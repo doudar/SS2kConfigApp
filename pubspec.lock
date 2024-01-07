@@ -25,10 +25,11 @@ packages:
   flutter_blue_plus:
     dependency: "direct main"
     description:
-      path: ".."
-      relative: true
-    source: path
-    version: "1.31.5"
+      name: flutter_blue_plus
+      sha256: aaeaea38bc6d697092ff8c9224dc5046e38682b6257515d971bb078567e4efcb
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.31.7"
   material_color_utilities:
     dependency: transitive
     description:

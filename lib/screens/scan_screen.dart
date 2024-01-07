@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_blue_plus_example/utils/constants.dart';
+import 'package:flutter_blue_plus_example/utils/extra.dart';
 
 import 'device_screen.dart';
 import '../utils/snackbar.dart';
