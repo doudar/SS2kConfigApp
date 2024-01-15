@@ -3,11 +3,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:flutter_blue_plus_example/utils/constants.dart';
-import 'package:flutter_blue_plus_example/utils/extra.dart';
 
+
+import '../utils/constants.dart';
+import '../utils/extra.dart';
 import 'device_screen.dart';
 import '../utils/snackbar.dart';
+import '../utils/customcharhelpers.dart';
 import '../widgets/system_device_tile.dart';
 import '../widgets/scan_result_tile.dart';
 
@@ -85,9 +87,13 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   void onConnectPressed(BluetoothDevice device) {
+     if (FlutterBluePlus.isScanningNow) {
+      FlutterBluePlus.stopScan();
+     }
     device.connectAndUpdateStream().catchError((e) {
       Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
     });
+    //updateCustomCharacter(cc);
     MaterialPageRoute route = MaterialPageRoute(
         builder: (context) => DeviceScreen(device: device), settings: RouteSettings(name: '/DeviceScreen'));
     Navigator.of(context).push(route);
@@ -106,13 +112,14 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Widget buildScanButton(BuildContext context) {
     if (FlutterBluePlus.isScanningNow) {
-      return FloatingActionButton(
+      return FloatingActionButton.large(
         child: const Icon(Icons.stop),
         onPressed: onStopPressed,
         backgroundColor: Colors.red,
+        
       );
     } else {
-      return FloatingActionButton(child: const Text("SCAN"), onPressed: onScanPressed);
+      return FloatingActionButton.large(child: const Text("SCAN"), onPressed: onScanPressed);
     }
   }
 

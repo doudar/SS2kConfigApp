@@ -4,13 +4,16 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:flutter_blue_plus_example/utils/extra.dart';
+import '../utils/extra.dart';
 
+import '../widgets/setting_tile.dart';
 import '../widgets/service_tile.dart';
 import '../widgets/characteristic_tile.dart';
 import '../widgets/descriptor_tile.dart';
 import '../utils/snackbar.dart';
 import '../utils/constants.dart';
+import '../utils/customcharhelpers.dart';
+
 
 class DeviceScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -26,6 +29,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
   int? _mtuSize;
   int? charReceived;
 
+  late BluetoothCharacteristic myCharacteristic;
   BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
   List<BluetoothService> _services = [];
 
@@ -148,6 +152,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
     try {
       _services = await widget.device.discoverServices();
+      _findChar();
+      updateCustomCharacter(myCharacteristic);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -156,15 +162,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
       setState(() {
         _isDiscoveringServices = false;
       });
-    }
-  }
-
-  Future onRequestMtuPressed() async {
-    try {
-      await widget.device.requestMtu(223, predelay: 0);
-      Snackbar.show(ABC.c, "Request Mtu: Success", success: true);
-    } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Change Mtu Error:", e), success: false);
     }
   }
 
@@ -238,107 +235,9 @@ class _DeviceScreenState extends State<DeviceScreen> {
     );
   }
 
-  String readCC(Map c) {
-    return (c["value"].toString());
-  }
-
-  Future writeCC(BluetoothCharacteristic cc, List<int> value) async {
-    //List<int> ret = [0];
+  _findChar() {
     try {
-      await cc.write(value);
-    } catch (e) {
-      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $value", success: false);
-    }
-  }
-
-  Future notify(BluetoothCharacteristic cc) async {
-    final subscription = cc.onValueReceived.listen((value) {
-      if (value[0] == 0x80) {
-        var length = value.length;
-        var t = new Uint8List(length);
-        String logString = "";
-        //
-        for (var c in customCharacteristic) {
-          if (int.parse(c["reference"]) == value[1]) {
-            for (var i = 0; i < length; i++) {
-              t[i] = value[i];
-            }
-            var data = t.buffer.asByteData();
-
-            switch (c["type"]) {
-              case "int":
-                {
-                  c["value"] = data.getUint16(2, Endian.little);
-                  logString = c["value"].toString();
-                  break;
-                }
-              case "bool":
-                {
-                  c["value"] = value[2];
-                  logString = c["value"].toString();
-                  break;
-                }
-              case "float":
-                {
-                  c["value"] = data.getUint16(2, Endian.little);
-                  logString = c["value"].toString();
-                  break;
-                }
-              case "long":
-                {
-                  c["value"] = data.getUint32(2, Endian.little);
-                  logString = c["value"].toString();
-                  break;
-                }
-              case "String":
-                {
-                  List<int> reversed = value.reversed.toList();
-                  reversed.removeRange(length - 2, length);
-                  try {
-                    c["value"] = utf8.decode(reversed);
-                  } catch (e) {
-                    Snackbar.show(ABC.c, "Failed to decode string", success: false);
-                  }
-                  logString = c["value"].toString();
-                  break;
-                }
-              default:
-                {
-                  String type = c["type"];
-                  print("No decoder found for $type");
-                }
-            }
-
-            break;
-          }
-        }
-
-        print("Received value: $logString");
-      } else if (value[0] == 0xff) {
-        for (var c in customCharacteristic) {
-          if (int.parse(c["reference"]) == value[1]) {
-            c["value"] = "Not supported by firmware version.";
-          }
-        }
-      }
-    });
-    widget.device.cancelWhenDisconnected(subscription);
-    if (!cc.isNotifying) {
-      try {
-        await cc.setNotifyValue(true);
-      } catch (e) {
-        Snackbar.show(ABC.c, "Failed to subscribe to notifications", success: false);
-      }
-    }
-  }
-
-//Build the settings dropdowns
-  List<Widget> buildSettings(BuildContext context) {
-    List<Widget> settings = [];
-    try {
-      BluetoothService cs = _services[0];
-      BluetoothCharacteristic cc = cs.characteristics[0];
-
+      BluetoothService cs = _services.first;
       for (BluetoothService s in _services) {
         if (s.uuid == Guid(csUUID)) {
           cs = s;
@@ -348,44 +247,47 @@ class _DeviceScreenState extends State<DeviceScreen> {
       List<BluetoothCharacteristic> characteristics = cs.characteristics;
       for (BluetoothCharacteristic c in characteristics) {
         if (c.uuid == Guid(ccUUID)) {
-          cc = c;
+          myCharacteristic = c;
           break;
         }
       }
+    } catch (e) {
+      Snackbar.show(ABC.c, prettyException("No Services", e), success: false);
+    }
+  }
 
-      notify(cc);
+//Build the settings dropdowns
+  List<Widget> buildSettings(BuildContext context) {
+    List<Widget> settings = [];
+    try {
+      BluetoothCharacteristic char;
+      char = myCharacteristic;
+    } catch (e) {}
+    ;
 
-      newEntry(Map c) {
+    _newEntry(Map c) {
+      if (!_services.isEmpty) {
         if (c["isSetting"]) {
-          //read settings
-          writeCC(cc, [0x01, int.parse(c["reference"])]);
-          //await readCC(c);
-          settings.add(ListTile(
-            contentPadding: const EdgeInsets.all(16.0),
-            //leading: Text(c["vName"]),
-            title: Text(c["vName"]),
-            trailing: Text(c["value"].toString()),
-          ));
-          //setState(() {});
+          settings.add(SettingTile(characteristic: myCharacteristic, c: c));
+          //ListTile(
+          //  contentPadding: const EdgeInsets.all(16.0),
+          //leading: Text(c["vName"]),
+          //  title: Text(c["vName"]),
+          //  trailing: Text(c["value"].toString()),
+          //));
         }
       }
+    }
 
-      customCharacteristic.forEach((c) => newEntry(c));
-    } catch (e) {
-      Snackbar.show(ABC.c, "Couldn't find service", success: false);
+    customCharacteristic.forEach((c) => _newEntry(c));
+    Map c = customCharacteristic[21];
+    String test = c["value"] ?? " ";
+    if (test == " ") {
+      discoverServices();
+      setState(() {});
     }
     //here
     return settings;
-  }
-
-  Widget buildMtuTile(BuildContext context) {
-    return ListTile(
-        title: const Text('MTU Size'),
-        subtitle: Text('$_mtuSize bytes'),
-        trailing: IconButton(
-          icon: const Icon(Icons.edit),
-          onPressed: onRequestMtuPressed,
-        ));
   }
 
   Widget buildConnectButton(BuildContext context) {
@@ -402,11 +304,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    try {
-      BluetoothService test = _services[0];
-    } catch (e) {
-      discoverServices();
-    }
     return ScaffoldMessenger(
       key: Snackbar.snackBarKeyC,
       child: Scaffold(
@@ -423,7 +320,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                 title: Text('Device is ${_connectionState.toString().split('.')[1]}.'),
                 trailing: buildGetServices(context),
               ),
-              buildMtuTile(context),
+              // buildMtuTile(context),
               //..._buildServiceTiles(context, widget.device),
               ...buildSettings(context),
             ],
