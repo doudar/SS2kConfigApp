@@ -6,10 +6,9 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 
 import '../utils/constants.dart';
-import '../utils/extra.dart';
 import 'device_screen.dart';
 import '../utils/snackbar.dart';
-import '../utils/customcharhelpers.dart';
+import '../utils/extra.dart';
 import '../widgets/system_device_tile.dart';
 import '../widgets/scan_result_tile.dart';
 
@@ -161,7 +160,7 @@ class _ScanScreenState extends State<ScanScreen> {
           titleTextStyle: TextStyle(
             fontSize: 30,
           ),
-          backgroundColor: Color.fromARGB(255, 18, 58, 189),
+          //backgroundColor: Color.fromARGB(255, 18, 58, 189),
         ),
         body: RefreshIndicator(
           onRefresh: onRefresh,

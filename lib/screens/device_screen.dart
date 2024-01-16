@@ -1,10 +1,7 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../utils/extra.dart';
 
 import '../widgets/setting_tile.dart';
 import '../widgets/service_tile.dart';
@@ -12,8 +9,8 @@ import '../widgets/characteristic_tile.dart';
 import '../widgets/descriptor_tile.dart';
 import '../utils/snackbar.dart';
 import '../utils/constants.dart';
+import '../utils/extra.dart';
 import '../utils/customcharhelpers.dart';
-
 
 class DeviceScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -133,6 +130,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
     try {
       _services = await widget.device.discoverServices();
+      _findChar();
+      await updateCustomCharacter(myCharacteristic, true);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -141,6 +140,16 @@ class _DeviceScreenState extends State<DeviceScreen> {
       setState(() {
         _isDiscoveringServices = false;
       });
+    }
+  }
+
+  Future onSaveSettingsPressed() async {
+    try {
+      //_services = await widget.device.discoverServices();
+      //_findChar();
+      await saveSettings(myCharacteristic);
+    } catch (e) {
+      Snackbar.show(ABC.c, prettyException("Save Settings Failed ", e), success: false);
     }
   }
 
@@ -189,9 +198,9 @@ class _DeviceScreenState extends State<DeviceScreen> {
       child: AspectRatio(
         aspectRatio: 1.0,
         child: CircularProgressIndicator(
-          backgroundColor: Colors.black12,
-          color: Colors.black26,
-        ),
+            //backgroundColor: Colors.black12,
+            //color: Colors.black26,
+            ),
       ),
     );
   }
@@ -213,19 +222,41 @@ class _DeviceScreenState extends State<DeviceScreen> {
     );
   }
 
-  Widget buildGetServices(BuildContext context) {
+  Widget buildUpdateValues(BuildContext context) {
     return IndexedStack(
       index: (_isDiscoveringServices) ? 1 : 0,
       children: <Widget>[
-        TextButton(
-          child: const Text("Update Values"),
+        OutlinedButton(
+          child: const Text("Update"),
           onPressed: onDiscoverServicesPressed,
         ),
         const IconButton(
           icon: SizedBox(
             child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation(Colors.grey),
-            ),
+                //valueColor: AlwaysStoppedAnimation(Colors.grey),
+                ),
+            width: 18.0,
+            height: 18.0,
+          ),
+          onPressed: null,
+        )
+      ],
+    );
+  }
+
+  buildSaveButton(context) {
+    return IndexedStack(
+      index: (_isDiscoveringServices) ? 1 : 0,
+      children: <Widget>[
+        OutlinedButton(
+          child: const Text("  Save  "),
+          onPressed: onSaveSettingsPressed,
+        ),
+        const IconButton(
+          icon: SizedBox(
+            child: CircularProgressIndicator(
+                //valueColor: AlwaysStoppedAnimation(Colors.grey),
+                ),
             width: 18.0,
             height: 18.0,
           ),
@@ -269,12 +300,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
       if (!_services.isEmpty) {
         if (c["isSetting"]) {
           settings.add(SettingTile(characteristic: myCharacteristic, c: c));
-          //ListTile(
-          //  contentPadding: const EdgeInsets.all(16.0),
-          //leading: Text(c["vName"]),
-          //  title: Text(c["vName"]),
-          //  trailing: Text(c["value"].toString()),
-          //));
         }
       }
     }
@@ -308,8 +333,12 @@ class _DeviceScreenState extends State<DeviceScreen> {
       key: Snackbar.snackBarKeyC,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(widget.device.platformName), centerTitle: true, backgroundColor: Color.fromARGB(255, 1, 37, 244), foregroundColor: Color.fromARGB(255, 255, 255, 255)),
-          //actions: [buildConnectButton(context)],
+          title: Text(widget.device.platformName),
+          centerTitle: true,
+          //  backgroundColor: Color.fromARGB(255, 1, 37, 244),
+          //  foregroundColor: Color.fromARGB(255, 255, 255, 255)
+        ),
+        //actions: [buildConnectButton(context)],
 
         body: SingleChildScrollView(
           child: Column(
@@ -318,7 +347,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
               ListTile(
                 leading: buildRssiTile(context),
                 title: Text('Device is ${_connectionState.toString().split('.')[1]}.'),
-                trailing: buildGetServices(context),
+                trailing: buildUpdateValues(context),
+              ),
+              ListTile(
+                trailing: buildSaveButton(context),
               ),
               // buildMtuTile(context),
               //..._buildServiceTiles(context, widget.device),

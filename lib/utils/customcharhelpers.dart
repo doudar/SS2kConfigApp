@@ -2,25 +2,26 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../utils/snackbar.dart';
 import '../utils/constants.dart';
 
-/* String readCC(Map c) {
-    while (c["value"] == null) {
-      sleep(const Duration(milliseconds: 50));
-    }
-    return (c["value"].toString());
-  }*/
+bool _subscribed = false;
+final _lastRequestStopwatch = Stopwatch();
 
 Future updateCustomCharacter(BluetoothCharacteristic? cc, bool initialScan) async {
   if (cc != null) {
-    notify(cc);
-    if (initialScan && (customCharacteristic[0]["value"] == null)) {
-      requestSettings(cc);
+    if (!cc.isNotifying) notify(cc);
+    if (!_subscribed) decode(cc);
+    if (!_lastRequestStopwatch.isRunning) {
+      await requestSettings(cc);
+      _lastRequestStopwatch.start();
+    } else if (_lastRequestStopwatch.elapsed > Duration(seconds: 5)) {
+      _lastRequestStopwatch.reset();
+      await requestSettings(cc);
     }
-    decode(cc);
   }
 }
 
@@ -34,7 +35,17 @@ void notify(BluetoothCharacteristic cc) {
   }
 }
 
-void requestSettings(BluetoothCharacteristic cc) {
+Future saveSettings(BluetoothCharacteristic cc) async {
+  findNSave(Map c) {
+    if (c["vName"] == "BLE_saveToLittleFS       ") {
+      write(cc, [0x02, int.parse(c["reference"])]);
+    }
+  }
+
+  await customCharacteristic.forEach((c) => findNSave(c));
+}
+
+Future requestSettings(BluetoothCharacteristic cc) async {
   _write(Map c) {
     if (c["isSetting"]) {
       //read settings
@@ -42,7 +53,7 @@ void requestSettings(BluetoothCharacteristic cc) {
     }
   }
 
-  customCharacteristic.forEach((c) => _write(c));
+  await customCharacteristic.forEach((c) => _write(c));
 }
 
 int getPrecision(Map c) {
@@ -89,6 +100,7 @@ void write(BluetoothCharacteristic cc, List<int> value) {
 
 void decode(BluetoothCharacteristic cc) {
   final subscription = cc.onValueReceived.listen((value) {
+    _subscribed = true;
     if (value[0] == 0x80) {
       var length = value.length;
       var t = new Uint8List(length);

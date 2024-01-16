@@ -57,7 +57,7 @@ class _SettingTileState extends State<SettingTile> {
             ),
             title: Column(
               children: <Widget>[
-                Text((c["humanReadableName"]), textAlign: TextAlign.left),
+                Text((c["humanReadableName"]), textAlign: TextAlign.left, style: Theme.of(context).textTheme.labelLarge),
                 Text(
                   c["value"] ?? "",
                   textAlign: TextAlign.right,
@@ -65,7 +65,7 @@ class _SettingTileState extends State<SettingTile> {
                 Icon(Icons.edit_note_sharp),
               ],
             ),
-            tileColor: (c["value"] == noFirmSupport) ? Color.fromARGB(149, 21, 21, 26) : Color.fromARGB(29, 1, 1, 242),
+            tileColor: (c["value"] == noFirmSupport) ? deactiveBackgroundColor : null,
             onTap: () {
               if (c["value"] == noFirmSupport) {
               } else {

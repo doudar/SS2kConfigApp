@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/services.dart';
+
 final String csUUID = "77776277-7877-7774-4466-896665500000";
 final String ccUUID = "77776277-7877-7774-4466-896665500001";
 
@@ -34,3 +36,7 @@ var customCharacteristic = jsonDecode('''[
 {"vName": "BLE_externalControl      ", "reference": "0x1A", "isSetting": false, "type":"bool"  ,  "humanReadableName":"External Control", "min":0, "max":1},
 {"vName": "BLE_syncMode             ", "reference": "0x1B", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Sync Mode", "min":0, "max":1}
 ]''');
+
+// the first two bytes are the opacity
+final Color activeBackgroundColor = Color(0xffc9ccf5);
+final Color deactiveBackgroundColor = Color(0xff686973);
