@@ -14,10 +14,12 @@ import '../utils/constants.dart';
     return (c["value"].toString());
   }*/
 
-void updateCustomCharacter(BluetoothCharacteristic? cc) {
+Future updateCustomCharacter(BluetoothCharacteristic? cc, bool initialScan) async {
   if (cc != null) {
     notify(cc);
-    requestSettings(cc);
+    if (initialScan && (customCharacteristic[0]["value"] == null)) {
+      requestSettings(cc);
+    }
     decode(cc);
   }
 }
@@ -43,7 +45,25 @@ void requestSettings(BluetoothCharacteristic cc) {
   customCharacteristic.forEach((c) => _write(c));
 }
 
-void writeToSS2K(BluetoothCharacteristic cc, Map c, String s) {
+int getPrecision(Map c) {
+  int precision = 0;
+  switch (c["type"]) {
+    case "string":
+    case "int":
+    case "long":
+      precision = 0;
+      break;
+    default:
+      precision = 2;
+  }
+  return precision;
+}
+
+void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
+  if (s == "") {
+    s = c["value"];
+  }
+
   int t = double.parse(s).round();
   final list = new Uint64List.fromList([t]);
   final bytes = new Uint8List.view(list.buffer);
@@ -53,7 +73,8 @@ void writeToSS2K(BluetoothCharacteristic cc, Map c, String s) {
   List<int> value = [
     0x02,
     int.parse(c["reference"]),
-    int.parse(out.elementAt(0)), int.parse(out.elementAt(1)) 
+    int.parse(out.elementAt(0)),
+    int.parse(out.elementAt(1))
   ]; //////////<<<<<<<<<<<This (s) needs to probably be converted to uint8 before sending.
   write(cc, value);
 }
@@ -71,7 +92,6 @@ void decode(BluetoothCharacteristic cc) {
     if (value[0] == 0x80) {
       var length = value.length;
       var t = new Uint8List(length);
-      String logString = "";
       //
       for (var c in customCharacteristic) {
         if (int.parse(c["reference"]) == value[1]) {
@@ -83,26 +103,24 @@ void decode(BluetoothCharacteristic cc) {
           switch (c["type"]) {
             case "int":
               {
-                c["value"] = data.getUint16(2, Endian.little);
-                logString = c["value"].toString();
+                c["value"] = data.getUint16(2, Endian.little).toString();
                 break;
               }
             case "bool":
               {
-                c["value"] = value[2];
-                logString = c["value"].toString();
+                c["value"] = value[2].toString();
+
                 break;
               }
             case "float":
               {
-                c["value"] = data.getUint16(2, Endian.little);
-                logString = c["value"].toString();
+                c["value"] = data.getUint16(2, Endian.little).toString();
                 break;
               }
             case "long":
               {
-                c["value"] = data.getUint32(2, Endian.little);
-                logString = c["value"].toString();
+                c["value"] = data.getUint32(2, Endian.little).toString();
+
                 break;
               }
             case "String":
@@ -114,7 +132,6 @@ void decode(BluetoothCharacteristic cc) {
                 } catch (e) {
                   Snackbar.show(ABC.c, "Failed to decode string", success: false);
                 }
-                logString = c["value"].toString();
                 break;
               }
             default:
@@ -127,12 +144,10 @@ void decode(BluetoothCharacteristic cc) {
           break;
         }
       }
-
-      print("Received value: $logString");
     } else if (value[0] == 0xff) {
       for (var c in customCharacteristic) {
         if (int.parse(c["reference"]) == value[1]) {
-          c["value"] = "Not supported by firmware version.";
+          c["value"] = noFirmSupport;
         }
       }
     }

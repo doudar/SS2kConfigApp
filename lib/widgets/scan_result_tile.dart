@@ -62,13 +62,12 @@ class _ScanResultTileState extends State<ScanResultTile> {
   Widget _buildTitle(BuildContext context) {
     if (widget.result.device.platformName.isNotEmpty) {
       return Column(
-        mainAxisAlignment: MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.max,
+        //mainAxisAlignment: MainAxisAlignment.start,
+        //crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            widget.result.device.platformName,
-            overflow: TextOverflow.ellipsis,
-          ),
+          Text(widget.result.device.platformName,
+              overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge),
           Text(
             widget.result.device.remoteId.toString(),
             style: Theme.of(context).textTheme.bodySmall,
@@ -118,15 +117,13 @@ class _ScanResultTileState extends State<ScanResultTile> {
     var adv = widget.result.advertisementData;
     return ExpansionTile(
       title: _buildTitle(context),
-      leading: Column(children: <Widget>[Image.asset('assets/ss2kv3.png', height: 40,), Text(widget.result.rssi.toString()),]),
+      leading: Image.asset(
+        'assets/ss2kv3.png',
+      ),
       trailing: _buildConnectButton(context),
       children: <Widget>[
         if (adv.advName.isNotEmpty) _buildAdvRow(context, 'Name', adv.advName),
-        if (adv.txPowerLevel != null) _buildAdvRow(context, 'Tx Power Level', '${adv.txPowerLevel}'),
-        if (adv.manufacturerData.isNotEmpty)
-          _buildAdvRow(context, 'Manufacturer Data', getNiceManufacturerData(adv.manufacturerData)),
-        if (adv.serviceUuids.isNotEmpty) _buildAdvRow(context, 'Service UUIDs', getNiceServiceUuids(adv.serviceUuids)),
-        if (adv.serviceData.isNotEmpty) _buildAdvRow(context, 'Service Data', getNiceServiceData(adv.serviceData)),
+        _buildAdvRow(context, 'RSSI', '${widget.result.rssi.toString()}'),
       ],
     );
   }

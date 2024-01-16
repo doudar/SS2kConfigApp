@@ -153,7 +153,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       _services = await widget.device.discoverServices();
       _findChar();
-      updateCustomCharacter(myCharacteristic);
+      await updateCustomCharacter(myCharacteristic, true);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -280,7 +280,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
 
     customCharacteristic.forEach((c) => _newEntry(c));
-    Map c = customCharacteristic[21];
+    Map c = customCharacteristic[21]; // the last one in the original batch
     String test = c["value"] ?? " ";
     if (test == " ") {
       discoverServices();
@@ -308,9 +308,9 @@ class _DeviceScreenState extends State<DeviceScreen> {
       key: Snackbar.snackBarKeyC,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(widget.device.platformName),
+          title: Text(widget.device.platformName), centerTitle: true, backgroundColor: Color.fromARGB(255, 1, 37, 244), foregroundColor: Color.fromARGB(255, 255, 255, 255)),
           //actions: [buildConnectButton(context)],
-        ),
+
         body: SingleChildScrollView(
           child: Column(
             children: <Widget>[

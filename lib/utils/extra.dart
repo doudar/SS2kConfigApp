@@ -1,3 +1,7 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+
 import 'utils.dart';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -32,10 +36,16 @@ extension Extra on BluetoothDevice {
   // connect & update stream
   Future<void> connectAndUpdateStream() async {
     _cstream.add(true);
-    try {
-      await connect();
-    } finally {
-      _cstream.add(false);
+    bool _connected = false;
+    while (!_connected) {
+      try {
+        await connect();
+        _connected = true;
+      } catch (e) {
+        sleep(Duration(milliseconds: 50));
+      } finally {
+        _cstream.add(false);
+      }
     }
   }
 
