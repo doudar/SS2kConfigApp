@@ -193,8 +193,10 @@ class _settingCardState extends State<settingCard> {
           children: <Widget>[
             const SizedBox(width: 8),
             TextButton(
-              child: const Text('SAVE'),
-              onPressed: () => writeToSS2K(characteristic, c),
+              child: const Text('BACK'),
+              onPressed: () {
+          Navigator.pop(context);
+        },
             ),
             const SizedBox(width: 8),
           ],

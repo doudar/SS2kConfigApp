@@ -160,7 +160,7 @@ class _ScanScreenState extends State<ScanScreen> {
           titleTextStyle: TextStyle(
             fontSize: 30,
           ),
-          //backgroundColor: Color.fromARGB(255, 18, 58, 189),
+          backgroundColor: Color.fromARGB(255, 18, 58, 189),
         ),
         body: RefreshIndicator(
           onRefresh: onRefresh,

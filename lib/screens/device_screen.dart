@@ -252,16 +252,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
           child: const Text("  Save  "),
           onPressed: onSaveSettingsPressed,
         ),
-        const IconButton(
-          icon: SizedBox(
-            child: CircularProgressIndicator(
-                //valueColor: AlwaysStoppedAnimation(Colors.grey),
-                ),
-            width: 18.0,
-            height: 18.0,
-          ),
-          onPressed: null,
-        )
       ],
     );
   }

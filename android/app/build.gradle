@@ -33,7 +33,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.lib.flutter_blue_plus_example"
+        applicationId "com.lib.SmartSpin2k"
         minSdkVersion 21
         targetSdkVersion 33
         versionCode flutterVersionCode.toInteger()
@@ -53,7 +53,7 @@ android {
 
     // Conditional for compatibility with AGP <4.2.
     if (project.android.hasProperty("namespace")) {
-        namespace 'com.lib.flutter_blue_plus_example'
+        namespace 'com.lib.SmartSpin2k'
     }
 }
 
