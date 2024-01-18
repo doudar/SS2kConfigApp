@@ -31,7 +31,7 @@ var customCharacteristic = jsonDecode('''[
 {"vName": "BLE_connectedPowerMeter  ", "reference": "0x15", "isSetting": true,  "type":"string",  "humanReadableName":"Saved Power Meter", "min":0, "max":2000},
 {"vName": "BLE_connectedHeartMonitor", "reference": "0x16", "isSetting": true,  "type":"string",  "humanReadableName":"Saved HRM", "min":0, "max":2000},
 {"vName": "BLE_shifterPosition      ", "reference": "0x17", "isSetting": false, "type":"int"   ,  "humanReadableName":"Current Gear", "min":0, "max":2000},
-{"vName": "BLE_saveToLittleFS       ", "reference": "0x18", "isSetting": false,  "type":"bool"  ,  "humanReadableName":"Save to Filesystem", "min":0, "max":1},
+{"vName": "BLE_saveToLittleFS       ", "reference": "0x18", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Save to Filesystem", "min":0, "max":1},
 {"vName": "BLE_targetPosition       ", "reference": "0x19", "isSetting": false, "type":"long"   ,  "humanReadableName":"Target Stepper Position", "min":0, "max":20000},
 {"vName": "BLE_externalControl      ", "reference": "0x1A", "isSetting": false, "type":"bool"  ,  "humanReadableName":"External Control", "min":0, "max":1},
 {"vName": "BLE_syncMode             ", "reference": "0x1B", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Sync Mode", "min":0, "max":1}

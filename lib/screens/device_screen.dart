@@ -244,15 +244,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
     );
   }
 
-  buildSaveButton(context) {
-    return IndexedStack(
-      index: (_isDiscoveringServices) ? 1 : 0,
-      children: <Widget>[
-        OutlinedButton(
-          child: const Text("  Save  "),
-          onPressed: onSaveSettingsPressed,
-        ),
-      ],
+  Widget buildSaveButton(context) {
+    return OutlinedButton(
+      child: const Text("  Save  "),
+      onPressed: onSaveSettingsPressed,
     );
   }
 

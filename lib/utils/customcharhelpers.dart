@@ -38,7 +38,7 @@ void notify(BluetoothCharacteristic cc) {
 Future saveSettings(BluetoothCharacteristic cc) async {
   findNSave(Map c) {
     if (c["vName"] == "BLE_saveToLittleFS       ") {
-      write(cc, [0x02, int.parse(c["reference"])]);
+      write(cc, [0x02, int.parse(c["reference"]), 0x01]);
     }
   }
 
@@ -75,18 +75,54 @@ void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
     s = c["value"];
   }
 
-  int t = double.parse(s).round();
-  final list = new Uint64List.fromList([t]);
-  final bytes = new Uint8List.view(list.buffer);
-  final out = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+  List<int> value = [0x02, int.parse(c["reference"])];
 
-  print('bytes: ${out}');
-  List<int> value = [
-    0x02,
-    int.parse(c["reference"]),
-    int.parse(out.elementAt(0)),
-    int.parse(out.elementAt(1))
-  ]; //////////<<<<<<<<<<<This (s) needs to probably be converted to uint8 before sending.
+  switch (c["type"]) {
+    case "string":
+      value = value + s.codeUnits;
+    case "int":
+      int t = double.parse(s).round();
+      final list = new Uint64List.fromList([t]);
+      final bytes = new Uint8List.view(list.buffer);
+      final out = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+      print('bytes: ${out}');
+      value = [0x02, int.parse(c["reference"]), int.parse(out.elementAt(0)), int.parse(out.elementAt(1))];
+      break;
+    case "bool":
+      int t = double.parse(s).round();
+      final list = new Uint64List.fromList([t]);
+      final bytes = new Uint8List.view(list.buffer);
+      final out = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+      print('bytes: ${out}');
+      value = [0x02, int.parse(c["reference"]), int.parse(out.elementAt(0)), int.parse(out.elementAt(1))];
+      break;
+    case "float":
+      int t = double.parse(s).round();
+      final list = new Uint64List.fromList([t]);
+      final bytes = new Uint8List.view(list.buffer);
+      final out = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+      print('bytes: ${out}');
+      value = [0x02, int.parse(c["reference"]), int.parse(out.elementAt(0)), int.parse(out.elementAt(1))];
+      break;
+    case "long":
+      int t = double.parse(s).round();
+      final list = new Uint64List.fromList([t]);
+      final bytes = new Uint8List.view(list.buffer);
+      final out = bytes.map((b) => '0x${b.toRadixString(32).padLeft(2, '0')}');
+      print('bytes: ${out}');
+      value = [
+        0x02,
+        int.parse(c["reference"]),
+        int.parse(out.elementAt(0)),
+        int.parse(out.elementAt(1)),
+        int.parse(out.elementAt(2)),
+        int.parse(out.elementAt(3))
+      ];
+      break;
+    default:
+      //value = [0xff];
+  }
+
   write(cc, value);
 }
 
@@ -135,15 +171,14 @@ void decode(BluetoothCharacteristic cc) {
 
                 break;
               }
-            case "String":
+            case "string":
               {
-                List<int> reversed = value.reversed.toList();
-                reversed.removeRange(length - 2, length);
-                try {
-                  c["value"] = utf8.decode(reversed);
-                } catch (e) {
-                  Snackbar.show(ABC.c, "Failed to decode string", success: false);
+                //remove the data bytes
+                var subT = new Uint8List(length - 2);
+                for (int i = 0; i < length - 2; i++) {
+                  subT[i] = t[i + 2];
                 }
+                c["value"] = utf8.decode(subT);
                 break;
               }
             default:
