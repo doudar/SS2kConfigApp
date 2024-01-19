@@ -47,10 +47,7 @@ Future saveSettings(BluetoothCharacteristic cc) async {
 
 Future requestSettings(BluetoothCharacteristic cc) async {
   _write(Map c) {
-    if (c["isSetting"]) {
-      //read settings
       write(cc, [0x01, int.parse(c["reference"])]);
-    }
   }
 
   await customCharacteristic.forEach((c) => _write(c));
@@ -89,6 +86,7 @@ void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
       value = [0x02, int.parse(c["reference"]), int.parse(out.elementAt(0)), int.parse(out.elementAt(1))];
       break;
     case "bool":
+      (s == "false") ? s = "0" : s = "1";
       int t = double.parse(s).round();
       final list = new Uint64List.fromList([t]);
       final bytes = new Uint8List.view(list.buffer);
@@ -97,7 +95,7 @@ void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
       value = [0x02, int.parse(c["reference"]), int.parse(out.elementAt(0)), int.parse(out.elementAt(1))];
       break;
     case "float":
-      int t = double.parse(s).round();
+      int t = (double.parse(s)*10).round();
       final list = new Uint64List.fromList([t]);
       final bytes = new Uint8List.view(list.buffer);
       final out = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
@@ -120,7 +118,7 @@ void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
       ];
       break;
     default:
-      //value = [0xff];
+    //value = [0xff];
   }
 
   write(cc, value);
@@ -154,15 +152,15 @@ void decode(BluetoothCharacteristic cc) {
                 c["value"] = data.getUint16(2, Endian.little).toString();
                 break;
               }
-            case "bool":
+            case "bool": 
               {
-                c["value"] = value[2].toString();
-
+                String b = (value[2] == 0) ? "false" : "true";
+                c["value"] = b;
                 break;
               }
             case "float":
               {
-                c["value"] = data.getUint16(2, Endian.little).toString();
+                c["value"] = (data.getUint16(2, Endian.little)/10).toString();
                 break;
               }
             case "long":

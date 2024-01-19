@@ -6,6 +6,7 @@ final String csUUID = "77776277-7877-7774-4466-896665500000";
 final String ccUUID = "77776277-7877-7774-4466-896665500001";
 
 final String noFirmSupport = "Not supported by firmware version.";
+final String passwordVname = "BLE_password             ";
 //Using JSON because it's easier to input the data:
 var customCharacteristic = jsonDecode('''[
 {"vName": "BLE_firmwareUpdateURL    ", "reference": "0x01", "isSetting": false, "type":"string",  "humanReadableName":"Firmware Update URL", "min":0, "max":0},
@@ -15,11 +16,11 @@ var customCharacteristic = jsonDecode('''[
 {"vName": "BLE_simulatedCad         ", "reference": "0x05", "isSetting": false, "type":"int"   ,  "humanReadableName":"Current CAD", "min":0, "max":2000},
 {"vName": "BLE_simulatedSpeed       ", "reference": "0x06", "isSetting": false, "type":"float" ,  "humanReadableName":"Current Speed", "min":0, "max":2000},
 {"vName": "BLE_deviceName           ", "reference": "0x07", "isSetting": true,  "type":"string",  "humanReadableName":"Name of SmartSpin2k", "min":0, "max":0},
-{"vName": "BLE_shiftStep            ", "reference": "0x08", "isSetting": true,  "type":"int"   ,  "humanReadableName":"Shift Step", "min":0, "max":2000},
+{"vName": "BLE_shiftStep            ", "reference": "0x08", "isSetting": true,  "type":"int"   ,  "humanReadableName":"Shift Step", "min":100, "max":2000},
 {"vName": "BLE_stepperPower         ", "reference": "0x09", "isSetting": true,  "type":"int"   ,  "humanReadableName":"Stepper Power", "min":0, "max":2000},
 {"vName": "BLE_stealthChop          ", "reference": "0x0A", "isSetting": true,  "type":"bool"   ,  "humanReadableName":"Stealth Chop", "min":0, "max":1},
 {"vName": "BLE_inclineMultiplier    ", "reference": "0x0B", "isSetting": true,  "type":"float" ,  "humanReadableName":"Incline Multiplier", "min":0, "max":10},
-{"vName": "BLE_powerCorrectionFactor", "reference": "0x0C", "isSetting": true,  "type":"int"   ,  "humanReadableName":"Power Correction Factor", "min":0, "max":2000},
+{"vName": "BLE_powerCorrectionFactor", "reference": "0x0C", "isSetting": true,  "type":"float"   ,  "humanReadableName":"Power Correction Factor", "min":0.4, "max":2.0},
 {"vName": "BLE_simulateHr           ", "reference": "0x0D", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Simulate HR", "min":0, "max":1},
 {"vName": "BLE_simulateWatts        ", "reference": "0x0E", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Simulate Watts", "min":0, "max":1},
 {"vName": "BLE_simulateCad          ", "reference": "0x0F", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Simulate CAD", "min":0, "max":1},

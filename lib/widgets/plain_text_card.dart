@@ -20,6 +20,7 @@ class _plainTextCardState extends State<plainTextCard> {
   Map get c => widget.c;
   BluetoothCharacteristic get characteristic => widget.characteristic;
   final controller = TextEditingController();
+  bool passwordVisible = false;
 
   @override
   void dispose() {
@@ -34,6 +35,61 @@ class _plainTextCardState extends State<plainTextCard> {
     setState(() {});
   }
 
+  Widget passwordTextField() {
+    return TextField(
+      obscureText: passwordVisible,
+      decoration: InputDecoration(
+        border: UnderlineInputBorder(),
+        hintText: "Password",
+        labelText: "Password",
+        helperStyle: TextStyle(color: Colors.green),
+        suffixIcon: IconButton(
+          icon: Icon(passwordVisible ? Icons.visibility : Icons.visibility_off),
+          onPressed: () {
+            setState(
+              () {
+                passwordVisible = !passwordVisible;
+              },
+            );
+          },
+        ),
+        alignLabelWithHint: false,
+        filled: true,
+      ),
+      keyboardType: TextInputType.visiblePassword,
+      textInputAction: TextInputAction.done,
+      onSubmitted: (t) {
+        this.verifyInput(t);
+        writeToSS2K(this.characteristic, this.c);
+        setState(() {});
+        return widget.c["value"];
+      },
+    );
+  }
+
+  Widget regularTextField() {
+    return TextField(
+      controller: this.controller,
+      decoration: InputDecoration(
+        hintText: "Type Here",
+        hintStyle: TextStyle(fontWeight: FontWeight.w200),
+        prefixIcon: Icon(Icons.edit_attributes),
+        fillColor: Colors.white,
+      ),
+      style: TextStyle(
+        fontSize: 30,
+      ),
+      textAlign: TextAlign.center,
+      textInputAction: TextInputAction.done,
+      onSubmitted: (t) {
+        this.verifyInput(t);
+        writeToSS2K(this.characteristic, this.c);
+        setState(() {});
+        return widget.c["value"];
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -46,24 +102,10 @@ class _plainTextCardState extends State<plainTextCard> {
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
         Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
-        Text((c["value"]), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
-        TextField(
-          controller: this.controller,
-          decoration: InputDecoration(
-            prefixIcon: Icon(Icons.edit_attributes),
-            fillColor: Colors.white,
-          ),
-          style: TextStyle(
-            fontSize: 30,
-          ),
-          textAlign: TextAlign.center,
-          onSubmitted: (t) {
-            this.verifyInput(t);
-            writeToSS2K(this.characteristic, this.c);
-            setState(() {});
-            return widget.c["value"];
-          },
-        ),
+        (c["vName"] == passwordVname)
+            ? Text("**********")
+            : Text((c["value"]), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
+        (c["vName"] == passwordVname) ? passwordTextField() : regularTextField(),
         const SizedBox(height: 15),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
