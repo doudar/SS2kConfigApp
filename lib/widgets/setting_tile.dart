@@ -8,6 +8,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import "../utils/snackbar.dart";
 import "../utils/customcharhelpers.dart";
 import "../widgets/slider_card.dart";
+import "../widgets/bool_card.dart";
 import "../widgets/plain_text_card.dart";
 
 class SettingTile extends StatefulWidget {
@@ -34,19 +35,28 @@ class _SettingTileState extends State<SettingTile> {
     });
   }
 
-  Widget widgetPicker(){
-    switch(c["type"]){
-    case "int":
-    case "float":
-    case "long":
-    return sliderCard(characteristic: characteristic, c: c);
-    case "string":
-    return plainTextCard(characteristic: characteristic, c: c);
-    case "bool":
-    return sliderCard(characteristic: characteristic, c: c);
-    default:
-    return plainTextCard(characteristic: characteristic, c: c);
+  Widget widgetPicker() {
+    switch (c["type"]) {
+      case "int":
+      case "float":
+      case "long":
+        return sliderCard(characteristic: characteristic, c: c);
+      case "string":
+        return plainTextCard(characteristic: characteristic, c: c);
+      case "bool":
+        return boolCard(characteristic: characteristic, c: c);
+      default:
+        return plainTextCard(characteristic: characteristic, c: c);
     }
+  }
+
+  String valueFormatter() {
+    String _ret = c["value"] ?? "";
+    if (_ret == "true" || _ret == "false") {
+      _ret = (_ret == "true") ? "On" : "Off";
+    }
+    _ret = (c["vName"] == passwordVname) ? "**********" : _ret;
+    return _ret;
   }
 
   @override
@@ -74,9 +84,10 @@ class _SettingTileState extends State<SettingTile> {
             ),
             title: Column(
               children: <Widget>[
-                Text((c["humanReadableName"]), textAlign: TextAlign.left, style: Theme.of(context).textTheme.labelLarge),
+                Text((c["humanReadableName"]),
+                    textAlign: TextAlign.left, style: Theme.of(context).textTheme.labelLarge),
                 Text(
-                  c["value"] ?? "",
+                  valueFormatter(),
                   textAlign: TextAlign.right,
                 ),
                 Icon(Icons.edit_note_sharp),
@@ -90,7 +101,7 @@ class _SettingTileState extends State<SettingTile> {
                   context,
                   MaterialPageRoute<Widget>(builder: (BuildContext context) {
                     return Scaffold(
-                      appBar: AppBar(title: const Text('Edit Page')),
+                      appBar: AppBar(title: const Text('Edit Setting')),
                       body: Center(
                         child: widgetPicker(),
                       ),
@@ -105,5 +116,3 @@ class _SettingTileState extends State<SettingTile> {
     );
   }
 }
-
-
