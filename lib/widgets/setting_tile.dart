@@ -10,6 +10,7 @@ import "../utils/customcharhelpers.dart";
 import "../widgets/slider_card.dart";
 import "../widgets/bool_card.dart";
 import "../widgets/plain_text_card.dart";
+import '../widgets/dropdown_card.dart';
 
 class SettingTile extends StatefulWidget {
   final BluetoothCharacteristic characteristic;
@@ -42,6 +43,9 @@ class _SettingTileState extends State<SettingTile> {
       case "long":
         return sliderCard(characteristic: characteristic, c: c);
       case "string":
+        if((c["vName"] == connectedHRMVname)|| (c["vName"] == connectedPWRVname)){
+          return dropdownCard(characteristic: characteristic, c: c);
+        }
         return plainTextCard(characteristic: characteristic, c: c);
       case "bool":
         return boolCard(characteristic: characteristic, c: c);
