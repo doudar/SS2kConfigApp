@@ -7,6 +7,15 @@ final String ccUUID = "77776277-7877-7774-4466-896665500001";
 
 final String noFirmSupport = "Not supported by firmware version.";
 final String passwordVname = "BLE_password             ";
+final String foundDevicesVname = "BLE_foundDevices         ";
+final String connectedHRMVname = "BLE_connectedHeartMonitor";
+final String connectedPWRVname = "BLE_connectedPowerMeter  ";
+
+String defaultDevices = '''[{"device -4": {"name": "any", "UUID": "0x180d"},
+    "device -3": {"name": "none", "UUID": "0x180d"},
+    "device -2": {"name": "any", "UUID": "0x1818"},
+    "device -1": {"name": "none", "UUID": "0x1818"},''';
+
 //Using JSON because it's easier to input the data:
 var customCharacteristic = jsonDecode('''[
 {"vName": "BLE_firmwareUpdateURL    ", "reference": "0x01", "isSetting": false, "type":"string",  "humanReadableName":"Firmware Update URL", "min":0, "max":0},
@@ -28,9 +37,9 @@ var customCharacteristic = jsonDecode('''[
 {"vName": "BLE_autoUpdate           ", "reference": "0x11", "isSetting": true,  "type":"bool"  ,  "humanReadableName":"Auto Updates", "min":0, "max":1},
 {"vName": "BLE_ssid                 ", "reference": "0x12", "isSetting": true,  "type":"string",  "humanReadableName":"SSID", "min":0, "max":2000},
 {"vName": "BLE_password             ", "reference": "0x13", "isSetting": true,  "type":"string",  "humanReadableName":"Password", "min":0, "max":2000},
-{"vName": "BLE_foundDevices         ", "reference": "0x14", "isSetting": false, "type":"string",  "humanReadableName":"Found Devices", "min":0, "max":2000},
 {"vName": "BLE_connectedPowerMeter  ", "reference": "0x15", "isSetting": true,  "type":"string",  "humanReadableName":"Saved Power Meter", "min":0, "max":2000},
 {"vName": "BLE_connectedHeartMonitor", "reference": "0x16", "isSetting": true,  "type":"string",  "humanReadableName":"Saved HRM", "min":0, "max":2000},
+{"vName": "BLE_foundDevices         ", "reference": "0x14", "isSetting": false, "type":"string",  "humanReadableName":"Found Devices", "min":0, "max":2000},
 {"vName": "BLE_shifterPosition      ", "reference": "0x17", "isSetting": false, "type":"int"   ,  "humanReadableName":"Current Gear", "min":0, "max":2000},
 {"vName": "BLE_saveToLittleFS       ", "reference": "0x18", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Save to Filesystem", "min":0, "max":1},
 {"vName": "BLE_targetPosition       ", "reference": "0x19", "isSetting": false, "type":"long"   ,  "humanReadableName":"Target Stepper Position", "min":0, "max":20000},

@@ -47,7 +47,7 @@ Future saveSettings(BluetoothCharacteristic cc) async {
 
 Future requestSettings(BluetoothCharacteristic cc) async {
   _write(Map c) {
-      write(cc, [0x01, int.parse(c["reference"])]);
+    write(cc, [0x01, int.parse(c["reference"])]);
   }
 
   await customCharacteristic.forEach((c) => _write(c));
@@ -95,7 +95,7 @@ void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
       value = [0x02, int.parse(c["reference"]), int.parse(out.elementAt(0)), int.parse(out.elementAt(1))];
       break;
     case "float":
-      int t = (double.parse(s)*10).round();
+      int t = (double.parse(s) * 10).round();
       final list = new Uint64List.fromList([t]);
       final bytes = new Uint8List.view(list.buffer);
       final out = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
@@ -152,7 +152,7 @@ void decode(BluetoothCharacteristic cc) {
                 c["value"] = data.getUint16(2, Endian.little).toString();
                 break;
               }
-            case "bool": 
+            case "bool":
               {
                 String b = (value[2] == 0) ? "false" : "true";
                 c["value"] = b;
@@ -160,7 +160,7 @@ void decode(BluetoothCharacteristic cc) {
               }
             case "float":
               {
-                c["value"] = (data.getUint16(2, Endian.little)/10).toString();
+                c["value"] = (data.getUint16(2, Endian.little) / 10).toString();
                 break;
               }
             case "long":
@@ -177,6 +177,28 @@ void decode(BluetoothCharacteristic cc) {
                   subT[i] = t[i + 2];
                 }
                 c["value"] = utf8.decode(subT);
+                if (c["vName"] == foundDevicesVname) {
+                  String _pm = "";
+                  String _hrm = "";
+                  for (var i in customCharacteristic) {
+                    if (i["vName"] == connectedHRMVname) {
+                      _hrm = i["value"];
+                    }
+                    if (i["vName"] == connectedPWRVname) {
+                      _pm = i["value"];
+                    }
+                  }
+                  String t = c["value"];
+                  String tList = defaultDevices +
+                      t.substring(1, t.length - 1) +
+                      ',"device -5": {"name":"' +
+                      _hrm +
+                      '", "UUID": "0x180d"}, "device -6": {"name":"' +
+                      _pm +
+                      '", "UUID": "0x1818"}' +
+                      '}]';
+                  c["value"] = tList;
+                }
                 break;
               }
             default:
