@@ -7,9 +7,12 @@ final String ccUUID = "77776277-7877-7774-4466-896665500001";
 
 final String noFirmSupport = "Not supported by firmware version.";
 final String passwordVname = "BLE_password             ";
+final String saveVname = "BLE_saveToLittleFS       ";
 final String foundDevicesVname = "BLE_foundDevices         ";
 final String connectedHRMVname = "BLE_connectedHeartMonitor";
 final String connectedPWRVname = "BLE_connectedPowerMeter  ";
+final String rebootVname = "BLE_reboot               ";
+final String resetVname = "BLE_resetToDefaults      ";
 
 String defaultDevices = '''[{"device -4": {"name": "any", "UUID": "0x180d"},
     "device -3": {"name": "none", "UUID": "0x180d"},
@@ -44,7 +47,9 @@ var customCharacteristic = jsonDecode('''[
 {"vName": "BLE_saveToLittleFS       ", "reference": "0x18", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Save to Filesystem", "min":0, "max":1},
 {"vName": "BLE_targetPosition       ", "reference": "0x19", "isSetting": false, "type":"long"   ,  "humanReadableName":"Target Stepper Position", "min":0, "max":20000},
 {"vName": "BLE_externalControl      ", "reference": "0x1A", "isSetting": false, "type":"bool"  ,  "humanReadableName":"External Control", "min":0, "max":1},
-{"vName": "BLE_syncMode             ", "reference": "0x1B", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Sync Mode", "min":0, "max":1}
+{"vName": "BLE_syncMode             ", "reference": "0x1B", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Sync Mode", "min":0, "max":1},
+{"vName": "BLE_reboot               ", "reference": "0x1C", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reboot SmartSpin2k", "min":0, "max":1},
+{"vName": "BLE_resetToDefaults      ", "reference": "0x1D", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reset to defaults", "min":0, "max":1}
 ]''');
 
 // the first two bytes are the opacity

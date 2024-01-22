@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -145,11 +147,49 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   Future onSaveSettingsPressed() async {
     try {
-      //_services = await widget.device.discoverServices();
-      //_findChar();
       await saveSettings(myCharacteristic);
+      Snackbar.show(ABC.c, "Settings Saved", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Save Settings Failed ", e), success: false);
+    }
+  }
+
+  Future onSaveLocalPressed() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      prefs.setString('user', jsonEncode(customCharacteristic));
+      Snackbar.show(ABC.c, "Settings Saved", success: true);
+    } catch (e) {
+      Snackbar.show(ABC.c, prettyException("Save Local Failed ", e), success: false);
+    }
+  }
+
+  Future onLoadLocalPressed() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      customCharacteristic = jsonDecode(prefs.getString('user')!);
+      Snackbar.show(ABC.c, "Settings Loaded", success: true);
+    } catch (e) {
+      Snackbar.show(ABC.c, prettyException("Load local failed. Do you have a backup?", e), success: false);
+    }
+  }
+
+  Future onRebootPressed() async {
+    try {
+      await reboot(myCharacteristic);
+      Snackbar.show(ABC.c, "SmartSpin2k is rebooting", success: true);
+    } catch (e) {
+      Snackbar.show(ABC.c, prettyException("Reboot Failed ", e), success: false);
+    }
+  }
+
+  Future onResetPressed() async {
+    try {
+      await resetToDefaults(myCharacteristic);
+      await discoverServices();
+      Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
+    } catch (e) {
+      Snackbar.show(ABC.c, prettyException("Reset Failed ", e), success: false);
     }
   }
 
@@ -227,7 +267,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
       index: (_isDiscoveringServices) ? 1 : 0,
       children: <Widget>[
         OutlinedButton(
-          child: const Text("Update"),
+          child: const Text("Update\nFrom SS2k", textAlign: TextAlign.center),
           onPressed: onDiscoverServicesPressed,
         ),
         const IconButton(
@@ -246,8 +286,51 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   Widget buildSaveButton(context) {
     return OutlinedButton(
-      child: const Text("  Save  "),
+      child: const Text("Save To\nSS2k", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Color.fromARGB(255, 0, 109, 11),
+      ),
       onPressed: onSaveSettingsPressed,
+    );
+  }
+
+  Widget buildSaveLocalButton(context) {
+    return OutlinedButton(
+      child: const Text("Backup\nSettings", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Color.fromARGB(255, 16, 3, 255),
+      ),
+      onPressed: onSaveLocalPressed,
+    );
+  }
+
+  Widget buildLoadLocalButton(context) {
+    return OutlinedButton(
+      child: const Text("Load\nBackup", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Color.fromARGB(255, 16, 3, 255),
+      ),
+      onPressed: onLoadLocalPressed,
+    );
+  }
+
+  buildRebootButton(context) {
+    return OutlinedButton(
+      child: const Text(" Reboot ", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Color.fromARGB(255, 255, 3, 3),
+      ),
+      onPressed: onRebootPressed,
+    );
+  }
+
+  buildResetButton(context) {
+    return OutlinedButton(
+      child: const Text("Reset To\nDefaults", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Color.fromARGB(255, 255, 3, 3),
+      ),
+      onPressed: onResetPressed,
     );
   }
 
@@ -331,12 +414,16 @@ class _DeviceScreenState extends State<DeviceScreen> {
               buildRemoteId(context),
               ListTile(
                 leading: buildRssiTile(context),
-                title: Text('Device is ${_connectionState.toString().split('.')[1]}.'),
+                title: Text('Device is ${_connectionState.toString().split('.')[1]}.', textAlign: TextAlign.center),
                 trailing: buildUpdateValues(context),
               ),
-              ListTile(
-                trailing: buildSaveButton(context),
-              ),
+              Row(children: <Widget>[
+                buildRebootButton(context),
+                buildResetButton(context),
+                buildSaveButton(context),
+                buildSaveLocalButton(context),
+                buildLoadLocalButton(context),
+              ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
               // buildMtuTile(context),
               //..._buildServiceTiles(context, widget.device),
               ...buildSettings(context),

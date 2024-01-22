@@ -35,19 +35,35 @@ void notify(BluetoothCharacteristic cc) {
   }
 }
 
-Future saveSettings(BluetoothCharacteristic cc) async {
-  findNSave(Map c) {
-    if (c["vName"] == "BLE_saveToLittleFS       ") {
+void findNSave(BluetoothCharacteristic cc, Map c, String find) {
+  if (c["vName"] == find) {
+    try {
       write(cc, [0x02, int.parse(c["reference"]), 0x01]);
+    } catch (e) {
+      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
   }
+}
 
-  await customCharacteristic.forEach((c) => findNSave(c));
+Future saveSettings(BluetoothCharacteristic cc) async {
+  await customCharacteristic.forEach((c) => findNSave(cc, c, saveVname));
+}
+
+Future reboot(BluetoothCharacteristic cc) async {
+  await customCharacteristic.forEach((c) => findNSave(cc, c, rebootVname));
+}
+
+Future resetToDefaults(BluetoothCharacteristic cc) async {
+  await customCharacteristic.forEach((c) => findNSave(cc, c, resetVname));
 }
 
 Future requestSettings(BluetoothCharacteristic cc) async {
   _write(Map c) {
-    write(cc, [0x01, int.parse(c["reference"])]);
+    try {
+      write(cc, [0x01, int.parse(c["reference"])]);
+    } catch (e) {
+      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
+    }
   }
 
   await customCharacteristic.forEach((c) => _write(c));
@@ -120,15 +136,18 @@ void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
     default:
     //value = [0xff];
   }
-
-  write(cc, value);
+  try {
+    write(cc, value);
+  } catch (e) {
+    Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
+  }
 }
 
 void write(BluetoothCharacteristic cc, List<int> value) {
   try {
     cc.write(value);
   } catch (e) {
-    Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $value", success: false);
+    Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
   }
 }
 
