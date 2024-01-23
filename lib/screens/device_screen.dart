@@ -6,9 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../widgets/setting_tile.dart';
-import '../widgets/service_tile.dart';
-import '../widgets/characteristic_tile.dart';
-import '../widgets/descriptor_tile.dart';
 import '../utils/snackbar.dart';
 import '../utils/constants.dart';
 import '../utils/extra.dart';
@@ -214,24 +211,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
         _isDiscoveringServices = false;
       });
     }
-  }
-
-  List<Widget> _buildServiceTiles(BuildContext context, BluetoothDevice d) {
-    return _services
-        .map(
-          (s) => ServiceTile(
-            service: s,
-            characteristicTiles: s.characteristics.map((c) => _buildCharacteristicTile(c)).toList(),
-          ),
-        )
-        .toList();
-  }
-
-  CharacteristicTile _buildCharacteristicTile(BluetoothCharacteristic c) {
-    return CharacteristicTile(
-      characteristic: c,
-      descriptorTiles: c.descriptors.map((d) => DescriptorTile(descriptor: d)).toList(),
-    );
   }
 
   Widget buildSpinner(BuildContext context) {
