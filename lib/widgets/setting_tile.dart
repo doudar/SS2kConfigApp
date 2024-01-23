@@ -113,7 +113,7 @@ class _SettingTileState extends State<SettingTile> {
                           children: <Widget>[
                             widgetPicker(),
                             Text(
-                              "Changes are applied immediately.\nSave on the main settings screen to make them permanent.\nPlease reboot to reconnect Bluetooth devices.",
+                              "Settings are immediate for the current session.\nClick save on the main screen to make them persistent.",
                               textAlign: TextAlign.center,
                             ),
                           ],
