@@ -43,7 +43,7 @@ class _SettingTileState extends State<SettingTile> {
       case "long":
         return sliderCard(characteristic: characteristic, c: c);
       case "string":
-        if((c["vName"] == connectedHRMVname)|| (c["vName"] == connectedPWRVname)){
+        if ((c["vName"] == connectedHRMVname) || (c["vName"] == connectedPWRVname)) {
           return dropdownCard(characteristic: characteristic, c: c);
         }
         return plainTextCard(characteristic: characteristic, c: c);
@@ -107,7 +107,17 @@ class _SettingTileState extends State<SettingTile> {
                     return Scaffold(
                       appBar: AppBar(title: const Text('Edit Setting')),
                       body: Center(
-                        child: widgetPicker(),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            widgetPicker(),
+                            Text(
+                              "Changes are applied immediately.\nSave on the main settings screen to make them permanent.\nPlease reboot to reconnect Bluetooth devices.",
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   }),

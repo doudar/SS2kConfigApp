@@ -147,7 +147,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   Future onSaveSettingsPressed() async {
     try {
-      await saveSettings(myCharacteristic);
+      await saveAllSettings(myCharacteristic);
       Snackbar.show(ABC.c, "Settings Saved", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Save Settings Failed ", e), success: false);
@@ -199,13 +199,15 @@ class _DeviceScreenState extends State<DeviceScreen> {
         _isDiscoveringServices = true;
       });
     }
-    try {
-      _services = await widget.device.discoverServices();
-      _findChar();
-      await updateCustomCharacter(myCharacteristic, true);
-      Snackbar.show(ABC.c, "Discover Services: Success", success: true);
-    } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
+    if (widget.device.isConnected) {
+      try {
+        _services = await widget.device.discoverServices();
+        _findChar();
+        await updateCustomCharacter(myCharacteristic, true);
+        Snackbar.show(ABC.c, "Discover Services: Success", success: true);
+      } catch (e) {
+        Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
+      }
     }
     if (mounted) {
       setState(() {
@@ -290,48 +292,62 @@ class _DeviceScreenState extends State<DeviceScreen> {
       style: OutlinedButton.styleFrom(
         backgroundColor: Color.fromARGB(255, 0, 109, 11),
       ),
-      onPressed: onSaveSettingsPressed,
+      onPressed: () {
+        onSaveSettingsPressed();
+        setState(() {});
+      },
     );
   }
 
   Widget buildSaveLocalButton(context) {
     return OutlinedButton(
-      child: const Text("Backup\nSettings", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: Color.fromARGB(255, 16, 3, 255),
-      ),
-      onPressed: onSaveLocalPressed,
-    );
+        child: const Text("Backup\nSettings", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+        style: OutlinedButton.styleFrom(
+          backgroundColor: Color.fromARGB(255, 16, 3, 255),
+        ),
+        onPressed: () {
+          onSaveLocalPressed();
+          setState(
+            () {},
+          );
+        });
   }
 
   Widget buildLoadLocalButton(context) {
     return OutlinedButton(
-      child: const Text("Load\nBackup", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: Color.fromARGB(255, 16, 3, 255),
-      ),
-      onPressed: onLoadLocalPressed,
-    );
+        child: const Text("Load\nBackup", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+        style: OutlinedButton.styleFrom(
+          backgroundColor: Color.fromARGB(255, 16, 3, 255),
+        ),
+        onPressed: () {
+          onLoadLocalPressed();
+          setState(() {});
+        });
   }
 
   buildRebootButton(context) {
     return OutlinedButton(
-      child: const Text(" Reboot ", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: Color.fromARGB(255, 255, 3, 3),
-      ),
-      onPressed: onRebootPressed,
-    );
+        child: const Text(" Reboot ", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+        style: OutlinedButton.styleFrom(
+          backgroundColor: Color.fromARGB(255, 255, 3, 3),
+        ),
+        onPressed: () {
+          onRebootPressed();
+          setState(() {});
+        });
   }
 
   buildResetButton(context) {
     return OutlinedButton(
-      child: const Text("Reset To\nDefaults", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: Color.fromARGB(255, 255, 3, 3),
-      ),
-      onPressed: onResetPressed,
-    );
+        child:
+            const Text("Reset To\nDefaults", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+        style: OutlinedButton.styleFrom(
+          backgroundColor: Color.fromARGB(255, 255, 3, 3),
+        ),
+        onPressed: () {
+          onResetPressed;
+          setState(() {});
+        });
   }
 
   _findChar() {

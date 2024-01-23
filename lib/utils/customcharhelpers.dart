@@ -45,7 +45,8 @@ void findNSave(BluetoothCharacteristic cc, Map c, String find) {
   }
 }
 
-Future saveSettings(BluetoothCharacteristic cc) async {
+Future saveAllSettings(BluetoothCharacteristic cc) async {
+  await customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2K(cc, c) : ());
   await customCharacteristic.forEach((c) => findNSave(cc, c, saveVname));
 }
 
