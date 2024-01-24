@@ -32,20 +32,31 @@ class _dropdownCardState extends State<dropdownCard> {
     for (var d in _items) {
       for (var subd in d.values) {
         if (c["vName"] == connectedPWRVname) {
-          if (subd["UUID"] == '0x1818' || subd["UUID"] == '0x1826' || subd["UUID"] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' || subd["UUID"] == '0bf669f0-45f2-11e7-9598-0800200c9a66') {
-            DDItems.add(subd["name"]);
+          if (subd["UUID"] == '0x1818' ||
+              subd["UUID"] == '0x1826' ||
+              subd["UUID"] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' ||
+              subd["UUID"] == '0bf669f0-45f2-11e7-9598-0800200c9a66') {
+            if (subd["name"] == null) {
+              DDItems.add(subd["address"]);
+            } else {
+              DDItems.add(subd["name"]);
+            }
           }
         }
         if (c["vName"] == connectedHRMVname) {
           if (subd["UUID"] == "0x180d") {
-            DDItems.add(subd["name"]);
+            if (subd["name"] == null) {
+              DDItems.add(subd["address"]);
+            } else {
+              DDItems.add(subd["name"]);
+            }
           }
         }
       }
     }
     //remove duplicates:
     var seen = Set<String>();
-    DDItems = DDItems.where((device) => seen.add(device)).toList(); 
+    DDItems = DDItems.where((device) => seen.add(device)).toList();
   }
 
   void verifyInput(dd) {}

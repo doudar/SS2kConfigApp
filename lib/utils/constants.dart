@@ -27,6 +27,7 @@ var customCharacteristic = jsonDecode('''[
 {"vName": "BLE_foundDevices         ", "reference": "0x14", "isSetting": false, "type":"string",  "humanReadableName":"Found Devices", "min":0, "max":2000},
 {"vName": "BLE_shiftStep            ", "reference": "0x08", "isSetting": true,  "type":"int"   ,  "humanReadableName":"Shift Step", "min":100, "max":2000},
 {"vName": "BLE_inclineMultiplier    ", "reference": "0x0B", "isSetting": true,  "type":"float" ,  "humanReadableName":"Incline Multiplier", "min":0, "max":10},
+{"vName": "BLE_ERGSensitivity       ", "reference": "0x1F", "isSetting": true,  "type":"float" ,  "humanReadableName":"ERG Sensitivity", "min":0.5, "max":10},
 {"vName": "BLE_firmwareUpdateURL    ", "reference": "0x01", "isSetting": false, "type":"string",  "humanReadableName":"Firmware Update URL", "min":0, "max":0},
 {"vName": "BLE_incline              ", "reference": "0x02", "isSetting": false, "type":"float" ,  "humanReadableName":"Current Incline", "min":-30, "max":30},
 {"vName": "BLE_simulatedWatts       ", "reference": "0x03", "isSetting": false, "type":"int"   ,  "humanReadableName":"Current Watts", "min":0, "max":2000},
@@ -48,7 +49,7 @@ var customCharacteristic = jsonDecode('''[
 {"vName": "BLE_saveToLittleFS       ", "reference": "0x18", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Save to Filesystem", "min":0, "max":1},
 {"vName": "BLE_targetPosition       ", "reference": "0x19", "isSetting": false, "type":"long"  ,  "humanReadableName":"Target Stepper Position", "min":0, "max":20000},
 {"vName": "BLE_externalControl      ", "reference": "0x1A", "isSetting": false, "type":"bool"  ,  "humanReadableName":"External Control", "min":0, "max":1},
-{"vName": "BLE_stepperSpeed         ", "reference": "0x1E", "isSetting": true,  "type":"int"   ,  "humanReadableName":"Stepper Motor Speed", "min":100, "max":10000},
+{"vName": "BLE_stepperSpeed         ", "reference": "0x1E", "isSetting": true,  "type":"int"   ,  "humanReadableName":"Stepper Motor Speed", "min":500, "max":4000},
 {"vName": "BLE_syncMode             ", "reference": "0x1B", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Sync Mode", "min":0, "max":1},
 {"vName": "BLE_reboot               ", "reference": "0x1C", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reboot SmartSpin2k", "min":0, "max":1},
 {"vName": "BLE_resetToDefaults      ", "reference": "0x1D", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reset to defaults", "min":0, "max":1}

@@ -215,8 +215,7 @@ void decode(BluetoothCharacteristic cc) {
                       _hrm +
                       '", "UUID": "0x180d"}, "device -6": {"name":"' +
                       _pm +
-                      '", "UUID": "0x1818"}' +
-                      '}]';
+                      '", "UUID": "0x1818"}}]';
                   c["value"] = tList;
                 }
                 break;
