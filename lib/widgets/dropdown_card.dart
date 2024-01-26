@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import "../utils/customcharhelpers.dart";
-import "../utils/constants.dart";
 
 class dropdownCard extends StatefulWidget {
   const dropdownCard({super.key, required this.characteristic, required this.c});

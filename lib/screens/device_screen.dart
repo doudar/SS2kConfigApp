@@ -324,7 +324,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
           backgroundColor: Color.fromARGB(255, 255, 3, 3),
         ),
         onPressed: () {
-          onResetPressed;
+          onResetPressed();
           setState(() {});
         });
   }

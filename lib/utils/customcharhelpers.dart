@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../utils/snackbar.dart';
@@ -209,9 +208,16 @@ void decode(BluetoothCharacteristic cc) {
                     }
                   }
                   String t = c["value"];
-                  String tList = defaultDevices +
-                      t.substring(1, t.length - 1) +
-                      ',"device -5": {"name":"' +
+                  String tList = "";
+                  if (t == " ") {
+                    t = "";
+                  } else {
+                    t = t.substring(1, t.length - 1);
+                    t += ",";
+                  }
+                  tList = defaultDevices +
+                      t +
+                      '"device -5": {"name":"' +
                       _hrm +
                       '", "UUID": "0x180d"}, "device -6": {"name":"' +
                       _pm +
