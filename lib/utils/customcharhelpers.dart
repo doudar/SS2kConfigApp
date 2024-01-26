@@ -144,11 +144,16 @@ void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
 }
 
 void write(BluetoothCharacteristic cc, List<int> value) {
+  if(cc.device.isConnected){
   try {
     cc.write(value);
   } catch (e) {
     Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
   }
+  }else{
+    Snackbar.show(ABC.c, "Failed to write to SmartSpin2k - Net Connected", success: false);
+  }
+
 }
 
 void decode(BluetoothCharacteristic cc) {

@@ -94,6 +94,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       await widget.device.connectAndUpdateStream();
       Snackbar.show(ABC.c, "Connect: Success", success: true);
+      await onDiscoverServicesPressed();
     } catch (e) {
       if (e is FlutterBluePlusException && e.code == FbpErrorCode.connectionCanceled.index) {
         // ignore connections canceled by the user
@@ -175,6 +176,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       await reboot(myCharacteristic);
       Snackbar.show(ABC.c, "SmartSpin2k is rebooting", success: true);
+      await onConnectPressed();
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Reboot Failed ", e), success: false);
     }
@@ -216,13 +218,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Widget buildSpinner(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(14.0),
-      child: AspectRatio(
-        aspectRatio: 1.0,
-        child: CircularProgressIndicator(
-            //backgroundColor: Colors.black12,
-            //color: Colors.black26,
-            ),
-      ),
+      child: CircularProgressIndicator(
+          //backgroundColor: Colors.black12,
+          //color: Colors.black26,
+          ),
     );
   }
 
@@ -247,10 +246,12 @@ class _DeviceScreenState extends State<DeviceScreen> {
     return IndexedStack(
       index: (_isDiscoveringServices) ? 1 : 0,
       children: <Widget>[
-        OutlinedButton(
-          child: const Text("Update\nFrom SS2k", textAlign: TextAlign.center),
-          onPressed: onDiscoverServicesPressed,
-        ),
+        isConnected
+            ? OutlinedButton(
+                child: const Text("Update\nFrom SS2k", textAlign: TextAlign.center),
+                onPressed: onDiscoverServicesPressed,
+              )
+            : Text(" "),
         const IconButton(
           icon: SizedBox(
             child: CircularProgressIndicator(
@@ -304,24 +305,28 @@ class _DeviceScreenState extends State<DeviceScreen> {
         });
   }
 
+  Future waitToSetState(context) async {
+    await Future.delayed(Duration(seconds: 10));
+    setState(() {});
+  }
+
   buildRebootButton(context) {
     return OutlinedButton(
-        child: const Text(" Reboot ", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+        child: const Text(" Reboot\nSS2k ", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
         style: OutlinedButton.styleFrom(
           backgroundColor: Color.fromARGB(255, 255, 3, 3),
         ),
         onPressed: () {
           onRebootPressed();
-          setState(() {});
+          waitToSetState(context);
         });
   }
 
   buildResetButton(context) {
     return OutlinedButton(
-        child:
-            const Text("Reset To\nDefaults", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+        child: const Text("Set\nDefaults", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
         style: OutlinedButton.styleFrom(
-          backgroundColor: Color.fromARGB(255, 255, 3, 3),
+          backgroundColor: Color.fromARGB(255, 225, 214, 10),
         ),
         onPressed: () {
           onResetPressed();
@@ -379,15 +384,24 @@ class _DeviceScreenState extends State<DeviceScreen> {
   }
 
   Widget buildConnectButton(BuildContext context) {
-    return Row(children: [
-      if (_isConnecting || _isDisconnecting) buildSpinner(context),
-      TextButton(
-          onPressed: _isConnecting ? onCancelPressed : (isConnected ? onDisconnectPressed : onConnectPressed),
-          child: Text(
-            _isConnecting ? "CANCEL" : (isConnected ? "DISCONNECT" : "CONNECT"),
-            style: Theme.of(context).primaryTextTheme.labelLarge?.copyWith(color: Colors.white),
-          ))
-    ]);
+    return Row(
+      children: [
+        (_isConnecting || _isDisconnecting)
+            ? buildSpinner(context)
+            : OutlinedButton(
+                onPressed: (isConnected ? onDisconnectPressed : onConnectPressed),
+                child: Text((isConnected ? "DISCONNECT" : "CONNECT"),
+                    textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+                style: isConnected
+                    ? OutlinedButton.styleFrom(
+                        backgroundColor: Color.fromARGB(255, 255, 3, 3),
+                      )
+                    : OutlinedButton.styleFrom(
+                        backgroundColor: Color.fromARGB(255, 25, 113, 0),
+                      ))
+      ],
+      mainAxisAlignment: MainAxisAlignment.center,
+    );
   }
 
   @override
@@ -409,8 +423,9 @@ class _DeviceScreenState extends State<DeviceScreen> {
               buildRemoteId(context),
               ListTile(
                 leading: buildRssiTile(context),
-                title: Text('Device is ${_connectionState.toString().split('.')[1]}.', textAlign: TextAlign.center),
+                title: buildConnectButton(context),
                 trailing: buildUpdateValues(context),
+                titleAlignment: ListTileTitleAlignment.center,
               ),
               Row(children: <Widget>[
                 buildRebootButton(context),
