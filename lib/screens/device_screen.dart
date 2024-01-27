@@ -427,13 +427,15 @@ class _DeviceScreenState extends State<DeviceScreen> {
                 trailing: buildUpdateValues(context),
                 titleAlignment: ListTileTitleAlignment.center,
               ),
-              Row(children: <Widget>[
-                buildRebootButton(context),
-                buildResetButton(context),
-                buildSaveButton(context),
-                buildSaveLocalButton(context),
-                buildLoadLocalButton(context),
-              ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
+              isConnected
+                  ? Row(children: <Widget>[
+                      buildRebootButton(context),
+                      buildResetButton(context),
+                      buildSaveButton(context),
+                      buildSaveLocalButton(context),
+                      buildLoadLocalButton(context),
+                    ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center)
+                  : SizedBox(),
               // buildMtuTile(context),
               //..._buildServiceTiles(context, widget.device),
               ...buildSettings(context),
