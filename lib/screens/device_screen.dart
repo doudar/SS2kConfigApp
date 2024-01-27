@@ -35,7 +35,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
   late StreamSubscription<bool> _isConnectingSubscription;
   late StreamSubscription<bool> _isDisconnectingSubscription;
-  late StreamSubscription<int> _mtuSubscription;
 
   @override
   void initState() {
@@ -72,7 +71,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
   @override
   void dispose() {
     _connectionStateSubscription.cancel();
-    _mtuSubscription.cancel();
     _isConnectingSubscription.cancel();
     _isDisconnectingSubscription.cancel();
     super.dispose();
@@ -357,17 +355,11 @@ class _DeviceScreenState extends State<DeviceScreen> {
           }
         }
       }
-
       customCharacteristic.forEach((c) => _newEntry(c));
     } else {
-      Map c = customCharacteristic[21]; // the last one in the original batch
-      String test = c["value"] ?? " ";
-      if (test == " ") {
         discoverServices();
         setState(() {});
-      }
     }
-    //here
     return settings;
   }
 
@@ -424,8 +416,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
                       buildLoadLocalButton(context),
                     ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center)
                   : SizedBox(),
-              // buildMtuTile(context),
-              //..._buildServiceTiles(context, widget.device),
               ...buildSettings(context),
             ],
           ),
