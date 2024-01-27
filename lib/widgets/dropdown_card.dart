@@ -26,12 +26,16 @@ class _dropdownCardState extends State<dropdownCard> {
   void buildDevicesMap() {
     late List _items;
     DDItems = [c["value"]];
+    // customCharacteristic.forEach((d) => (d["vName"] == foundDevicesVname) ? print(d["value"]) : null);
     customCharacteristic.forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
 
     for (var d in _items) {
       for (var subd in d.values) {
         if (c["vName"] == connectedPWRVname) {
-          if (subd["UUID"] == '0x1818' || subd["UUID"] == '0x1826' || subd["UUID"] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' || subd["UUID"] == '0bf669f0-45f2-11e7-9598-0800200c9a66') {
+          if (subd["UUID"] == '0x1818' ||
+              subd["UUID"] == '0x1826' ||
+              subd["UUID"] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' ||
+              subd["UUID"] == '0bf669f0-45f2-11e7-9598-0800200c9a66') {
             DDItems.add(subd["name"]);
           }
         }
@@ -44,7 +48,7 @@ class _dropdownCardState extends State<dropdownCard> {
     }
     //remove duplicates:
     var seen = Set<String>();
-    DDItems = DDItems.where((device) => seen.add(device)).toList(); 
+    DDItems = DDItems.where((device) => seen.add(device)).toList();
   }
 
   void verifyInput(dd) {}

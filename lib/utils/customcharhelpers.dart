@@ -214,7 +214,7 @@ void decode(BluetoothCharacteristic cc) {
                   }
                   String t = c["value"];
                   String tList = "";
-                  if (t == " ") {
+                  if (t == " " || t == "null") {
                     t = "";
                   } else {
                     t = t.substring(1, t.length - 1);
