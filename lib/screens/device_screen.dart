@@ -22,8 +22,7 @@ class DeviceScreen extends StatefulWidget {
 
 class _DeviceScreenState extends State<DeviceScreen> {
   int? _rssi;
-  int? _mtuSize;
-  int? charReceived;
+  bool charReceived = false;
 
   late BluetoothCharacteristic myCharacteristic;
   BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
@@ -36,7 +35,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
   late StreamSubscription<bool> _isConnectingSubscription;
   late StreamSubscription<bool> _isDisconnectingSubscription;
-  late StreamSubscription<int> _mtuSubscription;
 
   @override
   void initState() {
@@ -50,13 +48,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
       if (state == BluetoothConnectionState.connected && _rssi == null) {
         _rssi = await widget.device.readRssi();
       }
-      if (mounted) {
-        setState(() {});
-      }
-    });
-
-    _mtuSubscription = widget.device.mtu.listen((value) {
-      _mtuSize = value;
       if (mounted) {
         setState(() {});
       }
@@ -80,7 +71,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
   @override
   void dispose() {
     _connectionStateSubscription.cancel();
-    _mtuSubscription.cancel();
     _isConnectingSubscription.cancel();
     _isDisconnectingSubscription.cancel();
     super.dispose();
@@ -94,21 +84,13 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       await widget.device.connectAndUpdateStream();
       Snackbar.show(ABC.c, "Connect: Success", success: true);
+      await onDiscoverServicesPressed();
     } catch (e) {
       if (e is FlutterBluePlusException && e.code == FbpErrorCode.connectionCanceled.index) {
         // ignore connections canceled by the user
       } else {
         Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
       }
-    }
-  }
-
-  Future onCancelPressed() async {
-    try {
-      await widget.device.disconnectAndUpdateStream(queue: false);
-      Snackbar.show(ABC.c, "Cancel: Success", success: true);
-    } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Cancel Error:", e), success: false);
     }
   }
 
@@ -129,7 +111,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
     try {
       _services = await widget.device.discoverServices();
-      _findChar();
+      await _findChar();
       await updateCustomCharacter(myCharacteristic, true);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
@@ -174,7 +156,9 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Future onRebootPressed() async {
     try {
       await reboot(myCharacteristic);
-      Snackbar.show(ABC.c, "SmartSpin2k is rebooting", success: true);
+      Snackbar.show(ABC.a, "SmartSpin2k is rebooting", success: true);
+      await onDisconnectPressed();
+      await onConnectPressed();
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Reboot Failed ", e), success: false);
     }
@@ -216,13 +200,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Widget buildSpinner(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(14.0),
-      child: AspectRatio(
-        aspectRatio: 1.0,
-        child: CircularProgressIndicator(
-            //backgroundColor: Colors.black12,
-            //color: Colors.black26,
-            ),
-      ),
+      child: CircularProgressIndicator(
+          //backgroundColor: Colors.black12,
+          //color: Colors.black26,
+          ),
     );
   }
 
@@ -247,10 +228,12 @@ class _DeviceScreenState extends State<DeviceScreen> {
     return IndexedStack(
       index: (_isDiscoveringServices) ? 1 : 0,
       children: <Widget>[
-        OutlinedButton(
-          child: const Text("Update\nFrom SS2k", textAlign: TextAlign.center),
-          onPressed: onDiscoverServicesPressed,
-        ),
+        isConnected
+            ? OutlinedButton(
+                child: const Text("Refresh\nValues", textAlign: TextAlign.center),
+                onPressed: onDiscoverServicesPressed,
+              )
+            : Text(" "),
         const IconButton(
           icon: SizedBox(
             child: CircularProgressIndicator(
@@ -304,90 +287,101 @@ class _DeviceScreenState extends State<DeviceScreen> {
         });
   }
 
+  Future waitToSetState(context) async {
+    await Future.delayed(Duration(seconds: 10));
+    setState(() {});
+  }
+
   buildRebootButton(context) {
     return OutlinedButton(
-        child: const Text(" Reboot ", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+        child: const Text(" Reboot\nSS2k ", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
         style: OutlinedButton.styleFrom(
           backgroundColor: Color.fromARGB(255, 255, 3, 3),
         ),
         onPressed: () {
           onRebootPressed();
-          setState(() {});
+          waitToSetState(context);
         });
   }
 
   buildResetButton(context) {
     return OutlinedButton(
-        child:
-            const Text("Reset To\nDefaults", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+        child: const Text("Set\nDefaults", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
         style: OutlinedButton.styleFrom(
-          backgroundColor: Color.fromARGB(255, 255, 3, 3),
+          backgroundColor: Color.fromARGB(255, 225, 214, 10),
         ),
         onPressed: () {
-          onResetPressed;
+          onResetPressed();
           setState(() {});
         });
   }
 
-  _findChar() {
-    try {
-      BluetoothService cs = _services.first;
-      for (BluetoothService s in _services) {
-        if (s.uuid == Guid(csUUID)) {
-          cs = s;
-          break;
+  Future _findChar() async {
+    while (!charReceived) {
+      try {
+        BluetoothService cs = _services.first;
+        for (BluetoothService s in _services) {
+          if (s.uuid == Guid(csUUID)) {
+            cs = s;
+            break;
+          }
         }
-      }
-      List<BluetoothCharacteristic> characteristics = cs.characteristics;
-      for (BluetoothCharacteristic c in characteristics) {
-        if (c.uuid == Guid(ccUUID)) {
-          myCharacteristic = c;
-          break;
+        List<BluetoothCharacteristic> characteristics = cs.characteristics;
+        for (BluetoothCharacteristic c in characteristics) {
+          if (c.uuid == Guid(ccUUID)) {
+            myCharacteristic = c;
+            break;
+          }
         }
+        charReceived = true;
+      } catch (e) {
+        Snackbar.show(ABC.c, prettyException("No Services", e), success: false);
       }
-    } catch (e) {
-      Snackbar.show(ABC.c, prettyException("No Services", e), success: false);
     }
   }
 
 //Build the settings dropdowns
   List<Widget> buildSettings(BuildContext context) {
     List<Widget> settings = [];
-    try {
-      BluetoothCharacteristic char;
-      char = myCharacteristic;
-    } catch (e) {}
-    ;
+    if (charReceived) {
+      try {
+        // char = myCharacteristic;
+      } catch (e) {}
 
-    _newEntry(Map c) {
-      if (!_services.isEmpty) {
-        if (c["isSetting"]) {
-          settings.add(SettingTile(characteristic: myCharacteristic, c: c));
+      _newEntry(Map c) {
+        if (!_services.isEmpty) {
+          if (c["isSetting"]) {
+            settings.add(SettingTile(characteristic: myCharacteristic, c: c));
+          }
         }
       }
+      customCharacteristic.forEach((c) => _newEntry(c));
+    } else {
+        discoverServices();
+        setState(() {});
     }
-
-    customCharacteristic.forEach((c) => _newEntry(c));
-    Map c = customCharacteristic[21]; // the last one in the original batch
-    String test = c["value"] ?? " ";
-    if (test == " ") {
-      discoverServices();
-      setState(() {});
-    }
-    //here
     return settings;
   }
 
   Widget buildConnectButton(BuildContext context) {
-    return Row(children: [
-      if (_isConnecting || _isDisconnecting) buildSpinner(context),
-      TextButton(
-          onPressed: _isConnecting ? onCancelPressed : (isConnected ? onDisconnectPressed : onConnectPressed),
-          child: Text(
-            _isConnecting ? "CANCEL" : (isConnected ? "DISCONNECT" : "CONNECT"),
-            style: Theme.of(context).primaryTextTheme.labelLarge?.copyWith(color: Colors.white),
-          ))
-    ]);
+    return Row(
+      children: [
+        (_isConnecting || _isDisconnecting)
+            ? buildSpinner(context)
+            : OutlinedButton(
+                onPressed: (isConnected ? onDisconnectPressed : onConnectPressed),
+                child: Text((isConnected ? "DISCONNECT" : "CONNECT"),
+                    textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
+                style: isConnected
+                    ? OutlinedButton.styleFrom(
+                        backgroundColor: Color.fromARGB(255, 255, 3, 3),
+                      )
+                    : OutlinedButton.styleFrom(
+                        backgroundColor: Color.fromARGB(255, 25, 113, 0),
+                      ))
+      ],
+      mainAxisAlignment: MainAxisAlignment.center,
+    );
   }
 
   @override
@@ -409,18 +403,19 @@ class _DeviceScreenState extends State<DeviceScreen> {
               buildRemoteId(context),
               ListTile(
                 leading: buildRssiTile(context),
-                title: Text('Device is ${_connectionState.toString().split('.')[1]}.', textAlign: TextAlign.center),
+                title: buildConnectButton(context),
                 trailing: buildUpdateValues(context),
+                titleAlignment: ListTileTitleAlignment.center,
               ),
-              Row(children: <Widget>[
-                buildRebootButton(context),
-                buildResetButton(context),
-                buildSaveButton(context),
-                buildSaveLocalButton(context),
-                buildLoadLocalButton(context),
-              ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
-              // buildMtuTile(context),
-              //..._buildServiceTiles(context, widget.device),
+              isConnected
+                  ? Row(children: <Widget>[
+                      buildRebootButton(context),
+                      buildResetButton(context),
+                      buildSaveButton(context),
+                      buildSaveLocalButton(context),
+                      buildLoadLocalButton(context),
+                    ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center)
+                  : SizedBox(),
               ...buildSettings(context),
             ],
           ),

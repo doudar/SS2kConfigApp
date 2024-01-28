@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../utils/snackbar.dart';
@@ -145,11 +144,16 @@ void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
 }
 
 void write(BluetoothCharacteristic cc, List<int> value) {
+  if(cc.device.isConnected){
   try {
     cc.write(value);
   } catch (e) {
     Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
   }
+  }else{
+    Snackbar.show(ABC.c, "Failed to write to SmartSpin2k - Net Connected", success: false);
+  }
+
 }
 
 void decode(BluetoothCharacteristic cc) {
@@ -209,9 +213,16 @@ void decode(BluetoothCharacteristic cc) {
                     }
                   }
                   String t = c["value"];
-                  String tList = defaultDevices +
-                      t.substring(1, t.length - 1) +
-                      ',"device -5": {"name":"' +
+                  String tList = "";
+                  if (t == " " || t == "null") {
+                    t = "";
+                  } else {
+                    t = t.substring(1, t.length - 1);
+                    t += ",";
+                  }
+                  tList = defaultDevices +
+                      t +
+                      '"device -5": {"name":"' +
                       _hrm +
                       '", "UUID": "0x180d"}, "device -6": {"name":"' +
                       _pm +
