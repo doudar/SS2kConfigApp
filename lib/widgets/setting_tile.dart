@@ -12,7 +12,8 @@ import '../widgets/dropdown_card.dart';
 class SettingTile extends StatefulWidget {
   final BluetoothCharacteristic characteristic;
   final Map c;
-  const SettingTile({Key? key, required this.characteristic, required this.c}) : super(key: key);
+  final dataset;
+  const SettingTile({Key? key, required this.characteristic, required this.c, required this.dataset}) : super(key: key);
 
   @override
   State<SettingTile> createState() => _SettingTileState();
@@ -20,13 +21,11 @@ class SettingTile extends StatefulWidget {
 
 class _SettingTileState extends State<SettingTile> {
   late String text = this.c["value"].toString();
-  List<int> _value = [];
   late StreamSubscription<List<int>> _lastValueSubscription;
   @override
   void initState() {
     super.initState();
     _lastValueSubscription = widget.characteristic.lastValueStream.listen((value) {
-      _value = value;
       if (mounted) {
         setState(() {});
       }
@@ -41,13 +40,13 @@ class _SettingTileState extends State<SettingTile> {
         return sliderCard(characteristic: characteristic, c: c);
       case "string":
         if ((c["vName"] == connectedHRMVname) || (c["vName"] == connectedPWRVname)) {
-          return dropdownCard(characteristic: characteristic, c: c);
+          return dropdownCard(characteristic: characteristic, c: c, dataset: widget.dataset);
         }
-        return plainTextCard(characteristic: characteristic, c: c);
+        return plainTextCard(characteristic: characteristic, c: c, dataset:widget.dataset);
       case "bool":
-        return boolCard(characteristic: characteristic, c: c);
+        return boolCard(characteristic: characteristic, c: c, dataset:widget.dataset);
       default:
-        return plainTextCard(characteristic: characteristic, c: c);
+        return plainTextCard(characteristic: characteristic, c: c, dataset:widget.dataset);
     }
   }
 

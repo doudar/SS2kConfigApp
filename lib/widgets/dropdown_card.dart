@@ -7,9 +7,10 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import "../utils/customcharhelpers.dart";
 
 class dropdownCard extends StatefulWidget {
-  const dropdownCard({super.key, required this.characteristic, required this.c});
+  const dropdownCard({super.key, required this.characteristic, required this.c, required this.dataset});
   final BluetoothCharacteristic characteristic;
   final Map c;
+  final dataset;
   @override
   State<dropdownCard> createState() => _dropdownCardState();
 }
@@ -26,8 +27,8 @@ class _dropdownCardState extends State<dropdownCard> {
   void buildDevicesMap() {
     late List _items;
     DDItems = [c["value"]];
-    // customCharacteristic.forEach((d) => (d["vName"] == foundDevicesVname) ? print(d["value"]) : null);
-    customCharacteristic.forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
+    // this.dataset.forEach((d) => (d["vName"] == foundDevicesVname) ? print(d["value"]) : null);
+    widget.dataset.forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
 
     for (var d in _items) {
       for (var subd in d.values) {

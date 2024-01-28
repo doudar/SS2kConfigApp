@@ -85,8 +85,10 @@ class _ScanScreenState extends State<ScanScreen> {
     device.connectAndUpdateStream().catchError((e) {
       Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
     });
+    SmartSpinData smartSpinData = new SmartSpinData();
+    var dataset = smartSpinData.dataset;
     MaterialPageRoute route = MaterialPageRoute(
-        builder: (context) => DeviceScreen(device: device), settings: RouteSettings(name: '/DeviceScreen'));
+        builder: (context) => DeviceScreen(device: device, dataset: dataset), settings: RouteSettings(name: '/DeviceScreen'));
     Navigator.of(context).push(route);
   }
 
@@ -141,7 +143,6 @@ class _ScanScreenState extends State<ScanScreen> {
           onRefresh: onRefresh,
           child: ListView(
             children: <Widget>[
-              //..._buildSystemDeviceTiles(context),
               ..._buildScanResultTiles(context),
             ],
           ),

@@ -4,9 +4,10 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import "../utils/customcharhelpers.dart";
 
 class boolCard extends StatefulWidget {
-  const boolCard({super.key, required this.characteristic, required this.c});
+  const boolCard({super.key, required this.characteristic, required this.c, required this.dataset});
   final BluetoothCharacteristic characteristic;
   final Map c;
+  final dataset;
   @override
   State<boolCard> createState() => _boolCardState();
 }

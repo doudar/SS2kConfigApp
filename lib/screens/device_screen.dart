@@ -13,8 +13,8 @@ import '../utils/customcharhelpers.dart';
 
 class DeviceScreen extends StatefulWidget {
   final BluetoothDevice device;
-
-  const DeviceScreen({Key? key, required this.device}) : super(key: key);
+  final dataset;
+  const DeviceScreen({Key? key, required this.device, required this.dataset}) : super(key: key);
 
   @override
   State<DeviceScreen> createState() => _DeviceScreenState();
@@ -27,7 +27,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
   late BluetoothCharacteristic myCharacteristic;
   BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
   List<BluetoothService> _services = [];
-
   bool _isDiscoveringServices = false;
   bool _isConnecting = false;
   bool _isDisconnecting = false;
@@ -35,7 +34,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
   late StreamSubscription<bool> _isConnectingSubscription;
   late StreamSubscription<bool> _isDisconnectingSubscription;
-
   @override
   void initState() {
     super.initState();
@@ -94,6 +92,16 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
   }
 
+  bool valuesRecieved() {
+    Map c = widget.dataset[21]; // the last one in the original batch
+    String test = c["value"] ?? " ";
+    if (test == " ") {
+      return false;
+    } else {
+      return true;
+    }
+  }
+
   Future onDisconnectPressed() async {
     try {
       await widget.device.disconnectAndUpdateStream();
@@ -112,7 +120,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       _services = await widget.device.discoverServices();
       await _findChar();
-      await updateCustomCharacter(myCharacteristic, true);
+      await updateCustomCharacter(myCharacteristic, true, widget.dataset);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -126,7 +134,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   Future onSaveSettingsPressed() async {
     try {
-      await saveAllSettings(myCharacteristic);
+      await saveAllSettings(myCharacteristic, widget.dataset);
       Snackbar.show(ABC.c, "Settings Saved", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Save Settings Failed ", e), success: false);
@@ -136,7 +144,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Future onSaveLocalPressed() async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
-      prefs.setString('user', jsonEncode(customCharacteristic));
+      prefs.setString('user', jsonEncode(widget.dataset));
       Snackbar.show(ABC.c, "Settings Saved", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Save Local Failed ", e), success: false);
@@ -146,7 +154,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Future onLoadLocalPressed() async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
-      customCharacteristic = jsonDecode(prefs.getString('user')!);
+      var _tdataset = jsonDecode(prefs.getString('user')!);
+      await _tdataset.forEach((v) => findNSave(myCharacteristic, v, v["vName"]));
+      //widget.dataset = jsonDecode(prefs.getString('user')!);
+
       Snackbar.show(ABC.c, "Settings Loaded", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Load local failed. Do you have a backup?", e), success: false);
@@ -155,7 +166,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   Future onRebootPressed() async {
     try {
-      await reboot(myCharacteristic);
+      await reboot(myCharacteristic, widget.dataset);
       Snackbar.show(ABC.a, "SmartSpin2k is rebooting", success: true);
       await onDisconnectPressed();
       await onConnectPressed();
@@ -166,7 +177,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   Future onResetPressed() async {
     try {
-      await resetToDefaults(myCharacteristic);
+      await resetToDefaults(myCharacteristic, widget.dataset);
       await discoverServices();
       Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
     } catch (e) {
@@ -184,7 +195,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
       try {
         _services = await widget.device.discoverServices();
         _findChar();
-        await updateCustomCharacter(myCharacteristic, true);
+        await updateCustomCharacter(myCharacteristic, true, widget.dataset);
         Snackbar.show(ABC.c, "Discover Services: Success", success: true);
       } catch (e) {
         Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -343,22 +354,20 @@ class _DeviceScreenState extends State<DeviceScreen> {
 //Build the settings dropdowns
   List<Widget> buildSettings(BuildContext context) {
     List<Widget> settings = [];
-    if (charReceived) {
-      try {
-        // char = myCharacteristic;
-      } catch (e) {}
+    if (charReceived && valuesRecieved()) {
 
       _newEntry(Map c) {
         if (!_services.isEmpty) {
           if (c["isSetting"]) {
-            settings.add(SettingTile(characteristic: myCharacteristic, c: c));
+            settings.add(SettingTile(characteristic: myCharacteristic, c: c, dataset: widget.dataset));
           }
         }
       }
-      customCharacteristic.forEach((c) => _newEntry(c));
+      widget.dataset.forEach((c) => _newEntry(c));
     } else {
-        discoverServices();
-        setState(() {});
+      if(!_isDiscoveringServices){
+      discoverServices();
+      setState(() {});}
     }
     return settings;
   }

@@ -19,9 +19,13 @@ String defaultDevices = '''[{"device -4": {"name": "any", "UUID": "0x180d"},
     "device -2": {"name": "any", "UUID": "0x1818"},
     "device -1": {"name": "none", "UUID": "0x1818"},''';
 
+class SmartSpinData {
 //Using JSON because it's easier to input the data.
 //These are shuffled so they are built in a preferred order so most used settings are on top
-var customCharacteristic = jsonDecode('''[
+  var dataset;
+
+  SmartSpinData() {
+    dataset = jsonDecode('''[
 {"vName": "BLE_connectedPowerMeter  ", "reference": "0x15", "isSetting": true,  "type":"string",  "humanReadableName":"Saved Power Meter", "min":0, "max":2000},
 {"vName": "BLE_connectedHeartMonitor", "reference": "0x16", "isSetting": true,  "type":"string",  "humanReadableName":"Saved HRM", "min":0, "max":2000},
 {"vName": "BLE_foundDevices         ", "reference": "0x14", "isSetting": false, "type":"string",  "humanReadableName":"Found Devices", "min":0, "max":2000},
@@ -53,6 +57,8 @@ var customCharacteristic = jsonDecode('''[
 {"vName": "BLE_reboot               ", "reference": "0x1C", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reboot SmartSpin2k", "min":0, "max":1},
 {"vName": "BLE_resetToDefaults      ", "reference": "0x1D", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reset to defaults", "min":0, "max":1}
 ]''');
+  }
+}
 
 // the first two bytes are the opacity
 final Color activeBackgroundColor = Color(0xffc9ccf5);

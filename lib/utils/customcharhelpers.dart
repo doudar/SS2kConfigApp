@@ -10,16 +10,16 @@ import '../utils/constants.dart';
 bool _subscribed = false;
 final _lastRequestStopwatch = Stopwatch();
 
-Future updateCustomCharacter(BluetoothCharacteristic? cc, bool initialScan) async {
+Future updateCustomCharacter(BluetoothCharacteristic? cc, bool initialScan, dataset) async {
   if (cc != null) {
     if (!cc.isNotifying) notify(cc);
-    if (!_subscribed) decode(cc);
+    if (!_subscribed) decode(cc, dataset);
     if (!_lastRequestStopwatch.isRunning) {
-      await requestSettings(cc);
+      await requestSettings(cc, dataset);
       _lastRequestStopwatch.start();
     } else if (_lastRequestStopwatch.elapsed > Duration(seconds: 5)) {
       _lastRequestStopwatch.reset();
-      await requestSettings(cc);
+      await requestSettings(cc, dataset);
     }
   }
 }
@@ -44,20 +44,20 @@ void findNSave(BluetoothCharacteristic cc, Map c, String find) {
   }
 }
 
-Future saveAllSettings(BluetoothCharacteristic cc) async {
-  await customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2K(cc, c) : ());
-  await customCharacteristic.forEach((c) => findNSave(cc, c, saveVname));
+Future saveAllSettings(BluetoothCharacteristic cc, var dataset) async {
+  await dataset.forEach((c) => c["isSetting"] ? writeToSS2K(cc, c) : ());
+  await dataset.forEach((c) => findNSave(cc, c, saveVname));
 }
 
-Future reboot(BluetoothCharacteristic cc) async {
-  await customCharacteristic.forEach((c) => findNSave(cc, c, rebootVname));
+Future reboot(BluetoothCharacteristic cc, dataset) async {
+  await dataset.forEach((c) => findNSave(cc, c, rebootVname));
 }
 
-Future resetToDefaults(BluetoothCharacteristic cc) async {
-  await customCharacteristic.forEach((c) => findNSave(cc, c, resetVname));
+Future resetToDefaults(BluetoothCharacteristic cc, dataset) async {
+  await dataset.forEach((c) => findNSave(cc, c, resetVname));
 }
 
-Future requestSettings(BluetoothCharacteristic cc) async {
+Future requestSettings(BluetoothCharacteristic cc, dataset) async {
   _write(Map c) {
     try {
       write(cc, [0x01, int.parse(c["reference"])]);
@@ -66,7 +66,7 @@ Future requestSettings(BluetoothCharacteristic cc) async {
     }
   }
 
-  await customCharacteristic.forEach((c) => _write(c));
+  await dataset.forEach((c) => _write(c));
 }
 
 int getPrecision(Map c) {
@@ -156,14 +156,14 @@ void write(BluetoothCharacteristic cc, List<int> value) {
 
 }
 
-void decode(BluetoothCharacteristic cc) {
+void decode(BluetoothCharacteristic cc, dataset) {
   final subscription = cc.onValueReceived.listen((value) {
     _subscribed = true;
     if (value[0] == 0x80) {
       var length = value.length;
       var t = new Uint8List(length);
       //
-      for (var c in customCharacteristic) {
+      for (var c in dataset) {
         if (int.parse(c["reference"]) == value[1]) {
           for (var i = 0; i < length; i++) {
             t[i] = value[i];
@@ -204,7 +204,7 @@ void decode(BluetoothCharacteristic cc) {
                 if (c["vName"] == foundDevicesVname) {
                   String _pm = "";
                   String _hrm = "";
-                  for (var i in customCharacteristic) {
+                  for (var i in dataset) {
                     if (i["vName"] == connectedHRMVname) {
                       _hrm = i["value"];
                     }
@@ -243,7 +243,7 @@ void decode(BluetoothCharacteristic cc) {
         }
       }
     } else if (value[0] == 0xff) {
-      for (var c in customCharacteristic) {
+      for (var c in dataset) {
         if (int.parse(c["reference"]) == value[1]) {
           c["value"] = noFirmSupport;
         }
