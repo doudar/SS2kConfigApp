@@ -230,7 +230,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
       children: <Widget>[
         isConnected
             ? OutlinedButton(
-                child: const Text("Update\nFrom SS2k", textAlign: TextAlign.center),
+                child: const Text("Refresh\nValues", textAlign: TextAlign.center),
                 onPressed: onDiscoverServicesPressed,
               )
             : Text(" "),
