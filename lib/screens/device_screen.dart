@@ -289,7 +289,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   Future waitToSetState(context) async {
     await Future.delayed(Duration(seconds: 10));
+    try{ //Can fail if navigation happens within 10 seconds
     setState(() {});
+    }catch(e){};
+
   }
 
   buildRebootButton(context) {

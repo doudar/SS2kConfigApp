@@ -217,7 +217,7 @@ void decode(BluetoothCharacteristic cc) {
                   if (t == " " || t == "null") {
                     t = "";
                   } else {
-                    t = t.substring(1, t.length - 1);
+                    t = t.substring(1, t.length-1);
                     t += ",";
                   }
                   tList = defaultDevices +
