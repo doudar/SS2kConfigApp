@@ -222,13 +222,13 @@ void decode(BluetoothCharacteristic cc) {
                   }
                   tList = defaultDevices +
                       t +
-                      '"device -5": {"name":"' +
+                      '"device -5":{"name":"' +
                       _hrm +
-                      '", "UUID": "0x180d"}, "device -6": {"name":"' +
+                      '","UUID":"0x180d"},"device -6":{"name":"' +
                       _pm +
-                      '", "UUID": "0x1818"}' +
-                      '}]';
+                      '","UUID":"0x1818"}}]';
                   c["value"] = tList;
+                  print(c["value"]);
                 }
                 break;
               }

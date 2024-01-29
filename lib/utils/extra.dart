@@ -1,6 +1,5 @@
 import 'dart:io';
 
-
 import 'utils.dart';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -38,7 +37,7 @@ extension Extra on BluetoothDevice {
     bool _connected = false;
     while (!_connected) {
       try {
-        await connect();
+        await connect(mtu: 512);
         _connected = true;
       } catch (e) {
         sleep(Duration(milliseconds: 50));
