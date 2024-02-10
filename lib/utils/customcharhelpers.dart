@@ -57,6 +57,7 @@ Future resetToDefaults(BluetoothCharacteristic cc) async {
   await customCharacteristic.forEach((c) => findNSave(cc, c, resetVname));
 }
 
+//request all settings
 Future requestSettings(BluetoothCharacteristic cc) async {
   _write(Map c) {
     try {
@@ -67,6 +68,23 @@ Future requestSettings(BluetoothCharacteristic cc) async {
   }
 
   await customCharacteristic.forEach((c) => _write(c));
+}
+
+//request single setting
+Future requestSetting(BluetoothCharacteristic cc, String name) async {
+  _request(Map c) {
+    if (c["vName"] == name) {
+      try {
+        write(cc, [0x01, int.parse(c["reference"])]);
+      } catch (e) {
+        Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
+      }
+    } else{
+      //skipped
+    }
+  }
+
+  await customCharacteristic.forEach((c) => _request(c));
 }
 
 int getPrecision(Map c) {
@@ -144,16 +162,15 @@ void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
 }
 
 void write(BluetoothCharacteristic cc, List<int> value) {
-  if(cc.device.isConnected){
-  try {
-    cc.write(value);
-  } catch (e) {
-    Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
-  }
-  }else{
+  if (cc.device.isConnected) {
+    try {
+      cc.write(value);
+    } catch (e) {
+      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
+    }
+  } else {
     Snackbar.show(ABC.c, "Failed to write to SmartSpin2k - Net Connected", success: false);
   }
-
 }
 
 void decode(BluetoothCharacteristic cc) {
@@ -217,7 +234,7 @@ void decode(BluetoothCharacteristic cc) {
                   if (t == " " || t == "null") {
                     t = "";
                   } else {
-                    t = t.substring(1, t.length-1);
+                    t = t.substring(1, t.length - 1);
                     t += ",";
                   }
                   tList = defaultDevices +

@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../utils/constants.dart';
-import 'device_screen.dart';
+import 'main_device_screen.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 import '../widgets/scan_result_tile.dart';
@@ -23,10 +23,16 @@ class _ScanScreenState extends State<ScanScreen> {
   bool _isScanning = false;
   late StreamSubscription<List<ScanResult>> _scanResultsSubscription;
   late StreamSubscription<bool> _isScanningSubscription;
+  late final WebViewController controller;
 
   @override
   void initState() {
     super.initState();
+
+    controller = WebViewController()
+      ..loadRequest(
+        Uri.parse('https://github.com/doudar/SmartSpin2k/wiki/Viewing-logs-via-UDP'),
+      );
 
     _scanResultsSubscription = FlutterBluePlus.scanResults.listen((results) {
       _scanResults = results;
@@ -79,21 +85,20 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   void onConnectPressed(BluetoothDevice device) {
-     if (FlutterBluePlus.isScanningNow) {
+    if (FlutterBluePlus.isScanningNow) {
       FlutterBluePlus.stopScan();
-     }
+    }
     device.connectAndUpdateStream().catchError((e) {
       Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
     });
     MaterialPageRoute route = MaterialPageRoute(
-        builder: (context) => DeviceScreen(device: device), settings: RouteSettings(name: '/DeviceScreen'));
+        builder: (context) => MainDeviceScreen(device: device), settings: RouteSettings(name: '/MainDeviceScreen'));
     Navigator.of(context).push(route);
   }
 
   Future onRefresh() {
     if (_isScanning == false) {
-      FlutterBluePlus.startScan(
-          withServices: [Guid(csUUID)], timeout: const Duration(seconds: 15));
+      FlutterBluePlus.startScan(withServices: [Guid(csUUID)], timeout: const Duration(seconds: 15));
     }
     if (mounted) {
       setState(() {});
@@ -103,14 +108,22 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Widget buildScanButton(BuildContext context) {
     if (FlutterBluePlus.isScanningNow) {
-      return FloatingActionButton.large(
+      return OutlinedButton(
         child: const Icon(Icons.stop),
         onPressed: onStopPressed,
-        backgroundColor: Colors.red,
-        
+        style: OutlinedButton.styleFrom(
+          backgroundColor: Color.fromARGB(255, 241, 5, 5),
+          //maximumSize: Size.fromWidth(100),
+        ),
       );
     } else {
-      return FloatingActionButton.large(child: const Text("SCAN"), onPressed: onScanPressed);
+      return OutlinedButton(
+        child: const Text("SCAN"),
+        onPressed: onScanPressed,
+        style: OutlinedButton.styleFrom(
+            //maximumSize: Size.fromWidth(50),
+            ),
+      );
     }
   }
 
@@ -143,10 +156,10 @@ class _ScanScreenState extends State<ScanScreen> {
             children: <Widget>[
               //..._buildSystemDeviceTiles(context),
               ..._buildScanResultTiles(context),
-            ],
-          ),
+              buildScanButton(context),
+          
+          SizedBox(height: 300, child:WebViewWidget(controller: controller)),]),
         ),
-        floatingActionButton: buildScanButton(context),
       ),
     );
   }

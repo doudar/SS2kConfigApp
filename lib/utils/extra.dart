@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'utils.dart';
 
@@ -6,6 +7,23 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 final Map<DeviceIdentifier, StreamControllerReemit<bool>> _cglobal = {};
 final Map<DeviceIdentifier, StreamControllerReemit<bool>> _dglobal = {};
+
+class BLEData {
+  int? rssi;
+  bool charReceived = false;
+
+  late BluetoothCharacteristic myCharacteristic;
+  BluetoothConnectionState connectionState = BluetoothConnectionState.disconnected;
+  List<BluetoothService> services = [];
+
+  bool isDiscoveringServices = false;
+  bool isConnecting = false;
+  bool isDisconnecting = false;
+
+  late StreamSubscription<BluetoothConnectionState> connectionStateSubscription;
+  late StreamSubscription<bool> isConnectingSubscription;
+  late StreamSubscription<bool> isDisconnectingSubscription;
+}
 
 /// connect & disconnect + update stream
 extension Extra on BluetoothDevice {

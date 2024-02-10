@@ -70,7 +70,7 @@ class BluetoothAdapterStateObserver extends NavigatorObserver {
   @override
   void didPush(Route route, Route? previousRoute) {
     super.didPush(route, previousRoute);
-    if (route.settings.name == '/DeviceScreen') {
+    if (route.settings.name == '/MainDeviceScreen') {
       // Start listening to Bluetooth state changes when a new route is pushed
       _adapterStateSubscription ??= FlutterBluePlus.adapterState.listen((state) {
         if (state != BluetoothAdapterState.on) {

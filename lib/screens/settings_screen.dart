@@ -11,73 +11,25 @@ import '../utils/constants.dart';
 import '../utils/extra.dart';
 import '../utils/customcharhelpers.dart';
 
-class DeviceScreen extends StatefulWidget {
+class SettingsScreen extends StatefulWidget {
   final BluetoothDevice device;
+  final BLEData bleData;
 
-  const DeviceScreen({Key? key, required this.device}) : super(key: key);
+  const SettingsScreen({Key? key, required this.device, required this.bleData}) : super(key: key);
 
   @override
-  State<DeviceScreen> createState() => _DeviceScreenState();
+  State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _DeviceScreenState extends State<DeviceScreen> {
+class _SettingsScreenState extends State<SettingsScreen> {
   int? _rssi;
   bool charReceived = false;
 
   late BluetoothCharacteristic myCharacteristic;
-  BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
-  List<BluetoothService> _services = [];
 
-  bool _isDiscoveringServices = false;
-  bool _isConnecting = false;
-  bool _isDisconnecting = false;
-
-  late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
-  late StreamSubscription<bool> _isConnectingSubscription;
-  late StreamSubscription<bool> _isDisconnectingSubscription;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
-      _connectionState = state;
-      if (state == BluetoothConnectionState.connected) {
-        _services = []; // must rediscover services
-      }
-      if (state == BluetoothConnectionState.connected && _rssi == null) {
-        _rssi = await widget.device.readRssi();
-      }
-      if (mounted) {
-        setState(() {});
-      }
-    });
-
-    _isConnectingSubscription = widget.device.isConnecting.listen((value) {
-      _isConnecting = value;
-      if (mounted) {
-        setState(() {});
-      }
-    });
-
-    _isDisconnectingSubscription = widget.device.isDisconnecting.listen((value) {
-      _isDisconnecting = value;
-      if (mounted) {
-        setState(() {});
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _connectionStateSubscription.cancel();
-    _isConnectingSubscription.cancel();
-    _isDisconnectingSubscription.cancel();
-    super.dispose();
-  }
 
   bool get isConnected {
-    return _connectionState == BluetoothConnectionState.connected;
+    return widget.bleData.connectionState == BluetoothConnectionState.connected;
   }
 
   Future onConnectPressed() async {
@@ -106,11 +58,11 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Future onDiscoverServicesPressed() async {
     if (mounted) {
       setState(() {
-        _isDiscoveringServices = true;
+        widget.bleData.isDiscoveringServices = true;
       });
     }
     try {
-      _services = await widget.device.discoverServices();
+      widget.bleData.services = await widget.device.discoverServices();
       await _findChar();
       await updateCustomCharacter(myCharacteristic, true);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
@@ -119,7 +71,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
     if (mounted) {
       setState(() {
-        _isDiscoveringServices = false;
+        widget.bleData.isDiscoveringServices = false;
       });
     }
   }
@@ -177,12 +129,12 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Future discoverServices() async {
     if (mounted) {
       setState(() {
-        _isDiscoveringServices = true;
+        widget.bleData.isDiscoveringServices = true;
       });
     }
     if (widget.device.isConnected) {
       try {
-        _services = await widget.device.discoverServices();
+        widget.bleData.services = await widget.device.discoverServices();
         _findChar();
         await updateCustomCharacter(myCharacteristic, true);
         Snackbar.show(ABC.c, "Discover Services: Success", success: true);
@@ -192,7 +144,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
     if (mounted) {
       setState(() {
-        _isDiscoveringServices = false;
+        widget.bleData.isDiscoveringServices = false;
       });
     }
   }
@@ -226,7 +178,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   Widget buildUpdateValues(BuildContext context) {
     return IndexedStack(
-      index: (_isDiscoveringServices) ? 1 : 0,
+      index: (widget.bleData.isDiscoveringServices) ? 1 : 0,
       children: <Widget>[
         isConnected
             ? OutlinedButton(
@@ -322,8 +274,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Future _findChar() async {
     while (!charReceived) {
       try {
-        BluetoothService cs = _services.first;
-        for (BluetoothService s in _services) {
+        BluetoothService cs = widget.bleData.services.first;
+        for (BluetoothService s in widget.bleData.services) {
           if (s.uuid == Guid(csUUID)) {
             cs = s;
             break;
@@ -352,7 +304,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
       } catch (e) {}
 
       _newEntry(Map c) {
-        if (!_services.isEmpty) {
+        if (!widget.bleData.services.isEmpty) {
           if (c["isSetting"]) {
             settings.add(SettingTile(characteristic: myCharacteristic, c: c));
           }
@@ -369,7 +321,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Widget buildConnectButton(BuildContext context) {
     return Row(
       children: [
-        (_isConnecting || _isDisconnecting)
+        (widget.bleData.isConnecting || widget.bleData.isDisconnecting)
             ? buildSpinner(context)
             : OutlinedButton(
                 onPressed: (isConnected ? onDisconnectPressed : onConnectPressed),
