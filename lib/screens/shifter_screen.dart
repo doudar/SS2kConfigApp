@@ -14,9 +14,7 @@ class ShifterScreen extends StatefulWidget {
 }
 
 class _ShifterScreenState extends State<ShifterScreen> {
-  late BluetoothCharacteristic c;
  
-
   getC() {
   }
   shift(int amount) {}

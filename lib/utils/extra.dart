@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:async';
 
+import 'constants.dart';
 import 'utils.dart';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -19,6 +20,8 @@ class BLEData {
   bool isDiscoveringServices = false;
   bool isConnecting = false;
   bool isDisconnecting = false;
+
+  var customCharacteristic = customCharacteristicFramework;
 
   late StreamSubscription<BluetoothConnectionState> connectionStateSubscription;
   late StreamSubscription<bool> isConnectingSubscription;

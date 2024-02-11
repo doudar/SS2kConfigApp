@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:SS2kConfigApp/utils/constants.dart';
+import 'package:SS2kConfigApp/utils/extra.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -10,9 +11,9 @@ import "../widgets/plain_text_card.dart";
 import '../widgets/dropdown_card.dart';
 
 class SettingTile extends StatefulWidget {
-  final BluetoothCharacteristic characteristic;
+  final BLEData bleData;
   final Map c;
-  const SettingTile({Key? key, required this.characteristic, required this.c}) : super(key: key);
+  const SettingTile({Key? key, required this.bleData, required this.c}) : super(key: key);
 
   @override
   State<SettingTile> createState() => _SettingTileState();
@@ -20,13 +21,11 @@ class SettingTile extends StatefulWidget {
 
 class _SettingTileState extends State<SettingTile> {
   late String text = this.c["value"].toString();
-  List<int> _value = [];
   late StreamSubscription<List<int>> _lastValueSubscription;
   @override
   void initState() {
     super.initState();
-    _lastValueSubscription = widget.characteristic.lastValueStream.listen((value) {
-      _value = value;
+    _lastValueSubscription = widget.bleData.myCharacteristic.lastValueStream.listen((value) {
       if (mounted) {
         setState(() {});
       }
@@ -38,16 +37,16 @@ class _SettingTileState extends State<SettingTile> {
       case "int":
       case "float":
       case "long":
-        return sliderCard(characteristic: characteristic, c: c);
+        return sliderCard(bleData: widget.bleData, c: c);
       case "string":
         if ((c["vName"] == connectedHRMVname) || (c["vName"] == connectedPWRVname)) {
-          return dropdownCard(characteristic: characteristic, c: c);
+          return dropdownCard(bleData: widget.bleData, c: c);
         }
-        return plainTextCard(characteristic: characteristic, c: c);
+        return plainTextCard(bleData: widget.bleData, c: c);
       case "bool":
-        return boolCard(characteristic: characteristic, c: c);
+        return boolCard(bleData: widget.bleData, c: c);
       default:
-        return plainTextCard(characteristic: characteristic, c: c);
+        return plainTextCard(bleData: widget.bleData, c: c);
     }
   }
 
@@ -66,7 +65,7 @@ class _SettingTileState extends State<SettingTile> {
     super.dispose();
   }
 
-  BluetoothCharacteristic get characteristic => widget.characteristic;
+  BluetoothCharacteristic get characteristic => widget.bleData.myCharacteristic;
   Map get c => widget.c;
 
   @override

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:SS2kConfigApp/utils/extra.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../utils/snackbar.dart';
@@ -10,17 +11,15 @@ import '../utils/constants.dart';
 bool _subscribed = false;
 final _lastRequestStopwatch = Stopwatch();
 
-Future updateCustomCharacter(BluetoothCharacteristic? cc, bool initialScan) async {
-  if (cc != null) {
-    if (!cc.isNotifying) notify(cc);
-    if (!_subscribed) decode(cc);
-    if (!_lastRequestStopwatch.isRunning) {
-      await requestSettings(cc);
-      _lastRequestStopwatch.start();
-    } else if (_lastRequestStopwatch.elapsed > Duration(seconds: 5)) {
-      _lastRequestStopwatch.reset();
-      await requestSettings(cc);
-    }
+Future updateCustomCharacter(BLEData bleData, bool initialScan) async {
+  if (!bleData.myCharacteristic.isNotifying) notify(bleData.myCharacteristic);
+  if (!_subscribed) decode(bleData);
+  if (!_lastRequestStopwatch.isRunning) {
+    await requestSettings(bleData);
+    _lastRequestStopwatch.start();
+  } else if (_lastRequestStopwatch.elapsed > Duration(seconds: 5)) {
+    _lastRequestStopwatch.reset();
+    await requestSettings(bleData);
   }
 }
 
@@ -44,47 +43,47 @@ void findNSave(BluetoothCharacteristic cc, Map c, String find) {
   }
 }
 
-Future saveAllSettings(BluetoothCharacteristic cc) async {
-  await customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2K(cc, c) : ());
-  await customCharacteristic.forEach((c) => findNSave(cc, c, saveVname));
+Future saveAllSettings(BLEData bleData) async {
+  await bleData.customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2K(bleData.myCharacteristic, c) : ());
+  await bleData.customCharacteristic.forEach((c) => findNSave(bleData.myCharacteristic, c, saveVname));
 }
 
-Future reboot(BluetoothCharacteristic cc) async {
-  await customCharacteristic.forEach((c) => findNSave(cc, c, rebootVname));
+Future reboot(BLEData bleData) async {
+  await bleData.customCharacteristic.forEach((c) => findNSave(bleData.myCharacteristic, c, rebootVname));
 }
 
-Future resetToDefaults(BluetoothCharacteristic cc) async {
-  await customCharacteristic.forEach((c) => findNSave(cc, c, resetVname));
+Future resetToDefaults(BLEData bleData) async {
+  await bleData.customCharacteristic.forEach((c) => findNSave(bleData.myCharacteristic, c, resetVname));
 }
 
 //request all settings
-Future requestSettings(BluetoothCharacteristic cc) async {
+Future requestSettings(BLEData bleData) async {
   _write(Map c) {
     try {
-      write(cc, [0x01, int.parse(c["reference"])]);
+      write(bleData.myCharacteristic, [0x01, int.parse(c["reference"])]);
     } catch (e) {
       Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
   }
 
-  await customCharacteristic.forEach((c) => _write(c));
+  await bleData.customCharacteristic.forEach((c) => _write(c));
 }
 
 //request single setting
-Future requestSetting(BluetoothCharacteristic cc, String name) async {
+Future requestSetting(BLEData bleData, String name) async {
   _request(Map c) {
     if (c["vName"] == name) {
       try {
-        write(cc, [0x01, int.parse(c["reference"])]);
+        write(bleData.myCharacteristic, [0x01, int.parse(c["reference"])]);
       } catch (e) {
         Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
       }
-    } else{
+    } else {
       //skipped
     }
   }
 
-  await customCharacteristic.forEach((c) => _request(c));
+  await bleData.customCharacteristic.forEach((c) => _request(c));
 }
 
 int getPrecision(Map c) {
@@ -173,14 +172,14 @@ void write(BluetoothCharacteristic cc, List<int> value) {
   }
 }
 
-void decode(BluetoothCharacteristic cc) {
-  final subscription = cc.onValueReceived.listen((value) {
+void decode(BLEData bleData) {
+  final subscription = bleData.myCharacteristic.onValueReceived.listen((value) {
     _subscribed = true;
     if (value[0] == 0x80) {
       var length = value.length;
       var t = new Uint8List(length);
       //
-      for (var c in customCharacteristic) {
+      for (var c in bleData.customCharacteristic) {
         if (int.parse(c["reference"]) == value[1]) {
           for (var i = 0; i < length; i++) {
             t[i] = value[i];
@@ -221,7 +220,7 @@ void decode(BluetoothCharacteristic cc) {
                 if (c["vName"] == foundDevicesVname) {
                   String _pm = "";
                   String _hrm = "";
-                  for (var i in customCharacteristic) {
+                  for (var i in bleData.customCharacteristic) {
                     if (i["vName"] == connectedHRMVname) {
                       _hrm = i["value"];
                     }
@@ -260,7 +259,7 @@ void decode(BluetoothCharacteristic cc) {
         }
       }
     } else if (value[0] == 0xff) {
-      for (var c in customCharacteristic) {
+      for (var c in bleData.customCharacteristic) {
         if (int.parse(c["reference"]) == value[1]) {
           c["value"] = noFirmSupport;
         }

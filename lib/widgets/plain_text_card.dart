@@ -2,12 +2,13 @@
 import 'package:SS2kConfigApp/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:SS2kConfigApp/utils/extra.dart';
 
 import "../utils/customcharhelpers.dart";
 
 class plainTextCard extends StatefulWidget {
-  const plainTextCard({super.key, required this.characteristic, required this.c});
-  final BluetoothCharacteristic characteristic;
+  const plainTextCard({super.key, required this.bleData, required this.c});
+  final BLEData bleData;
   final Map c;
   @override
   State<plainTextCard> createState() => _plainTextCardState();
@@ -15,7 +16,7 @@ class plainTextCard extends StatefulWidget {
 
 class _plainTextCardState extends State<plainTextCard> {
   Map get c => widget.c;
-  BluetoothCharacteristic get characteristic => widget.characteristic;
+  BluetoothCharacteristic get characteristic => widget.bleData.myCharacteristic;
   final controller = TextEditingController();
   bool passwordVisible = false;
 

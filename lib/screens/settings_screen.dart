@@ -22,12 +22,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  int? _rssi;
-  bool charReceived = false;
-
-  late BluetoothCharacteristic myCharacteristic;
-
-
   bool get isConnected {
     return widget.bleData.connectionState == BluetoothConnectionState.connected;
   }
@@ -64,7 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       widget.bleData.services = await widget.device.discoverServices();
       await _findChar();
-      await updateCustomCharacter(myCharacteristic, true);
+      await updateCustomCharacter(widget.bleData, true);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -78,7 +72,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future onSaveSettingsPressed() async {
     try {
-      await saveAllSettings(myCharacteristic);
+      await saveAllSettings(widget.bleData);
       Snackbar.show(ABC.c, "Settings Saved", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Save Settings Failed ", e), success: false);
@@ -88,7 +82,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future onSaveLocalPressed() async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
-      prefs.setString('user', jsonEncode(customCharacteristic));
+      prefs.setString('user', jsonEncode(widget.bleData.customCharacteristic));
       Snackbar.show(ABC.c, "Settings Saved", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Save Local Failed ", e), success: false);
@@ -98,7 +92,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future onLoadLocalPressed() async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
-      customCharacteristic = jsonDecode(prefs.getString('user')!);
+      widget.bleData.customCharacteristic = jsonDecode(prefs.getString('user')!);
       Snackbar.show(ABC.c, "Settings Loaded", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Load local failed. Do you have a backup?", e), success: false);
@@ -107,7 +101,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future onRebootPressed() async {
     try {
-      await reboot(myCharacteristic);
+      await reboot(widget.bleData);
       Snackbar.show(ABC.a, "SmartSpin2k is rebooting", success: true);
       await onDisconnectPressed();
       await onConnectPressed();
@@ -118,7 +112,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future onResetPressed() async {
     try {
-      await resetToDefaults(myCharacteristic);
+      await resetToDefaults(widget.bleData);
       await discoverServices();
       Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
     } catch (e) {
@@ -136,7 +130,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       try {
         widget.bleData.services = await widget.device.discoverServices();
         _findChar();
-        await updateCustomCharacter(myCharacteristic, true);
+        await updateCustomCharacter(widget.bleData, true);
         Snackbar.show(ABC.c, "Discover Services: Success", success: true);
       } catch (e) {
         Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -171,7 +165,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         isConnected ? const Icon(Icons.bluetooth_connected) : const Icon(Icons.bluetooth_disabled),
-        Text(((isConnected && _rssi != null) ? '${_rssi!} dBm' : ''), style: Theme.of(context).textTheme.bodySmall)
+        Text(((isConnected && widget.bleData.rssi != null) ? '${widget.bleData.rssi!} dBm' : ''),
+            style: Theme.of(context).textTheme.bodySmall)
       ],
     );
   }
@@ -241,10 +236,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future waitToSetState(context) async {
     await Future.delayed(Duration(seconds: 10));
-    try{ //Can fail if navigation happens within 10 seconds
-    setState(() {});
-    }catch(e){};
-
+    try {
+      //Can fail if navigation happens within 10 seconds
+      setState(() {});
+    } catch (e) {}
+    ;
   }
 
   buildRebootButton(context) {
@@ -272,7 +268,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future _findChar() async {
-    while (!charReceived) {
+    while (!widget.bleData.charReceived) {
       try {
         BluetoothService cs = widget.bleData.services.first;
         for (BluetoothService s in widget.bleData.services) {
@@ -284,11 +280,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         List<BluetoothCharacteristic> characteristics = cs.characteristics;
         for (BluetoothCharacteristic c in characteristics) {
           if (c.uuid == Guid(ccUUID)) {
-            myCharacteristic = c;
+            widget.bleData.myCharacteristic = c;
             break;
           }
         }
-        charReceived = true;
+        widget.bleData.charReceived = true;
       } catch (e) {
         Snackbar.show(ABC.c, prettyException("No Services", e), success: false);
       }
@@ -298,23 +294,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
 //Build the settings dropdowns
   List<Widget> buildSettings(BuildContext context) {
     List<Widget> settings = [];
-    if (charReceived) {
-      try {
-        // char = myCharacteristic;
-      } catch (e) {}
+    if (widget.bleData.isDiscoveringServices) {
+      Snackbar.show(ABC.c, "Data Loading, please wait ", success: true);
+      setState(() {});
+    } else {
+      if (widget.bleData.charReceived) {
+        try {
+          // char = myCharacteristic;
+        } catch (e) {}
 
-      _newEntry(Map c) {
-        if (!widget.bleData.services.isEmpty) {
-          if (c["isSetting"]) {
-            settings.add(SettingTile(characteristic: myCharacteristic, c: c));
+        _newEntry(Map c) {
+          if (!widget.bleData.services.isEmpty) {
+            if (c["isSetting"]) {
+              settings.add(SettingTile(bleData: widget.bleData, c: c));
+            }
           }
         }
+        widget.bleData.customCharacteristic.forEach((c) => _newEntry(c));
       }
-      customCharacteristic.forEach((c) => _newEntry(c));
-    } else {
-        discoverServices();
-        setState(() {});
-    }
+    } //else {
+    // discoverServices();
+    //  setState(() {});
+    // }
     return settings;
   }
 

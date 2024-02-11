@@ -19,7 +19,7 @@ String defaultDevices =
 
 //Using JSON because it's easier to input the data.
 //These are shuffled so they are built in a preferred order so most used settings are on top
-var customCharacteristic = jsonDecode('''[
+var customCharacteristicFramework = jsonDecode('''[
 {"vName": "BLE_connectedPowerMeter  ", "reference": "0x15", "isSetting": true,  "type":"string",  "humanReadableName":"Saved Power Meter", "min":0, "max":2000},
 {"vName": "BLE_connectedHeartMonitor", "reference": "0x16", "isSetting": true,  "type":"string",  "humanReadableName":"Saved HRM", "min":0, "max":2000},
 {"vName": "BLE_foundDevices         ", "reference": "0x14", "isSetting": false, "type":"string",  "humanReadableName":"Found Devices", "min":0, "max":2000},

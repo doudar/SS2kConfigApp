@@ -1,19 +1,19 @@
+import 'package:SS2kConfigApp/utils/extra.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+
 
 import "../utils/customcharhelpers.dart";
 
 class boolCard extends StatefulWidget {
-  const boolCard({super.key, required this.characteristic, required this.c});
-  final BluetoothCharacteristic characteristic;
+  const boolCard({super.key, required this.bleData, required this.c});
+  final BLEData bleData;
   final Map c;
   @override
   State<boolCard> createState() => _boolCardState();
 }
 
 class _boolCardState extends State<boolCard> {
-  Map get c => widget.c;
-  BluetoothCharacteristic get characteristic => widget.characteristic;
 
   @override
   void dispose() {
@@ -31,13 +31,13 @@ class _boolCardState extends State<boolCard> {
         ),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-        Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
-        Text((bool.parse(c["value"]) ? "On" : "Off"), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
+        Text((widget.c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
+        Text((bool.parse(widget.c["value"]) ? "On" : "Off"), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
         Switch(
-          value: bool.parse(c["value"]),
+          value: bool.parse(widget.c["value"]),
           onChanged: (b) {
-            c["value"] = b.toString();
-            writeToSS2K(this.characteristic, this.c);
+            widget.c["value"] = b.toString();
+            writeToSS2K(widget.bleData.myCharacteristic, widget.c);
             setState(() {});
             return widget.c["value"];
           },

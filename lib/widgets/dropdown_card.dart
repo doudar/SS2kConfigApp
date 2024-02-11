@@ -1,22 +1,21 @@
 import 'dart:convert';
 
 import 'package:SS2kConfigApp/utils/constants.dart';
+import 'package:SS2kConfigApp/utils/extra.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import "../utils/customcharhelpers.dart";
 
 class dropdownCard extends StatefulWidget {
-  const dropdownCard({super.key, required this.characteristic, required this.c});
-  final BluetoothCharacteristic characteristic;
+  const dropdownCard({super.key, required this.bleData, required this.c});
+  final BLEData bleData;
   final Map c;
   @override
   State<dropdownCard> createState() => _dropdownCardState();
 }
 
 class _dropdownCardState extends State<dropdownCard> {
-  Map get c => widget.c;
-  BluetoothCharacteristic get characteristic => widget.characteristic;
   List<String> DDItems = [];
   @override
   void dispose() {
@@ -25,13 +24,13 @@ class _dropdownCardState extends State<dropdownCard> {
 
   void buildDevicesMap() {
     late List _items;
-    DDItems = [c["value"]];
-    // customCharacteristic.forEach((d) => (d["vName"] == foundDevicesVname) ? print(d["value"]) : null);
-    customCharacteristic.forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
+    DDItems = [widget.c["value"]];
+    // widget.bleData.customCharacteristic.forEach((d) => (d["vName"] == foundDevicesVname) ? print(d["value"]) : null);
+    widget.bleData.customCharacteristic.forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
 
     for (var d in _items) {
       for (var subd in d.values) {
-        if (c["vName"] == connectedPWRVname) {
+        if (widget.c["vName"] == connectedPWRVname) {
           if (subd["UUID"] == '0x1818' ||
               subd["UUID"] == '0x1826' ||
               subd["UUID"] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' ||
@@ -39,7 +38,7 @@ class _dropdownCardState extends State<dropdownCard> {
             DDItems.add(subd["name"] ?? subd["address"]);
           }
         }
-        if (c["vName"] == connectedHRMVname) {
+        if (widget.c["vName"] == connectedHRMVname) {
           if (subd["UUID"] == "0x180d") {
             DDItems.add(subd["name"] ?? subd["address"]);
           }
@@ -65,10 +64,10 @@ class _dropdownCardState extends State<dropdownCard> {
         ),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-        Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
-        Text(c["value"], style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
+        Text((widget.c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
+        Text(widget.c["value"], style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
         DropdownButton(
-          hint: Text(c["value"]),
+          hint: Text(widget.c["value"]),
           items: DDItems.map((String items) {
             return DropdownMenuItem<String>(
               value: items,
@@ -78,8 +77,8 @@ class _dropdownCardState extends State<dropdownCard> {
           onChanged: (String? value) {
             // This is called when the user selects an item.
             setState(() {
-              c["value"] = value!;
-              writeToSS2K(this.characteristic, this.c);
+              widget.c["value"] = value!;
+              writeToSS2K(widget.bleData.myCharacteristic, widget.c);
             });
           },
         ),

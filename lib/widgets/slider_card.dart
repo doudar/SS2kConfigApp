@@ -3,13 +3,14 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:SS2kConfigApp/utils/extra.dart';
 
 import "../utils/snackbar.dart";
 import "../utils/customcharhelpers.dart";
 
 class sliderCard extends StatefulWidget {
-  const sliderCard({super.key, required this.characteristic, required this.c});
-  final BluetoothCharacteristic characteristic;
+  const sliderCard({super.key, required this.bleData, required this.c});
+  final BLEData bleData;
   final Map c;
   @override
   State<sliderCard> createState() => _sliderCardState();
@@ -17,7 +18,7 @@ class sliderCard extends StatefulWidget {
 
 class _sliderCardState extends State<sliderCard> {
   Map get c => widget.c;
-  BluetoothCharacteristic get characteristic => widget.characteristic;
+  BluetoothCharacteristic get characteristic => widget.bleData.myCharacteristic;
   late double _currentSliderValue = double.parse(c["value"]);
   final controller = TextEditingController();
 
