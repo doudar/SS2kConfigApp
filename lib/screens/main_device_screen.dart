@@ -87,11 +87,10 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   }
 
   Future discoverServices() async {
-    if (mounted) {
       setState(() {
         this.bleData.isReadingOrWriting.value= true;
       });
-    }
+ 
     if (widget.device.isConnected) {
       try {
         this.bleData.services = await widget.device.discoverServices();
@@ -102,12 +101,10 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
         //Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
       }
     }
-    if (mounted) {
       setState(() {
         this.bleData.isReadingOrWriting.value= false;
       });
     }
-  }
 
   buildShiftMenuButton(BuildContext context) {
     return OutlinedButton(

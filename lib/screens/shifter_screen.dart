@@ -17,31 +17,47 @@ class ShifterScreen extends StatefulWidget {
 
 class _ShifterScreenState extends State<ShifterScreen> {
   late Map c;
+  String t = "Loading";
   late StreamSubscription _charSubscription;
 
   @override
   void initState() {
-    super.initState();
     widget.bleData.customCharacteristic.forEach((i) => i["vName"] == shiftVname ? c = i : ());
-
-    _charSubscription = widget.bleData.myCharacteristic.onValueReceived.listen((state) async {
-      if (mounted) {
-        setState(() {});
-      }
-    });
+    startSubscription();
+    super.initState();
   }
 
-    @override
+  @override
   void dispose() {
     _charSubscription.cancel();
     super.dispose();
   }
 
+  Future startSubscription() async {
+    await Future.delayed(Duration(seconds: 5));
+    t = c["value"] ?? "Loading";
+    try {
+      _charSubscription = widget.bleData.myCharacteristic.onValueReceived.listen((data) async {
+        if (t != c["value"]) {
+          setState(() {
+            t = c["value"] ?? "Loading";
+          });
+        }
+      });
+    } catch (e) {
+      print("Subscription Failed, $e");
+    }
+  }
+
   shift(int amount) {
-    String _t = (int.parse(c["value"]) + amount).toString();
-    c["value"] = _t;
-    writeToSS2K(widget.bleData, c);
-    setState(() {});
+    if (t != "Loading") {
+      String _t = (int.parse(c["value"]) + amount).toString();
+      c["value"] = _t;
+      writeToSS2K(widget.bleData, c);
+    }
+    setState(() {
+      t = c["value"] ?? "Loading";
+    });
   }
 
   @override
@@ -56,7 +72,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
           style: TextStyle(
             fontWeight: FontWeight.w400,
             fontStyle: FontStyle.normal,
-            fontSize: 50,
+            fontSize: 20,
             color: Color(0xff000000),
           ),
         ),
@@ -112,7 +128,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
                   Padding(
                     padding: EdgeInsets.fromLTRB(0, 5, 0, 0),
                     child: Text(
-                      c["value"].toString(),
+                      t,
                       textAlign: TextAlign.start,
                       overflow: TextOverflow.clip,
                       style: TextStyle(

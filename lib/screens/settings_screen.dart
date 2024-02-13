@@ -390,13 +390,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 titleAlignment: ListTileTitleAlignment.center,
               ),
               isConnected
-                  ? Row(children: <Widget>[
-                      buildRebootButton(context),
-                      buildResetButton(context),
-                      buildSaveButton(context),
-                      buildSaveLocalButton(context),
-                      buildLoadLocalButton(context),
-                    ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center)
+                  ? Column(children: <Widget>[
+                      Row(children: <Widget>[
+                        buildRebootButton(context),
+                        buildResetButton(context),
+                        buildSaveButton(context),
+                      ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
+                      Row(children: <Widget>[
+                        buildSaveLocalButton(context),
+                        buildLoadLocalButton(context),
+                      ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
+                    ])
                   : SizedBox(),
               ...buildSettings(context),
             ],
