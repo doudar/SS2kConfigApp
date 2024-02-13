@@ -85,7 +85,7 @@ class BluetoothAdapterStateObserver extends NavigatorObserver {
   void didPop(Route route, Route? previousRoute) {
     super.didPop(route, previousRoute);
     // Cancel the subscription when the route is popped
-    //_adapterStateSubscription?.cancel();
-    //_adapterStateSubscription = null;
+    _adapterStateSubscription?.cancel();
+    _adapterStateSubscription = null;
   }
 }
