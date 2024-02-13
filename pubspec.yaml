@@ -1,5 +1,6 @@
 name: SS2kConfigApp
 description: Configures the SmartSpin2k using BLE
+version: 0.0.1
 
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -20,6 +21,7 @@ dependencies:
   flutter_native_splash: ^2.3.9
   shared_preferences: ^2.2.0
   webview_flutter: ^4.7.0
+  lottie: ^3.0.0
 
 flutter:
   uses-material-design: true
@@ -30,3 +32,5 @@ flutter:
     - assets/shiftscreen.png
     - assets/settingsScreen.png
     - assets/GitHub-logo.png
+    - assets/Firmware_Loading.json
+    
