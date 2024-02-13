@@ -17,11 +17,24 @@ class ShifterScreen extends StatefulWidget {
 
 class _ShifterScreenState extends State<ShifterScreen> {
   late Map c;
+  late StreamSubscription _charSubscription;
 
   @override
   void initState() {
     super.initState();
     widget.bleData.customCharacteristic.forEach((i) => i["vName"] == shiftVname ? c = i : ());
+
+    _charSubscription = widget.bleData.myCharacteristic.onValueReceived.listen((state) async {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+    @override
+  void dispose() {
+    _charSubscription.cancel();
+    super.dispose();
   }
 
   shift(int amount) {
@@ -37,13 +50,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
         child: Scaffold(
       backgroundColor: Color(0xffffffff),
       appBar: AppBar(
-        elevation: 4,
         centerTitle: true,
-        automaticallyImplyLeading: false,
-        backgroundColor: Color(0xff3a57e8),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.zero,
-        ),
         title: Text(
           "Virtual Shifter",
           style: TextStyle(
@@ -52,11 +59,6 @@ class _ShifterScreenState extends State<ShifterScreen> {
             fontSize: 50,
             color: Color(0xff000000),
           ),
-        ),
-        leading: Icon(
-          Icons.arrow_back,
-          color: Color(0xff212435),
-          size: 24,
         ),
       ),
       body: Align(

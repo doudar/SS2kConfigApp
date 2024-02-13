@@ -27,3 +27,6 @@ flutter:
   assets:
     - assets/ss2k_wiki_banner.png
     - assets/ss2kv3.png
+    - assets/shiftscreen.png
+    - assets/settingsScreen.png
+    - assets/GitHub-logo.png

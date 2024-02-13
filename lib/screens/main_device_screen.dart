@@ -166,6 +166,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     );
   }
 
+/*
   @override
   Widget build(BuildContext context) {
     return ScaffoldMessenger(
@@ -187,5 +188,256 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
         ),
       ),
     );
+  }
+}
+*/
+  @override
+  Widget build(BuildContext context) {
+    return ScaffoldMessenger( child: Scaffold(
+      backgroundColor: Color(0xffebebeb),
+      appBar: AppBar(
+        elevation: 4,
+        centerTitle: false,
+        backgroundColor: Color(0xffffffff),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.zero,
+        ),
+        title: Text(
+          "Main Device Screen",
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontStyle: FontStyle.normal,
+            fontSize: 18,
+            color: Color(0xff000000),
+          ),
+        ),
+      ),
+      body: ListView(
+        scrollDirection: Axis.vertical,
+        padding: EdgeInsets.all(8),
+        shrinkWrap: true,
+        physics: ClampingScrollPhysics(),
+        children: [
+          Card(
+            margin: EdgeInsets.all(0),
+            color: Color(0xffffffff),
+            shadowColor: Color(0xff000000),
+            elevation: 1,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12.0),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(12.0),
+                      bottomLeft: Radius.circular(12.0)),
+                  child:
+
+                      ///***If you have exported images you must have to copy those images in assets/images directory.
+                      Image(
+                    image: AssetImage('assets/shiftscreen.png',),
+                    height: 130,
+                    width: 100,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Expanded(
+                  flex: 1,
+                  child: Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.max,
+                      children: [
+                        buildShiftMenuButton(context),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(0, 8, 0, 0),
+                          child: Text(
+                            "Use the buttons on the screen to shift.",
+                            textAlign: TextAlign.start,
+                            maxLines: 2,
+                            overflow: TextOverflow.clip,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w400,
+                              fontStyle: FontStyle.normal,
+                              fontSize: 11,
+                              color: Color(0xff000000),
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(0, 4, 0, 0),
+                          child: Text(
+                            "",
+                            textAlign: TextAlign.start,
+                            maxLines: 1,
+                            overflow: TextOverflow.clip,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w400,
+                              fontStyle: FontStyle.normal,
+                              fontSize: 12,
+                              color: Color(0xff7a7a7a),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Card(
+            margin: EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+            color: Color(0xffffffff),
+            shadowColor: Color(0xff000000),
+            elevation: 1,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12.0),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(12.0),
+                      bottomLeft: Radius.circular(12.0)),
+                  child:
+
+                      ///***If you have exported images you must have to copy those images in assets/images directory.
+                      Image(
+                    image: AssetImage('assets/settingsScreen.png',),
+                    height: 130,
+                    width: 100,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Expanded(
+                  flex: 1,
+                  child: Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.max,
+                      children: [
+                        buildSettingsButton(context),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(0, 8, 0, 0),
+                          child: Text(
+                            "Pair devices, setup WiFi, and advanced settings.",
+                            textAlign: TextAlign.start,
+                            maxLines: 2,
+                            overflow: TextOverflow.clip,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w400,
+                              fontStyle: FontStyle.normal,
+                              fontSize: 11,
+                              color: Color(0xff000000),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Card(
+            margin: EdgeInsets.fromLTRB(0, 0, 0, 8),
+            color: Color(0xffffffff),
+            shadowColor: Color(0xff000000),
+            elevation: 1,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12.0),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(12.0),
+                      bottomLeft: Radius.circular(12.0)),
+                  child:
+
+                      ///***If you have exported images you must have to copy those images in assets/images directory.
+                      Image(
+                    image: AssetImage('assets/GitHub-logo.png',),
+                    height: 130,
+                    width: 100,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Expanded(
+                  flex: 1,
+                  child: Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.max,
+                      children: [
+                        buildUpdateButton(context),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(0, 4, 0, 0),
+                          child: Text(
+                            "",
+                            textAlign: TextAlign.start,
+                            maxLines: 1,
+                            overflow: TextOverflow.clip,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w400,
+                              fontStyle: FontStyle.normal,
+                              fontSize: 12,
+                              color: Color(0xff7a7a7a),
+                            ),
+                          ),
+                        ),
+                        Text(
+                          "Update your device to the latest firmware from GitHub",
+                          textAlign: TextAlign.start,
+                          maxLines: 3,
+                          overflow: TextOverflow.clip,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w400,
+                            fontStyle: FontStyle.normal,
+                            fontSize: 11,
+                            color: Color(0xff000000),
+                          ),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(0, 8, 0, 0),
+                          child: Text(
+                            "",
+                            textAlign: TextAlign.start,
+                            overflow: TextOverflow.clip,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w400,
+                              fontStyle: FontStyle.normal,
+                              fontSize: 11,
+                              color: Color(0xff000000),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),);
   }
 }

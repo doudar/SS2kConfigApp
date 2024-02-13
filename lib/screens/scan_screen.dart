@@ -152,13 +152,15 @@ class _ScanScreenState extends State<ScanScreen> {
         ),
         body: RefreshIndicator(
           onRefresh: onRefresh,
-          child: ListView(
-            children: <Widget>[
-              //..._buildSystemDeviceTiles(context),
-              ..._buildScanResultTiles(context),
-              buildScanButton(context),
-          
-          SizedBox(height: 300, child:WebViewWidget(controller: controller)),]),
+          child: ListView(children: <Widget>[
+            //..._buildSystemDeviceTiles(context),
+            ..._buildScanResultTiles(context),
+            Padding(
+              padding: EdgeInsets.fromLTRB(100, 8, 100, 15),
+              child: buildScanButton(context),
+            ),
+            SizedBox(height: 300, child: WebViewWidget(controller: controller)),
+          ]),
         ),
       ),
     );
