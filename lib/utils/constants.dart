@@ -13,6 +13,7 @@ final String connectedHRMVname = "BLE_connectedHeartMonitor";
 final String connectedPWRVname = "BLE_connectedPowerMeter  ";
 final String rebootVname = "BLE_reboot               ";
 final String resetVname = "BLE_resetToDefaults      ";
+final String shiftVname = "BLE_shifterPosition      ";
 
 String defaultDevices =
     '''[{"device -4": {"name": "any", "UUID": "0x180d"},"device -3": {"name": "none", "UUID": "0x180d"},"device -2": {"name": "any", "UUID": "0x1818"},"device -1": {"name": "none", "UUID": "0x1818"},''';

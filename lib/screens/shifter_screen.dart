@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'package:SS2kConfigApp/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/extra.dart';
+import '../utils/customcharhelpers.dart';
 
 class ShifterScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -14,10 +16,22 @@ class ShifterScreen extends StatefulWidget {
 }
 
 class _ShifterScreenState extends State<ShifterScreen> {
- 
-  getC() {
+  late Map c;
+
+  @override
+  void initState() {
+    super.initState();
+     widget.bleData.customCharacteristic.forEach((i) => i["vName"] == shiftVname ? c = i : ());
+
   }
-  shift(int amount) {}
+
+  shift(int amount) {
+    String _t = (int.parse(c["value"]) + amount).toString();
+   c["value"] = _t;
+   writeToSS2K(widget.bleData, c);
+   setState(() {
+   });
+  }
 
   buildUpShiftButton(BuildContext context) {
     return OutlinedButton(
@@ -44,12 +58,11 @@ class _ShifterScreenState extends State<ShifterScreen> {
   }
 
   buildShiftIndicator(BuildContext context) {
-    int _currentShift = 0;
     return Container(
       margin: const EdgeInsets.all(15.0),
       padding: const EdgeInsets.all(3.0),
       decoration: BoxDecoration(border: Border.all(color: Colors.blueAccent)),
-      child: Text(_currentShift.toString()),
+      child: Text(c["value"].toString()),
     );
   }
 

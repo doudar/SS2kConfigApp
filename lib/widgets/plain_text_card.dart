@@ -16,7 +16,6 @@ class plainTextCard extends StatefulWidget {
 
 class _plainTextCardState extends State<plainTextCard> {
   Map get c => widget.c;
-  BluetoothCharacteristic get characteristic => widget.bleData.myCharacteristic;
   final controller = TextEditingController();
   bool passwordVisible = false;
 
@@ -58,7 +57,7 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        writeToSS2K(this.characteristic, this.c);
+        writeToSS2K(widget.bleData, this.c);
         setState(() {});
         return widget.c["value"];
       },
@@ -81,7 +80,7 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        writeToSS2K(this.characteristic, this.c);
+        writeToSS2K(widget.bleData, this.c);
         setState(() {});
         return widget.c["value"];
       },

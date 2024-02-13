@@ -12,7 +12,8 @@ bool _subscribed = false;
 final _lastRequestStopwatch = Stopwatch();
 
 Future updateCustomCharacter(BLEData bleData, bool initialScan) async {
-  if (!bleData.myCharacteristic.isNotifying) notify(bleData.myCharacteristic);
+  bleData.isReadingOrWriting.value= true;
+  if (!bleData.myCharacteristic.isNotifying) notify(bleData);
   if (!_subscribed) decode(bleData);
   if (!_lastRequestStopwatch.isRunning) {
     await requestSettings(bleData);
@@ -21,22 +22,23 @@ Future updateCustomCharacter(BLEData bleData, bool initialScan) async {
     _lastRequestStopwatch.reset();
     await requestSettings(bleData);
   }
+  bleData.isReadingOrWriting.value= false;
 }
 
-void notify(BluetoothCharacteristic cc) {
-  if (!cc.isNotifying) {
+void notify(BLEData bleData) {
+  if (!bleData.myCharacteristic.isNotifying) {
     try {
-      cc.setNotifyValue(true);
+      bleData.myCharacteristic.setNotifyValue(true);
     } catch (e) {
       Snackbar.show(ABC.c, "Failed to subscribe to notifications", success: false);
     }
   }
 }
 
-void findNSave(BluetoothCharacteristic cc, Map c, String find) {
+void findNSave(BLEData bleData, Map c, String find) {
   if (c["vName"] == find) {
     try {
-      write(cc, [0x02, int.parse(c["reference"]), 0x01]);
+      write(bleData, [0x02, int.parse(c["reference"]), 0x01]);
     } catch (e) {
       Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
@@ -44,29 +46,35 @@ void findNSave(BluetoothCharacteristic cc, Map c, String find) {
 }
 
 Future saveAllSettings(BLEData bleData) async {
-  await bleData.customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2K(bleData.myCharacteristic, c) : ());
-  await bleData.customCharacteristic.forEach((c) => findNSave(bleData.myCharacteristic, c, saveVname));
+  bleData.isReadingOrWriting.value= true;
+  await bleData.customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2K(bleData, c) : ());
+  await bleData.customCharacteristic.forEach((c) => findNSave(bleData, c, saveVname));
+  bleData.isReadingOrWriting.value= false;
 }
 
 Future reboot(BLEData bleData) async {
-  await bleData.customCharacteristic.forEach((c) => findNSave(bleData.myCharacteristic, c, rebootVname));
+  await bleData.customCharacteristic.forEach((c) => findNSave(bleData, c, rebootVname));
 }
 
 Future resetToDefaults(BLEData bleData) async {
-  await bleData.customCharacteristic.forEach((c) => findNSave(bleData.myCharacteristic, c, resetVname));
+  bleData.isReadingOrWriting.value= true;
+  await bleData.customCharacteristic.forEach((c) => findNSave(bleData, c, resetVname));
+  bleData.isReadingOrWriting.value= false;
 }
 
 //request all settings
 Future requestSettings(BLEData bleData) async {
+  bleData.isReadingOrWriting.value= true;
   _write(Map c) {
     try {
-      write(bleData.myCharacteristic, [0x01, int.parse(c["reference"])]);
+      write(bleData, [0x01, int.parse(c["reference"])]);
     } catch (e) {
       Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
   }
 
   await bleData.customCharacteristic.forEach((c) => _write(c));
+  bleData.isReadingOrWriting.value= false;
 }
 
 //request single setting
@@ -74,7 +82,7 @@ Future requestSetting(BLEData bleData, String name) async {
   _request(Map c) {
     if (c["vName"] == name) {
       try {
-        write(bleData.myCharacteristic, [0x01, int.parse(c["reference"])]);
+        write(bleData, [0x01, int.parse(c["reference"])]);
       } catch (e) {
         Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
       }
@@ -100,7 +108,7 @@ int getPrecision(Map c) {
   return precision;
 }
 
-void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
+void writeToSS2K(BLEData bleData, Map c, {String s = ""}) {
   if (s == "") {
     s = c["value"];
   }
@@ -154,16 +162,16 @@ void writeToSS2K(BluetoothCharacteristic cc, Map c, {String s = ""}) {
     //value = [0xff];
   }
   try {
-    write(cc, value);
+    write(bleData, value);
   } catch (e) {
     Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
   }
 }
 
-void write(BluetoothCharacteristic cc, List<int> value) {
-  if (cc.device.isConnected) {
+void write(BLEData bleData, List<int> value) {
+  if (bleData.myCharacteristic.device.isConnected) {
     try {
-      cc.write(value);
+      bleData.myCharacteristic.write(value);
     } catch (e) {
       Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
@@ -189,7 +197,7 @@ void decode(BLEData bleData) {
           switch (c["type"]) {
             case "int":
               {
-                c["value"] = data.getUint16(2, Endian.little).toString();
+                c["value"] = data.getInt16(2, Endian.little).toString();
                 break;
               }
             case "bool":
@@ -200,12 +208,12 @@ void decode(BLEData bleData) {
               }
             case "float":
               {
-                c["value"] = (data.getUint16(2, Endian.little) / 10).toString();
+                c["value"] = (data.getInt16(2, Endian.little) / 10).toString();
                 break;
               }
             case "long":
               {
-                c["value"] = data.getUint32(2, Endian.little).toString();
+                c["value"] = data.getInt32(2, Endian.little).toString();
 
                 break;
               }

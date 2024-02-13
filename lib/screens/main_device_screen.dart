@@ -58,9 +58,9 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
 
   @override
   void dispose() {
-    //bleData.connectionStateSubscription.cancel();
-    //bleData.isConnectingSubscription.cancel();
-    //bleData.isDisconnectingSubscription.cancel();
+    bleData.connectionStateSubscription.cancel();
+    bleData.isConnectingSubscription.cancel();
+    bleData.isDisconnectingSubscription.cancel();
     super.dispose();
   }
 
@@ -89,7 +89,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   Future discoverServices() async {
     if (mounted) {
       setState(() {
-        this.bleData.isDiscoveringServices = true;
+        this.bleData.isReadingOrWriting.value= true;
       });
     }
     if (widget.device.isConnected) {
@@ -104,7 +104,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     }
     if (mounted) {
       setState(() {
-        this.bleData.isDiscoveringServices = false;
+        this.bleData.isReadingOrWriting.value= false;
       });
     }
   }

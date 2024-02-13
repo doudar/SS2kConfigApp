@@ -22,6 +22,31 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+    widget.bleData.isReadingOrWriting.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectionStateSubscription.cancel();
+    widget.bleData.isReadingOrWriting.removeListener(() {});
+    super.dispose();
+  }
+
   bool get isConnected {
     return widget.bleData.connectionState == BluetoothConnectionState.connected;
   }
@@ -52,7 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future onDiscoverServicesPressed() async {
     if (mounted) {
       setState(() {
-        widget.bleData.isDiscoveringServices = true;
+        widget.bleData.isReadingOrWriting.value = true;
       });
     }
     try {
@@ -65,7 +90,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (mounted) {
       setState(() {
-        widget.bleData.isDiscoveringServices = false;
+        widget.bleData.isReadingOrWriting.value = false;
       });
     }
   }
@@ -123,7 +148,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future discoverServices() async {
     if (mounted) {
       setState(() {
-        widget.bleData.isDiscoveringServices = true;
+        widget.bleData.isReadingOrWriting.value = true;
       });
     }
     if (widget.device.isConnected) {
@@ -138,7 +163,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (mounted) {
       setState(() {
-        widget.bleData.isDiscoveringServices = false;
+        widget.bleData.isReadingOrWriting.value = false;
       });
     }
   }
@@ -173,7 +198,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget buildUpdateValues(BuildContext context) {
     return IndexedStack(
-      index: (widget.bleData.isDiscoveringServices) ? 1 : 0,
+      index: (widget.bleData.isReadingOrWriting.value) ? 1 : 0,
       children: <Widget>[
         isConnected
             ? OutlinedButton(
@@ -294,7 +319,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 //Build the settings dropdowns
   List<Widget> buildSettings(BuildContext context) {
     List<Widget> settings = [];
-    if (widget.bleData.isDiscoveringServices) {
+    if (widget.bleData.isReadingOrWriting.value) {
       Snackbar.show(ABC.c, "Data Loading, please wait ", success: true);
       setState(() {});
     } else {
@@ -310,6 +335,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             }
           }
         }
+
         widget.bleData.customCharacteristic.forEach((c) => _newEntry(c));
       }
     } //else {

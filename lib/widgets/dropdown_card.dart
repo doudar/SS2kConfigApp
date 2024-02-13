@@ -78,7 +78,7 @@ class _dropdownCardState extends State<dropdownCard> {
             // This is called when the user selects an item.
             setState(() {
               widget.c["value"] = value!;
-              writeToSS2K(widget.bleData.myCharacteristic, widget.c);
+              writeToSS2K(widget.bleData, widget.c);
             });
           },
         ),

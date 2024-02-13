@@ -79,7 +79,7 @@ class _sliderCardState extends State<sliderCard> {
           textAlign: TextAlign.center,
           onSubmitted: (t) {
             this.verifyInput(t);
-            writeToSS2K(this.characteristic, this.c);
+            writeToSS2K(widget.bleData, this.c);
             setState(() {});
             return widget.c["value"];
           },
@@ -103,7 +103,7 @@ class _sliderCardState extends State<sliderCard> {
               this._currentSliderValue = v;
               widget.c["value"] = this._currentSliderValue.toStringAsFixed(getPrecision(c));
               controller.text = widget.c["value"];
-              writeToSS2K(this.characteristic, this.c);
+              writeToSS2K(widget.bleData, this.c);
             });
           },
         ),

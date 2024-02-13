@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'constants.dart';
 import 'utils.dart';
 
@@ -17,7 +19,7 @@ class BLEData {
   BluetoothConnectionState connectionState = BluetoothConnectionState.disconnected;
   List<BluetoothService> services = [];
 
-  bool isDiscoveringServices = false;
+  ValueNotifier<bool> isReadingOrWriting = ValueNotifier(false);
   bool isConnecting = false;
   bool isDisconnecting = false;
 

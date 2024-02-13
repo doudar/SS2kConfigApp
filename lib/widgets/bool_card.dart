@@ -37,7 +37,7 @@ class _boolCardState extends State<boolCard> {
           value: bool.parse(widget.c["value"]),
           onChanged: (b) {
             widget.c["value"] = b.toString();
-            writeToSS2K(widget.bleData.myCharacteristic, widget.c);
+            writeToSS2K(widget.bleData, widget.c);
             setState(() {});
             return widget.c["value"];
           },
