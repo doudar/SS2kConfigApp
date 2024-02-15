@@ -20,17 +20,12 @@ dependencies:
   material_color_utilities: ^0.5.0
   flutter_native_splash: ^2.3.9
   shared_preferences: ^2.2.0
-  webview_flutter: ^4.7.0
   lottie: ^3.0.0
+  flutter_ota: ^0.1.4
 
 flutter:
   uses-material-design: true
 
   assets:
-    - assets/ss2k_wiki_banner.png
-    - assets/ss2kv3.png
-    - assets/shiftscreen.png
-    - assets/settingsScreen.png
-    - assets/GitHub-logo.png
-    - assets/Firmware_Loading.json
-    
+    - assets/
+

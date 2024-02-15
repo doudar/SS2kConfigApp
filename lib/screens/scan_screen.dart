@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 import '../utils/constants.dart';
 import 'main_device_screen.dart';
@@ -23,7 +22,6 @@ class _ScanScreenState extends State<ScanScreen> {
   bool _isScanning = false;
   late StreamSubscription<List<ScanResult>> _scanResultsSubscription;
   late StreamSubscription<bool> _isScanningSubscription;
-  late final WebViewController controller;
 
   @override
   void initState() {

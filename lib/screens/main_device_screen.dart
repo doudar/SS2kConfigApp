@@ -82,6 +82,22 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
             break;
           }
         }
+        for (BluetoothService s in this.bleData.services) {
+          if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {
+            this.bleData.firmwareService = s;
+            break;
+          }
+        }
+        characteristics = this.bleData.firmwareService.characteristics;
+        for (BluetoothCharacteristic c in characteristics) {
+          print(c.uuid.toString());
+          if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130005")) {
+            this.bleData.firmwareDataCharacteristic = c;
+          }
+          if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130003")) {
+            this.bleData.firmwareControlCharacteristic = c;
+          }
+        }
         this.bleData.charReceived = true;
       } catch (e) {}
     }
@@ -153,7 +169,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       onPressed: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => FirmwareUpdateScreen(),
+            builder: (context) => FirmwareUpdateScreen(device: widget.device, bleData: bleData),
             //settings: RouteSettings(name: '/UpdateFirmwareScreen'),
           ),
         );
