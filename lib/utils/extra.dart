@@ -60,7 +60,7 @@ extension Extra on BluetoothDevice {
     bool _connected = false;
     while (!_connected) {
       try {
-        await connect(mtu: 512);
+        await connect(mtu: 527);
         _connected = true;
       } catch (e) {
         sleep(Duration(milliseconds: 50));
