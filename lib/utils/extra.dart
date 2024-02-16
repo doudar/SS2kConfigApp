@@ -14,7 +14,9 @@ final Map<DeviceIdentifier, StreamControllerReemit<bool>> _dglobal = {};
 class BLEData {
   int? rssi;
   bool charReceived = false;
-
+  late BluetoothService firmwareService;
+  late BluetoothCharacteristic firmwareDataCharacteristic;
+  late BluetoothCharacteristic firmwareControlCharacteristic;
   late BluetoothCharacteristic myCharacteristic;
   BluetoothConnectionState connectionState = BluetoothConnectionState.disconnected;
   List<BluetoothService> services = [];
