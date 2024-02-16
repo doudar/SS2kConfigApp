@@ -18,7 +18,7 @@ class FirmwareUpdateScreen extends StatefulWidget {
 class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   final BleRepository bleRepo = BleRepository();
 
-  late Esp32OtaPackage esp32otaPackage;
+  late OtaPackage otaPackage;
 
   late StreamSubscription<int> progressSubscription;
 
@@ -30,7 +30,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   void initState() {
     super.initState();
-    esp32otaPackage = Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
+    otaPackage = Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
   }
 
   @override
@@ -42,8 +42,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
 
   Future<void> startFirmwareUpdate() async {
-    if (widget.device != null && esp32otaPackage != null) {
-      await esp32otaPackage.updateFirmware(
+    if (widget.device != null && otaPackage != null) {
+      await otaPackage.updateFirmware(
         widget.device!,
         1,
         widget.bleData.firmwareService,
