@@ -17,7 +17,6 @@ dependencies:
   flutter_blue_plus: ^1.31.8
   #dynamic_color: ^1.6.9
   flutter_launcher_icons: ^0.13.1
-  material_color_utilities: ^0.5.0
   flutter_native_splash: ^2.3.9
   shared_preferences: ^2.2.0
   lottie: ^3.0.0
