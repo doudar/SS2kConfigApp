@@ -17,8 +17,10 @@ class ShifterScreen extends StatefulWidget {
 
 class _ShifterScreenState extends State<ShifterScreen> {
   late Map c;
+  String _status = "Please Wait";
   String t = "Loading";
   late StreamSubscription _charSubscription;
+  late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
 
   @override
   void initState() {
@@ -30,15 +32,22 @@ class _ShifterScreenState extends State<ShifterScreen> {
   @override
   void dispose() {
     _charSubscription.cancel();
+    _connectionStateSubscription.cancel();
     super.dispose();
   }
 
   Future startSubscription() async {
-    await Future.delayed(Duration(seconds: 5));
+    await Future.delayed(Duration(seconds: 3));
     t = c["value"] ?? "Loading";
+        _connectionStateSubscription = widget.device.connectionState.listen((state) async {
+      if (mounted) {
+        state == BluetoothConnectionState.connected ? _status = "Connected" : _status = "Disconnected";
+        setState(() {});
+      }
+    });
     try {
       _charSubscription = widget.bleData.myCharacteristic.onValueReceived.listen((data) async {
-        if (t != c["value"]) {
+        if (c["vName"] == shiftVname) {
           setState(() {
             t = c["value"] ?? "Loading";
           });
@@ -55,9 +64,6 @@ class _ShifterScreenState extends State<ShifterScreen> {
       c["value"] = _t;
       writeToSS2K(widget.bleData, c);
     }
-    setState(() {
-      t = c["value"] ?? "Loading";
-    });
   }
 
   @override
@@ -84,6 +90,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
           crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisSize: MainAxisSize.max,
           children: [
+            Text(_status),
             Expanded(
               flex: 1,
               child: Padding(
