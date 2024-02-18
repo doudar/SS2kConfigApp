@@ -177,31 +177,6 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     );
   }
 
-/*
-  @override
-  Widget build(BuildContext context) {
-    return ScaffoldMessenger(
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(widget.device.platformName),
-          centerTitle: true,
-        ),
-        body: SingleChildScrollView(
-          child: Column(
-            children: <Widget>[
-              Row(children: <Widget>[
-                buildShiftMenuButton(context),
-                buildSettingsButton(context),
-                buildUpdateButton(context),
-              ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-*/
   @override
   Widget build(BuildContext context) {
     return ScaffoldMessenger(

@@ -27,7 +27,7 @@ class _ScanScreenState extends State<ScanScreen> {
   void initState() {
     super.initState();
 
-   /* controller = WebViewController()
+    /* controller = WebViewController()
       ..loadRequest(
         Uri.parse('https://github.com/doudar/SmartSpin2k/wiki/Viewing-logs-via-UDP'),
       );*/

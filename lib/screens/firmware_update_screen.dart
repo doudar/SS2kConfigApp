@@ -21,16 +21,26 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   late OtaPackage otaPackage;
 
   late StreamSubscription<int> progressSubscription;
+  int _progress = 0;
 
   bool firmwareCharReceived = false;
 
   bool updatingFirmware = false;
 
+  final int BINARY = 1;
+  final int PICKER = 2;
+  final int URL = 3;
 
+  final String URLString = "https://github.com/doudar/OTAUpdates/raw/main/firmware.bin";
   @override
   void initState() {
     super.initState();
-    otaPackage = Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
+    otaPackage =
+        Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
+    progressSubscription = otaPackage.percentageStream.listen((event) {
+      _progress = event;
+      setState(() {});
+    });
   }
 
   @override
@@ -40,17 +50,39 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     super.dispose();
   }
 
+  void startFirmwareUpdate(type) async {
+    setState(() {
+      updatingFirmware = true;
+    });
 
-  Future<void> startFirmwareUpdate() async {
-    if (widget.device != null && otaPackage != null) {
+    try {
       await otaPackage.updateFirmware(
-        widget.device!,
-        1,
+        widget.device,
+        type,
         widget.bleData.firmwareService,
         widget.bleData.firmwareDataCharacteristic,
         widget.bleData.firmwareControlCharacteristic,
         binFilePath: 'assets/firmware.bin',
+        url: URLString,
       );
+
+      if (otaPackage.firmwareupdate) {
+        // Firmware update was successful
+
+        print('Firmware update was successful');
+      } else {
+        // Firmware update failed
+
+        print('Firmware update failed');
+      }
+    } catch (e) {
+      // Handle errors during the update process
+
+      print('Error during firmware update: $e');
+    } finally {
+      setState(() {
+        updatingFirmware = false;
+      });
     }
   }
 
@@ -63,14 +95,37 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+          children: <Widget>[
+            Text(
+              'Select firmware update method:',
+              style: TextStyle(fontWeight: FontWeight.w400, fontSize: 20),
+            ),
+            Text("Don't leave this screen until the update completes"),
+            SizedBox(height: 20),
+            updatingFirmware ? Text('${_progress}%') : SizedBox(),
             if (updatingFirmware)
               CircularProgressIndicator()
             else
               ElevatedButton(
-                onPressed: startFirmwareUpdate,
-                child: Text('Start Firmware Update'),
+                onPressed: () {
+                  startFirmwareUpdate(BINARY);
+                },
+                child: Text('Use Builtin Firmware'),
               ),
+            SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: () {
+                startFirmwareUpdate(PICKER);
+              },
+              child: Text('Choose Firmware From Dialog'),
+            ),
+            SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: () {
+                startFirmwareUpdate(URL);
+              },
+              child: Text('Use Latest Firmware from Github'),
+            ),
           ],
         ),
       ),

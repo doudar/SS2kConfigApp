@@ -377,36 +377,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
           //  backgroundColor: Color.fromARGB(255, 1, 37, 244),
           //  foregroundColor: Color.fromARGB(255, 255, 255, 255)
         ),
-        //actions: [buildConnectButton(context)],
-
-        body: SingleChildScrollView(
-          child: Column(
-            children: <Widget>[
-              buildRemoteId(context),
-              ListTile(
-                leading: buildRssiTile(context),
-                title: buildConnectButton(context),
-                trailing: buildUpdateValues(context),
-                titleAlignment: ListTileTitleAlignment.center,
-              ),
-              isConnected
-                  ? Column(children: <Widget>[
-                      Row(children: <Widget>[
-                        buildRebootButton(context),
-                        buildResetButton(context),
-                        buildSaveButton(context),
-                      ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
-                      Row(children: <Widget>[
-                        buildSaveLocalButton(context),
-                        buildLoadLocalButton(context),
-                      ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
-                    ])
-                  : SizedBox(),
-              ...buildSettings(context),
-            ],
-          ),
+        body: Column(
+          mainAxisSize: MainAxisSize.max,
+          children: <Widget>[
+            buildRemoteId(context),
+            ListTile(
+              leading: buildRssiTile(context),
+              title: buildConnectButton(context),
+              trailing: buildUpdateValues(context),
+              titleAlignment: ListTileTitleAlignment.threeLine,
+            ),
+            isConnected
+                ? Column(children: <Widget>[
+                    Row(children: <Widget>[
+                      buildRebootButton(context),
+                      buildResetButton(context),
+                      buildSaveButton(context),
+                    ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
+                    Row(children: <Widget>[
+                      buildSaveLocalButton(context),
+                      buildLoadLocalButton(context),
+                    ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
+                  ])
+                : SizedBox(),
+            Divider(height: 5),
+            SizedBox(
+              height:500,
+              child: ListWheelScrollView(
+                  //child: Column(
+                    clipBehavior: Clip.antiAlias,
+                  itemExtent: 100,
+                  children: <Widget>[
+                    ...buildSettings(context),
+                  ]),
+              //),
+            ),
+          ],
         ),
       ),
     );
   }
 }
+
+              // buildRemoteId(context),
+              // ListTile(
+              //   leading: buildRssiTile(context),
+              //   title: buildConnectButton(context),
+              //   trailing: buildUpdateValues(context),
+              //   titleAlignment: ListTileTitleAlignment.center,
+              // ),
+              // isConnected
+              //     ? Column(children: <Widget>[
+              //         Row(children: <Widget>[
+              //           buildRebootButton(context),
+              //           buildResetButton(context),
+              //           buildSaveButton(context),
+              //         ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
+              //         Row(children: <Widget>[
+              //           buildSaveLocalButton(context),
+              //           buildLoadLocalButton(context),
+              //         ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
+              //       ])
+              //     : SizedBox(),

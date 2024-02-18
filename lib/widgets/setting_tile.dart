@@ -107,7 +107,7 @@ class _SettingTileState extends State<SettingTile> {
                           crossAxisAlignment: CrossAxisAlignment.center,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: <Widget>[
-                            widgetPicker(),
+                            Hero(tag: Text(c["vName"]),child: widgetPicker()),
                             Text(
                               "Settings are immediate for the current session.\nClick save on the main screen to make them persistent.",
                               textAlign: TextAlign.center,

@@ -19,8 +19,8 @@ dependencies:
   flutter_launcher_icons: ^0.13.1
   flutter_native_splash: ^2.3.9
   shared_preferences: ^2.2.0
-  lottie: ^3.0.0
   flutter_ota: ^0.1.4
+  wakelock_plus: ^1.1.4
 
 flutter:
   uses-material-design: true
