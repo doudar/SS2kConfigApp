@@ -12,8 +12,9 @@ import '../widgets/dropdown_card.dart';
 
 class SettingTile extends StatefulWidget {
   final BLEData bleData;
+  final BluetoothDevice device;
   final Map c;
-  const SettingTile({Key? key, required this.bleData, required this.c}) : super(key: key);
+  const SettingTile({Key? key, required this.bleData, required this.device,required this.c}) : super(key: key);
 
   @override
   State<SettingTile> createState() => _SettingTileState();
@@ -25,7 +26,7 @@ class _SettingTileState extends State<SettingTile> {
   @override
   void initState() {
     super.initState();
-    _lastValueSubscription = widget.bleData.myCharacteristic.lastValueStream.listen((value) {
+    _lastValueSubscription = widget.bleData.getMyCharacteristic(widget.device).lastValueStream.listen((value) {
       if (mounted) {
         setState(() {});
       }
@@ -37,16 +38,16 @@ class _SettingTileState extends State<SettingTile> {
       case "int":
       case "float":
       case "long":
-        return sliderCard(bleData: widget.bleData, c: c);
+        return sliderCard(bleData: widget.bleData, device: widget.device, c: c);
       case "string":
         if ((c["vName"] == connectedHRMVname) || (c["vName"] == connectedPWRVname)) {
-          return dropdownCard(bleData: widget.bleData, c: c);
+          return dropdownCard(bleData: widget.bleData, device: widget.device, c: c);
         }
-        return plainTextCard(bleData: widget.bleData, c: c);
+        return plainTextCard(bleData: widget.bleData, device: widget.device, c: c);
       case "bool":
-        return boolCard(bleData: widget.bleData, c: c);
+        return boolCard(bleData: widget.bleData, device: widget.device, c: c);
       default:
-        return plainTextCard(bleData: widget.bleData, c: c);
+        return plainTextCard(bleData: widget.bleData, device: widget.device, c: c);
     }
   }
 
@@ -65,7 +66,7 @@ class _SettingTileState extends State<SettingTile> {
     super.dispose();
   }
 
-  BluetoothCharacteristic get characteristic => widget.bleData.myCharacteristic;
+  BluetoothCharacteristic get characteristic => widget.bleData.getMyCharacteristic(widget.device);
   Map get c => widget.c;
 
   @override

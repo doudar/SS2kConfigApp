@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/extra.dart';
 import '../utils/customcharhelpers.dart';
+import '../widgets/device_header.dart';
 
 class ShifterScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -17,7 +18,6 @@ class ShifterScreen extends StatefulWidget {
 
 class _ShifterScreenState extends State<ShifterScreen> {
   late Map c;
-  String _status = "Please Wait";
   String t = "Loading";
   late StreamSubscription _charSubscription;
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
@@ -25,28 +25,42 @@ class _ShifterScreenState extends State<ShifterScreen> {
   @override
   void initState() {
     widget.bleData.customCharacteristic.forEach((i) => i["vName"] == shiftVname ? c = i : ());
+    widget.bleData.isReadingOrWriting.addListener(_rwListner);
     startSubscription();
     super.initState();
   }
 
   @override
   void dispose() {
-    _charSubscription.cancel();
     _connectionStateSubscription.cancel();
+    _charSubscription.cancel();
+    widget.bleData.isReadingOrWriting.removeListener(_rwListner);
     super.dispose();
   }
 
+  void _rwListner() {
+    if (mounted) {
+      setState(() {
+        t = c["value"] ?? "Loading";
+      });
+    }
+  }
+
   Future startSubscription() async {
-    await Future.delayed(Duration(seconds: 3));
     t = c["value"] ?? "Loading";
-        _connectionStateSubscription = widget.device.connectionState.listen((state) async {
+    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
       if (mounted) {
-        state == BluetoothConnectionState.connected ? _status = "Connected" : _status = "Disconnected";
+        if (state == BluetoothConnectionState.connected) {
+          widget.bleData.setupConnection(widget.device);
+          t = c["value"] ?? "Loading";
+        } else {
+          t = "Loading";
+        }
         setState(() {});
       }
     });
     try {
-      _charSubscription = widget.bleData.myCharacteristic.onValueReceived.listen((data) async {
+      _charSubscription = widget.bleData.getMyCharacteristic(widget.device).onValueReceived.listen((data) async {
         if (c["vName"] == shiftVname) {
           setState(() {
             t = c["value"] ?? "Loading";
@@ -62,7 +76,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
     if (t != "Loading") {
       String _t = (int.parse(c["value"]) + amount).toString();
       c["value"] = _t;
-      writeToSS2K(widget.bleData, c);
+      writeToSS2K(widget.bleData, widget.device, c);
     }
   }
 
@@ -90,7 +104,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
           crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisSize: MainAxisSize.max,
           children: [
-            Text(_status),
+            DeviceHeader(device: widget.device, bleData: widget.bleData, connectOnly: true),
             Expanded(
               flex: 1,
               child: Padding(
