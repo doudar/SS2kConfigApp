@@ -1,3 +1,4 @@
+import 'package:SS2kConfigApp/widgets/device_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'dart:async';
@@ -25,103 +26,66 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   void initState() {
     super.initState();
 
-    bleData.connectionStateSubscription = widget.device.connectionState.listen((state) async {
-      bleData.connectionState = state;
+    this.bleData.connectionStateSubscription = widget.device.connectionState.listen((state) async {
+      this.bleData.connectionState = state;
       if (state == BluetoothConnectionState.connected) {
-        bleData.services = []; // must rediscover services
+        this.bleData.services = []; // must rediscover services
       }
-      if (state == BluetoothConnectionState.connected && bleData.rssi == null) {
-        bleData.rssi = await widget.device.readRssi();
+      if (state == BluetoothConnectionState.connected) {
+        this.bleData.rssi.value = await widget.device.readRssi();
       }
-      if (state == BluetoothConnectionState.connected && bleData.charReceived == false) {
-        await discoverServices();
-        await _findChar();
-      }
-      if (mounted) {
-        setState(() {});
-      }
+      bleData.setupConnection(widget.device);
     });
+
+    bleData.charReceived.addListener(_crListener);
 
     bleData.isConnectingSubscription = widget.device.isConnecting.listen((value) {
-      bleData.isConnecting = value;
+      this.bleData.isConnecting = value;
       if (mounted) {
         setState(() {});
       }
     });
 
-    bleData.isDisconnectingSubscription = widget.device.isDisconnecting.listen((value) {
-      bleData.isDisconnecting = value;
+    this.bleData.isDisconnectingSubscription = widget.device.isDisconnecting.listen((value) {
+      this.bleData.isDisconnecting = value;
       if (mounted) {
         setState(() {});
       }
     });
+  }
+
+  void _crListener(){
+    updateCustomCharacter(bleData, widget.device);
   }
 
   @override
   void dispose() {
-    bleData.connectionStateSubscription.cancel();
-    bleData.isConnectingSubscription.cancel();
-    bleData.isDisconnectingSubscription.cancel();
+    this.bleData.connectionStateSubscription.cancel();
+    this.bleData.isConnectingSubscription.cancel();
+    this.bleData.isDisconnectingSubscription.cancel();
+    this.bleData.charReceived.removeListener(_crListener);
     super.dispose();
   }
 
-  Future _findChar() async {
-    while (!this.bleData.charReceived) {
-      try {
-        BluetoothService cs = this.bleData.services.first;
-        for (BluetoothService s in this.bleData.services) {
-          if (s.uuid == Guid(csUUID)) {
-            cs = s;
-            break;
-          }
-        }
-        List<BluetoothCharacteristic> characteristics = cs.characteristics;
-        for (BluetoothCharacteristic c in characteristics) {
-          if (c.uuid == Guid(ccUUID)) {
-            this.bleData.myCharacteristic = c;
-            break;
-          }
-        }
-        for (BluetoothService s in this.bleData.services) {
-          if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {
-            this.bleData.firmwareService = s;
-            break;
-          }
-        }
-        characteristics = this.bleData.firmwareService.characteristics;
-        for (BluetoothCharacteristic c in characteristics) {
-          print(c.uuid.toString());
-          if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130005")) {
-            this.bleData.firmwareDataCharacteristic = c;
-          }
-          if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130003")) {
-            this.bleData.firmwareControlCharacteristic = c;
-          }
-        }
-        this.bleData.charReceived = true;
-      } catch (e) {}
-    }
-  }
+  // Future discoverServices() async {
+  //   setState(() {
+  //     this.bleData.isReadingOrWriting.value = true;
+  //   });
 
-  Future discoverServices() async {
-    setState(() {
-      this.bleData.isReadingOrWriting.value = true;
-    });
-
-    if (widget.device.isConnected) {
-      try {
-        this.bleData.services = await widget.device.discoverServices();
-        _findChar();
-        await updateCustomCharacter(this.bleData, true);
-        //Snackbar.show(ABC.c, "Discover Services: Success", success: true);
-      } catch (e) {
-        //Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
-      }
-    }
-    setState(() {
-      this.bleData.isReadingOrWriting.value = false;
-    });
-  }
+  //   if (widget.device.isConnected) {
+  //     try {
+  //       this.bleData.services = await widget.device.discoverServices();
+  //       //findChar(this.bleData);
+  //       await updateCustomCharacter(this.bleData, widget.device,true);
+  //       //Snackbar.show(ABC.c, "Discover Services: Success", success: true);
+  //     } catch (e) {
+  //       //Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
+  //     }
+  //   }
+  //   setState(() {
+  //     this.bleData.isReadingOrWriting.value = false;
+  //   });
+  // }
 
   buildShiftMenuButton(BuildContext context) {
     return OutlinedButton(
@@ -205,6 +169,8 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
           shrinkWrap: true,
           physics: ClampingScrollPhysics(),
           children: [
+            DeviceHeader(device: widget.device, bleData: bleData, connectOnly: true),
+            SizedBox(height:50),
             Card(
               margin: EdgeInsets.all(0),
               color: Color(0xffffffff),

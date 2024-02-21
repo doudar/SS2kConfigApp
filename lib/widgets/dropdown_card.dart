@@ -8,8 +8,9 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import "../utils/customcharhelpers.dart";
 
 class dropdownCard extends StatefulWidget {
-  const dropdownCard({super.key, required this.bleData, required this.c});
+  const dropdownCard({super.key, required this.bleData, required this.device,required this.c});
   final BLEData bleData;
+  final BluetoothDevice device;
   final Map c;
   @override
   State<dropdownCard> createState() => _dropdownCardState();
@@ -78,7 +79,7 @@ class _dropdownCardState extends State<dropdownCard> {
             // This is called when the user selects an item.
             setState(() {
               widget.c["value"] = value!;
-              writeToSS2K(widget.bleData, widget.c);
+              writeToSS2K(widget.bleData, widget.device, widget.c);
             });
           },
         ),

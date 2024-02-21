@@ -9,8 +9,9 @@ import "../utils/snackbar.dart";
 import "../utils/customcharhelpers.dart";
 
 class sliderCard extends StatefulWidget {
-  const sliderCard({super.key, required this.bleData, required this.c});
+  const sliderCard({super.key, required this.bleData, required this.device, required this.c});
   final BLEData bleData;
+  final BluetoothDevice device;
   final Map c;
   @override
   State<sliderCard> createState() => _sliderCardState();
@@ -18,7 +19,7 @@ class sliderCard extends StatefulWidget {
 
 class _sliderCardState extends State<sliderCard> {
   Map get c => widget.c;
-  BluetoothCharacteristic get characteristic => widget.bleData.myCharacteristic;
+  BluetoothCharacteristic get characteristic => widget.bleData.getMyCharacteristic(widget.device);
   late double _currentSliderValue = double.parse(c["value"]);
   final controller = TextEditingController();
 
@@ -79,7 +80,7 @@ class _sliderCardState extends State<sliderCard> {
           textAlign: TextAlign.center,
           onSubmitted: (t) {
             this.verifyInput(t);
-            writeToSS2K(widget.bleData, this.c);
+            writeToSS2K(widget.bleData, widget.device, this.c);
             setState(() {});
             return widget.c["value"];
           },
@@ -103,7 +104,7 @@ class _sliderCardState extends State<sliderCard> {
               this._currentSliderValue = v;
               widget.c["value"] = this._currentSliderValue.toStringAsFixed(getPrecision(c));
               controller.text = widget.c["value"];
-              writeToSS2K(widget.bleData, this.c);
+              writeToSS2K(widget.bleData, widget.device,this.c);
             });
           },
         ),

@@ -27,11 +27,6 @@ class _ScanScreenState extends State<ScanScreen> {
   void initState() {
     super.initState();
 
-    /* controller = WebViewController()
-      ..loadRequest(
-        Uri.parse('https://github.com/doudar/SmartSpin2k/wiki/Viewing-logs-via-UDP'),
-      );*/
-
     _scanResultsSubscription = FlutterBluePlus.scanResults.listen((results) {
       _scanResults = results;
       if (mounted) {
@@ -151,13 +146,11 @@ class _ScanScreenState extends State<ScanScreen> {
         body: RefreshIndicator(
           onRefresh: onRefresh,
           child: ListView(children: <Widget>[
-            //..._buildSystemDeviceTiles(context),
             ..._buildScanResultTiles(context),
             Padding(
               padding: EdgeInsets.fromLTRB(100, 8, 100, 15),
               child: buildScanButton(context),
             ),
-            //SizedBox(height: 300, child: WebViewWidget(controller: controller)),
           ]),
         ),
       ),

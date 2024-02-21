@@ -7,8 +7,9 @@ import 'package:SS2kConfigApp/utils/extra.dart';
 import "../utils/customcharhelpers.dart";
 
 class plainTextCard extends StatefulWidget {
-  const plainTextCard({super.key, required this.bleData, required this.c});
+  const plainTextCard({super.key, required this.bleData, required this.device,required this.c});
   final BLEData bleData;
+  final BluetoothDevice device;
   final Map c;
   @override
   State<plainTextCard> createState() => _plainTextCardState();
@@ -57,7 +58,7 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        writeToSS2K(widget.bleData, this.c);
+        writeToSS2K(widget.bleData, widget.device, this.c);
         setState(() {});
         return widget.c["value"];
       },
@@ -80,7 +81,7 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        writeToSS2K(widget.bleData, this.c);
+        writeToSS2K(widget.bleData, widget.device, this.c);
         setState(() {});
         return widget.c["value"];
       },
