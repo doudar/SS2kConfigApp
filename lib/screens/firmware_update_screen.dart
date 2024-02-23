@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_ota/ota_package.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../utils/extra.dart';
+
+import '../utils/bledata.dart';
 import '../widgets/device_header.dart';
 
 class FirmwareUpdateScreen extends StatefulWidget {
@@ -21,7 +22,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   late OtaPackage otaPackage;
 
-  late StreamSubscription<int> progressSubscription;
+  StreamSubscription<int>? progressSubscription;
   int _progress = 0;
 
   bool firmwareCharReceived = false;
@@ -36,17 +37,20 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   void initState() {
     super.initState();
-    otaPackage =
-        Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
-    progressSubscription = otaPackage.percentageStream.listen((event) {
-      _progress = event;
-      setState(() {});
-    });
+    //Setup OTA only if the firmware is compatabile.
+    if (widget.bleData.configAppCompatableFirmware) {
+      otaPackage =
+          Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
+      progressSubscription = otaPackage.percentageStream.listen((event) {
+        _progress = event;
+        setState(() {});
+      });
+    }
   }
 
   @override
   void dispose() {
-    progressSubscription.cancel();
+    progressSubscription?.cancel();
 
     super.dispose();
   }
@@ -87,9 +91,47 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     }
   }
 
+  List<Widget> _buildUpdateButtons() {
+    return <Widget>[
+      Text("Don't leave this screen until the update completes"),
+      SizedBox(height: 20),
+      updatingFirmware ? Text('${_progress}%') : SizedBox(),
+      if (updatingFirmware)
+        CircularProgressIndicator()
+      else
+        ElevatedButton(
+          onPressed: () {
+            startFirmwareUpdate(BINARY);
+          },
+          child: Text('Use Builtin Firmware'),
+        ),
+      SizedBox(height: 10),
+      ElevatedButton(
+        onPressed: () {
+          startFirmwareUpdate(PICKER);
+        },
+        child: Text('Choose Firmware From Dialog'),
+      ),
+      SizedBox(height: 10),
+      ElevatedButton(
+        onPressed: () {
+          startFirmwareUpdate(URL);
+        },
+        child: Text('Use Latest Firmware from Github'),
+      ),
+    ];
+  }
+
+  List<Widget> _notBLECompatable() {
+    return <Widget>[
+      Text("This firmware isn't compatable with the configuration app. Please upgrade your firmware via HTTP"),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Color(0xffebebeb),
       appBar: AppBar(
         title: Text('Firmware Update'),
       ),
@@ -99,35 +141,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           children: <Widget>[
             DeviceHeader(device: widget.device, bleData: widget.bleData),
             SizedBox(height: 50),
-            Text(
-              'Select firmware update method:',
-              style: TextStyle(fontWeight: FontWeight.w400, fontSize: 20),
-            ),
-            Text("Don't leave this screen until the update completes"),
-            SizedBox(height: 20),
-            updatingFirmware ? Text('${_progress}%') : SizedBox(),
-            if (updatingFirmware)
-              CircularProgressIndicator()
-            else
-              ElevatedButton(
-                onPressed: () {
-                  startFirmwareUpdate(BINARY);
-                },
-                child: Text('Use Builtin Firmware'),
-              ),
-            SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: () {
-                startFirmwareUpdate(PICKER);
-              },
-              child: Text('Choose Firmware From Dialog'),
-            ),
-            SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: () {
-                startFirmwareUpdate(URL);
-              },
-              child: Text('Use Latest Firmware from Github'),
+            Column(
+              children: widget.bleData.configAppCompatableFirmware ? _buildUpdateButtons() : _notBLECompatable(),
             ),
           ],
         ),

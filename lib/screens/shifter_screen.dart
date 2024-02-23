@@ -2,9 +2,10 @@ import 'dart:async';
 import 'package:SS2kConfigApp/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../utils/extra.dart';
+
 import '../utils/customcharhelpers.dart';
 import '../widgets/device_header.dart';
+import '../utils/bledata.dart';
 
 class ShifterScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -59,16 +60,18 @@ class _ShifterScreenState extends State<ShifterScreen> {
         setState(() {});
       }
     });
-    try {
-      _charSubscription = widget.bleData.getMyCharacteristic(widget.device).onValueReceived.listen((data) async {
-        if (c["vName"] == shiftVname) {
-          setState(() {
-            t = c["value"] ?? "Loading";
-          });
-        }
-      });
-    } catch (e) {
-      print("Subscription Failed, $e");
+    if (widget.bleData.charReceived.value) {
+      try {
+        _charSubscription = widget.bleData.getMyCharacteristic(widget.device).onValueReceived.listen((data) async {
+          if (c["vName"] == shiftVname) {
+            setState(() {
+              t = c["value"] ?? "Loading";
+            });
+          }
+        });
+      } catch (e) {
+        print("Subscription Failed, $e");
+      }
     }
   }
 
@@ -84,7 +87,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   Widget build(BuildContext context) {
     return ScaffoldMessenger(
         child: Scaffold(
-      backgroundColor: Color(0xffffffff),
+      backgroundColor: Color(0xffebebeb),
       appBar: AppBar(
         centerTitle: true,
         title: Text(

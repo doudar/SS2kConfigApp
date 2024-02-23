@@ -1,7 +1,7 @@
 import 'package:SS2kConfigApp/widgets/device_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'dart:async';
+
 
 import '../screens/settings_screen.dart';
 import '../screens/shifter_screen.dart';
@@ -9,7 +9,8 @@ import '../screens/firmware_update_screen.dart';
 
 import '../utils/extra.dart';
 import '../utils/customcharhelpers.dart';
-import '../utils/constants.dart';
+
+import '../utils/bledata.dart';
 
 class MainDeviceScreen extends StatefulWidget {
   final BluetoothDevice device;

@@ -6,7 +6,8 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../widgets/setting_tile.dart';
 import '../widgets/device_header.dart';
 import '../utils/snackbar.dart';
-import '../utils/extra.dart';
+
+import '../utils/bledata.dart';
 
 class SettingsScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -30,14 +31,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() {});
       }
     });
-
+    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      widget.bleData.isReadingOrWriting.addListener(_rwListner);
+    });
   }
 
   @override
   void dispose() {
     _connectionStateSubscription.cancel();
-    widget.bleData.isReadingOrWriting.removeListener(() {});
+    widget.bleData.isReadingOrWriting.removeListener(_rwListner);
     super.dispose();
+  }
+
+  bool _refreshBlocker = true;
+
+  void _rwListner() async {
+    if(_refreshBlocker){
+      return;
+    }
+    _refreshBlocker = true;
+    if (mounted) {
+    await Future.delayed(Duration(microseconds: 500));
+    setState(() {});
+    }
+    _refreshBlocker = false;
   }
 
 //Build the settings dropdowns
@@ -63,14 +80,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         widget.bleData.customCharacteristic.forEach((c) => _newEntry(c));
       }
     }
+    _refreshBlocker = false;
     return settings;
   }
 
   @override
   Widget build(BuildContext context) {
+        _refreshBlocker = true;
     return ScaffoldMessenger(
       key: Snackbar.snackBarKeyC,
       child: Scaffold(
+        backgroundColor: Color(0xffebebeb),
         appBar: AppBar(
           title: Text(widget.device.platformName),
           centerTitle: true,

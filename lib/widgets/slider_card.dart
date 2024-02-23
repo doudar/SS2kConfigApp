@@ -1,12 +1,12 @@
-
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:SS2kConfigApp/utils/extra.dart';
 
 import "../utils/snackbar.dart";
 import "../utils/customcharhelpers.dart";
+import '../utils/bledata.dart';
 
 class sliderCard extends StatefulWidget {
   const sliderCard({super.key, required this.bleData, required this.device, required this.c});
@@ -65,7 +65,7 @@ class _sliderCardState extends State<sliderCard> {
           width: 2.0,
         ),
       ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+      child: Column(children: <Widget>[
         Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
         Text((c["value"]), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
         TextField(
@@ -86,7 +86,7 @@ class _sliderCardState extends State<sliderCard> {
           },
         ),
         const SizedBox(height: 15),
-        Slider(
+         Slider(
           min: c["min"].toDouble(),
           max: c["max"].toDouble(),
           label: this._currentSliderValue.toStringAsFixed(getPrecision(c)),
@@ -104,22 +104,15 @@ class _sliderCardState extends State<sliderCard> {
               this._currentSliderValue = v;
               widget.c["value"] = this._currentSliderValue.toStringAsFixed(getPrecision(c));
               controller.text = widget.c["value"];
-              writeToSS2K(widget.bleData, widget.device,this.c);
+              writeToSS2K(widget.bleData, widget.device, this.c);
             });
           },
         ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: <Widget>[
-            const SizedBox(width: 8),
             TextButton(
               child: const Text('BACK'),
               onPressed: () {
           Navigator.pop(context);
         },
-            ),
-            const SizedBox(width: 8),
-          ],
         ),
       ]),
     );
