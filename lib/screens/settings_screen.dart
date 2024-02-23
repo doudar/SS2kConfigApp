@@ -6,7 +6,8 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../widgets/setting_tile.dart';
 import '../widgets/device_header.dart';
 import '../utils/snackbar.dart';
-import '../utils/extra.dart';
+
+import '../utils/bledata.dart';
 
 class SettingsScreen extends StatefulWidget {
   final BluetoothDevice device;

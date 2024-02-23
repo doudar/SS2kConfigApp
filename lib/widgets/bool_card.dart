@@ -1,6 +1,7 @@
-import 'package:SS2kConfigApp/utils/extra.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import '../utils/bledata.dart';
 
 
 import "../utils/customcharhelpers.dart";
@@ -23,7 +24,9 @@ class _boolCardState extends State<boolCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+
+    return Column(
+      children: <Widget>[Card(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
         side: BorderSide(
@@ -58,6 +61,6 @@ class _boolCardState extends State<boolCard> {
           ],
         ),
       ]),
-    );
+    ),]);
   }
 }

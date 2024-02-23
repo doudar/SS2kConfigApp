@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:SS2kConfigApp/utils/extra.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../utils/snackbar.dart';
 import '../utils/constants.dart';
+import '../utils/bledata.dart';
 
 bool _subscribed = false;
 final _lastRequestStopwatch = Stopwatch();
@@ -36,6 +36,10 @@ void notify(BLEData bleData, BluetoothDevice device) {
 }
 
 void findNSave(BLEData bleData, BluetoothDevice device, Map c, String find) {
+  // Firmware that wasn't compatable with the app would reboot whenever this command was read.
+  if (!bleData.configAppCompatableFirmware && c["vName"] == saveVname) {
+    return;
+  }
   if (c["vName"] == find) {
     try {
       write(bleData, device, [0x02, int.parse(c["reference"]), 0x01]);
@@ -66,6 +70,10 @@ Future resetToDefaults(BLEData bleData, BluetoothDevice device) async {
 Future requestSettings(BLEData bleData, BluetoothDevice device) async {
   bleData.isReadingOrWriting.value = true;
   _write(Map c) {
+    // Firmware that wasn't compatable with the app would reboot whenever this command was read.
+    if (!bleData.configAppCompatableFirmware && c["vName"] == saveVname) {
+      return;
+    }
     try {
       write(bleData, device, [0x01, int.parse(c["reference"])]);
     } catch (e) {
@@ -80,6 +88,10 @@ Future requestSettings(BLEData bleData, BluetoothDevice device) async {
 //request single setting
 Future requestSetting(BLEData bleData, BluetoothDevice device, String name) async {
   _request(Map c) {
+    // Firmware that wasn't compatable with the app would reboot whenever this command was read.
+    if (!bleData.configAppCompatableFirmware && c["vName"] == saveVname) {
+      return;
+    }
     if (c["vName"] == name) {
       try {
         write(bleData, device, [0x01, int.parse(c["reference"])]);
@@ -109,8 +121,13 @@ int getPrecision(Map c) {
 }
 
 void writeToSS2K(BLEData bleData, BluetoothDevice device, Map c, {String s = ""}) {
+  //If a specific value wasn't passed, use the previously saved value
   if (s == "") {
     s = c["value"];
+  }
+  //If the value wasn't read by the firmware, don't try to set it.
+  if (s == noFirmSupport) {
+    return;
   }
 
   List<int> value = [0x02, int.parse(c["reference"])];
@@ -200,7 +217,11 @@ void decode(BLEData bleData, BluetoothDevice device) {
           switch (c["type"]) {
             case "int":
               {
-                c["value"] = data.getInt16(2, Endian.little).toString();
+                if (data.lengthInBytes < 4) {
+                  c["value"] = noFirmSupport;
+                } else {
+                  c["value"] = data.getInt16(2, Endian.little).toString();
+                }
                 break;
               }
             case "bool":

@@ -4,10 +4,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../utils/constants.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 import '../utils/customcharhelpers.dart';
+import '../utils/bledata.dart';
 
 class DeviceHeader extends StatefulWidget {
   final BluetoothDevice device;
@@ -31,11 +31,18 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       if (mounted) {
         if (widget.device.isConnected) {
           widget.bleData.rssi.value = await widget.device.readRssi();
+        }else{
+          widget.bleData.rssi.value = 0;
         }
         setState(() {});
       }
       rssiTimer = Timer.periodic(Duration(seconds: 10), (rssiTimer) async {
-        widget.bleData.rssi.value = await widget.device.readRssi();
+      if(widget.device.isConnected){
+        try {
+          widget.bleData.rssi.value = await widget.device.readRssi();
+        } catch (e) {
+          widget.bleData.rssi.value = 0;
+        }}
         setState(() {});
       });
     });
@@ -342,7 +349,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   @override
   Widget build(BuildContext context) {
     return Column(children: <Widget>[
-      widget.connectOnly ? SizedBox() : buildRssiTile(context),
       ListTile(
         leading: buildRssiTile(context),
         title: buildConnectButton(context),
