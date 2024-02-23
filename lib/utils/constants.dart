@@ -57,4 +57,4 @@ var customCharacteristicFramework = jsonDecode('''    [
 
 // the first two bytes are the opacity
 final Color activeBackgroundColor = Color(0xffc9ccf5);
-final Color deactiveBackgroundColor = Color(0xff686973);
+final Color deactiveBackgroundColor = Color.fromARGB(255, 90, 91, 100);

@@ -31,19 +31,22 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       if (mounted) {
         if (widget.device.isConnected) {
           widget.bleData.rssi.value = await widget.device.readRssi();
-        }else{
+        } else {
           widget.bleData.rssi.value = 0;
         }
         setState(() {});
       }
       rssiTimer = Timer.periodic(Duration(seconds: 10), (rssiTimer) async {
-      if(widget.device.isConnected){
-        try {
-          widget.bleData.rssi.value = await widget.device.readRssi();
-        } catch (e) {
-          widget.bleData.rssi.value = 0;
-        }}
-        setState(() {});
+        if (widget.device.isConnected) {
+          try {
+            widget.bleData.rssi.value = await widget.device.readRssi();
+          } catch (e) {
+            widget.bleData.rssi.value = 0;
+          }
+        }
+        if (mounted) {
+          setState(() {});
+        }
       });
     });
   }
@@ -51,7 +54,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   @override
   void dispose() {
     _connectionStateSubscription.cancel();
-
     rssiTimer.cancel();
 
     super.dispose();

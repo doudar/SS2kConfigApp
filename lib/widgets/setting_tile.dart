@@ -57,22 +57,33 @@ class _SettingTileState extends State<SettingTile> {
       case "int":
       case "float":
       case "long":
-        ret = sliderCard(bleData: widget.bleData, device: widget.device, c: c);
+        ret = SingleChildScrollView(
+          child: sliderCard(bleData: widget.bleData, device: widget.device, c: c),
+        );
       case "string":
         if ((c["vName"] == connectedHRMVname) || (c["vName"] == connectedPWRVname)) {
-          ret = dropdownCard(bleData: widget.bleData, device: widget.device, c: c);
+          ret = SingleChildScrollView(
+            child: dropdownCard(bleData: widget.bleData, device: widget.device, c: c),
+          );
         }
-        ret = plainTextCard(bleData: widget.bleData, device: widget.device, c: c);
+        ret = SingleChildScrollView(
+          child: plainTextCard(bleData: widget.bleData, device: widget.device, c: c),
+        );
       case "bool":
-        ret = boolCard(bleData: widget.bleData, device: widget.device, c: c);
+        ret = SingleChildScrollView(
+          child: boolCard(bleData: widget.bleData, device: widget.device, c: c),
+        );
       default:
-        ret = plainTextCard(bleData: widget.bleData, device: widget.device, c: c);
+        ret = SingleChildScrollView(
+          child: plainTextCard(bleData: widget.bleData, device: widget.device, c: c),
+        );
     }
 
     return Card(
+      color: Colors.black12,
       child: Column(
         children: <Widget>[
-          Text(c["textDescription"]),
+          Text(c["textDescription"], style: TextStyle(color: Colors.white)),
           SizedBox(height: 50),
           Center(
             child: Hero(
@@ -83,10 +94,11 @@ class _SettingTileState extends State<SettingTile> {
                   type: MaterialType.transparency,
                 )),
           ),
+          SizedBox(height: 50),
           Text(
-            "Settings are immediate for the current session.\nClick save on the main screen to make them persistent.",
-            textAlign: TextAlign.center,
-          )
+              "Settings are immediate for the current session.\nClick save on the main screen to make them persistent.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white)),
         ],
         crossAxisAlignment: CrossAxisAlignment.center,
         mainAxisAlignment: MainAxisAlignment.center,
@@ -113,6 +125,7 @@ class _SettingTileState extends State<SettingTile> {
   Widget build(BuildContext context) {
     SizedBox(height: 10);
     return Material(
+      color: Color(0xffebebeb),
       child: Hero(
         tag: c["vName"],
         //flightShuttleBuilder: _flightShuttleBuilder,
@@ -135,18 +148,18 @@ class _SettingTileState extends State<SettingTile> {
                   Icon(Icons.edit_note_sharp),
                 ],
               ),
-              tileColor: (c["value"] == noFirmSupport) ? deactiveBackgroundColor : null,
+              tileColor: (c["value"] == noFirmSupport) ? deactiveBackgroundColor : Colors.black12,
               onTap: () {
                 if (c["value"] == noFirmSupport) {
                 } else {
                   Navigator.push(
                     context,
-                    MaterialPageRoute<Widget>(builder: (BuildContext context) {
-                      return Scaffold(
+                    fadeRoute(
+                      Scaffold(
                         appBar: AppBar(title: const Text('Edit Setting')),
                         body: Center(child: widgetPicker()),
-                      );
-                    }),
+                      ),
+                    ),
                   );
                 }
               },
@@ -156,4 +169,16 @@ class _SettingTileState extends State<SettingTile> {
       ),
     );
   }
+}
+
+Route fadeRoute(Widget page) {
+  return PageRouteBuilder(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return FadeTransition(
+        opacity: animation,
+        child: child,
+      );
+    },
+  );
 }

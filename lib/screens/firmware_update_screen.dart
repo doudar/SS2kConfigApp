@@ -131,6 +131,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Color(0xffebebeb),
       appBar: AppBar(
         title: Text('Firmware Update'),
       ),

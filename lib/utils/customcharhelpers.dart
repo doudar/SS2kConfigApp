@@ -12,7 +12,6 @@ bool _subscribed = false;
 final _lastRequestStopwatch = Stopwatch();
 
 Future updateCustomCharacter(BLEData bleData, BluetoothDevice device) async {
-  bleData.isReadingOrWriting.value = true;
   if (!bleData.getMyCharacteristic(device).isNotifying) notify(bleData, device);
   if (!_subscribed) decode(bleData, device);
   if (!_lastRequestStopwatch.isRunning) {

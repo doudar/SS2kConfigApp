@@ -60,16 +60,18 @@ class _ShifterScreenState extends State<ShifterScreen> {
         setState(() {});
       }
     });
-    try {
-      _charSubscription = widget.bleData.getMyCharacteristic(widget.device).onValueReceived.listen((data) async {
-        if (c["vName"] == shiftVname) {
-          setState(() {
-            t = c["value"] ?? "Loading";
-          });
-        }
-      });
-    } catch (e) {
-      print("Subscription Failed, $e");
+    if (widget.bleData.charReceived.value) {
+      try {
+        _charSubscription = widget.bleData.getMyCharacteristic(widget.device).onValueReceived.listen((data) async {
+          if (c["vName"] == shiftVname) {
+            setState(() {
+              t = c["value"] ?? "Loading";
+            });
+          }
+        });
+      } catch (e) {
+        print("Subscription Failed, $e");
+      }
     }
   }
 
@@ -85,7 +87,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   Widget build(BuildContext context) {
     return ScaffoldMessenger(
         child: Scaffold(
-      backgroundColor: Color(0xffffffff),
+      backgroundColor: Color(0xffebebeb),
       appBar: AppBar(
         centerTitle: true,
         title: Text(
