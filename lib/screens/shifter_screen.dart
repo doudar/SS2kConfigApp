@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:SS2kConfigApp/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../utils/customcharhelpers.dart';
 import '../widgets/device_header.dart';
@@ -36,6 +37,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
     _connectionStateSubscription.cancel();
     _charSubscription.cancel();
     widget.bleData.isReadingOrWriting.removeListener(_rwListner);
+    WakelockPlus.disable();
     super.dispose();
   }
 
@@ -81,6 +83,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
       c["value"] = _t;
       writeToSS2K(widget.bleData, widget.device, c);
     }
+    WakelockPlus.enable();
   }
 
   @override

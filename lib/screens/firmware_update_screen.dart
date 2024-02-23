@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_ota/ota_package.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../utils/bledata.dart';
 import '../widgets/device_header.dart';
@@ -51,7 +52,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   void dispose() {
     progressSubscription?.cancel();
-
+    WakelockPlus.disable();
     super.dispose();
   }
 
@@ -96,18 +97,19 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       Text("Don't leave this screen until the update completes"),
       SizedBox(height: 20),
       updatingFirmware ? Text('${_progress}%') : SizedBox(),
-      if (updatingFirmware)
-        CircularProgressIndicator()
-      else
-        ElevatedButton(
-          onPressed: () {
-            startFirmwareUpdate(BINARY);
-          },
-          child: Text('Use Builtin Firmware'),
-        ),
+      updatingFirmware
+          ? CircularProgressIndicator()
+          : Column(children: <Widget>[ElevatedButton(
+              onPressed: () {
+                WakelockPlus.enable();
+                startFirmwareUpdate(BINARY);
+              },
+              child: Text('Use Builtin Firmware'),
+            ),
       SizedBox(height: 10),
       ElevatedButton(
         onPressed: () {
+          WakelockPlus.enable();
           startFirmwareUpdate(PICKER);
         },
         child: Text('Choose Firmware From Dialog'),
@@ -115,10 +117,11 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       SizedBox(height: 10),
       ElevatedButton(
         onPressed: () {
+          WakelockPlus.enable();
           startFirmwareUpdate(URL);
         },
         child: Text('Use Latest Firmware from Github'),
-      ),
+      ),],)
     ];
   }
 
