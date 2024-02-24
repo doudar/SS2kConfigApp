@@ -98,7 +98,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       SizedBox(height: 20),
       updatingFirmware ? Text('${_progress}%') : SizedBox(),
       updatingFirmware
-          ? CircularProgressIndicator()
+          ? CircularProgressIndicator(value: _progress.toDouble())
           : Column(children: <Widget>[ElevatedButton(
               onPressed: () {
                 WakelockPlus.enable();
