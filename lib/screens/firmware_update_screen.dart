@@ -1,4 +1,10 @@
-///File download from FlutterViz- Drag and drop a tools. For more details visit https://flutterviz.io/
+/*
+ * Copyright (C) 2020  Anthony Doud
+ * All rights reserved
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
+
 import 'dart:async';
 import 'dart:io' as io;
 import 'package:flutter/material.dart';
