@@ -1,6 +1,7 @@
 ///File download from FlutterViz- Drag and drop a tools. For more details visit https://flutterviz.io/
 import 'dart:async';
 import 'dart:io' as io;
+import 'dart:html';
 import 'package:flutter/material.dart';
 import 'package:flutter_ota/ota_package.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
