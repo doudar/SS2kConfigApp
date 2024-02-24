@@ -14,17 +14,17 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v2
         with:
-          java-version: '11' # Specify Java version here
-          distribution: 'adopt' # Choose your preferred Java distribution
+          java-version: '17'
+          distribution: 'adopt'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v1
         with:
-          flutter-version: '3.x' # Specify the Flutter version you need
+          flutter-version: '3.x'
 
       - name: Get the date
-        id: version
-        run: echo "::set-output name=date::$(date +'%y.%m.%d')"
+        run: echo "date=$(date +'%y.%m.%d')" >> $GITHUB_OUTPUT
+        shell: bash
 
       - name: Build Android APK
         run: flutter build apk
@@ -37,7 +37,7 @@ jobs:
 
       - name: Archive Applications
         run: |
-          zip -r build_outputs_${{ steps.version.outputs.date }}.zip build/app/outputs/flutter-apk/app-release.apk build/ios/iphoneos build/macos/Build/Products/Release
+          zip -r build_outputs_${{ env.date }}.zip build/app/outputs/flutter-apk/app-release.apk build/ios/iphoneos build/macos/Build/Products/Release
 
       - name: Create Release
         id: create_release
@@ -45,8 +45,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.version.outputs.date }}
-          release_name: Release ${{ steps.version.outputs.date }}
+          tag_name: ${{ env.date }}
+          release_name: Release ${{ env.date }}
           draft: false
           prerelease: false
 
@@ -56,6 +56,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./build_outputs_${{ steps.version.outputs.date }}.zip
-          asset_name: build_outputs_${{ steps.version.outputs.date }}.zip
+          asset_path: ./build_outputs_${{ env.date }}.zip
+          asset_name: build_outputs_${{ env.date }}.zip
           asset_content_type: application/zip
