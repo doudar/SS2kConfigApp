@@ -1,4 +1,4 @@
-name: Build Applications
+name: Build and Release Applications
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - develop
 
 jobs:
-  build:
+  build-and-release:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v2
@@ -24,29 +24,39 @@ jobs:
           flutter doctor
 
       - name: Build Android APK
-        run: |
-          flutter build apk
+        run: flutter build apk
 
       - name: Build iOS App
-        run: |
-          flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign
 
       - name: Build macOS App
-        run: |
-          flutter build macos --release
-
-      - name: Archive Applications
-        run: |
-          zip -r build_outputs_${{ steps.version.outputs.date }}.zip build/app/outputs/flutter-apk/app-release.apk build/ios/iphoneos build/macos/Build/Products/Release
-        env:
-          version_tag: ${{ steps.version.outputs.date }}
+        run: flutter build macos --release
 
       - name: Get the date
         id: version
         run: echo "::set-output name=date::$(date +'%y.%m.%d')"
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v2
+      - name: Archive Applications
+        run: |
+          zip -r build_outputs_${{ steps.version.outputs.date }}.zip build/app/outputs/flutter-apk/app-release.apk build/ios/iphoneos build/macos/Build/Products/Release
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: app-builds-${{ steps.version.outputs.date }}
-          path: build_outputs_${{ steps.version.outputs.date }}.zip
+          tag_name: ${{ steps.version.outputs.date }}
+          release_name: Release ${{ steps.version.outputs.date }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build_outputs_${{ steps.version.outputs.date }}.zip
+          asset_name: build_outputs_${{ steps.version.outputs.date }}.zip
+          asset_content_type: application/zip
