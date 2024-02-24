@@ -11,6 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Setup Java
+        uses: actions/setup-java@v2
+        with:
+          java-version: '11' # Specify Java version here
+          distribution: 'adopt' # Choose your preferred Java distribution
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v1
         with:
