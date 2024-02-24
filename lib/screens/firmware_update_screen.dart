@@ -79,19 +79,19 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         url: URLString,
       );
 
-      if (otaPackage.firmwareupdate) {
-        // Firmware update was successful
+      //   if (otaPackage.firmwareupdate) {
+      //     // Firmware update was successful
 
-        print('Firmware update was successful');
-      } else {
-        // Firmware update failed
+      //     print('Firmware update was successful');
+      //   } else {
+      //     // Firmware update failed
 
-        print('Firmware update failed');
-      }
-    } catch (e) {
-      // Handle errors during the update process
+      //     print('Firmware update failed');
+      //   }
+      // } catch (e) {
+      //   // Handle errors during the update process
 
-      print('Error during firmware update: $e');
+      // print('Error during firmware update: $e');
     } finally {
       setState(() {
         updatingFirmware = false;
