@@ -24,12 +24,14 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>We need BT access because it&apos;s a BT App.</string>
+	<string>We need BT access because it's a BT App.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>We need BT access because it&apos;s a BT App.</string>
+	<string>We need BT access because it's a BT App.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>We need access in order to store and upload firmware to our device.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
@@ -38,6 +40,8 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<key>UIStatusBarHidden</key>
+	<false/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -53,7 +57,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
-	<key>UIStatusBarHidden</key>
-	<false/>
 </dict>
 </plist>
