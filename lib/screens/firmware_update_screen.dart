@@ -1,5 +1,6 @@
 ///File download from FlutterViz- Drag and drop a tools. For more details visit https://flutterviz.io/
 import 'dart:async';
+import 'dart:io' as io;
 import 'package:flutter/material.dart';
 import 'package:flutter_ota/ota_package.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -98,30 +99,36 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       SizedBox(height: 20),
       updatingFirmware ? Text('${_progress}%') : SizedBox(),
       updatingFirmware
-          ? CircularProgressIndicator(value: _progress.toDouble())
-          : Column(children: <Widget>[ElevatedButton(
-              onPressed: () {
-                WakelockPlus.enable();
-                startFirmwareUpdate(BINARY);
-              },
-              child: Text('Use Builtin Firmware'),
-            ),
-      SizedBox(height: 10),
-      ElevatedButton(
-        onPressed: () {
-          WakelockPlus.enable();
-          startFirmwareUpdate(PICKER);
-        },
-        child: Text('Choose Firmware From Dialog'),
-      ),
-      SizedBox(height: 10),
-      ElevatedButton(
-        onPressed: () {
-          WakelockPlus.enable();
-          startFirmwareUpdate(URL);
-        },
-        child: Text('Use Latest Firmware from Github'),
-      ),],)
+          ? CircularProgressIndicator(value: _progress.toDouble() / 100)
+          : Column(
+              children: <Widget>[
+                ElevatedButton(
+                  onPressed: () {
+                    WakelockPlus.enable();
+                    startFirmwareUpdate(BINARY);
+                  },
+                  child: Text('Use App Bundled Firmware'),
+                ),
+                SizedBox(height: 10),
+                io.Platform.isMacOS
+                    ? SizedBox() : ElevatedButton(
+                        onPressed: () {
+                          WakelockPlus.enable();
+                          startFirmwareUpdate(PICKER);
+                        },
+                        child: Text('Choose Firmware From Dialog'),
+                      ),
+                    
+                SizedBox(height: 10),
+                ElevatedButton(
+                  onPressed: () {
+                    WakelockPlus.enable();
+                    startFirmwareUpdate(URL);
+                  },
+                  child: Text('Use Latest Firmware from Github'),
+                ),
+              ],
+            )
     ];
   }
 
@@ -142,7 +149,11 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.start,
           children: <Widget>[
-            DeviceHeader(device: widget.device, bleData: widget.bleData),
+            DeviceHeader(
+              device: widget.device,
+              bleData: widget.bleData,
+              connectOnly: true,
+            ),
             SizedBox(height: 50),
             Column(
               children: widget.bleData.configAppCompatableFirmware ? _buildUpdateButtons() : _notBLECompatable(),

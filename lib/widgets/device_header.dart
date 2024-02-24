@@ -370,6 +370,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
               ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
             ])
           : SizedBox(),
+      
       Divider(height: 5),
     ]);
   }

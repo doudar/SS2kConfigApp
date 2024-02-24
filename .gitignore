@@ -45,3 +45,37 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 pubspec.lock
+
+# Dependency directories
+/android/.gradle/
+/ios/Flutter/.symlinks/
+/ios/Pods/
+/macos/Pods/
+
+# Build output directories
+/build/
+/ios/Flutter/Flutter.framework/
+/ios/Flutter/Flutter.podspec
+/macos/Flutter/Flutter.framework/
+/macos/Flutter/Flutter.podspec
+
+# IDE-specific settings and directories
+/.idea/
+/ios/.symlinks/
+/macos/.symlinks/
+
+# Temporary files
+*.swp
+*.lock
+.DS_Store
+
+# Platform-specific files that should not be tracked
+/ios/Flutter/App.framework
+/ios/Flutter/Flutter.framework
+/macos/Flutter/Flutter.framework
+
+# Local configuration files
+/android/key.properties
+
+# Generated code files
+/lib/generated_plugin_registrant.dart
