@@ -1,9 +1,16 @@
+/*
+ * Copyright (C) 2020  Anthony Doud
+ * All rights reserved
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
+
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
 import '../utils/customcharhelpers.dart';
-import '../utils/constants.dart'; // Make sure this import path is correct for your project
+import '../utils/constants.dart'; 
 
 class DropdownCard extends StatefulWidget {
   const DropdownCard({

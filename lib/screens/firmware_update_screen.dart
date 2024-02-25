@@ -225,19 +225,17 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                         child: Text(textAlign: TextAlign.center, 'Choose Firmware From Dialog'),
                       ),
                 SizedBox(height: 10),
-                io.Platform.isMacOS
-                    ? SizedBox()
-                    : ElevatedButton(
-                        onPressed: () {
-                          WakelockPlus.enable();
-                          startFirmwareUpdate(URL);
-                        },
-                        child: Text(
-                          textAlign: TextAlign.center,
-                          'Use Latest Firmware from Github\n${_githubFirmwareVersion}',
-                          style: TextStyle(color: _githubVersionColor),
-                        ),
-                      ),
+                ElevatedButton(
+                  onPressed: () {
+                    WakelockPlus.enable();
+                    startFirmwareUpdate(URL);
+                  },
+                  child: Text(
+                    textAlign: TextAlign.center,
+                    'Use Latest Firmware from Github\n${_githubFirmwareVersion}',
+                    style: TextStyle(color: _githubVersionColor),
+                  ),
+                ),
               ],
             )
     ];
