@@ -69,12 +69,11 @@ class _SettingTileState extends State<SettingTile> {
       case "string":
         if ((c["vName"] == connectedHRMVname) || (c["vName"] == connectedPWRVname)) {
           ret = SingleChildScrollView(
-            child: dropdownCard(bleData: widget.bleData, device: widget.device, c: c),
+            child: DropdownCard(bleData: widget.bleData, device: widget.device, c: c),
           );
-        }
-        ret = SingleChildScrollView(
+        } else {ret = SingleChildScrollView(
           child: plainTextCard(bleData: widget.bleData, device: widget.device, c: c),
-        );
+        );}
       case "bool":
         ret = SingleChildScrollView(
           child: boolCard(bleData: widget.bleData, device: widget.device, c: c),
