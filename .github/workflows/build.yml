@@ -67,19 +67,19 @@ jobs:
 
       - name: Create artifacts
         run: |
-          zip -r build_outputs_${{ needs.prepare.outputs.version }}.zip build/app/outputs/flutter-apk/app-release.apk build/ios/iphoneos build/macos/Build/Products/Release
+          mkdir -p artifacts
+          zip -r artifacts/build_outputs_${{ needs.prepare.outputs.version }}.zip build/app/outputs/flutter-apk/app-release.apk build/ios/iphoneos build/macos/Build/Products/Release
+          
       - name: Archive
         uses: actions/upload-artifact@v4
         with:
           name: all-artifacts
-          path: SmartSpin2kConfigApp-${{ needs.prepare.outputs.version  }}.bin.zip
-      - name: Download Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: all-artifacts
+          path: artifacts/
+          
       - name: Get tag info
         id: tag_info
         run: echo ::set-output name=SOURCE_TAG::${{ needs.prepare.outputs.version }}
+        
       - name: Create release
         uses: softprops/action-gh-release@v1
         env:
@@ -91,5 +91,4 @@ jobs:
           prerelease: false
           generate_release_notes: true
           body: ${{ github.event.head_commit.message }}
-          files: |
-            SmartSpin2kConfigApp-${{ needs.prepare.outputs.version  }}.bin.zip
+          files: artifacts/build_outputs_${{ needs.prepare.outputs.version }}.zip
