@@ -29,6 +29,7 @@ String defaultDevices =
 //Using JSON because it's easier to input the data.
 //These are a bit mixed up so they are built in a preferred order so most used settings are on top
 var customCharacteristicFramework = jsonDecode('''    [
+{"vName": "BLE_firmwareVer          ", "reference": "0x25", "isSetting": false, "type":"string",  "humanReadableName":"Firmware Version", "min":0, "max":2000,          "textDescription":"The current loaded firmware."},
 {"vName": "BLE_connectedPowerMeter  ", "reference": "0x15", "isSetting": true,  "type":"string",  "humanReadableName":"Saved Power Meter", "min":0, "max":2000,         "textDescription":"Select your Power Meter from the list below"},
 {"vName": "BLE_connectedHeartMonitor", "reference": "0x16", "isSetting": true,  "type":"string",  "humanReadableName":"Saved HRM", "min":0, "max":2000,                 "textDescription":"Select your Heart Rate Monitor from the list below"},
 {"vName": "BLE_foundDevices         ", "reference": "0x14", "isSetting": false, "type":"string",  "humanReadableName":"Found Devices", "min":0, "max":2000,             "textDescription":"The following devices have been found"},
@@ -64,8 +65,7 @@ var customCharacteristicFramework = jsonDecode('''    [
 {"vName": "BLE_minBrakeWatts        ", "reference": "0x21", "isSetting": true,  "type":"int"  ,  "humanReadableName":"Min Brake Watts", "min":0, "max":100,             "textDescription":"Minimum amount of resistance you can pedal without hitting the low limit stop on your bike."},
 {"vName": "BLE_maxBrakeWatts        ", "reference": "0x22", "isSetting": true,  "type":"int"  ,  "humanReadableName":"Min Brake Watts", "min":0, "max":2500,            "textDescription":"Maximum amount of resistance you can pedal without hitting the high limit stop on your bike."},
 {"vName": "BLE_restartBLE           ", "reference": "0x23", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reboot SmartSpin2k", "min":0, "max":1,           "textDescription":"Disconnect the BLE devices (scan will then happen along with reconnect)"},
-{"vName": "BLE_scanBLE              ", "reference": "0x24", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reboot SmartSpin2k", "min":0, "max":1,           "textDescription":"Scan for BLE devices. Scanning is automatic (not needed to be used) unless all devices are connected."},
-{"vName": "BLE_firmwareVer          ", "reference": "0x25", "isSetting": false, "type":"string",  "humanReadableName":"Firmware Version", "min":0, "max":2000,          "textDescription":"The current loaded firmware."}
+{"vName": "BLE_scanBLE              ", "reference": "0x24", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reboot SmartSpin2k", "min":0, "max":1,           "textDescription":"Scan for BLE devices. Scanning is automatic (not needed to be used) unless all devices are connected."}
 ]''');
 
 // the first two bytes are the opacity

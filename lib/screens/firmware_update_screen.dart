@@ -31,13 +31,16 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   final BleRepository bleRepo = BleRepository();
   String _githubFirmwareVersion = '';
   String _builtinFirmwareVersion = '';
-  Color _githubVersionColor = Colors.black;
-  Color _builtinVersionColor = Colors.black;
+  Color _githubVersionColor = Color.fromARGB(255, 242, 0, 255);
+  Color _builtinVersionColor = Color.fromARGB(255, 242, 0, 255);
+  Timer _loadingTimer = Timer.periodic(Duration(seconds: 30), (_loadingTimer) {});
 
   late OtaPackage otaPackage;
 
   StreamSubscription<int>? progressSubscription;
+  StreamSubscription<bool>? charSubscription;
   double _progress = 0;
+  bool _loaded = false;
   DateTime? startTime;
   String timeRemaining = 'Calculating...';
 
@@ -55,8 +58,45 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     super.initState();
     _fetchGithubFirmwareVersion();
     _fetchBuiltinFirmwareVersion();
-    //Setup OTA only if the firmware is compatabile.
-    if (widget.bleData.configAppCompatableFirmware) {
+    widget.bleData.charReceived.addListener(_charListner);
+    _loadingTimer = Timer.periodic(Duration(microseconds: 100), (_fwCheck) {
+      if (widget.bleData.firmwareVersion == "") {
+        return;
+      } else {
+        _loaded = true;
+        setState(() {
+          _builtinVersionColor =
+              _isNewerVersion(_builtinFirmwareVersion, widget.bleData.firmwareVersion) ? Colors.green : Colors.red;
+          _githubVersionColor =
+              _isNewerVersion(_githubFirmwareVersion, widget.bleData.firmwareVersion) ? Colors.green : Colors.red;
+        });
+        _fwCheck.cancel();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    progressSubscription?.cancel();
+    widget.bleData.charReceived.removeListener(_charListner);
+    WakelockPlus.disable();
+    super.dispose();
+  }
+
+  Future<void> _charListner() async {
+    if (widget.bleData.charReceived.value) {
+      await _progressStreamSubscription();
+      await _fetchGithubFirmwareVersion();
+      await _fetchBuiltinFirmwareVersion();
+      if (mounted) {
+        setState(() {});
+      }
+    }
+    progressSubscription?.cancel;
+  }
+
+  Future<void> _progressStreamSubscription() async {
+    if (widget.bleData.charReceived.value) {
       otaPackage =
           Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
       progressSubscription = otaPackage.percentageStream.listen((event) {
@@ -68,19 +108,14 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    progressSubscription?.cancel();
-    WakelockPlus.disable();
-    super.dispose();
-  }
-
   Future<void> _fetchBuiltinFirmwareVersion() async {
     final builtinVersion = await rootBundle.loadString('assets/version.txt');
     setState(() {
       _builtinFirmwareVersion = builtinVersion.trim();
       _builtinVersionColor =
           _isNewerVersion(_builtinFirmwareVersion, widget.bleData.firmwareVersion) ? Colors.green : Colors.red;
+      _builtinVersionColor =
+          (widget.bleData.firmwareVersion == "") ? Color.fromARGB(255, 242, 0, 255) : _builtinVersionColor;
     });
   }
 
@@ -93,6 +128,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         // Assuming widget.bleData.firmwareVersion is in 'major.minor.patch' format
         _githubVersionColor =
             _isNewerVersion(githubVersion, widget.bleData.firmwareVersion) ? Colors.green : Colors.red;
+        _githubVersionColor =
+            (widget.bleData.firmwareVersion == "") ? Color.fromARGB(255, 242, 0, 255) : _githubVersionColor;
       });
     } else {
       // Handle HTTP request error...
@@ -243,8 +280,41 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   List<Widget> _notBLECompatable() {
     return <Widget>[
-      Text("This firmware isn't compatable with the configuration app. Please upgrade your firmware via HTTP"),
+      _loaded
+          ? Text("This firmware isn't compatable with the configuration app. Please upgrade your firmware via HTTP")
+          : Text("Loading....Please Wait"),
     ];
+  }
+
+  Widget _ledgend() {
+    return Column(
+      children: <Widget>[
+        SizedBox(
+          height: 30,
+        ),
+        _loaded ? SizedBox() : Text("Determining Firmware Versions. Please Wait..."),
+        _loaded ? Text("Color Coding Ledgend:") : CircularProgressIndicator(),
+        SizedBox(
+          height: 10,
+        ),
+        _loaded
+            ? Text(
+                "Firmware is NEWER than current.",
+                style: TextStyle(color: Colors.green),
+              )
+            : SizedBox(),
+        Text(
+          "Firmware version is UNKNOWN.",
+          style: TextStyle(color: Color.fromARGB(255, 242, 0, 255)),
+        ),
+        _loaded
+            ? Text(
+                "Firmware is OLDER than current.",
+                style: TextStyle(color: Colors.red),
+              )
+            : SizedBox(),
+      ],
+    );
   }
 
   @override
@@ -267,6 +337,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
             Column(
               children: widget.bleData.configAppCompatableFirmware ? _buildUpdateButtons() : _notBLECompatable(),
             ),
+            _ledgend(),
           ],
         ),
       ),

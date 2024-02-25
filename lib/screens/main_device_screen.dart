@@ -9,7 +9,6 @@ import 'package:SS2kConfigApp/widgets/device_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-
 import '../screens/settings_screen.dart';
 import '../screens/shifter_screen.dart';
 import '../screens/firmware_update_screen.dart';
@@ -62,7 +61,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     });
   }
 
-  void _crListener(){
+  void _crListener() {
     updateCustomCharacter(bleData, widget.device);
   }
 
@@ -178,7 +177,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
           physics: ClampingScrollPhysics(),
           children: [
             DeviceHeader(device: widget.device, bleData: bleData, connectOnly: true),
-            SizedBox(height:50),
+            SizedBox(height: 50),
             Card(
               margin: EdgeInsets.all(0),
               color: Color(0xffffffff),
@@ -211,16 +210,16 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                     child: Padding(
                       padding: EdgeInsets.all(8),
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.max,
                         children: [
-                          buildShiftMenuButton(context),
+                          Align(
+                            child: buildShiftMenuButton(context),
+                            alignment: Alignment.topRight,
+                          ),
                           Padding(
                             padding: EdgeInsets.fromLTRB(0, 8, 0, 0),
                             child: Text(
                               "Use the buttons on the screen to shift.",
-                              textAlign: TextAlign.start,
+                              textAlign: TextAlign.end,
                               maxLines: 2,
                               overflow: TextOverflow.clip,
                               style: TextStyle(
@@ -285,16 +284,16 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                     child: Padding(
                       padding: EdgeInsets.all(8),
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.max,
                         children: [
-                          buildSettingsButton(context),
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(0, 8, 0, 0),
-                            child: Text(
+                          Align(
+                            child: buildSettingsButton(context),
+                            alignment: Alignment.topRight,
+                          ),
+                          
+                    
+                            Text(
                               "Pair devices, setup WiFi, and advanced settings.",
-                              textAlign: TextAlign.start,
+                              textAlign: TextAlign.end,
                               maxLines: 2,
                               overflow: TextOverflow.clip,
                               style: TextStyle(
@@ -304,7 +303,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                                 color: Color(0xff000000),
                               ),
                             ),
-                          ),
+                        
                         ],
                       ),
                     ),
@@ -325,47 +324,30 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.max,
                 children: [
-                  ClipRRect(
+                 Padding(padding: EdgeInsets.fromLTRB(0, 30, 0, 0),child:ClipRRect(
                     borderRadius: BorderRadius.only(topLeft: Radius.circular(12.0), bottomLeft: Radius.circular(12.0)),
                     child:
-
-                        ///***If you have exported images you must have to copy those images in assets/images directory.
                         Image(
                       image: AssetImage(
                         'assets/GitHub-logo.png',
                       ),
-                      height: 130,
+                      // height: 130,
                       width: 100,
                       fit: BoxFit.cover,
                     ),
-                  ),
+                  ),),SizedBox(height:130, width:1),
                   Expanded(
                     flex: 1,
                     child: Padding(
                       padding: EdgeInsets.all(8),
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.max,
                         children: [
-                          buildUpdateButton(context),
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(0, 4, 0, 0),
-                            child: Text(
-                              "",
-                              textAlign: TextAlign.start,
-                              maxLines: 1,
-                              overflow: TextOverflow.clip,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w400,
-                                fontStyle: FontStyle.normal,
-                                fontSize: 12,
-                                color: Color(0xff7a7a7a),
-                              ),
-                            ),
+                          Align(
+                            child: buildUpdateButton(context),
+                            alignment: Alignment.topRight,
                           ),
                           Text(
-                            "Update your device to the latest firmware from GitHub",
+                            "Update your device to the latest firmware.",
                             textAlign: TextAlign.start,
                             maxLines: 3,
                             overflow: TextOverflow.clip,
@@ -374,20 +356,6 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                               fontStyle: FontStyle.normal,
                               fontSize: 11,
                               color: Color(0xff000000),
-                            ),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(0, 8, 0, 0),
-                            child: Text(
-                              "",
-                              textAlign: TextAlign.start,
-                              overflow: TextOverflow.clip,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w400,
-                                fontStyle: FontStyle.normal,
-                                fontSize: 11,
-                                color: Color(0xff000000),
-                              ),
                             ),
                           ),
                         ],
