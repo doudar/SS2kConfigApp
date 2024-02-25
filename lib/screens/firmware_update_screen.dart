@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_ota/ota_package.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:http/http.dart' as http;
+import 'package:flutter/services.dart' show rootBundle;
 
 import '../utils/bledata.dart';
 import '../widgets/device_header.dart';
@@ -27,6 +29,10 @@ class FirmwareUpdateScreen extends StatefulWidget {
 
 class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   final BleRepository bleRepo = BleRepository();
+  String _githubFirmwareVersion = '';
+  String _builtinFirmwareVersion = '';
+  Color _githubVersionColor = Colors.black;
+  Color _builtinVersionColor = Colors.black;
 
   late OtaPackage otaPackage;
 
@@ -47,6 +53,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   void initState() {
     super.initState();
+    _fetchGithubFirmwareVersion();
+    _fetchBuiltinFirmwareVersion();
     //Setup OTA only if the firmware is compatabile.
     if (widget.bleData.configAppCompatableFirmware) {
       otaPackage =
@@ -65,6 +73,60 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     progressSubscription?.cancel();
     WakelockPlus.disable();
     super.dispose();
+  }
+
+  Future<void> _fetchBuiltinFirmwareVersion() async {
+    final builtinVersion = await rootBundle.loadString('assets/version.txt');
+    setState(() {
+      _builtinFirmwareVersion = builtinVersion.trim();
+      _builtinVersionColor =
+          _isNewerVersion(_builtinFirmwareVersion, widget.bleData.firmwareVersion) ? Colors.green : Colors.red;
+    });
+  }
+
+  Future<void> _fetchGithubFirmwareVersion() async {
+    final response = await http.get(Uri.parse('https://raw.githubusercontent.com/doudar/OTAUpdates/main/version.txt'));
+    if (response.statusCode == 200) {
+      final githubVersion = response.body.trim();
+      setState(() {
+        _githubFirmwareVersion = githubVersion;
+        // Assuming widget.bleData.firmwareVersion is in 'major.minor.patch' format
+        _githubVersionColor =
+            _isNewerVersion(githubVersion, widget.bleData.firmwareVersion) ? Colors.green : Colors.red;
+      });
+    } else {
+      // Handle HTTP request error...
+    }
+  }
+
+  bool _isNewerVersion(String versionA, String versionB) {
+    // Regular expression to extract numbers from the version strings
+    final regex = RegExp(r'\d+');
+
+    // Extracting only the numeric parts of the version strings
+    final versionAParts = regex.allMatches(versionA).map((m) => int.parse(m.group(0)!)).toList();
+    final versionBParts = regex.allMatches(versionB).map((m) => int.parse(m.group(0)!)).toList();
+
+    // Assuming that both version strings will have at least three numeric parts (major, minor, patch)
+    // This comparison logic might need adjustment if the version format changes
+    for (int i = 0; i < 3; i++) {
+      if (i < versionAParts.length && i < versionBParts.length) {
+        if (versionAParts[i] > versionBParts[i]) {
+          return true;
+        } else if (versionAParts[i] < versionBParts[i]) {
+          return false;
+        }
+      } else if (i >= versionAParts.length && i < versionBParts.length) {
+        // If versionA has fewer parts and we've not returned yet, versionB is newer
+        return false;
+      } else if (i < versionAParts.length && i >= versionBParts.length) {
+        // If versionB has fewer parts and we've not returned yet, versionA is newer
+        return true;
+      }
+    }
+
+    // If we reach here, the versions are equal in terms of major.minor.patch
+    return false;
   }
 
   void updateProgress() {
@@ -116,7 +178,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       //   // Handle errors during the update process
 
       // print('Error during firmware update: $e');
-      
     } finally {
       setState(() {
         updatingFirmware = false;
@@ -137,8 +198,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
               LinearProgressIndicator(
                 value: _progress,
                 minHeight: 10,
-              )
-            ,Text('Time remaining: $timeRemaining'),])
+              ),
+              Text('Time remaining: $timeRemaining'),
+            ])
           : Column(
               children: <Widget>[
                 ElevatedButton(
@@ -146,7 +208,11 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                     WakelockPlus.enable();
                     startFirmwareUpdate(BINARY);
                   },
-                  child: Text('Use App Bundled Firmware'),
+                  child: Text(
+                    textAlign: TextAlign.center,
+                    'Use App Bundled Firmware\n${_builtinFirmwareVersion}',
+                    style: TextStyle(color: _builtinVersionColor),
+                  ),
                 ),
                 SizedBox(height: 10),
                 io.Platform.isMacOS
@@ -156,7 +222,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                           WakelockPlus.enable();
                           startFirmwareUpdate(PICKER);
                         },
-                        child: Text('Choose Firmware From Dialog'),
+                        child: Text(textAlign: TextAlign.center, 'Choose Firmware From Dialog'),
                       ),
                 SizedBox(height: 10),
                 io.Platform.isMacOS
@@ -166,7 +232,11 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                           WakelockPlus.enable();
                           startFirmwareUpdate(URL);
                         },
-                        child: Text('Use Latest Firmware from Github'),
+                        child: Text(
+                          textAlign: TextAlign.center,
+                          'Use Latest Firmware from Github\n${_githubFirmwareVersion}',
+                          style: TextStyle(color: _githubVersionColor),
+                        ),
                       ),
               ],
             )

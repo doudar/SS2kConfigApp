@@ -10,7 +10,6 @@ environment:
   sdk: ">=3.2.4 <3.16.8"
 
 dependencies:
-  
   flutter:
     sdk: flutter
 
@@ -21,10 +20,10 @@ dependencies:
   shared_preferences: ^2.2.0
   flutter_ota: ^0.1.4
   wakelock_plus: ^1.1.4
+  http: ^1.1.0
 
 flutter:
   uses-material-design: true
 
   assets:
     - assets/
-

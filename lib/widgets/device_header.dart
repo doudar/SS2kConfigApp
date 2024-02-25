@@ -210,10 +210,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
   Widget buildRssiTile(BuildContext context) {
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisAlignment: MainAxisAlignment.start,
       children: [
-        Text('Version: ${widget.bleData.firmwareVersion}', style: Theme.of(context).textTheme.bodySmall),
-        Text('Signal Strength: ${widget.bleData.rssi.value} dBm', style: Theme.of(context).textTheme.bodySmall)
+        Text('  Signal Strength:\n       ${widget.bleData.rssi.value} dBm',
+            style: Theme.of(context).textTheme.bodySmall)
       ],
     );
   }
@@ -230,8 +230,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
             : Text(" "),
         const IconButton(
           icon: SizedBox(
-            child: CircularProgressIndicator(
-                ),
+            child: CircularProgressIndicator(),
             width: 15.0,
             height: 15.0,
           ),
@@ -361,6 +360,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   @override
   Widget build(BuildContext context) {
     return Column(children: <Widget>[
+      Text('Version: ${widget.bleData.firmwareVersion}', style: Theme.of(context).textTheme.bodySmall),
       IntrinsicHeight(
         child: Stack(
           children: [
