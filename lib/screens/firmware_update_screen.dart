@@ -31,7 +31,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   late OtaPackage otaPackage;
 
   StreamSubscription<int>? progressSubscription;
-  int _progress = 0;
+  double _progress = 0;
+  DateTime? startTime;
+  String timeRemaining = 'Calculating...';
 
   bool firmwareCharReceived = false;
 
@@ -50,8 +52,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       otaPackage =
           Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
       progressSubscription = otaPackage.percentageStream.listen((event) {
-        _progress = event;
-        setState(() {});
+        _progress = event / 100.0;
+        setState(() {
+          updateProgress();
+        });
       });
     }
   }
@@ -61,6 +65,26 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     progressSubscription?.cancel();
     WakelockPlus.disable();
     super.dispose();
+  }
+
+  void updateProgress() {
+    if (startTime == null) {
+      startTime = DateTime.now();
+    }
+    if (_progress > 0) {
+      final timeElapsed = DateTime.now().difference(startTime!).inSeconds;
+      final estimatedTotalTime = timeElapsed / _progress;
+      final estimatedTimeRemaining = estimatedTotalTime - timeElapsed;
+      timeRemaining = formatDuration(Duration(seconds: estimatedTimeRemaining.toInt()));
+    }
+  }
+
+  String formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final hours = twoDigits(duration.inHours);
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return "$hours:$minutes:$seconds";
   }
 
   void startFirmwareUpdate(type) async {
@@ -92,6 +116,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       //   // Handle errors during the update process
 
       // print('Error during firmware update: $e');
+      
     } finally {
       setState(() {
         updatingFirmware = false;
@@ -103,9 +128,17 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     return <Widget>[
       Text("Don't leave this screen until the update completes"),
       SizedBox(height: 20),
-      updatingFirmware ? Text('${_progress}%') : SizedBox(),
+      updatingFirmware ? Text('   ${(_progress * 100).round()}%') : SizedBox(),
+      SizedBox(height: 20),
       updatingFirmware
-          ? CircularProgressIndicator(value: _progress.toDouble() / 100)
+          ? Column(children: <Widget>[
+              CircularProgressIndicator(),
+              SizedBox(height: 10),
+              LinearProgressIndicator(
+                value: _progress,
+                minHeight: 10,
+              )
+            ,Text('Time remaining: $timeRemaining'),])
           : Column(
               children: <Widget>[
                 ElevatedButton(

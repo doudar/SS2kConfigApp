@@ -41,7 +41,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
   @override
   void dispose() {
     _connectionStateSubscription.cancel();
-    _charSubscription.cancel();
+    if (widget.bleData.charReceived.value) {
+      _charSubscription.cancel();
+    }
     widget.bleData.isReadingOrWriting.removeListener(_rwListner);
     WakelockPlus.disable();
     super.dispose();

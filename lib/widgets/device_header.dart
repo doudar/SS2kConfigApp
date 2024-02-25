@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 import '../utils/customcharhelpers.dart';
+import '../utils/constants.dart';
 import '../utils/bledata.dart';
 
 class DeviceHeader extends StatefulWidget {
@@ -28,24 +29,28 @@ class DeviceHeader extends StatefulWidget {
 
 class _DeviceHeaderState extends State<DeviceHeader> {
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
-  late Timer rssiTimer;
+  Timer rssiTimer = Timer.periodic(Duration(seconds: 30), (rssiTimer) {});
 
   @override
   void initState() {
     super.initState();
     _connectionStateSubscription = widget.device.connectionState.listen((state) async {
+      if (widget.device.isConnected) {
+        widget.bleData.rssi.value = await widget.device.readRssi();
+      } else {
+        widget.bleData.rssi.value = 0;
+      }
       if (mounted) {
-        if (widget.device.isConnected) {
-          widget.bleData.rssi.value = await widget.device.readRssi();
-        } else {
-          widget.bleData.rssi.value = 0;
-        }
         setState(() {});
       }
       rssiTimer = Timer.periodic(Duration(seconds: 10), (rssiTimer) async {
         if (widget.device.isConnected) {
           try {
             widget.bleData.rssi.value = await widget.device.readRssi();
+            if (widget.bleData.firmwareVersion == "") {
+              widget.bleData.customCharacteristic
+                  .forEach((d) => (d["vName"] == fwVname) ? widget.bleData.firmwareVersion = d["value"] ?? "" : null);
+            }
           } catch (e) {
             widget.bleData.rssi.value = 0;
           }
@@ -207,8 +212,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        isConnected ? const Icon(Icons.bluetooth_connected) : const Icon(Icons.bluetooth_disabled),
-        Text('${widget.bleData.rssi.value} dBm', style: Theme.of(context).textTheme.bodySmall)
+        Text('Version: ${widget.bleData.firmwareVersion}', style: Theme.of(context).textTheme.bodySmall),
+        Text('Signal Strength: ${widget.bleData.rssi.value} dBm', style: Theme.of(context).textTheme.bodySmall)
       ],
     );
   }
@@ -219,17 +224,16 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       children: <Widget>[
         isConnected
             ? OutlinedButton(
-                child: const Text("Refresh\nValues", textAlign: TextAlign.center),
+                child: const Text("Refresh Values", textAlign: TextAlign.center),
                 onPressed: onDiscoverServicesPressed,
               )
             : Text(" "),
         const IconButton(
           icon: SizedBox(
             child: CircularProgressIndicator(
-                //valueColor: AlwaysStoppedAnimation(Colors.grey),
                 ),
-            width: 18.0,
-            height: 18.0,
+            width: 15.0,
+            height: 15.0,
           ),
           onPressed: null,
         )
@@ -357,11 +361,20 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   @override
   Widget build(BuildContext context) {
     return Column(children: <Widget>[
-      ListTile(
-        leading: buildRssiTile(context),
-        title: buildConnectButton(context),
-        trailing: widget.connectOnly ? SizedBox() : buildUpdateValues(context),
-        titleAlignment: ListTileTitleAlignment.threeLine,
+      IntrinsicHeight(
+        child: Stack(
+          children: [
+            Positioned(left: 0, child: buildRssiTile(context)),
+            Align(child: buildConnectButton(context)),
+            Positioned(
+              right: 0,
+              child: widget.connectOnly ? SizedBox() : buildUpdateValues(context),
+            ),
+          ],
+        ),
+      ),
+      SizedBox(
+        height: 5,
       ),
       (isConnected && !widget.connectOnly)
           ? Column(children: <Widget>[
@@ -370,13 +383,15 @@ class _DeviceHeaderState extends State<DeviceHeader> {
                 buildResetButton(context),
                 buildSaveButton(context),
               ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
+              SizedBox(
+                height: 5,
+              ),
               Row(children: <Widget>[
                 buildSaveLocalButton(context),
                 buildLoadLocalButton(context),
               ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
             ])
           : SizedBox(),
-      
       Divider(height: 5),
     ]);
   }

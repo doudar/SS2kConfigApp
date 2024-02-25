@@ -21,6 +21,7 @@ final String connectedPWRVname = "BLE_connectedPowerMeter  ";
 final String rebootVname = "BLE_reboot               ";
 final String resetVname = "BLE_resetToDefaults      ";
 final String shiftVname = "BLE_shifterPosition      ";
+final String fwVname = "BLE_firmwareVer          ";
 
 String defaultDevices =
     '''[{"device -4": {"name": "any", "UUID": "0x180d"},"device -3": {"name": "none", "UUID": "0x180d"},"device -2": {"name": "any", "UUID": "0x1818"},"device -1": {"name": "none", "UUID": "0x1818"},''';
@@ -63,7 +64,8 @@ var customCharacteristicFramework = jsonDecode('''    [
 {"vName": "BLE_minBrakeWatts        ", "reference": "0x21", "isSetting": true,  "type":"int"  ,  "humanReadableName":"Min Brake Watts", "min":0, "max":100,             "textDescription":"Minimum amount of resistance you can pedal without hitting the low limit stop on your bike."},
 {"vName": "BLE_maxBrakeWatts        ", "reference": "0x22", "isSetting": true,  "type":"int"  ,  "humanReadableName":"Min Brake Watts", "min":0, "max":2500,            "textDescription":"Maximum amount of resistance you can pedal without hitting the high limit stop on your bike."},
 {"vName": "BLE_restartBLE           ", "reference": "0x23", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reboot SmartSpin2k", "min":0, "max":1,           "textDescription":"Disconnect the BLE devices (scan will then happen along with reconnect)"},
-{"vName": "BLE_scanBLE              ", "reference": "0x24", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reboot SmartSpin2k", "min":0, "max":1,           "textDescription":"Scan for BLE devices. Scanning is automatic (not needed to be used) unless all devices are connected."}
+{"vName": "BLE_scanBLE              ", "reference": "0x24", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reboot SmartSpin2k", "min":0, "max":1,           "textDescription":"Scan for BLE devices. Scanning is automatic (not needed to be used) unless all devices are connected."},
+{"vName": "BLE_firmwareVer          ", "reference": "0x25", "isSetting": false, "type":"string",  "humanReadableName":"Firmware Version", "min":0, "max":2000,          "textDescription":"The current loaded firmware."}
 ]''');
 
 // the first two bytes are the opacity
