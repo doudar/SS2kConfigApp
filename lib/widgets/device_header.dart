@@ -224,7 +224,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       children: <Widget>[
         isConnected
             ? OutlinedButton(
-                child: const Text("Refresh Values", textAlign: TextAlign.center),
+                child: const Text("Refresh", textAlign: TextAlign.center),
                 onPressed: onDiscoverServicesPressed,
               )
             : Text(" "),
