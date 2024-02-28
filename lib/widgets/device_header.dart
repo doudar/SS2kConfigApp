@@ -43,7 +43,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       if (mounted) {
         setState(() {});
       }
-      rssiTimer = Timer.periodic(Duration(seconds: 1), (rssiTimer) async {
+      rssiTimer = Timer.periodic(Duration(seconds: 20), (rssiTimer) async {
         if (widget.device.isConnected) {
           try {
             widget.bleData.rssi.value = await widget.device.readRssi();

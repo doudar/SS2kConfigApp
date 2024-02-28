@@ -35,18 +35,6 @@ class _SettingTileState extends State<SettingTile> {
   BluetoothCharacteristic get characteristic => widget.bleData.getMyCharacteristic(widget.device);
   Map get c => widget.c;
 
-  Widget _flightShuttleBuilder(
-    BuildContext flightContext,
-    Animation<double> animation,
-    HeroFlightDirection flightDirection,
-    BuildContext fromHeroContext,
-    BuildContext toHeroContext,
-  ) {
-    return SingleChildScrollView(
-      child: fromHeroContext.widget,
-    );
-  }
-
   @override
   void initState() {
     super.initState();

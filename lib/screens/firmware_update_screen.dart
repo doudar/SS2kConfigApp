@@ -79,6 +79,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   void dispose() {
     progressSubscription?.cancel();
     widget.bleData.charReceived.removeListener(_charListner);
+    _loadingTimer.cancel();
     WakelockPlus.disable();
     super.dispose();
   }
