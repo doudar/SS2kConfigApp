@@ -92,7 +92,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-        _refreshBlocker = true;
+    _refreshBlocker = true;
     return ScaffoldMessenger(
       key: Snackbar.snackBarKeyC,
       child: Scaffold(
@@ -101,24 +101,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: Text(widget.device.platformName),
           centerTitle: true,
         ),
-        body: Column(
-          mainAxisSize: MainAxisSize.max,
-          children: <Widget>[
-            DeviceHeader(device: widget.device, bleData: widget.bleData),
-            SizedBox(
-              height: 500,
-              child: ListWheelScrollView(
-                  //child: Column(
-                  clipBehavior: Clip.antiAlias,
-                  itemExtent: 100,
-                  children: <Widget>[
-                    ...buildSettings(context),
-                  ]),
-              //),
+        body:
+            /*Row(
+              children:
+                <Widget>[DeviceHeader(device: widget.device, bleData: widget.bleData),]
+            ),*/
+            ListView(
+                scrollDirection: Axis.vertical,
+                padding: EdgeInsets.all( 0),
+                shrinkWrap: true,
+                physics: ScrollPhysics(),
+                children: <Widget>[
+                  ...buildSettings(context),
+                  ]
             ),
-          ],
+
         ),
-      ),
-    );
+      );
   }
 }

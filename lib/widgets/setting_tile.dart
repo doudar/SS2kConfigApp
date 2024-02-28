@@ -32,25 +32,19 @@ class _SettingTileState extends State<SettingTile> {
   late String text = this.c["value"].toString();
   late StreamSubscription<List<int>> _lastValueSubscription;
 
-  BluetoothCharacteristic get characteristic => widget.bleData.getMyCharacteristic(widget.device);
+  BluetoothCharacteristic get characteristic =>
+      widget.bleData.getMyCharacteristic(widget.device);
+
   Map get c => widget.c;
 
-  Widget _flightShuttleBuilder(
-    BuildContext flightContext,
-    Animation<double> animation,
-    HeroFlightDirection flightDirection,
-    BuildContext fromHeroContext,
-    BuildContext toHeroContext,
-  ) {
-    return SingleChildScrollView(
-      child: fromHeroContext.widget,
-    );
-  }
 
   @override
   void initState() {
     super.initState();
-    _lastValueSubscription = widget.bleData.getMyCharacteristic(widget.device).lastValueStream.listen((value) {
+    _lastValueSubscription = widget.bleData
+        .getMyCharacteristic(widget.device)
+        .lastValueStream
+        .listen((value) {
       if (mounted) {
         setState(() {});
       }
@@ -64,23 +58,30 @@ class _SettingTileState extends State<SettingTile> {
       case "float":
       case "long":
         ret = SingleChildScrollView(
-          child: sliderCard(bleData: widget.bleData, device: widget.device, c: c),
+          child: sliderCard(
+              bleData: widget.bleData, device: widget.device, c: c),
         );
       case "string":
-        if ((c["vName"] == connectedHRMVname) || (c["vName"] == connectedPWRVname)) {
+        if ((c["vName"] == connectedHRMVname) ||
+            (c["vName"] == connectedPWRVname)) {
           ret = SingleChildScrollView(
-            child: DropdownCard(bleData: widget.bleData, device: widget.device, c: c),
+            child: DropdownCard(
+                bleData: widget.bleData, device: widget.device, c: c),
           );
-        } else {ret = SingleChildScrollView(
-          child: plainTextCard(bleData: widget.bleData, device: widget.device, c: c),
-        );}
+        } else {
+          ret = SingleChildScrollView(
+            child: plainTextCard(
+                bleData: widget.bleData, device: widget.device, c: c),
+          );
+        }
       case "bool":
         ret = SingleChildScrollView(
           child: boolCard(bleData: widget.bleData, device: widget.device, c: c),
         );
       default:
         ret = SingleChildScrollView(
-          child: plainTextCard(bleData: widget.bleData, device: widget.device, c: c),
+          child: plainTextCard(
+              bleData: widget.bleData, device: widget.device, c: c),
         );
     }
 
@@ -130,18 +131,84 @@ class _SettingTileState extends State<SettingTile> {
   Widget build(BuildContext context) {
     SizedBox(height: 10);
     return Material(
-      color: Color(0xffebebeb),
-      child: Hero(
-        tag: c["vName"],
+      //type: MaterialType.transparency,
+      child: Card(
+        //tag: c["vName"],
+        margin: EdgeInsets.fromLTRB(0, 0, 0, 16),
+        color: Color(0xffffffff),
+        shadowColor: Color(0x4d939393),
+        elevation: 1,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(4.0),
+          side: BorderSide(color: Color(0x4d9e9e9e), width: 1),
+        ),
+        child:
+        Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisSize: MainAxisSize.max,
+            children: [
+              Expanded(
+                flex: 1,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                  child:
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Text(
+                        (c["humanReadableName"]),
+                        textAlign: TextAlign.start,
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontStyle: FontStyle.normal,
+                          fontSize: 16,
+                          color: Color(0xff000000),
+                        ),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(0, 4, 0, 0),
+                        child: Text(
+                          valueFormatter(),
+                          textAlign: TextAlign.start,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w400,
+                            fontStyle: FontStyle.normal,
+                            fontSize: 14,
+                            color: Color(0xff6c6c6c),
+                          ),
+                        ),
+                      ),
+                    ],),),),
+              Icon(
+                Icons.arrow_forward_ios,
+                color: Color(0xff212435),
+                size: 24,
+              ),
+            ],),),
+      ),
+    );
+  }
+
+/*
         //flightShuttleBuilder: _flightShuttleBuilder,
         child: Material(
           type: MaterialType.transparency,
           child: Card(
             child: ListTile(
-              shape: RoundedRectangleBorder(
-                side: BorderSide(color: Colors.black, width: 2),
-                borderRadius: BorderRadius.circular(10),
-              ),
+              //shape: RoundedRectangleBorder(
+
+                //side: BorderSide(color: Colors.black, width: 2),
+                //borderRadius: BorderRadius.circular(5),
+              //),
               title: Column(
                 children: <Widget>[
                   Text((c["humanReadableName"]),
@@ -175,15 +242,18 @@ class _SettingTileState extends State<SettingTile> {
     );
   }
 }
-
-Route fadeRoute(Widget page) {
-  return PageRouteBuilder(
-    pageBuilder: (context, animation, secondaryAnimation) => page,
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      return FadeTransition(
-        opacity: animation,
-        child: child,
-      );
-    },
-  );
+*/
+/*
+  Route fadeRoute(Widget page) {
+    return PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: animation,
+          child: child,
+        );
+      },
+    );
+  }
+  */
 }
