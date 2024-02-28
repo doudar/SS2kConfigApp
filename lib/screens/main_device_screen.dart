@@ -74,299 +74,49 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     super.dispose();
   }
 
-  // Future discoverServices() async {
-  //   setState(() {
-  //     this.bleData.isReadingOrWriting.value = true;
-  //   });
-
-  //   if (widget.device.isConnected) {
-  //     try {
-  //       this.bleData.services = await widget.device.discoverServices();
-  //       //findChar(this.bleData);
-  //       await updateCustomCharacter(this.bleData, widget.device,true);
-  //       //Snackbar.show(ABC.c, "Discover Services: Success", success: true);
-  //     } catch (e) {
-  //       //Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
-  //     }
-  //   }
-  //   setState(() {
-  //     this.bleData.isReadingOrWriting.value = false;
-  //   });
-  // }
-
-  buildShiftMenuButton(BuildContext context) {
-    return OutlinedButton(
-      child: const Text("Virtual Shifter", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: Color.fromARGB(255, 0, 109, 11),
-      ),
-      onPressed: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => ShifterScreen(
-              device: widget.device,
-              bleData: bleData,
+  Widget _buildCard(String assetPath, String title, VoidCallback onPressed) {
+    return Card(
+      elevation: 4,
+      margin: EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        children: [
+          ListTile(
+            onTap: onPressed,
+            leading: Image.asset(assetPath, width: 56, fit: BoxFit.cover),
+            title: Text(title),
+            trailing: IconButton(
+              icon: Icon(Icons.arrow_forward),
+              onPressed: onPressed,
             ),
-            //settings: RouteSettings(name: '/ShifterScreen'),
           ),
-        );
-      },
-    );
-  }
-
-  buildSettingsButton(BuildContext context) {
-    return OutlinedButton(
-      child: const Text("Settings", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: Color.fromARGB(255, 0, 109, 11),
+        ],
       ),
-      onPressed: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => SettingsScreen(device: widget.device, bleData: bleData),
-            //settings: RouteSettings(name: '/SettingsScreen'),
-          ),
-        );
-      },
-    );
-  }
-
-  buildUpdateButton(BuildContext context) {
-    return OutlinedButton(
-      child: const Text("Update Firmware", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: Color.fromARGB(255, 0, 109, 11),
-      ),
-      onPressed: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => FirmwareUpdateScreen(device: widget.device, bleData: bleData),
-            //settings: RouteSettings(name: '/UpdateFirmwareScreen'),
-          ),
-        );
-      },
     );
   }
 
   @override
-  Widget build(BuildContext context) {
-    return ScaffoldMessenger(
-      child: Scaffold(
-        backgroundColor: Color(0xffebebeb),
-        appBar: AppBar(
-          elevation: 4,
-          centerTitle: false,
-          backgroundColor: Color(0xffffffff),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.zero,
-          ),
-          title: Text(
-            "Main Device Screen",
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontStyle: FontStyle.normal,
-              fontSize: 18,
-              color: Color(0xff000000),
-            ),
-          ),
-        ),
-        body: ListView(
-          scrollDirection: Axis.vertical,
-          padding: EdgeInsets.all(8),
-          shrinkWrap: true,
-          physics: ClampingScrollPhysics(),
-          children: [
-            DeviceHeader(device: widget.device, bleData: bleData, connectOnly: true),
-            SizedBox(height: 50),
-            Card(
-              margin: EdgeInsets.all(0),
-              color: Color(0xffffffff),
-              shadowColor: Color(0xff000000),
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12.0),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.only(topLeft: Radius.circular(12.0), bottomLeft: Radius.circular(12.0)),
-                    child:
-
-                        ///***If you have exported images you must have to copy those images in assets/images directory.
-                        Image(
-                      image: AssetImage(
-                        'assets/shiftscreen.png',
-                      ),
-                      height: 130,
-                      width: 100,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  Expanded(
-                    flex: 1,
-                    child: Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Column(
-                        children: [
-                          Align(
-                            child: buildShiftMenuButton(context),
-                            alignment: Alignment.topRight,
-                          ),
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(0, 8, 0, 0),
-                            child: Text(
-                              "Use the buttons on the screen to shift.",
-                              textAlign: TextAlign.end,
-                              maxLines: 2,
-                              overflow: TextOverflow.clip,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w400,
-                                fontStyle: FontStyle.normal,
-                                fontSize: 11,
-                                color: Color(0xff000000),
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(0, 4, 0, 0),
-                            child: Text(
-                              "",
-                              textAlign: TextAlign.start,
-                              maxLines: 1,
-                              overflow: TextOverflow.clip,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w400,
-                                fontStyle: FontStyle.normal,
-                                fontSize: 12,
-                                color: Color(0xff7a7a7a),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Card(
-              margin: EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-              color: Color(0xffffffff),
-              shadowColor: Color(0xff000000),
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12.0),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.max,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.only(topLeft: Radius.circular(12.0), bottomLeft: Radius.circular(12.0)),
-                    child:
-
-                        ///***If you have exported images you must have to copy those images in assets/images directory.
-                        Image(
-                      image: AssetImage(
-                        'assets/settingsScreen.png',
-                      ),
-                      height: 130,
-                      width: 100,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  Expanded(
-                    flex: 1,
-                    child: Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Column(
-                        children: [
-                          Align(
-                            child: buildSettingsButton(context),
-                            alignment: Alignment.topRight,
-                          ),
-                          
-                    
-                            Text(
-                              "Pair devices, setup WiFi, and advanced settings.",
-                              textAlign: TextAlign.end,
-                              maxLines: 2,
-                              overflow: TextOverflow.clip,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w400,
-                                fontStyle: FontStyle.normal,
-                                fontSize: 11,
-                                color: Color(0xff000000),
-                              ),
-                            ),
-                        
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Card(
-              margin: EdgeInsets.fromLTRB(0, 0, 0, 8),
-              color: Color(0xffffffff),
-              shadowColor: Color(0xff000000),
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12.0),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.max,
-                children: [
-                 Padding(padding: EdgeInsets.fromLTRB(0, 30, 0, 0),child:ClipRRect(
-                    borderRadius: BorderRadius.only(topLeft: Radius.circular(12.0), bottomLeft: Radius.circular(12.0)),
-                    child:
-                        Image(
-                      image: AssetImage(
-                        'assets/GitHub-logo.png',
-                      ),
-                      // height: 130,
-                      width: 100,
-                      fit: BoxFit.cover,
-                    ),
-                  ),),SizedBox(height:130, width:1),
-                  Expanded(
-                    flex: 1,
-                    child: Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Column(
-                        children: [
-                          Align(
-                            child: buildUpdateButton(context),
-                            alignment: Alignment.topRight,
-                          ),
-                          Text(
-                            "Update your device to the latest firmware.",
-                            textAlign: TextAlign.start,
-                            maxLines: 3,
-                            overflow: TextOverflow.clip,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w400,
-                              fontStyle: FontStyle.normal,
-                              fontSize: 11,
-                              color: Color(0xff000000),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Main Device Screen"),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+      ),
+      body: ListView(
+        padding: EdgeInsets.all(8),
+        children: <Widget>[
+          DeviceHeader(device: widget.device, bleData: bleData, connectOnly: true),
+          SizedBox(height: 20),
+          _buildCard('assets/shiftscreen.png', "Virtual Shifter", () {
+            Navigator.of(context).push(MaterialPageRoute(builder: (context) => ShifterScreen(device: widget.device, bleData: bleData)));
+          }),
+          _buildCard('assets/settingsScreen.png', "Settings", () {
+            Navigator.of(context).push(MaterialPageRoute(builder: (context) => SettingsScreen(device: widget.device, bleData: bleData)));
+          }),
+          _buildCard('assets/GitHub-logo.png', "Update Firmware", () {
+            Navigator.of(context).push(MaterialPageRoute(builder: (context) => FirmwareUpdateScreen(device: widget.device, bleData: bleData)));
+          }),
+        ],
       ),
     );
   }

@@ -41,17 +41,17 @@ extension Extra on BluetoothDevice {
   // connect & update stream
   Future connectAndUpdateStream() async {
     _cstream.add(true);
-    bool _connected = false;
-    while (!_connected) {
+   // bool _connected = false;
+   // while (!_connected) {
       try {
         await connect(mtu: 527);
-        _connected = true;
+     //   _connected = true;
       } catch (e) {
         sleep(Duration(milliseconds: 50));
       } finally {
         _cstream.add(false);
       }
-    }
+   // }
   }
 
   // disconnect & update stream

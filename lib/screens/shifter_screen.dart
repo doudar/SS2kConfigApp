@@ -94,6 +94,44 @@ class _ShifterScreenState extends State<ShifterScreen> {
     WakelockPlus.enable();
   }
 
+  Widget _buildShiftButton(IconData icon, VoidCallback onPressed) {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        primary: Colors.grey[300], // Button color
+        onPrimary: Colors.black, // Icon color
+        shape: CircleBorder(),
+        padding: EdgeInsets.all(24),
+      ),
+      child: Icon(icon, size: 48),
+      onPressed: onPressed,
+    );
+  }
+
+  Widget _buildGearDisplay(String gearNumber) {
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 16, horizontal: 32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.5),
+            spreadRadius: 5,
+            blurRadius: 7,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Text(
+        gearNumber,
+        style: TextStyle(
+          fontSize: 48,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ScaffoldMessenger(
@@ -119,78 +157,17 @@ class _ShifterScreenState extends State<ShifterScreen> {
           mainAxisSize: MainAxisSize.max,
           children: [
             DeviceHeader(device: widget.device, bleData: widget.bleData, connectOnly: true),
-            Expanded(
-              flex: 1,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(0, 50, 0, 25),
-                child: IconButton(
-                  icon: Icon(Icons.expand_less_rounded),
-                  onPressed: () {
-                    shift(1);
-                  },
-                  color: Color(0xff000000),
-                  iconSize: 200,
-                ),
-              ),
-            ),
-            Container(
-              margin: EdgeInsets.all(0),
-              padding: EdgeInsets.all(0),
-              width: 200,
-              height: 100,
-              decoration: BoxDecoration(
-                color: Color(0x1f000000),
-                shape: BoxShape.rectangle,
-                borderRadius: BorderRadius.circular(5.0),
-                border: Border.all(color: Color(0x4d000000), width: 1),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisSize: MainAxisSize.max,
-                children: [
-                  Text(
-                    "Gear",
-                    textAlign: TextAlign.start,
-                    overflow: TextOverflow.clip,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w400,
-                      fontStyle: FontStyle.normal,
-                      fontSize: 14,
-                      color: Color(0xff000000),
-                    ),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(0, 5, 0, 0),
-                    child: Text(
-                      t,
-                      textAlign: TextAlign.start,
-                      overflow: TextOverflow.clip,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontStyle: FontStyle.normal,
-                        fontSize: 40,
-                        color: Color(0xff000000),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              flex: 1,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(0, 25, 0, 50),
-                child: IconButton(
-                  icon: Icon(Icons.expand_more_rounded),
-                  onPressed: () {
-                    shift(-1);
-                  },
-                  color: Color(0xff000000),
-                  iconSize: 200,
-                ),
-              ),
-            ),
+            Spacer(flex: 1),
+            _buildShiftButton(Icons.arrow_upward, () {
+              shift(1);
+            }),
+            Spacer(flex: 1),
+            _buildGearDisplay(t), // Assuming '0' is the current gear value
+            Spacer(flex: 1),
+            _buildShiftButton(Icons.arrow_downward, () {
+              shift(-1);
+            }),
+            Spacer(flex: 1),
           ],
         ),
       ),
