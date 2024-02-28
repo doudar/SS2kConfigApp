@@ -97,8 +97,8 @@ class _ShifterScreenState extends State<ShifterScreen> {
   Widget _buildShiftButton(IconData icon, VoidCallback onPressed) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        primary: Colors.grey[300], // Button color
-        onPrimary: Colors.black, // Icon color
+       backgroundColor: Colors.grey[300], // Button color
+        foregroundColor: Colors.black, // Icon color
         shape: CircleBorder(),
         padding: EdgeInsets.all(24),
       ),
