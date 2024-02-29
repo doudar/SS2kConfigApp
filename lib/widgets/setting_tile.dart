@@ -129,14 +129,12 @@ class _SettingTileState extends State<SettingTile> {
 
   @override
   Widget build(BuildContext context) {
-    SizedBox(height: 10); // Comment out if not needed
-
     return InkWell(
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (Context) => Scaffold(
+          fadeRoute(
+            Scaffold(
               appBar: AppBar(title: const Text('Edit Setting')),
               body: Center(child: widgetPicker()),
               // ... other Scaffold content
@@ -146,6 +144,7 @@ class _SettingTileState extends State<SettingTile> {
       },
       child: Material(
         //type: MaterialType.transparency,
+
         child: Card(
           //tag: c["vName"],
           margin: EdgeInsets.fromLTRB(0, 0, 0, 16),
@@ -203,10 +202,16 @@ class _SettingTileState extends State<SettingTile> {
                     ),
                   ),
                 ),
-                Icon(
-                  Icons.arrow_forward_ios,
-                  color: Color(0xff212435),
-                  size: 24,
+                Hero(
+                  tag: c["vName"],
+                    child: Material(
+                    type: MaterialType.transparency,
+                    child: Icon(
+                      Icons.arrow_forward_ios,
+                      color: Color(0xff212435),
+                      size: 24,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -216,52 +221,6 @@ class _SettingTileState extends State<SettingTile> {
     );
   }
 
-/*
-        //flightShuttleBuilder: _flightShuttleBuilder,
-        child: Material(
-          type: MaterialType.transparency,
-          child: Card(
-            child: ListTile(
-              //shape: RoundedRectangleBorder(
-
-                //side: BorderSide(color: Colors.black, width: 2),
-                //borderRadius: BorderRadius.circular(5),
-              //),
-              title: Column(
-                children: <Widget>[
-                  Text((c["humanReadableName"]),
-                      textAlign: TextAlign.left, style: Theme.of(context).textTheme.labelLarge),
-                  Text(
-                    valueFormatter(),
-                    textAlign: TextAlign.right,
-                  ),
-                  Icon(Icons.edit_note_sharp),
-                ],
-              ),
-              tileColor: (c["value"] == noFirmSupport) ? deactiveBackgroundColor : Colors.black12,
-              onTap: () {
-                if (c["value"] == noFirmSupport) {
-                } else {
-                  Navigator.push(
-                    context,
-                    fadeRoute(
-                      Scaffold(
-                        appBar: AppBar(title: const Text('Edit Setting')),
-                        body: Center(child: widgetPicker()),
-                      ),
-                    ),
-                  );
-                }
-              },
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-*/
-/*
   Route fadeRoute(Widget page) {
     return PageRouteBuilder(
       pageBuilder: (context, animation, secondaryAnimation) => page,
@@ -273,5 +232,5 @@ class _SettingTileState extends State<SettingTile> {
       },
     );
   }
-  */
+
 }
