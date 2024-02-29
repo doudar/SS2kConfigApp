@@ -86,20 +86,21 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   Future<void> _charListner() async {
     if (widget.bleData.charReceived.value) {
+      otaPackage =
+          Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
       await _progressStreamSubscription();
       await _fetchGithubFirmwareVersion();
       await _fetchBuiltinFirmwareVersion();
       if (mounted) {
         setState(() {});
       }
+      //remove the listener as soon as the characteristic is received.
+      widget.bleData.charReceived.removeListener(_charListner);
     }
-    progressSubscription?.cancel;
   }
 
   Future<void> _progressStreamSubscription() async {
     if (widget.bleData.charReceived.value) {
-      otaPackage =
-          Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
       progressSubscription = otaPackage.percentageStream.listen((event) {
         _progress = event / 100.0;
         setState(() {
