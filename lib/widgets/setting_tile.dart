@@ -76,7 +76,7 @@ class _SettingTileState extends State<SettingTile> {
         }
       case "bool":
         ret = SingleChildScrollView(
-          child: boolCard(bleData: widget.bleData, device: widget.device, c: c),
+          child: boolCard(bleData: widget.bleData, device: widget.device, c: c), // boolCard
         );
       default:
         ret = SingleChildScrollView(
@@ -87,7 +87,9 @@ class _SettingTileState extends State<SettingTile> {
 
     return Card(
       color: Colors.black12,
+
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Text(c["textDescription"], style: TextStyle(color: Colors.white)),
           SizedBox(height: 50),
