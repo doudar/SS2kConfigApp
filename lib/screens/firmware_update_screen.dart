@@ -35,7 +35,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   Color _builtinVersionColor = Color.fromARGB(255, 242, 0, 255);
   Timer _loadingTimer = Timer.periodic(Duration(seconds: 30), (_loadingTimer) {});
 
-  late OtaPackage otaPackage;
+  OtaPackage? otaPackage;
 
   StreamSubscription<int>? progressSubscription;
   StreamSubscription<bool>? charSubscription;
@@ -56,9 +56,13 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchGithubFirmwareVersion();
-    _fetchBuiltinFirmwareVersion();
-    widget.bleData.charReceived.addListener(_charListner);
+
+    if (widget.bleData.charReceived.value == true) {
+      _initialize();
+    } else {
+      widget.bleData.charReceived.addListener(_charListner);
+    }
+
     _loadingTimer = Timer.periodic(Duration(microseconds: 100), (_fwCheck) {
       if (widget.bleData.firmwareVersion == "") {
         return;
@@ -78,29 +82,33 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   void dispose() {
     progressSubscription?.cancel();
-    widget.bleData.charReceived.removeListener(_charListner);
     _loadingTimer.cancel();
     WakelockPlus.disable();
     super.dispose();
   }
 
+  Future<void> _initialize() async {
+    otaPackage =
+        Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
+    await _fetchGithubFirmwareVersion();
+    await _fetchBuiltinFirmwareVersion();
+    await _progressStreamSubscription();
+  }
+
   Future<void> _charListner() async {
     if (widget.bleData.charReceived.value) {
-      await _progressStreamSubscription();
-      await _fetchGithubFirmwareVersion();
-      await _fetchBuiltinFirmwareVersion();
+      _initialize();
       if (mounted) {
         setState(() {});
       }
+      //remove the listener as soon as the characteristic is received.
+      widget.bleData.charReceived.removeListener(_charListner);
     }
-    progressSubscription?.cancel;
   }
 
   Future<void> _progressStreamSubscription() async {
     if (widget.bleData.charReceived.value) {
-      otaPackage =
-          Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
-      progressSubscription = otaPackage.percentageStream.listen((event) {
+      progressSubscription = otaPackage!.percentageStream.listen((event) {
         _progress = event / 100.0;
         setState(() {
           updateProgress();
@@ -193,7 +201,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     });
 
     try {
-      await otaPackage.updateFirmware(
+      await otaPackage!.updateFirmware(
         widget.device,
         type,
         widget.bleData.firmwareService,
