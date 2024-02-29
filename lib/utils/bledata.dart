@@ -57,12 +57,12 @@ class BLEData {
         _findChar();
       }
     }
-    try {
+    if (_myCharacteristic != null) {
+      charReceived.value = true;
       _char = _myCharacteristic!;
-    } catch (e) {
+    } else {
       charReceived.value = false;
     }
-    charReceived.value = true;
     return _char;
   }
 
