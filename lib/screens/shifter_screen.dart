@@ -99,12 +99,13 @@ Widget _buildShiftButton(IconData icon, VoidCallback onPressed) {
     style: ElevatedButton.styleFrom(
       backgroundColor: Colors.grey[300], // Button color
       foregroundColor: Colors.black, // Icon color
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero), // Square shape
-      padding: EdgeInsets.all(40), // Increased padding for larger button
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(20))), // Oval shape
+      padding: EdgeInsets.symmetric(vertical: 48, horizontal: 30), // Padding for oval shape
     ),
-    child: Icon(icon, size: 60), // Increased icon size
+    child: Icon(icon, size: 60), // Icon size
     onPressed: onPressed,
   );
+}
 }
 
   Widget _buildGearDisplay(String gearNumber) {
