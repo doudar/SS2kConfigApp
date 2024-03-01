@@ -39,28 +39,37 @@ class _DropdownCardState extends State<DropdownCard> {
     selectedValue = ddItems.isNotEmpty ? ddItems[0] : null;
   }
 
-  void buildDevicesMap() {
+void buildDevicesMap() {
     late List _items;
     ddItems = [widget.c["value"]];
-    widget.bleData.customCharacteristic.forEach((d) => {
-          if (d["vName"] == foundDevicesVname)
-            {
-              _items = jsonDecode(d["value"]),
-              for (var d in _items)
-                {
-                  for (var subd in d.values)
-                    {
-                      if (subd["UUID"] == '0x1818' ||
-                          subd["UUID"] == '0x1826' ||
-                          subd["UUID"] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' ||
-                          subd["UUID"] == '0bf669f0-45f2-11e7-9598-0800200c9a66')
-                        {
-                          ddItems.add(subd["name"] ?? subd["address"]),
-                        }
-                    }
-                }
+    widget.bleData.customCharacteristic.forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
+
+    for (var d in _items) {
+      for (var subd in d.values) {
+        if (widget.c["vName"] == connectedPWRVname) {
+          if (subd["UUID"] == '0x1818' ||
+              subd["UUID"] == '0x1826' ||
+              subd["UUID"] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' ||
+              subd["UUID"] == '0bf669f0-45f2-11e7-9598-0800200c9a66') {
+            if (subd["name"] == null) {
+              ddItems.add(subd["address"]);
+            } else {
+              ddItems.add(subd["name"]);
             }
-        });
+          }
+        }
+        if (widget.c["vName"] == connectedHRMVname) {
+          if (subd["UUID"] == "0x180d") {
+            if (subd["name"] == null) {
+              ddItems.add(subd["address"]);
+            } else {
+              ddItems.add(subd["name"]);
+            }
+          }
+        }
+      }
+    }
+    //remove duplicates:
     ddItems = ddItems.toSet().toList(); // Remove duplicates
   }
 
