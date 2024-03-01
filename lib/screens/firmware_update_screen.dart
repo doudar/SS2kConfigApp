@@ -196,6 +196,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   }
 
   void startFirmwareUpdate(type) async {
+    widget.bleData.isUpdatingFirmware = true;
     setState(() {
       updatingFirmware = true;
     });
@@ -229,6 +230,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         updatingFirmware = false;
       });
     }
+    widget.bleData.isUpdatingFirmware = false;
   }
 
   List<Widget> _buildUpdateButtons() {

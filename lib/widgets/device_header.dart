@@ -45,6 +45,9 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         setState(() {});
       }
       rssiTimer = Timer.periodic(Duration(seconds: 20), (rssiTimer) async {
+        if (widget.bleData.isUpdatingFirmware) {
+          return; // Do not check RSSI if the firmware is being updated
+        }
         if (widget.device.isConnected) {
           try {
             widget.bleData.rssi.value = await widget.device.readRssi();
