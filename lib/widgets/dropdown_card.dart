@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
 import '../utils/customcharhelpers.dart';
-import '../utils/constants.dart'; 
+import '../utils/constants.dart';
 
 class DropdownCard extends StatefulWidget {
   const DropdownCard({
@@ -64,6 +64,17 @@ class _DropdownCardState extends State<DropdownCard> {
     ddItems = ddItems.toSet().toList(); // Remove duplicates
   }
 
+  Future _changeBLEDevice() async {
+    setState(() {
+      widget.c["value"] = selectedValue!;
+      // Assuming writeToSS2K is your method to handle selection
+    });
+    //reconnect devices
+    writeToSS2K(widget.bleData, widget.device, widget.c);
+    widget.bleData.customCharacteristic
+        .forEach((d) => d["vName"] == restartBLEVname ? writeToSS2K(widget.bleData, widget.device, d, s: "1") : ());
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -111,12 +122,8 @@ class _DropdownCardState extends State<DropdownCard> {
                         ),
                         titleAlignment: ListTileTitleAlignment.top,
                         onTap: () {
-                          setState(() {
-                            selectedValue = ddItems[index];
-                            widget.c["value"] = selectedValue!;
-                            // Assuming writeToSS2K is your method to handle selection
-                            writeToSS2K(widget.bleData, widget.device, widget.c);
-                          });
+                          selectedValue = ddItems[index];
+                          _changeBLEDevice;
                         },
                       );
                     },
