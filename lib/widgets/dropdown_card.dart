@@ -109,7 +109,7 @@ void buildDevicesMap() {
                   style: TextStyle(fontSize: 20),
                   textAlign: TextAlign.left,
                 ),
-              ),
+              ), Text( widget.c["value"]),
               SizedBox(height: 20),
               Expanded(
                 child: ListWheelScrollView.useDelegate(
