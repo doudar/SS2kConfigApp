@@ -94,17 +94,18 @@ class _ShifterScreenState extends State<ShifterScreen> {
     WakelockPlus.enable();
   }
 
-  Widget _buildShiftButton(IconData icon, VoidCallback onPressed) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-       backgroundColor: Colors.grey[300], // Button color
-        foregroundColor: Colors.black, // Icon color
-        shape: CircleBorder(),
-        padding: EdgeInsets.all(24),
-      ),
-      child: Icon(icon, size: 48),
-      onPressed: onPressed,
-    );
+Widget _buildShiftButton(IconData icon, VoidCallback onPressed) {
+  return ElevatedButton(
+    style: ElevatedButton.styleFrom(
+      backgroundColor: Colors.grey[300], // Button color
+      foregroundColor: Colors.black, // Icon color
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero), // Square shape
+      padding: EdgeInsets.all(40), // Increased padding for larger button
+    ),
+    child: Icon(icon, size: 60), // Increased icon size
+    onPressed: onPressed,
+  );
+}
   }
 
   Widget _buildGearDisplay(String gearNumber) {
