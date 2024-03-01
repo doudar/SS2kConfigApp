@@ -21,6 +21,7 @@ dependencies:
   flutter_ota: ^0.1.4
   wakelock_plus: ^1.1.4
   http: ^1.1.0
+  font_awesome_flutter: ^10.7.0
 
 flutter:
   uses-material-design: true

@@ -29,6 +29,7 @@ class BLEData {
   bool isConnecting = false;
   bool isDisconnecting = false;
   bool configAppCompatableFirmware = false;
+  bool isUpdatingFirmware = false;
   String firmwareVersion = "";
 
   var customCharacteristic = customCharacteristicFramework;

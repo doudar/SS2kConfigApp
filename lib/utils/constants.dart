@@ -22,6 +22,7 @@ final String rebootVname = "BLE_reboot               ";
 final String resetVname = "BLE_resetToDefaults      ";
 final String shiftVname = "BLE_shifterPosition      ";
 final String fwVname = "BLE_firmwareVer          ";
+final String restartBLEVname = "BLE_restartBLE           ";
 
 String defaultDevices =
     '''[{"device -4": {"name": "any", "UUID": "0x180d"},"device -3": {"name": "none", "UUID": "0x180d"},"device -2": {"name": "any", "UUID": "0x1818"},"device -1": {"name": "none", "UUID": "0x1818"},''';
@@ -64,8 +65,8 @@ var customCharacteristicFramework = jsonDecode('''    [
 {"vName": "BLE_resetToDefaults      ", "reference": "0x1D", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reset to defaults", "min":0, "max":1,            "textDescription":"Restore SmartSpin2k to default settings"},
 {"vName": "BLE_minBrakeWatts        ", "reference": "0x21", "isSetting": true,  "type":"int"  ,  "humanReadableName":"Min Brake Watts", "min":0, "max":100,             "textDescription":"Minimum amount of resistance you can pedal without hitting the low limit stop on your bike.  Pedal at 90rpm at your lowest comfortable resistance setting.  Use the reported watts"},
 {"vName": "BLE_maxBrakeWatts        ", "reference": "0x22", "isSetting": true,  "type":"int"  ,  "humanReadableName":"Max Brake Watts", "min":0, "max":2500,            "textDescription":"Maximum amount of resistance you can pedal without hitting the high limit stop on your bike. Pedal at 90rpm at at the highest resistance setting.  Use the reported watts.  The default 800 is fine for most users."},
-{"vName": "BLE_restartBLE           ", "reference": "0x23", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reboot SmartSpin2k", "min":0, "max":1,           "textDescription":"Disconnect the BLE devices (scan will then happen along with reconnect)"},
-{"vName": "BLE_scanBLE              ", "reference": "0x24", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reboot SmartSpin2k", "min":0, "max":1,           "textDescription":"Scan for BLE devices. Scanning is automatic (not needed to be used) unless all devices are connected."}
+{"vName": "BLE_restartBLE           ", "reference": "0x23", "isSetting": false, "type":"bool"  ,  "humanReadableName":"Reconnect Devices", "min":0, "max":1,           "textDescription":"Disconnect the BLE devices (scan will then happen along with reconnect)"},
+{"vName": "BLE_scanBLE              ", "reference": "0x24", "isSetting": false, "type":"bool"  ,  "humanReadableName":"BLE Scan", "min":0, "max":1,           "textDescription":"Scan for BLE devices. Scanning is automatic (not needed to be used) unless all devices are connected."}
 ]''');
 
 // the first two bytes are the opacity
