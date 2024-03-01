@@ -33,38 +33,20 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Timer rssiTimer = Timer.periodic(Duration(seconds: 30), (rssiTimer) {});
 
   @override
-  void initState() {
-    super.initState();
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
-      if (widget.device.isConnected) {
-        widget.bleData.rssi.value = await widget.device.readRssi();
-      } else {
-        widget.bleData.rssi.value = 0;
-      }
-      if (mounted) {
-        setState(() {});
-      }
-      rssiTimer = Timer.periodic(Duration(seconds: 20), (rssiTimer) async {
-        if (widget.bleData.isUpdatingFirmware) {
-          return; // Do not check RSSI if the firmware is being updated
-        }
-        if (widget.device.isConnected) {
-          try {
-            widget.bleData.rssi.value = await widget.device.readRssi();
-            if (widget.bleData.firmwareVersion == "") {
-              widget.bleData.customCharacteristic
-                  .forEach((d) => (d["vName"] == fwVname) ? widget.bleData.firmwareVersion = d["value"] ?? "" : null);
-            }
-          } catch (e) {
-            widget.bleData.rssi.value = 0;
-          }
-          if (mounted) {
-            setState(() {});
-          }
-        }
-      });
-    });
-  }
+ void initState() {
+  super.initState();
+  _connectionStateSubscription = widget.device.connectionState.listen((state) async {
+    if (widget.device.isConnected) {
+      widget.bleData.rssi.value = await widget.device.readRssi();
+    } else {
+      widget.bleData.rssi.value = 0;
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  });
+  _startRssiTimer();
+}
 
   @override
   void dispose() {
@@ -73,6 +55,34 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
     super.dispose();
   }
+
+void _startRssiTimer() {
+  rssiTimer = Timer.periodic(Duration(seconds: 20), (Timer t) {
+    _updateRssi();
+  });
+}
+
+Future<void> _updateRssi() async {
+  if (widget.bleData.isUpdatingFirmware || widget.bleData.isReadingOrWriting.value) {
+    return; // Do not check RSSI if the firmware is being updated
+  }
+  if (widget.device.isConnected) {
+    try {
+      widget.bleData.rssi.value = await widget.device.readRssi();
+      if (widget.bleData.firmwareVersion == "") {
+        widget.bleData.customCharacteristic
+            .forEach((d) => (d["vName"] == fwVname) ? widget.bleData.firmwareVersion = d["value"] ?? "" : null);
+      }
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      widget.bleData.rssi.value = 0;
+    }
+  }
+}
+
+
 
   bool get isConnected {
     return widget.bleData.connectionState == BluetoothConnectionState.connected;
