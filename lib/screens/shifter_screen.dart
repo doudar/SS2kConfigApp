@@ -27,7 +27,7 @@ class ShifterScreen extends StatefulWidget {
 class _ShifterScreenState extends State<ShifterScreen> {
   late Map c;
   String t = "Loading";
-  late StreamSubscription _charSubscription;
+  StreamSubscription? _charSubscription;
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
 
   @override
@@ -42,7 +42,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   void dispose() {
     _connectionStateSubscription.cancel();
     if (widget.bleData.charReceived.value) {
-      _charSubscription.cancel();
+      _charSubscription?.cancel();
     }
     widget.bleData.isReadingOrWriting.removeListener(_rwListner);
     WakelockPlus.disable();
