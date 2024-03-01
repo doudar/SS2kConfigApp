@@ -15,21 +15,7 @@ import '../utils/extra.dart';
 import '../utils/customcharhelpers.dart';
 import '../utils/constants.dart';
 import '../utils/bledata.dart';
-
-/*
- * Copyright (C) 2020 Anthony Doud
- * All rights reserved
- *
- * SPDX-License-Identifier: GPL-2.0-only
- */
-import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-
-import '../utils/bledata.dart';
-import '../utils/snackbar.dart';
-import '../utils/constants.dart';
-import '../utils/extra.dart';
 
 class DeviceHeader extends StatefulWidget {
   final BluetoothDevice device;
@@ -222,21 +208,35 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       child: Text('${widget.device.remoteId}'),
     );
   }
+
   bool _isExpanded = false;
 
   Widget _buildSignalStrengthIcon(int rssi) {
     IconData iconData;
     Color iconColor;
-    if (rssi >= -60) {
-      iconData = FontAwesomeIcons.signal;
-      iconColor = Colors.green;
-    } else if (rssi >= -70) {
-      iconData = FontAwesomeIcons.signal;
-      iconColor = Colors.yellow;
+
+    if (widget.device.isConnected) {
+      if (rssi >= -60) {
+        iconData = Icons.signal_cellular_4_bar_sharp; // Assume this is full signal strength
+        iconColor = Colors.black;
+      } else if (rssi >= -70) {
+        iconData = Icons.signal_cellular_alt_sharp; // Assume this is 4 bars
+        iconColor = Colors.green;
+      } else if (rssi >= -80) {
+        iconData = Icons.signal_cellular_alt_2_bar_sharp; // Assume this is 3 bars
+        iconColor = Colors.yellow;
+      } else if (rssi >= -90) {
+        iconData = Icons.signal_cellular_alt_1_bar_sharp; // Assume this is 2 bars
+        iconColor = Colors.orange;
+      } else {
+        iconData = Icons.signal_cellular_0_bar_sharp; // Assume this is 1 bar
+        iconColor = Colors.red;
+      }
     } else {
-      iconData = FontAwesomeIcons.signal;
+      iconData = Icons.signal_cellular_off_sharp; // Assume this is 1 bar
       iconColor = Colors.red;
     }
+
     return Icon(iconData, color: iconColor);
   }
 
@@ -283,4 +283,3 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
   // ... Remaining code including the methods: _onConnectPressed, _onDisconnectPressed, _onDiscoverServicesPressed, _onSaveSettingsPressed, _onSaveLocalPressed, _onLoadLocalPressed, _onRebootPressed, _onResetPressed
 }
-
