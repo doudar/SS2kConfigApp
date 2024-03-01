@@ -27,7 +27,6 @@ class _ScanResultTileState extends State<ScanResultTile> {
   @override
   void initState() {
     super.initState();
-
     _connectionStateSubscription = widget.result.device.connectionState.listen((state) {
       _connectionState = state;
       if (mounted) {

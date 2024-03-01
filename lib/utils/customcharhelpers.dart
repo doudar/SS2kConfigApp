@@ -17,8 +17,14 @@ import '../utils/bledata.dart';
 
 bool _subscribed = false;
 final _lastRequestStopwatch = Stopwatch();
+// only used as a flag to prevent multiple concurrent instances of updateCustomCharacter
+bool _inUpdateLoop = false;
 
 Future updateCustomCharacter(BLEData bleData, BluetoothDevice device) async {
+  if (_inUpdateLoop) {
+    return;
+  }
+  _inUpdateLoop = true;
   if (!bleData.getMyCharacteristic(device).isNotifying) notify(bleData, device);
   if (!_subscribed) decode(bleData, device);
   if (!_lastRequestStopwatch.isRunning) {
@@ -29,6 +35,7 @@ Future updateCustomCharacter(BLEData bleData, BluetoothDevice device) async {
     await requestSettings(bleData, device);
   }
   bleData.isReadingOrWriting.value = false;
+  _inUpdateLoop = false;
 }
 
 void notify(BLEData bleData, BluetoothDevice device) {
