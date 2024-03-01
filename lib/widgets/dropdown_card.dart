@@ -64,7 +64,7 @@ class _DropdownCardState extends State<DropdownCard> {
     ddItems = ddItems.toSet().toList(); // Remove duplicates
   }
 
-  Future _changeBLEDevice() async {
+  Future _changeBLEDevice(BuildContext context) async {
     setState(() {
       widget.c["value"] = selectedValue!;
       // Assuming writeToSS2K is your method to handle selection
@@ -123,7 +123,7 @@ class _DropdownCardState extends State<DropdownCard> {
                         titleAlignment: ListTileTitleAlignment.top,
                         onTap: () {
                           selectedValue = ddItems[index];
-                          _changeBLEDevice;
+                          _changeBLEDevice(context);
                         },
                       );
                     },
