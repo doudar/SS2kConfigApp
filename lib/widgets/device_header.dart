@@ -289,7 +289,7 @@ Future<void> _updateRssi() async {
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         backgroundColor: Theme.of(context).colorScheme.secondary,
-        primary: Colors.white,
+        foregroundColor: Colors.white,
       ),
     );
   }
