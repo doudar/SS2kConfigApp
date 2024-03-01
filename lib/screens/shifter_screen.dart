@@ -106,7 +106,6 @@ Widget _buildShiftButton(IconData icon, VoidCallback onPressed) {
     onPressed: onPressed,
   );
 }
-  }
 
   Widget _buildGearDisplay(String gearNumber) {
     return Container(
