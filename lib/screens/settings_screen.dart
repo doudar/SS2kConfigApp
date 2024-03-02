@@ -102,21 +102,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           centerTitle: true,
         ),
         body:
-            /*Row(
-              children:
-                <Widget>[DeviceHeader(device: widget.device, bleData: widget.bleData),]
-            ),*/
-            ListView(
+              ListView(
                 scrollDirection: Axis.vertical,
                 padding: EdgeInsets.all( 0),
                 shrinkWrap: true,
                 physics: ScrollPhysics(),
-                children: <Widget>[
-                  ...buildSettings(context),
-                  ]
+                children:
+                  <Widget>[DeviceHeader(device: widget.device, bleData: widget.bleData),
+                  ...buildSettings(context),]
+              ),
             ),
-
-        ),
-      );
+        );
   }
 }
