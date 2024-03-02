@@ -29,6 +29,7 @@ class BLEData {
   bool isConnecting = false;
   bool isDisconnecting = false;
   bool configAppCompatableFirmware = false;
+  bool isUpdatingFirmware = false;
   String firmwareVersion = "";
 
   var customCharacteristic = customCharacteristicFramework;
@@ -57,12 +58,12 @@ class BLEData {
         _findChar();
       }
     }
-    try {
+    if (_myCharacteristic != null) {
+      charReceived.value = true;
       _char = _myCharacteristic!;
-    } catch (e) {
+    } else {
       charReceived.value = false;
     }
-    charReceived.value = true;
     return _char;
   }
 

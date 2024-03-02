@@ -15,6 +15,7 @@ import '../utils/extra.dart';
 import '../utils/customcharhelpers.dart';
 import '../utils/constants.dart';
 import '../utils/bledata.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class DeviceHeader extends StatefulWidget {
   final BluetoothDevice device;
@@ -28,47 +29,60 @@ class DeviceHeader extends StatefulWidget {
 }
 
 class _DeviceHeaderState extends State<DeviceHeader> {
-  late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
+  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   Timer rssiTimer = Timer.periodic(Duration(seconds: 30), (rssiTimer) {});
 
   @override
-  void initState() {
-    super.initState();
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
-      if (widget.device.isConnected) {
-        widget.bleData.rssi.value = await widget.device.readRssi();
-      } else {
-        widget.bleData.rssi.value = 0;
-      }
-      if (mounted) {
-        setState(() {});
-      }
-      rssiTimer = Timer.periodic(Duration(seconds: 1), (rssiTimer) async {
-        if (widget.device.isConnected) {
-          try {
-            widget.bleData.rssi.value = await widget.device.readRssi();
-            if (widget.bleData.firmwareVersion == "") {
-              widget.bleData.customCharacteristic
-                  .forEach((d) => (d["vName"] == fwVname) ? widget.bleData.firmwareVersion = d["value"] ?? "" : null);
-            }
-          } catch (e) {
-            widget.bleData.rssi.value = 0;
-          }
-          if (mounted) {
-            setState(() {});
-          }
-        }
-      });
-    });
-  }
+ void initState() {
+  super.initState();
+  _connectionStateSubscription = widget.device.connectionState.listen((state) async {
+    if (widget.device.isConnected) {
+      widget.bleData.rssi.value = await widget.device.readRssi();
+    } else {
+      widget.bleData.rssi.value = 0;
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  });
+  _startRssiTimer();
+}
 
   @override
   void dispose() {
-    _connectionStateSubscription.cancel();
+    _connectionStateSubscription!.cancel();
     rssiTimer.cancel();
 
     super.dispose();
   }
+
+void _startRssiTimer() {
+  rssiTimer = Timer.periodic(Duration(seconds: 20), (Timer t) {
+    _updateRssi();
+  });
+}
+
+Future<void> _updateRssi() async {
+  if (widget.bleData.isUpdatingFirmware || widget.bleData.isReadingOrWriting.value) {
+    return; // Do not check RSSI if the firmware is being updated
+  }
+  if (widget.device.isConnected) {
+    try {
+      widget.bleData.rssi.value = await widget.device.readRssi();
+      if (widget.bleData.firmwareVersion == "") {
+        widget.bleData.customCharacteristic
+            .forEach((d) => (d["vName"] == fwVname) ? widget.bleData.firmwareVersion = d["value"] ?? "" : null);
+      }
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      widget.bleData.rssi.value = 0;
+    }
+  }
+}
+
+
 
   bool get isConnected {
     return widget.bleData.connectionState == BluetoothConnectionState.connected;
@@ -208,191 +222,77 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     );
   }
 
-  Widget buildRssiTile(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.start,
-      children: [
-        Text('  Signal Strength:\n       ${widget.bleData.rssi.value} dBm',
-            style: Theme.of(context).textTheme.bodySmall)
-      ],
-    );
-  }
+  bool _isExpanded = false;
 
-  Widget buildUpdateValues(BuildContext context) {
-    return IndexedStack(
-      index: (widget.bleData.isReadingOrWriting.value) ? 1 : 0,
-      children: <Widget>[
-        isConnected
-            ? OutlinedButton(
-                child: const Text("Refresh", textAlign: TextAlign.center),
-                onPressed: onDiscoverServicesPressed,
-              )
-            : Text(" "),
-        const IconButton(
-          icon: SizedBox(
-            child: CircularProgressIndicator(),
-            width: 15.0,
-            height: 15.0,
-          ),
-          onPressed: null,
-        )
-      ],
-    );
-  }
+  Widget _buildSignalStrengthIcon(int rssi) {
+    IconData iconData;
+    Color iconColor;
 
-  Widget buildSaveButton(context) {
-    return OutlinedButton(
-      child: const Text("Save To\nSS2k", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: Color.fromARGB(255, 0, 109, 11),
-      ),
-      onPressed: () {
-        onSaveSettingsPressed();
-        setState(() {});
-      },
-    );
-  }
+    if (widget.device.isConnected) {
+      if (rssi >= -60) {
+        iconData = Icons.signal_cellular_4_bar_sharp; // Assume this is full signal strength
+        iconColor = Colors.black;
+      } else if (rssi >= -70) {
+        iconData = Icons.signal_cellular_alt_sharp; // Assume this is 4 bars
+        iconColor = Colors.green;
+      } else if (rssi >= -80) {
+        iconData = Icons.signal_cellular_alt_2_bar_sharp; // Assume this is 3 bars
+        iconColor = Colors.yellow;
+      } else if (rssi >= -90) {
+        iconData = Icons.signal_cellular_alt_1_bar_sharp; // Assume this is 2 bars
+        iconColor = Colors.orange;
+      } else {
+        iconData = Icons.signal_cellular_0_bar_sharp; // Assume this is 1 bar
+        iconColor = Colors.red;
+      }
+    } else {
+      iconData = Icons.signal_cellular_off_sharp; // Assume this is 1 bar
+      iconColor = Colors.red;
+    }
 
-  Widget buildSaveLocalButton(context) {
-    return OutlinedButton(
-        child: const Text("Backup\nSettings", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-        style: OutlinedButton.styleFrom(
-          backgroundColor: Color.fromARGB(255, 16, 3, 255),
-        ),
-        onPressed: () {
-          onSaveLocalPressed();
-          setState(
-            () {},
-          );
-        });
-  }
-
-  Widget buildLoadLocalButton(context) {
-    return OutlinedButton(
-        child: const Text("Load\nBackup", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-        style: OutlinedButton.styleFrom(
-          backgroundColor: Color.fromARGB(255, 16, 3, 255),
-        ),
-        onPressed: () {
-          onLoadLocalPressed();
-          setState(() {});
-        });
-  }
-
-  Future waitToSetState(context) async {
-    await Future.delayed(Duration(seconds: 10));
-    try {
-      //Can fail if navigation happens within 10 seconds
-      setState(() {});
-    } catch (e) {}
-    ;
-  }
-
-  buildRebootButton(context) {
-    return OutlinedButton(
-        child: const Text(" Reboot\nSS2k ", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-        style: OutlinedButton.styleFrom(
-          backgroundColor: Color.fromARGB(255, 255, 3, 3),
-        ),
-        onPressed: () {
-          onRebootPressed();
-          waitToSetState(context);
-        });
-  }
-
-  buildResetButton(context) {
-    return OutlinedButton(
-        child: const Text("Set\nDefaults", textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-        style: OutlinedButton.styleFrom(
-          backgroundColor: Color.fromARGB(255, 225, 214, 10),
-        ),
-        onPressed: () {
-          onResetPressed();
-          setState(() {});
-        });
-  }
-
-  // Future _findChar() async {
-  //   while (!widget.bleData.charReceived) {
-  //     try {
-  //       BluetoothService cs = widget.bleData.services.first;
-  //       for (BluetoothService s in widget.bleData.services) {
-  //         if (s.uuid == Guid(csUUID)) {
-  //           cs = s;
-  //           break;
-  //         }
-  //       }
-  //       List<BluetoothCharacteristic> characteristics = cs.characteristics;
-  //       for (BluetoothCharacteristic c in characteristics) {
-  //         if (c.uuid == Guid(ccUUID)) {
-  //           widget.bleData.getMyCharacteristic(device) = c;
-  //           break;
-  //         }
-  //       }
-  //       widget.bleData.charReceived = true;
-  //     } catch (e) {
-  //       Snackbar.show(ABC.c, prettyException("No Services", e), success: false);
-  //     }
-  //   }
-  // }
-
-  Widget buildConnectButton(BuildContext context) {
-    return Row(
-      children: [
-        (widget.bleData.isConnecting || widget.bleData.isDisconnecting)
-            ? buildSpinner(context)
-            : OutlinedButton(
-                onPressed: (isConnected ? onDisconnectPressed : onConnectPressed),
-                child: Text((isConnected ? "DISCONNECT" : "CONNECT"),
-                    textAlign: TextAlign.center, style: TextStyle(color: Color(0xfffffffff))),
-                style: isConnected
-                    ? OutlinedButton.styleFrom(
-                        backgroundColor: Color.fromARGB(255, 255, 3, 3),
-                      )
-                    : OutlinedButton.styleFrom(
-                        backgroundColor: Color.fromARGB(255, 25, 113, 0),
-                      ))
-      ],
-      mainAxisAlignment: MainAxisAlignment.center,
-    );
+    return Icon(iconData, color: iconColor);
   }
 
   @override
   Widget build(BuildContext context) {
+    var rssiIcon = _buildSignalStrengthIcon(widget.bleData.rssi.value);
+
     return Column(children: <Widget>[
-      Text('Version: ${widget.bleData.firmwareVersion}', style: Theme.of(context).textTheme.bodySmall),
-      IntrinsicHeight(
-        child: Stack(
-          children: [
-            Positioned(left: 0, child: buildRssiTile(context)),
-            Align(child: buildConnectButton(context)),
-            Positioned(
-              right: 0,
-              child: widget.connectOnly ? SizedBox() : buildUpdateValues(context),
-            ),
-          ],
-        ),
+      ListTile(
+        title: Text('Device: ${widget.device.name} (${widget.device.id})'),
+        subtitle: Text('Version: ${widget.bleData.firmwareVersion}'),
+        trailing: rssiIcon,
+        onTap: () => setState(() => _isExpanded = !_isExpanded),
       ),
-      SizedBox(
-        height: 5,
+      AnimatedCrossFade(
+        firstChild: Container(height: 0),
+        secondChild: Column(children: <Widget>[
+          _buildActionButton('Connect', FontAwesomeIcons.plug, onConnectPressed),
+          _buildActionButton('Refresh', FontAwesomeIcons.rotate, onDiscoverServicesPressed),
+          _buildActionButton('Reboot SS2K', FontAwesomeIcons.arrowRotateRight, onRebootPressed),
+          _buildActionButton('Set Defaults', FontAwesomeIcons.arrowRotateLeft, onResetPressed),
+          _buildActionButton('Save To SS2k', FontAwesomeIcons.floppyDisk, onSaveSettingsPressed),
+          _buildActionButton('Backup Settings', FontAwesomeIcons.solidFloppyDisk, onSaveLocalPressed),
+          _buildActionButton('Load Backup', FontAwesomeIcons.upload, onLoadLocalPressed),
+        ]),
+        crossFadeState: _isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+        duration: Duration(milliseconds: 500),
       ),
-      (isConnected && !widget.connectOnly)
-          ? Column(children: <Widget>[
-              Row(children: <Widget>[
-                buildRebootButton(context),
-                buildResetButton(context),
-                buildSaveButton(context),
-              ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
-              SizedBox(
-                height: 5,
-              ),
-              Row(children: <Widget>[
-                buildSaveLocalButton(context),
-                buildLoadLocalButton(context),
-              ], mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center),
-            ])
-          : SizedBox(),
       Divider(height: 5),
     ]);
   }
+
+  Widget _buildActionButton(String text, IconData icon, VoidCallback onPressed) {
+    return OutlinedButton.icon(
+      icon: Icon(icon),
+      label: Text(text),
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Theme.of(context).colorScheme.secondary,
+        foregroundColor: Colors.white,
+      ),
+    );
+  }
+
+  // ... Remaining code including the methods: _onConnectPressed, _onDisconnectPressed, _onDiscoverServicesPressed, _onSaveSettingsPressed, _onSaveLocalPressed, _onLoadLocalPressed, _onRebootPressed, _onResetPressed
 }

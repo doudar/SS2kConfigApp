@@ -44,8 +44,11 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       bleData.setupConnection(widget.device);
     });
 
-    bleData.charReceived.addListener(_crListener);
-
+    if (bleData.charReceived.value) {
+      updateCustomCharacter(this.bleData, widget.device);
+    } else {
+      bleData.charReceived.addListener(_crListener);
+    }
     bleData.isConnectingSubscription = widget.device.isConnecting.listen((value) {
       this.bleData.isConnecting = value;
       if (mounted) {
@@ -62,7 +65,9 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   }
 
   void _crListener() {
-    updateCustomCharacter(bleData, widget.device);
+    if (bleData.charReceived.value) {
+      updateCustomCharacter(bleData, widget.device);
+    }
   }
 
   @override
@@ -95,7 +100,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   }
 
   @override
-Widget build(BuildContext context) {
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text("Main Device Screen"),
@@ -108,13 +113,16 @@ Widget build(BuildContext context) {
           DeviceHeader(device: widget.device, bleData: bleData, connectOnly: true),
           SizedBox(height: 20),
           _buildCard('assets/shiftscreen.png', "Virtual Shifter", () {
-            Navigator.of(context).push(MaterialPageRoute(builder: (context) => ShifterScreen(device: widget.device, bleData: bleData)));
+            Navigator.of(context)
+                .push(MaterialPageRoute(builder: (context) => ShifterScreen(device: widget.device, bleData: bleData)));
           }),
           _buildCard('assets/settingsScreen.png', "Settings", () {
-            Navigator.of(context).push(MaterialPageRoute(builder: (context) => SettingsScreen(device: widget.device, bleData: bleData)));
+            Navigator.of(context)
+                .push(MaterialPageRoute(builder: (context) => SettingsScreen(device: widget.device, bleData: bleData)));
           }),
           _buildCard('assets/GitHub-logo.png', "Update Firmware", () {
-            Navigator.of(context).push(MaterialPageRoute(builder: (context) => FirmwareUpdateScreen(device: widget.device, bleData: bleData)));
+            Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => FirmwareUpdateScreen(device: widget.device, bleData: bleData)));
           }),
         ],
       ),

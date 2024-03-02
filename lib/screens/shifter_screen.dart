@@ -27,7 +27,7 @@ class ShifterScreen extends StatefulWidget {
 class _ShifterScreenState extends State<ShifterScreen> {
   late Map c;
   String t = "Loading";
-  late StreamSubscription _charSubscription;
+  StreamSubscription? _charSubscription;
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
 
   @override
@@ -42,7 +42,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   void dispose() {
     _connectionStateSubscription.cancel();
     if (widget.bleData.charReceived.value) {
-      _charSubscription.cancel();
+      _charSubscription?.cancel();
     }
     widget.bleData.isReadingOrWriting.removeListener(_rwListner);
     WakelockPlus.disable();
@@ -97,12 +97,12 @@ class _ShifterScreenState extends State<ShifterScreen> {
   Widget _buildShiftButton(IconData icon, VoidCallback onPressed) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        primary: Colors.grey[300], // Button color
-        onPrimary: Colors.black, // Icon color
-        shape: CircleBorder(),
-        padding: EdgeInsets.all(24),
+        backgroundColor: Colors.grey[300], // Button color
+        foregroundColor: Colors.black, // Icon color
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(20))), // Oval shape
+        padding: EdgeInsets.symmetric(vertical: 48, horizontal: 30), // Padding for oval shape
       ),
-      child: Icon(icon, size: 48),
+      child: Icon(icon, size: 60), // Icon size
       onPressed: onPressed,
     );
   }
