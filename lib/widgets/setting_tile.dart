@@ -38,6 +38,7 @@ class _SettingTileState extends State<SettingTile> {
   Map get c => widget.c;
 
 
+
   @override
   void initState() {
     super.initState();
@@ -86,32 +87,15 @@ class _SettingTileState extends State<SettingTile> {
     }
 
     return Card(
-      color: Colors.black12,
-
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Text(c["textDescription"], style: TextStyle(color: Colors.white)),
-          SizedBox(height: 50),
-          Center(
-            child: Hero(
-                tag: c["vName"],
-                //flightShuttleBuilder: _flightShuttleBuilder,
-                child: Material(
-                  child: ret,
-                  type: MaterialType.transparency,
-                )),
-          ),
-          SizedBox(height: 50),
-          Text(
-              "Settings are immediate for the current session.\nClick save on the main screen to make them persistent.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white)),
-        ],
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisAlignment: MainAxisAlignment.center,
-      ),
-    );
+          Material(
+            child: ret,
+            type: MaterialType.transparency,
+          )]),
+        //crossAxisAlignment: CrossAxisAlignment.center,
+        //mainAxisAlignment: MainAxisAlignment.center,
+      );
   }
 
   String valueFormatter() {
@@ -131,96 +115,19 @@ class _SettingTileState extends State<SettingTile> {
 
   @override
   Widget build(BuildContext context) {
-    return Hero(
-      tag: c["vName"],
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              fadeRoute(
-                Scaffold(
-                  appBar: AppBar(title: const Text('Edit Setting')),
-                  body: Center(child: widgetPicker()),
-                  // ... other Scaffold content
-                ),
-              ),
-            );
-          },
-          child: Material(
-            //type: MaterialType.transparency,
-
-            child: Card(
-              //tag: c["vName"],
-              margin: EdgeInsets.fromLTRB(0, 0, 0, 16),
-              color: Color(0xffffffff),
-              shadowColor: Color(0x4d939393),
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4.0),
-                side: BorderSide(color: Color(0x4d9e9e9e), width: 1),
-              ),
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.max,
-                  children: [
-                    Expanded(
-                      flex: 1,
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.max,
-                          children: [
-                            Text(
-                              (c["humanReadableName"]),
-                              textAlign: TextAlign.start,
-                              maxLines: 1,
-                              overflow: TextOverflow.clip,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontStyle: FontStyle.normal,
-                                fontSize: 16,
-                                color: Color(0xff000000),
-                              ),
-                            ),
-                            Padding(
-                              padding: EdgeInsets.fromLTRB(0, 4, 0, 0),
-                              child: Text(
-                                valueFormatter(),
-                                textAlign: TextAlign.start,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w400,
-                                  fontStyle: FontStyle.normal,
-                                  fontSize: 14,
-                                  color: Color(0xff6c6c6c),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      Icons.arrow_forward_ios,
-                      color: Color(0xff212435),
-                      size: 24,
-                    ),
-                  ],
-                ),
-              ),
-            ),
+    return Column(children: <Widget>[
+        ExpansionTile(
+          title: Text(
+            (c["humanReadableName"]),
+            textAlign: TextAlign.start,
+            maxLines: 1,
+            overflow: TextOverflow.clip,
           ),
-        ),
-      ),
-    );
+          subtitle: Text(valueFormatter()),
+          children: <Widget>[
+            widgetPicker(),
+        ]),
+    ]);
   }
 
   Route fadeRoute(Widget page) {

@@ -31,42 +31,15 @@ class _boolCardState extends State<boolCard> {
   @override
   Widget build(BuildContext context) {
 
-    return Column(
-      children: <Widget>[Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: Colors.black,
-          width: 2.0,
-        ),
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-        Text((widget.c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
-        Text((bool.parse(widget.c["value"]) ? "On" : "Off"), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
-        Switch(
-          value: bool.parse(widget.c["value"]),
-          onChanged: (b) {
-            widget.c["value"] = b.toString();
-            writeToSS2K(widget.bleData, widget.device, widget.c);
-            setState(() {});
-            return widget.c["value"];
-          },
-        ),
-        const SizedBox(height: 15),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: <Widget>[
-            const SizedBox(width: 8),
-            TextButton(
-              child: const Text('BACK'),
-              onPressed: () {
-                Navigator.pop(context);
-              },
-            ),
-            const SizedBox(width: 8),
-          ],
-        ),
-      ]),
-    ),]);
+    return SwitchListTile(
+      subtitle: Text((c["textDescription"])),
+      value: bool.parse(widget.c["value"]),
+      onChanged: (b) {
+        widget.c["value"] = b.toString();
+        writeToSS2K(widget.bleData, widget.device, widget.c);
+        setState(() {});
+        return widget.c["value"];
+        },
+    );
   }
 }
