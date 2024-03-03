@@ -32,7 +32,7 @@ class _boolCardState extends State<boolCard> {
   Widget build(BuildContext context) {
 
     return SwitchListTile(
-      subtitle: Text((c["textDescription"])),
+      subtitle: Text(widget.c["textDescription"]),
       value: bool.parse(widget.c["value"]),
       onChanged: (b) {
         widget.c["value"] = b.toString();
