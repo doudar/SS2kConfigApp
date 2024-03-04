@@ -229,10 +229,7 @@ Future<void> _updateRssi() async {
     Color iconColor;
 
     if (widget.device.isConnected) {
-      if (rssi >= -60) {
-        iconData = Icons.signal_cellular_4_bar_sharp; // Assume this is full signal strength
-        iconColor = Colors.black;
-      } else if (rssi >= -70) {
+      if (rssi >= -70) {
         iconData = Icons.signal_cellular_alt_sharp; // Assume this is 4 bars
         iconColor = Colors.green;
       } else if (rssi >= -80) {

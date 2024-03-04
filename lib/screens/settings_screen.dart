@@ -96,7 +96,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return ScaffoldMessenger(
       key: Snackbar.snackBarKeyC,
       child: Scaffold(
-        backgroundColor: Color(0xffebebeb),
         appBar: AppBar(
           title: Text(widget.device.platformName),
           centerTitle: true,
