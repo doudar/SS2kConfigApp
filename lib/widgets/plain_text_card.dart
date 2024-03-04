@@ -40,62 +40,68 @@ class _plainTextCardState extends State<plainTextCard> {
   }
 
   Widget passwordTextField() {
-    return TextField(
-      obscureText: passwordVisible,
-      decoration: InputDecoration(
-        border: UnderlineInputBorder(),
-        hintText: "Password",
-        labelText: "Password",
-        helperStyle: TextStyle(color: Colors.green),
-        suffixIcon: IconButton(
-          icon: Icon(passwordVisible ? Icons.visibility : Icons.visibility_off),
-          onPressed: () {
-            setState(
-              () {
-                passwordVisible = !passwordVisible;
-              },
-            );
-          },
+    return Container(
+      padding: EdgeInsets.fromLTRB(10, 0, 10, 0),
+      child: TextField(
+        obscureText: passwordVisible,
+        decoration: InputDecoration(
+          border: UnderlineInputBorder(),
+          hintText: "Password",
+          labelText: "Password",
+          helperStyle: TextStyle(color: Colors.green),
+          suffixIcon: IconButton(
+            icon: Icon(passwordVisible ? Icons.visibility : Icons.visibility_off),
+            onPressed: () {
+              setState(
+                () {
+                  passwordVisible = !passwordVisible;
+                },
+              );
+            },
+          ),
+          alignLabelWithHint: false,
+          filled: true,
         ),
-        alignLabelWithHint: false,
-        filled: true,
+        keyboardType: TextInputType.visiblePassword,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (t) {
+          this.verifyInput(t);
+          writeToSS2K(widget.bleData, widget.device, this.c);
+          setState(() {});
+          return widget.c["value"];
+        },
       ),
-      keyboardType: TextInputType.visiblePassword,
-      textInputAction: TextInputAction.done,
-      onSubmitted: (t) {
-        this.verifyInput(t);
-        writeToSS2K(widget.bleData, widget.device, this.c);
-        setState(() {});
-        return widget.c["value"];
-      },
     );
   }
 
   Widget regularTextField() {
-    return TextField(
-      controller: this.controller,
-      decoration: InputDecoration(
-        border: OutlineInputBorder(),
-        hintText: "Type Here",
-        labelText: "SSID",
-        hintStyle: TextStyle(fontWeight: FontWeight.w200),
-        suffixIcon: Icon(Icons.edit_attributes),
-        //fillColor: Colors.white,
+    return Container(
+      padding: EdgeInsets.fromLTRB(10, 0, 10, 0),
+      child: TextField(
+        controller: this.controller,
+        decoration: InputDecoration(
+          border: OutlineInputBorder(),
+          hintText: "Type Here",
+          labelText: "SSID",
+          hintStyle: TextStyle(fontWeight: FontWeight.w200),
+          suffixIcon: Icon(Icons.edit_attributes),
+          //fillColor: Colors.white,
+          ),
+        textAlign: TextAlign.left,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (t) {
+          this.verifyInput(t);
+          writeToSS2K(widget.bleData, widget.device, this.c);
+          setState(() {});
+          return widget.c["value"];
+        },
       ),
-      textAlign: TextAlign.left,
-      textInputAction: TextInputAction.done,
-      onSubmitted: (t) {
-        this.verifyInput(t);
-        writeToSS2K(widget.bleData, widget.device, this.c);
-        setState(() {});
-        return widget.c["value"];
-      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return Container(
       child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
         ListTile(
           title: Text(widget.c["textDescription"]),
