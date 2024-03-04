@@ -80,9 +80,9 @@ class _plainTextCardState extends State<plainTextCard> {
       child: TextField(
         controller: this.controller,
         decoration: InputDecoration(
-          border: OutlineInputBorder(),
+          //border: OutlineInputBorder(),
           hintText: "Type Here",
-          labelText: "SSID",
+          labelText: widget.c["humanReadableName"],
           hintStyle: TextStyle(fontWeight: FontWeight.w200),
           suffixIcon: Icon(Icons.edit_attributes),
           //fillColor: Colors.white,
