@@ -62,25 +62,20 @@ class _sliderCardState extends State<sliderCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: Colors.black,
-          width: 2.0,
+    return Container(
+      child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+        ListTile(
+        title: Text(widget.c["textDescription"]),
+        dense: true,
         ),
-      ),
-      child: Column(children: <Widget>[
-        Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
-        Text((c["value"]), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
+        //Text((c["value"]), textAlign: TextAlign.left),
         TextField(
           controller: this.controller,
           decoration: InputDecoration(
+            border: OutlineInputBorder(),
+            labelText: c["humanReadableName"],
             prefixIcon: Icon(Icons.edit_attributes),
             fillColor: Colors.white,
-          ),
-          style: TextStyle(
-            fontSize: 30,
           ),
           textAlign: TextAlign.center,
           onSubmitted: (t) {
@@ -112,12 +107,6 @@ class _sliderCardState extends State<sliderCard> {
               writeToSS2K(widget.bleData, widget.device, this.c);
             });
           },
-        ),
-            TextButton(
-              child: const Text('BACK'),
-              onPressed: () {
-          Navigator.pop(context);
-        },
         ),
       ]),
     );
