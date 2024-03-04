@@ -75,15 +75,14 @@ class _plainTextCardState extends State<plainTextCard> {
     return TextField(
       controller: this.controller,
       decoration: InputDecoration(
+        border: OutlineInputBorder(),
         hintText: "Type Here",
+        labelText: "SSID",
         hintStyle: TextStyle(fontWeight: FontWeight.w200),
-        prefixIcon: Icon(Icons.edit_attributes),
-        fillColor: Colors.white,
+        suffixIcon: Icon(Icons.edit_attributes),
+        //fillColor: Colors.white,
       ),
-      style: TextStyle(
-        fontSize: 30,
-      ),
-      textAlign: TextAlign.center,
+      textAlign: TextAlign.left,
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
@@ -97,33 +96,16 @@ class _plainTextCardState extends State<plainTextCard> {
   @override
   Widget build(BuildContext context) {
     return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: Colors.black,
-          width: 2.0,
-        ),
-      ),
       child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-        Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
+        ListTile(
+          title: Text(widget.c["textDescription"]),
+          dense: true,
+        ),
         (c["vName"] == passwordVname)
             ? Text("**********")
-            : Text((c["value"]), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
+            : Text((c["value"]), textAlign: TextAlign.left),
         (c["vName"] == passwordVname) ? passwordTextField() : regularTextField(),
         const SizedBox(height: 15),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: <Widget>[
-            const SizedBox(width: 8),
-            TextButton(
-              child: const Text('BACK'),
-              onPressed: () {
-                Navigator.pop(context);
-              },
-            ),
-            const SizedBox(width: 8),
-          ],
-        ),
       ]),
     );
   }
