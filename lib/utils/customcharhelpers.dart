@@ -24,6 +24,7 @@ Future updateCustomCharacter(BLEData bleData, BluetoothDevice device) async {
   if (_inUpdateLoop) {
     return;
   }
+  device.requestMtu(515);
   _inUpdateLoop = true;
   if (!bleData.getMyCharacteristic(device).isNotifying) notify(bleData, device);
   if (!_subscribed) decode(bleData, device);

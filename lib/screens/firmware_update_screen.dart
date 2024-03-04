@@ -8,12 +8,13 @@
 import 'dart:async';
 import 'dart:io' as io;
 import 'package:flutter/material.dart';
-import 'package:flutter_ota/ota_package.dart';
+
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../utils/bleOTA.dart';
 import '../utils/bledata.dart';
 import '../widgets/device_header.dart';
 
