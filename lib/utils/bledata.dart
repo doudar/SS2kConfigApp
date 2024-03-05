@@ -12,6 +12,25 @@ import 'constants.dart';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+class BLEDataManager {
+  static final Map<String, BLEData> _dataMap = {};
+
+  static BLEData forDevice(BluetoothDevice device) {
+    if (!_dataMap.containsKey(device.remoteId.str)) {
+      _dataMap[device.remoteId.str] = BLEData();
+    }
+    return _dataMap[device.remoteId.str]!;
+  }
+
+  static void updateDataForDevice(BluetoothDevice device, BLEData data) {
+    _dataMap[device.remoteId.str] = data;
+  }
+
+  static void clearDataForDevice(BluetoothDevice device) {
+    _dataMap.remove(device.remoteId.str);
+  }
+}
+
 class BLEData {
   ValueNotifier<int> rssi = ValueNotifier(0);
   ValueNotifier<bool> charReceived = ValueNotifier(false);

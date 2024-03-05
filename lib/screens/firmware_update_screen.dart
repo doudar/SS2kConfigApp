@@ -342,7 +342,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           children: <Widget>[
             DeviceHeader(
               device: widget.device,
-              bleData: widget.bleData,
               connectOnly: true,
             ),
             SizedBox(height: 50),

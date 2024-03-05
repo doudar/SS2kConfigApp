@@ -156,7 +156,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
           crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisSize: MainAxisSize.max,
           children: [
-            DeviceHeader(device: widget.device, bleData: widget.bleData, connectOnly: true),
+            DeviceHeader(device: widget.device, connectOnly: true),
             Spacer(flex: 1),
             _buildShiftButton(Icons.arrow_upward, () {
               shift(1);

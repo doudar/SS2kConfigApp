@@ -15,12 +15,10 @@ import '../utils/constants.dart';
 class DropdownCard extends StatefulWidget {
   const DropdownCard({
     Key? key,
-    required this.bleData,
     required this.device,
     required this.c,
   }) : super(key: key);
 
-  final BLEData bleData;
   final BluetoothDevice device;
   final Map c;
 
@@ -31,18 +29,21 @@ class DropdownCard extends StatefulWidget {
 class _DropdownCardState extends State<DropdownCard> {
   List<String> ddItems = [];
   String? selectedValue;
+  late BLEData bleData;
 
   @override
   void initState() {
     super.initState();
+    bleData = BLEDataManager.forDevice(widget.device);
     buildDevicesMap();
     selectedValue = ddItems.isNotEmpty ? ddItems[0] : null;
   }
 
-void buildDevicesMap() {
+  void buildDevicesMap() {
     late List _items;
     ddItems = [widget.c["value"]];
-    widget.bleData.customCharacteristic.forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
+    this.bleData.customCharacteristic
+        .forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
 
     for (var d in _items) {
       for (var subd in d.values) {
@@ -79,9 +80,9 @@ void buildDevicesMap() {
       // Assuming writeToSS2K is your method to handle selection
     });
     //reconnect devices
-    writeToSS2K(widget.bleData, widget.device, widget.c);
-    widget.bleData.customCharacteristic
-        .forEach((d) => d["vName"] == restartBLEVname ? writeToSS2K(widget.bleData, widget.device, d, s: "1") : ());
+    writeToSS2K(this.bleData, widget.device, widget.c);
+    this.bleData.customCharacteristic
+        .forEach((d) => d["vName"] == restartBLEVname ? writeToSS2K(this.bleData, widget.device, d, s: "1") : ());
   }
 
   @override
@@ -109,7 +110,8 @@ void buildDevicesMap() {
                   style: TextStyle(fontSize: 20),
                   textAlign: TextAlign.left,
                 ),
-              ), Text( widget.c["value"]),
+              ),
+              Text(widget.c["value"]),
               SizedBox(height: 20),
               Expanded(
                 child: ListWheelScrollView.useDelegate(
