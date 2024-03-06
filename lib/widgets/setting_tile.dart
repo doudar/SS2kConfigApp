@@ -19,10 +19,9 @@ import '../widgets/dropdown_card.dart';
 import '../utils/bledata.dart';
 
 class SettingTile extends StatefulWidget {
-  final BLEData bleData;
   final BluetoothDevice device;
   final Map c;
-  const SettingTile({Key? key, required this.bleData, required this.device, required this.c}) : super(key: key);
+  const SettingTile({Key? key, required this.device, required this.c}) : super(key: key);
 
   @override
   State<SettingTile> createState() => _SettingTileState();
@@ -31,21 +30,14 @@ class SettingTile extends StatefulWidget {
 class _SettingTileState extends State<SettingTile> {
   late String text = this.c["value"].toString();
   late StreamSubscription<List<int>> _lastValueSubscription;
-
-  BluetoothCharacteristic get characteristic =>
-      widget.bleData.getMyCharacteristic(widget.device);
-
+  late BLEData bleData;
   Map get c => widget.c;
-
-
 
   @override
   void initState() {
     super.initState();
-    _lastValueSubscription = widget.bleData
-        .getMyCharacteristic(widget.device)
-        .lastValueStream
-        .listen((value) {
+    bleData = BLEDataManager.forDevice(widget.device);
+    _lastValueSubscription = this.bleData.getMyCharacteristic(widget.device).lastValueStream.listen((value) {
       if (mounted) {
         setState(() {});
       }
@@ -59,30 +51,25 @@ class _SettingTileState extends State<SettingTile> {
       case "float":
       case "long":
         ret = SingleChildScrollView(
-          child: sliderCard(
-              bleData: widget.bleData, device: widget.device, c: c),
+          child: sliderCard(device: widget.device, c: c),
         );
       case "string":
-        if ((c["vName"] == connectedHRMVname) ||
-            (c["vName"] == connectedPWRVname)) {
+        if ((c["vName"] == connectedHRMVname) || (c["vName"] == connectedPWRVname)) {
           ret = SingleChildScrollView(
-            child: DropdownCard(
-                bleData: widget.bleData, device: widget.device, c: c),
+            child: DropdownCard(device: widget.device, c: c),
           );
         } else {
           ret = SingleChildScrollView(
-            child: plainTextCard(
-                bleData: widget.bleData, device: widget.device, c: c),
+            child: plainTextCard(device: widget.device, c: c),
           );
         }
       case "bool":
         ret = SingleChildScrollView(
-          child: boolCard(bleData: widget.bleData, device: widget.device, c: c), // boolCard
+          child: boolCard(device: widget.device, c: c),
         );
       default:
         ret = SingleChildScrollView(
-          child: plainTextCard(
-              bleData: widget.bleData, device: widget.device, c: c),
+          child: plainTextCard(device: widget.device, c: c),
         );
     }
 
@@ -129,4 +116,16 @@ class _SettingTileState extends State<SettingTile> {
         ]),
     ]);
   }
+}
+
+Route fadeRoute(Widget page) {
+  return PageRouteBuilder(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return FadeTransition(
+        opacity: animation,
+        child: child,
+      );
+    },
+  );
 }
