@@ -39,7 +39,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   OtaPackage? otaPackage;
 
   StreamSubscription<int>? progressSubscription;
-  StreamSubscription<bool>? charSubscription;
+  StreamSubscription<BluetoothConnectionState>? charSubscription;
   double _progress = 0;
   bool _loaded = false;
   DateTime? startTime;
@@ -63,7 +63,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     } else {
       this.bleData.charReceived.addListener(_charListner);
     }
-
     _loadingTimer = Timer.periodic(Duration(microseconds: 100), (_fwCheck) {
       if (this.bleData.firmwareVersion == "") {
         return;
@@ -78,6 +77,20 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         _fwCheck.cancel();
       }
     });
+    // Listen for firmware update progress and handle completion
+    progressSubscription?.onDone(() {
+      if (_progress >= 1) {
+        // Check if the upload is complete
+        _showUploadCompleteDialog(true);
+      }
+    });
+
+     // Monitor device disconnection during firmware update
+  charSubscription = widget.device.connectionState.listen((state) {
+    if (state != BluetoothConnectionState.connected && updatingFirmware && _progress < 1) {
+      _showUploadCompleteDialog(false);
+    }
+  });
   }
 
   @override
@@ -88,9 +101,34 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     super.dispose();
   }
 
+  // Method to display dialog based on firmware update success or failure
+void _showUploadCompleteDialog(bool isSuccess) {
+  String title = isSuccess ? "Upload Successful" : "Upload Failed";
+  String content = isSuccess
+      ? "The firmware upload was successful."
+      : "The device disconnected before the upload could complete.";
+
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: <Widget>[
+          TextButton(
+            child: Text("OK"),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
+
   Future<void> _initialize() async {
-    otaPackage =
-        Esp32OtaPackage(this.bleData.firmwareDataCharacteristic, this.bleData.firmwareControlCharacteristic);
+    otaPackage = Esp32OtaPackage(this.bleData.firmwareDataCharacteristic, this.bleData.firmwareControlCharacteristic);
     await _fetchGithubFirmwareVersion();
     await _fetchBuiltinFirmwareVersion();
     await _progressStreamSubscription();
@@ -136,8 +174,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       setState(() {
         _githubFirmwareVersion = githubVersion;
         // Assuming this.bleData.firmwareVersion is in 'major.minor.patch' format
-        _githubVersionColor =
-            _isNewerVersion(githubVersion, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
+        _githubVersionColor = _isNewerVersion(githubVersion, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
         _githubVersionColor =
             (this.bleData.firmwareVersion == "") ? Color.fromARGB(255, 242, 0, 255) : _githubVersionColor;
       });

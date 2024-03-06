@@ -92,10 +92,14 @@ class Esp32OtaPackage implements OtaPackage {
     List<int> value = await bleRepo.readCharacteristic(controlCharacteristic).timeout(Duration(seconds: 10));
     print('value returned is this ------- ${value[0]}');
 
+    try {
     int packageNumber = 0;
     for (Uint8List chunk in binaryChunks) {
-      // Write firmware chunks to dataCharacteristic
-      await bleRepo.writeDataCharacteristic(dataCharacteristic, chunk);
+      // Attempt to write firmware chunks to dataCharacteristic
+      await bleRepo.writeDataCharacteristic(dataCharacteristic, chunk).timeout(Duration(seconds: 10), onTimeout: () {
+        // If a timeout occurs, throw a custom exception to be caught by the catch block
+        throw TimeoutException('Failed to write data chunk #$packageNumber');
+      });
       packageNumber++;
 
       double progress = (packageNumber / binaryChunks.length) * 100;
@@ -103,7 +107,13 @@ class Esp32OtaPackage implements OtaPackage {
       print('Writing package number $packageNumber of ${binaryChunks.length} to ESP32');
       print('Progress: $roundedProgress%');
       _percentageController.add(roundedProgress);
-    }
+    }} catch (e) {
+    // If an exception is caught, including our custom TimeoutException
+    print('Error during firmware update: $e');
+    
+    // Notify the UI layer about the failure.
+    FirmwareUpdateScreen().showFirmwareUpdateFailedDialog();
+  }
 
     // Write x04 to the controlCharacteristic to finish the update process
     // await bleRepo.writeDataCharacteristic(controlCharacteristic, Uint8List.fromList([4]));
