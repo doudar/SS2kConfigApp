@@ -6,6 +6,7 @@
  */
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
@@ -160,7 +161,9 @@ class BLEData {
     if (_inUpdateLoop) {
       return;
     }
-    device.requestMtu(515);
+    if (Platform.isAndroid) {
+      device.requestMtu(515);
+    }
     _inUpdateLoop = true;
     if (!this.getMyCharacteristic(device).isNotifying) notify(device);
     if (!_subscribed) decode(device);
@@ -430,7 +433,7 @@ class BLEData {
                     print(c["value"]);
                   }
                   //Set the firmware version
-                 if(c["vName"] == fwVname) this.firmwareVersion = c["value"];
+                  if (c["vName"] == fwVname) this.firmwareVersion = c["value"];
                   break;
                 }
               default:
