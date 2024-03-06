@@ -84,13 +84,13 @@ class Esp32OtaPackage implements OtaPackage {
     }
 
     // Write x01 to the controlCharacteristic and check if it returns value of 0x02
-    await bleRepo.writeDataCharacteristic(dataCharacteristic, byteList);
-    //await bleRepo.writeDataCharacteristic(controlCharacteristic, Uint8List.fromList([1]));
+    // await bleRepo.writeDataCharacteristic(dataCharacteristic, byteList);
+    await bleRepo.writeDataCharacteristic(controlCharacteristic, Uint8List.fromList([1]));
 
     // Read value from controlCharacteristic
-    List<int> value = [0,0];
-    //List<int> value = await bleRepo.readCharacteristic(controlCharacteristic).timeout(Duration(seconds: 10));
-    //print('value returned is this ------- ${value[0]}');
+    // List<int> value = [0,0];
+    List<int> value = await bleRepo.readCharacteristic(controlCharacteristic).timeout(Duration(seconds: 10));
+    print('value returned is this ------- ${value[0]}');
 
     int packageNumber = 0;
     for (Uint8List chunk in binaryChunks) {
