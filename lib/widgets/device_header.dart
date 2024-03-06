@@ -69,10 +69,6 @@ Future<void> _updateRssi() async {
   if (widget.device.isConnected) {
     try {
       this.bleData.rssi.value = await widget.device.readRssi();
-      if (this.bleData.firmwareVersion == "") {
-        this.bleData.customCharacteristic
-            .forEach((d) => (d["vName"] == fwVname) ? this.bleData.firmwareVersion = d["value"] ?? "" : null);
-      }
       if (mounted) {
         setState(() {});
       }

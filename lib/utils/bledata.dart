@@ -399,6 +399,7 @@ class BLEData {
                     subT[i] = t[i + 2];
                   }
                   c["value"] = utf8.decode(subT);
+                  // Format Found Devices into a JSON String
                   if (c["vName"] == foundDevicesVname) {
                     String _pm = "";
                     String _hrm = "";
@@ -428,6 +429,8 @@ class BLEData {
                     c["value"] = tList;
                     print(c["value"]);
                   }
+                  //Set the firmware version
+                 if(c["vName"] == fwVname) this.firmwareVersion = c["value"];
                   break;
                 }
               default:
