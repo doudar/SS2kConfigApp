@@ -9,7 +9,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
-import '../utils/customcharhelpers.dart';
 import '../utils/constants.dart';
 
 class DropdownCard extends StatefulWidget {
@@ -80,9 +79,9 @@ class _DropdownCardState extends State<DropdownCard> {
       // Assuming writeToSS2K is your method to handle selection
     });
     //reconnect devices
-    writeToSS2K(this.bleData, widget.device, widget.c);
+    this.bleData.writeToSS2K(widget.device, widget.c);
     this.bleData.customCharacteristic
-        .forEach((d) => d["vName"] == restartBLEVname ? writeToSS2K(this.bleData, widget.device, d, s: "1") : ());
+        .forEach((d) => d["vName"] == restartBLEVname ? this.bleData.writeToSS2K(widget.device, d, s: "1") : ());
   }
 
   @override

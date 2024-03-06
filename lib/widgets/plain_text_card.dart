@@ -8,13 +8,10 @@
 import 'package:SS2kConfigApp/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-
-import "../utils/customcharhelpers.dart";
 import '../utils/bledata.dart';
 
 class plainTextCard extends StatefulWidget {
-  const plainTextCard({super.key, required this.bleData, required this.device,required this.c});
-  final BLEData bleData;
+  const plainTextCard({super.key, required this.device,required this.c});
   final BluetoothDevice device;
   final Map c;
   @override
@@ -25,7 +22,13 @@ class _plainTextCardState extends State<plainTextCard> {
   Map get c => widget.c;
   final controller = TextEditingController();
   bool passwordVisible = false;
+   late BLEData bleData;
 
+  @override
+  void initState() {
+    super.initState();
+    bleData = BLEDataManager.forDevice(widget.device);
+  }
   @override
   void dispose() {
     controller.dispose();
@@ -64,7 +67,7 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        writeToSS2K(widget.bleData, widget.device, this.c);
+        this.bleData.writeToSS2K( widget.device, this.c);
         setState(() {});
         return widget.c["value"];
       },
@@ -87,7 +90,7 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        writeToSS2K(widget.bleData, widget.device, this.c);
+        this.bleData.writeToSS2K(widget.device, this.c);
         setState(() {});
         return widget.c["value"];
       },

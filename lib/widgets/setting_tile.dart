@@ -51,7 +51,7 @@ class _SettingTileState extends State<SettingTile> {
       case "float":
       case "long":
         ret = SingleChildScrollView(
-          child: sliderCard(bleData: this.bleData, device: widget.device, c: c),
+          child: sliderCard(device: widget.device, c: c),
         );
       case "string":
         if ((c["vName"] == connectedHRMVname) || (c["vName"] == connectedPWRVname)) {
@@ -60,16 +60,16 @@ class _SettingTileState extends State<SettingTile> {
           );
         } else {
           ret = SingleChildScrollView(
-            child: plainTextCard(bleData: this.bleData, device: widget.device, c: c),
+            child: plainTextCard(device: widget.device, c: c),
           );
         }
       case "bool":
         ret = SingleChildScrollView(
-          child: boolCard(bleData: this.bleData, device: widget.device, c: c),
+          child: boolCard(device: widget.device, c: c),
         );
       default:
         ret = SingleChildScrollView(
-          child: plainTextCard(bleData: this.bleData, device: widget.device, c: c),
+          child: plainTextCard(device: widget.device, c: c),
         );
     }
 

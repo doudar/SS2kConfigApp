@@ -12,7 +12,6 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
-import '../utils/customcharhelpers.dart';
 import '../utils/constants.dart';
 import '../utils/bledata.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -121,7 +120,7 @@ Future<void> _updateRssi() async {
     try {
       this.bleData.services = await widget.device.discoverServices();
       //await _findChar();
-      await updateCustomCharacter(this.bleData, widget.device);
+      await this.bleData.updateCustomCharacter(widget.device);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -135,7 +134,7 @@ Future<void> _updateRssi() async {
 
   Future onSaveSettingsPressed() async {
     try {
-      await saveAllSettings(this.bleData, widget.device);
+      await this.bleData.saveAllSettings(widget.device);
       Snackbar.show(ABC.c, "Settings Saved", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Save Settings Failed ", e), success: false);
@@ -164,7 +163,7 @@ Future<void> _updateRssi() async {
 
   Future onRebootPressed() async {
     try {
-      await reboot(this.bleData, widget.device);
+      await this.bleData.reboot( widget.device);
       Snackbar.show(ABC.a, "SmartSpin2k is rebooting", success: true);
       await onDisconnectPressed();
       await onConnectPressed();
@@ -175,7 +174,7 @@ Future<void> _updateRssi() async {
 
   Future onResetPressed() async {
     try {
-      await resetToDefaults(this.bleData, widget.device);
+      await this.bleData.resetToDefaults(widget.device);
       await discoverServices();
       Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
     } catch (e) {
@@ -193,7 +192,7 @@ Future<void> _updateRssi() async {
       try {
         this.bleData.services = await widget.device.discoverServices();
         //_findChar();
-        await updateCustomCharacter(this.bleData, widget.device);
+        await this.bleData.updateCustomCharacter(widget.device);
         Snackbar.show(ABC.c, "Discover Services: Success", success: true);
       } catch (e) {
         Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
