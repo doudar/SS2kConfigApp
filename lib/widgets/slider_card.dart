@@ -10,12 +10,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import "../utils/snackbar.dart";
-import "../utils/customcharhelpers.dart";
 import '../utils/bledata.dart';
 
 class sliderCard extends StatefulWidget {
-  const sliderCard({super.key, required this.bleData, required this.device, required this.c});
-  final BLEData bleData;
+  const sliderCard({super.key, required this.device, required this.c});
   final BluetoothDevice device;
   final Map c;
   @override
@@ -24,10 +22,15 @@ class sliderCard extends StatefulWidget {
 
 class _sliderCardState extends State<sliderCard> {
   Map get c => widget.c;
-  BluetoothCharacteristic get characteristic => widget.bleData.getMyCharacteristic(widget.device);
+   late BLEData bleData;
   late double _currentSliderValue = double.parse(c["value"]);
   final controller = TextEditingController();
 
+  @override
+  void initState() {
+    super.initState();
+    bleData = BLEDataManager.forDevice(widget.device);
+  }
   @override
   void dispose() {
     controller.dispose();
@@ -85,7 +88,7 @@ class _sliderCardState extends State<sliderCard> {
           textAlign: TextAlign.center,
           onSubmitted: (t) {
             this.verifyInput(t);
-            writeToSS2K(widget.bleData, widget.device, this.c);
+            this.bleData.writeToSS2K(widget.device, this.c);
             setState(() {});
             return widget.c["value"];
           },
@@ -94,22 +97,22 @@ class _sliderCardState extends State<sliderCard> {
          Slider(
           min: c["min"].toDouble(),
           max: c["max"].toDouble(),
-          label: this._currentSliderValue.toStringAsFixed(getPrecision(c)),
+          label: this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c)),
           divisions: 100,
           value: constrainValue(this._currentSliderValue),
           onChanged: (double v) {
             setState(() {
               this._currentSliderValue = v;
-              widget.c["value"] = this._currentSliderValue.toStringAsFixed(getPrecision(c));
+              widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
               controller.text = widget.c["value"];
             });
           },
           onChangeEnd: (double v) {
             setState(() {
               this._currentSliderValue = v;
-              widget.c["value"] = this._currentSliderValue.toStringAsFixed(getPrecision(c));
+              widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
               controller.text = widget.c["value"];
-              writeToSS2K(widget.bleData, widget.device, this.c);
+              this.bleData.writeToSS2K(widget.device, this.c);
             });
           },
         ),

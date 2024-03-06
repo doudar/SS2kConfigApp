@@ -10,11 +10,8 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
 
 
-import "../utils/customcharhelpers.dart";
-
 class boolCard extends StatefulWidget {
-  const boolCard({super.key, required this.bleData, required this.device,required this.c});
-  final BLEData bleData;
+  const boolCard({super.key, required this.device,required this.c});
   final BluetoothDevice device;
   final Map c;
   @override
@@ -22,6 +19,14 @@ class boolCard extends StatefulWidget {
 }
 
 class _boolCardState extends State<boolCard> {
+late BLEData bleData;
+
+  @override
+  void initState() {
+    super.initState();
+    bleData = BLEDataManager.forDevice(widget.device);
+  }
+
 
   @override
   void dispose() {
@@ -47,7 +52,7 @@ class _boolCardState extends State<boolCard> {
           value: bool.parse(widget.c["value"]),
           onChanged: (b) {
             widget.c["value"] = b.toString();
-            writeToSS2K(widget.bleData, widget.device, widget.c);
+            this.bleData.writeToSS2K(widget.device, widget.c);
             setState(() {});
             return widget.c["value"];
           },

@@ -14,7 +14,6 @@ import '../screens/shifter_screen.dart';
 import '../screens/firmware_update_screen.dart';
 
 import '../utils/extra.dart';
-import '../utils/customcharhelpers.dart';
 
 import '../utils/bledata.dart';
 
@@ -27,12 +26,12 @@ class MainDeviceScreen extends StatefulWidget {
 }
 
 class _MainDeviceScreenState extends State<MainDeviceScreen> {
-  BLEData bleData = new BLEData();
-
+  late BLEData bleData;
+  
   @override
   void initState() {
     super.initState();
-
+    bleData = BLEDataManager.forDevice(widget.device);
     this.bleData.connectionStateSubscription = widget.device.connectionState.listen((state) async {
       this.bleData.connectionState = state;
       if (state == BluetoothConnectionState.connected) {
@@ -45,7 +44,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     });
 
     if (bleData.charReceived.value) {
-      updateCustomCharacter(this.bleData, widget.device);
+      bleData.updateCustomCharacter(widget.device);
     } else {
       bleData.charReceived.addListener(_crListener);
     }
@@ -66,7 +65,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
 
   void _crListener() {
     if (bleData.charReceived.value) {
-      updateCustomCharacter(bleData, widget.device);
+      bleData.updateCustomCharacter(widget.device);
     }
   }
 
@@ -110,19 +109,19 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       body: ListView(
         padding: EdgeInsets.all(8),
         children: <Widget>[
-          DeviceHeader(device: widget.device, bleData: bleData, connectOnly: true),
+          DeviceHeader(device: widget.device,connectOnly: true),
           SizedBox(height: 20),
           _buildCard('assets/shiftscreen.png', "Virtual Shifter", () {
             Navigator.of(context)
-                .push(MaterialPageRoute(builder: (context) => ShifterScreen(device: widget.device, bleData: bleData)));
+                .push(MaterialPageRoute(builder: (context) => ShifterScreen(device: widget.device)));
           }),
           _buildCard('assets/settingsScreen.png', "Settings", () {
             Navigator.of(context)
-                .push(MaterialPageRoute(builder: (context) => SettingsScreen(device: widget.device, bleData: bleData)));
+                .push(MaterialPageRoute(builder: (context) => SettingsScreen(device: widget.device)));
           }),
           _buildCard('assets/GitHub-logo.png', "Update Firmware", () {
             Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => FirmwareUpdateScreen(device: widget.device, bleData: bleData)));
+                MaterialPageRoute(builder: (context) => FirmwareUpdateScreen(device: widget.device)));
           }),
         ],
       ),

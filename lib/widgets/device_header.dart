@@ -12,16 +12,14 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
-import '../utils/customcharhelpers.dart';
 import '../utils/constants.dart';
 import '../utils/bledata.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class DeviceHeader extends StatefulWidget {
   final BluetoothDevice device;
-  final BLEData bleData;
   final bool connectOnly;
-  const DeviceHeader({Key? key, required this.device, required this.bleData, this.connectOnly = false})
+  const DeviceHeader({Key? key, required this.device,this.connectOnly = false})
       : super(key: key);
 
   @override
@@ -31,15 +29,17 @@ class DeviceHeader extends StatefulWidget {
 class _DeviceHeaderState extends State<DeviceHeader> {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   Timer rssiTimer = Timer.periodic(Duration(seconds: 30), (rssiTimer) {});
-
+late BLEData bleData;
   @override
  void initState() {
   super.initState();
+  bleData = BLEDataManager.forDevice(widget.device);
+
   _connectionStateSubscription = widget.device.connectionState.listen((state) async {
     if (widget.device.isConnected) {
-      widget.bleData.rssi.value = await widget.device.readRssi();
+      this.bleData.rssi.value = await widget.device.readRssi();
     } else {
-      widget.bleData.rssi.value = 0;
+      this.bleData.rssi.value = 0;
     }
     if (mounted) {
       setState(() {});
@@ -63,21 +63,17 @@ void _startRssiTimer() {
 }
 
 Future<void> _updateRssi() async {
-  if (widget.bleData.isUpdatingFirmware || widget.bleData.isReadingOrWriting.value) {
+  if (this.bleData.isUpdatingFirmware || this.bleData.isReadingOrWriting.value) {
     return; // Do not check RSSI if the firmware is being updated
   }
   if (widget.device.isConnected) {
     try {
-      widget.bleData.rssi.value = await widget.device.readRssi();
-      if (widget.bleData.firmwareVersion == "") {
-        widget.bleData.customCharacteristic
-            .forEach((d) => (d["vName"] == fwVname) ? widget.bleData.firmwareVersion = d["value"] ?? "" : null);
-      }
+      this.bleData.rssi.value = await widget.device.readRssi();
       if (mounted) {
         setState(() {});
       }
     } catch (e) {
-      widget.bleData.rssi.value = 0;
+      this.bleData.rssi.value = 0;
     }
   }
 }
@@ -85,7 +81,7 @@ Future<void> _updateRssi() async {
 
 
   bool get isConnected {
-    return widget.bleData.connectionState == BluetoothConnectionState.connected;
+    return this.bleData.connectionState == BluetoothConnectionState.connected;
   }
 
   Future onConnectPressed() async {
@@ -114,27 +110,27 @@ Future<void> _updateRssi() async {
   Future onDiscoverServicesPressed() async {
     if (mounted) {
       setState(() {
-        widget.bleData.isReadingOrWriting.value = true;
+        this.bleData.isReadingOrWriting.value = true;
       });
     }
     try {
-      widget.bleData.services = await widget.device.discoverServices();
+      this.bleData.services = await widget.device.discoverServices();
       //await _findChar();
-      await updateCustomCharacter(widget.bleData, widget.device);
+      await this.bleData.updateCustomCharacter(widget.device);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
     }
     if (mounted) {
       setState(() {
-        widget.bleData.isReadingOrWriting.value = false;
+        this.bleData.isReadingOrWriting.value = false;
       });
     }
   }
 
   Future onSaveSettingsPressed() async {
     try {
-      await saveAllSettings(widget.bleData, widget.device);
+      await this.bleData.saveAllSettings(widget.device);
       Snackbar.show(ABC.c, "Settings Saved", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Save Settings Failed ", e), success: false);
@@ -144,7 +140,7 @@ Future<void> _updateRssi() async {
   Future onSaveLocalPressed() async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
-      prefs.setString('user', jsonEncode(widget.bleData.customCharacteristic));
+      prefs.setString('user', jsonEncode(this.bleData.customCharacteristic));
       Snackbar.show(ABC.c, "Settings Saved", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Save Local Failed ", e), success: false);
@@ -154,7 +150,7 @@ Future<void> _updateRssi() async {
   Future onLoadLocalPressed() async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
-      widget.bleData.customCharacteristic = jsonDecode(prefs.getString('user')!);
+      this.bleData.customCharacteristic = jsonDecode(prefs.getString('user')!);
       Snackbar.show(ABC.c, "Settings Loaded", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Load local failed. Do you have a backup?", e), success: false);
@@ -163,7 +159,7 @@ Future<void> _updateRssi() async {
 
   Future onRebootPressed() async {
     try {
-      await reboot(widget.bleData, widget.device);
+      await this.bleData.reboot( widget.device);
       Snackbar.show(ABC.a, "SmartSpin2k is rebooting", success: true);
       await onDisconnectPressed();
       await onConnectPressed();
@@ -174,7 +170,7 @@ Future<void> _updateRssi() async {
 
   Future onResetPressed() async {
     try {
-      await resetToDefaults(widget.bleData, widget.device);
+      await this.bleData.resetToDefaults(widget.device);
       await discoverServices();
       Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
     } catch (e) {
@@ -185,14 +181,14 @@ Future<void> _updateRssi() async {
   Future discoverServices() async {
     if (mounted) {
       setState(() {
-        widget.bleData.isReadingOrWriting.value = true;
+        this.bleData.isReadingOrWriting.value = true;
       });
     }
     if (widget.device.isConnected) {
       try {
-        widget.bleData.services = await widget.device.discoverServices();
+        this.bleData.services = await widget.device.discoverServices();
         //_findChar();
-        await updateCustomCharacter(widget.bleData, widget.device);
+        await this.bleData.updateCustomCharacter(widget.device);
         Snackbar.show(ABC.c, "Discover Services: Success", success: true);
       } catch (e) {
         Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -200,7 +196,7 @@ Future<void> _updateRssi() async {
     }
     if (mounted) {
       setState(() {
-        widget.bleData.isReadingOrWriting.value = false;
+        this.bleData.isReadingOrWriting.value = false;
       });
     }
   }
@@ -255,12 +251,12 @@ Future<void> _updateRssi() async {
 
   @override
   Widget build(BuildContext context) {
-    var rssiIcon = _buildSignalStrengthIcon(widget.bleData.rssi.value);
+    var rssiIcon = _buildSignalStrengthIcon(this.bleData.rssi.value);
 
     return Column(children: <Widget>[
       ListTile(
         title: Text('Device: ${widget.device.name} (${widget.device.id})'),
-        subtitle: Text('Version: ${widget.bleData.firmwareVersion}'),
+        subtitle: Text('Version: ${this.bleData.firmwareVersion}'),
         trailing: rssiIcon,
         onTap: () => setState(() => _isExpanded = !_isExpanded),
       ),

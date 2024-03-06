@@ -10,21 +10,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-import '../utils/customcharhelpers.dart';
 import '../widgets/device_header.dart';
 import '../utils/bledata.dart';
 
 class ShifterScreen extends StatefulWidget {
   final BluetoothDevice device;
-  final BLEData bleData;
-
-  const ShifterScreen({Key? key, required this.device, required this.bleData}) : super(key: key);
+  const ShifterScreen({Key? key, required this.device}) : super(key: key);
 
   @override
   State<ShifterScreen> createState() => _ShifterScreenState();
 }
 
 class _ShifterScreenState extends State<ShifterScreen> {
+  late BLEData bleData;
   late Map c;
   String t = "Loading";
   StreamSubscription? _charSubscription;
@@ -32,8 +30,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
   @override
   void initState() {
-    widget.bleData.customCharacteristic.forEach((i) => i["vName"] == shiftVname ? c = i : ());
-    widget.bleData.isReadingOrWriting.addListener(_rwListner);
+    bleData = BLEDataManager.forDevice(widget.device);
+    this.bleData.customCharacteristic.forEach((i) => i["vName"] == shiftVname ? c = i : ());
+    this.bleData.isReadingOrWriting.addListener(_rwListner);
     startSubscription();
     super.initState();
   }
@@ -41,10 +40,10 @@ class _ShifterScreenState extends State<ShifterScreen> {
   @override
   void dispose() {
     _connectionStateSubscription.cancel();
-    if (widget.bleData.charReceived.value) {
+    if (this.bleData.charReceived.value) {
       _charSubscription?.cancel();
     }
-    widget.bleData.isReadingOrWriting.removeListener(_rwListner);
+    this.bleData.isReadingOrWriting.removeListener(_rwListner);
     WakelockPlus.disable();
     super.dispose();
   }
@@ -62,7 +61,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
     _connectionStateSubscription = widget.device.connectionState.listen((state) async {
       if (mounted) {
         if (state == BluetoothConnectionState.connected) {
-          widget.bleData.setupConnection(widget.device);
+          this.bleData.setupConnection(widget.device);
           t = c["value"] ?? "Loading";
         } else {
           t = "Loading";
@@ -70,9 +69,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
         setState(() {});
       }
     });
-    if (widget.bleData.charReceived.value) {
+    if (this.bleData.charReceived.value) {
       try {
-        _charSubscription = widget.bleData.getMyCharacteristic(widget.device).onValueReceived.listen((data) async {
+        _charSubscription = this.bleData.getMyCharacteristic(widget.device).onValueReceived.listen((data) async {
           if (c["vName"] == shiftVname) {
             setState(() {
               t = c["value"] ?? "Loading";
@@ -89,7 +88,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
     if (t != "Loading") {
       String _t = (int.parse(c["value"]) + amount).toString();
       c["value"] = _t;
-      writeToSS2K(widget.bleData, widget.device, c);
+      this.bleData.writeToSS2K(widget.device, c);
     }
     WakelockPlus.enable();
   }
@@ -156,7 +155,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
           crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisSize: MainAxisSize.max,
           children: [
-            DeviceHeader(device: widget.device, bleData: widget.bleData, connectOnly: true),
+            DeviceHeader(device: widget.device, connectOnly: true),
             Spacer(flex: 1),
             _buildShiftButton(Icons.arrow_upward, () {
               shift(1);
