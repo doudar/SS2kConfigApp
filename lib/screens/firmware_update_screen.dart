@@ -61,7 +61,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     if (this.bleData.charReceived.value == true) {
       _initialize();
     } else {
-      this.bleData.charReceived.addListener(_charListner);
+      this.bleData.charReceived.addListener(_charListener);
     }
     _loadingTimer = Timer.periodic(Duration(microseconds: 100), (_fwCheck) {
       if (this.bleData.firmwareVersion == "") {
@@ -134,14 +134,14 @@ void _showUploadCompleteDialog(bool isSuccess) {
     await _progressStreamSubscription();
   }
 
-  Future<void> _charListner() async {
+  Future<void> _charListener() async {
     if (this.bleData.charReceived.value) {
       _initialize();
       if (mounted) {
         setState(() {});
       }
       //remove the listener as soon as the characteristic is received.
-      this.bleData.charReceived.removeListener(_charListner);
+      this.bleData.charReceived.removeListener(_charListener);
     }
   }
 
@@ -327,22 +327,22 @@ void _showUploadCompleteDialog(bool isSuccess) {
     ];
   }
 
-  List<Widget> _notBLECompatable() {
+  List<Widget> _notBLECompatible() {
     return <Widget>[
       _loaded
-          ? Text("This firmware isn't compatable with the configuration app. Please upgrade your firmware via HTTP")
+          ? Text("This firmware isn't compatible with the configuration app. Please upgrade your firmware via HTTP")
           : Text("Loading....Please Wait"),
     ];
   }
 
-  Widget _ledgend() {
+  Widget _legend() {
     return Column(
       children: <Widget>[
         SizedBox(
           height: 30,
         ),
         _loaded ? SizedBox() : Text("Determining Firmware Versions. Please Wait..."),
-        _loaded ? Text("Color Coding Ledgend:") : CircularProgressIndicator(),
+        _loaded ? Text("Color Coding Legend:") : CircularProgressIndicator(),
         SizedBox(
           height: 10,
         ),
@@ -383,9 +383,9 @@ void _showUploadCompleteDialog(bool isSuccess) {
             ),
             SizedBox(height: 50),
             Column(
-              children: this.bleData.configAppCompatableFirmware ? _buildUpdateButtons() : _notBLECompatable(),
+              children: this.bleData.configAppCompatibleFirmware ? _buildUpdateButtons() : _notBLECompatible(),
             ),
-            _ledgend(),
+            _legend(),
           ],
         ),
       ),
