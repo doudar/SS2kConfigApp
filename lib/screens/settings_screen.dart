@@ -31,11 +31,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(widget.device);
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
-      if (mounted) {
-        setState(() {});
-      }
-    });
+    _connectionStateSubscription =
+        widget.device.connectionState.listen((state) async {
+          if (mounted) {
+            setState(() {});
+          }
+        });
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
       bleData.isReadingOrWriting.addListener(_rwListner);
     });
@@ -56,61 +57,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     _refreshBlocker = true;
     if (mounted) {
-    await Future.delayed(Duration(microseconds: 500));
-    if (mounted) {
-      setState(() {});
+      await Future.delayed(Duration(microseconds: 500));
+      if (mounted) {
+        setState(() {});
+      }
+      _refreshBlocker = false;
     }
-    _refreshBlocker = false;
-  }
 
 //Build the settings dropdowns
-  List<Widget> buildSettings(BuildContext context) {
-    List<Widget> settings = [];
-    if (this.bleData.isReadingOrWriting.value) {
-      Snackbar.show(ABC.c, "Data Loading, please wait ", success: true);
-      setState(() {});
-    } else {
-      if (this.bleData.charReceived.value) {
-        try {
-          // char = myCharacteristic;
-        } catch (e) {}
+    List<Widget> buildSettings(BuildContext context) {
+      List<Widget> settings = [];
+      if (this.bleData.isReadingOrWriting.value) {
+        Snackbar.show(ABC.c, "Data Loading, please wait ", success: true);
+        setState(() {});
+      } else {
+        if (this.bleData.charReceived.value) {
+          try {
+            // char = myCharacteristic;
+          } catch (e) {}
 
-        _newEntry(Map c) {
-          if (!this.bleData.services.isEmpty) {
-            if (c["isSetting"]) {
-              settings.add(SettingTile(device: widget.device, c: c));
+          _newEntry(Map c) {
+            if (!this.bleData.services.isEmpty) {
+              if (c["isSetting"]) {
+                settings.add(SettingTile(device: widget.device, c: c));
+              }
             }
           }
+
+          this.bleData.customCharacteristic.forEach((c) => _newEntry(c));
         }
-
-        this.bleData.customCharacteristic.forEach((c) => _newEntry(c));
       }
+      _refreshBlocker = false;
+      return settings;
     }
-    _refreshBlocker = false;
-    return settings;
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    _refreshBlocker = true;
-    return ScaffoldMessenger(
-      key: Snackbar.snackBarKeyC,
-      child: Scaffold(
-        backgroundColor: Color(0xffebebeb),
-        appBar: AppBar(
-          title: Text(widget.device.platformName),
-          centerTitle: true,
+    @override
+    Widget build(BuildContext context) {
+      _refreshBlocker = true;
+      return ScaffoldMessenger(
+        key: Snackbar.snackBarKeyC,
+        child: Scaffold(
+          backgroundColor: Color(0xffebebeb),
+          appBar: AppBar(
+            title: Text(widget.device.platformName),
+            centerTitle: true,
+          ),
+          body:
+          ListView(
+              scrollDirection: Axis.vertical,
+              padding: EdgeInsets.all(0),
+              shrinkWrap: true,
+              physics: ScrollPhysics(),
+              children: <Widget>[
+                ...buildSettings(context),
+              ]),
         ),
-        body:
-              ListView(
-                scrollDirection: Axis.vertical,
-                padding: EdgeInsets.all( 0),
-                shrinkWrap: true,
-                physics: ScrollPhysics(),
-                children: <Widget>[
-                  ...buildSettings(context),
-                ]),
-            ),
-        );
+      );
+    }
   }
 }
