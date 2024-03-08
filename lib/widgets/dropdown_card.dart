@@ -33,20 +33,20 @@ class _DropdownCardState extends State<DropdownCard> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
+    bleData = BLEDataManager.forDevice(this.widget.device);
     buildDevicesMap();
     selectedValue = ddItems.isNotEmpty ? ddItems[0] : null;
   }
 
   void buildDevicesMap() {
     late List _items;
-    ddItems = [widget.c["value"]];
+    ddItems = [this.widget.c["value"]];
     this.bleData.customCharacteristic
         .forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
 
     for (var d in _items) {
       for (var subd in d.values) {
-        if (widget.c["vName"] == connectedPWRVname) {
+        if (this.widget.c["vName"] == connectedPWRVname) {
           if (subd["UUID"] == '0x1818' ||
               subd["UUID"] == '0x1826' ||
               subd["UUID"] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' ||
@@ -58,7 +58,7 @@ class _DropdownCardState extends State<DropdownCard> {
             }
           }
         }
-        if (widget.c["vName"] == connectedHRMVname) {
+        if (this.widget.c["vName"] == connectedHRMVname) {
           if (subd["UUID"] == "0x180d") {
             if (subd["name"] == null) {
               ddItems.add(subd["address"]);
@@ -75,13 +75,13 @@ class _DropdownCardState extends State<DropdownCard> {
 
   Future _changeBLEDevice(BuildContext context) async {
     setState(() {
-      widget.c["value"] = selectedValue!;
+      this.widget.c["value"] = selectedValue!;
       // Assuming writeToSS2K is your method to handle selection
     });
     //reconnect devices
-    this.bleData.writeToSS2K(widget.device, widget.c);
+    this.bleData.writeToSS2K(this.widget.device, this.widget.c);
     this.bleData.customCharacteristic
-        .forEach((d) => d["vName"] == restartBLEVname ? this.bleData.writeToSS2K(widget.device, d, s: "1") : ());
+        .forEach((d) => d["vName"] == restartBLEVname ? this.bleData.writeToSS2K(this.widget.device, d, s: "1") : ());
   }
 
   @override
@@ -105,12 +105,12 @@ class _DropdownCardState extends State<DropdownCard> {
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Text(
-                  widget.c["humanReadableName"],
+                  this.widget.c["humanReadableName"],
                   style: TextStyle(fontSize: 20),
                   textAlign: TextAlign.left,
                 ),
               ),
-              Text(widget.c["value"]),
+              Text(this.widget.c["value"]),
               SizedBox(height: 20),
               Expanded(
                 child: ListWheelScrollView.useDelegate(

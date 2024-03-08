@@ -18,8 +18,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 class DeviceHeader extends StatefulWidget {
   final BluetoothDevice device;
   final bool connectOnly;
-  const DeviceHeader({Key? key, required this.device,this.connectOnly = false})
-      : super(key: key);
+  const DeviceHeader({Key? key, required this.device, this.connectOnly = false}) : super(key: key);
 
   @override
   State<DeviceHeader> createState() => _DeviceHeaderState();
@@ -28,24 +27,24 @@ class DeviceHeader extends StatefulWidget {
 class _DeviceHeaderState extends State<DeviceHeader> {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   Timer rssiTimer = Timer.periodic(Duration(seconds: 30), (rssiTimer) {});
-late BLEData bleData;
+  late BLEData bleData;
   @override
- void initState() {
-  super.initState();
-  bleData = BLEDataManager.forDevice(widget.device);
+  void initState() {
+    super.initState();
+    bleData = BLEDataManager.forDevice(this.widget.device);
 
-  _connectionStateSubscription = widget.device.connectionState.listen((state) async {
-    if (widget.device.isConnected) {
-      this.bleData.rssi.value = await widget.device.readRssi();
-    } else {
-      this.bleData.rssi.value = 0;
-    }
-    if (mounted) {
-      setState(() {});
-    }
-  });
-  _startRssiTimer();
-}
+    _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
+      if (this.widget.device.isConnected) {
+        this.bleData.rssi.value = await this.widget.device.readRssi();
+      } else {
+        this.bleData.rssi.value = 0;
+      }
+      if (mounted) {
+        setState(() {});
+      }
+    });
+    _startRssiTimer();
+  }
 
   @override
   void dispose() {
@@ -55,29 +54,27 @@ late BLEData bleData;
     super.dispose();
   }
 
-void _startRssiTimer() {
-  rssiTimer = Timer.periodic(Duration(seconds: 20), (Timer t) {
-    _updateRssi();
-  });
-}
-
-Future<void> _updateRssi() async {
-  if (this.bleData.isUpdatingFirmware || this.bleData.isReadingOrWriting.value) {
-    return; // Do not check RSSI if the firmware is being updated
+  void _startRssiTimer() {
+    rssiTimer = Timer.periodic(Duration(seconds: 20), (Timer t) {
+      _updateRssi();
+    });
   }
-  if (widget.device.isConnected) {
-    try {
-      this.bleData.rssi.value = await widget.device.readRssi();
-      if (mounted) {
-        setState(() {});
+
+  Future<void> _updateRssi() async {
+    if (this.bleData.isUpdatingFirmware || this.bleData.isReadingOrWriting.value) {
+      return; // Do not check RSSI if the firmware is being updated
+    }
+    if (this.widget.device.isConnected) {
+      try {
+        this.bleData.rssi.value = await this.widget.device.readRssi();
+        if (mounted) {
+          setState(() {});
+        }
+      } catch (e) {
+        this.bleData.rssi.value = 0;
       }
-    } catch (e) {
-      this.bleData.rssi.value = 0;
     }
   }
-}
-
-
 
   bool get isConnected {
     return this.bleData.connectionState == BluetoothConnectionState.connected;
@@ -85,7 +82,7 @@ Future<void> _updateRssi() async {
 
   Future onConnectPressed() async {
     try {
-      await widget.device.connectAndUpdateStream();
+      await this.widget.device.connectAndUpdateStream();
       Snackbar.show(ABC.c, "Connect: Success", success: true);
       await onDiscoverServicesPressed();
     } catch (e) {
@@ -99,7 +96,7 @@ Future<void> _updateRssi() async {
 
   Future onDisconnectPressed() async {
     try {
-      await widget.device.disconnectAndUpdateStream();
+      await this.widget.device.disconnectAndUpdateStream();
       Snackbar.show(ABC.c, "Disconnect: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Disconnect Error:", e), success: false);
@@ -113,9 +110,9 @@ Future<void> _updateRssi() async {
       });
     }
     try {
-      this.bleData.services = await widget.device.discoverServices();
+      this.bleData.services = await this.widget.device.discoverServices();
       //await _findChar();
-      await this.bleData.updateCustomCharacter(widget.device);
+      await this.bleData.updateCustomCharacter(this.widget.device);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -129,7 +126,7 @@ Future<void> _updateRssi() async {
 
   Future onSaveSettingsPressed() async {
     try {
-      await this.bleData.saveAllSettings(widget.device);
+      await this.bleData.saveAllSettings(this.widget.device);
       Snackbar.show(ABC.c, "Settings Saved", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Save Settings Failed ", e), success: false);
@@ -158,7 +155,7 @@ Future<void> _updateRssi() async {
 
   Future onRebootPressed() async {
     try {
-      await this.bleData.reboot( widget.device);
+      await this.bleData.reboot(this.widget.device);
       Snackbar.show(ABC.a, "SmartSpin2k is rebooting", success: true);
       await onDisconnectPressed();
       await onConnectPressed();
@@ -169,7 +166,7 @@ Future<void> _updateRssi() async {
 
   Future onResetPressed() async {
     try {
-      await this.bleData.resetToDefaults(widget.device);
+      await this.bleData.resetToDefaults(this.widget.device);
       await discoverServices();
       Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
     } catch (e) {
@@ -183,11 +180,11 @@ Future<void> _updateRssi() async {
         this.bleData.isReadingOrWriting.value = true;
       });
     }
-    if (widget.device.isConnected) {
+    if (this.widget.device.isConnected) {
       try {
-        this.bleData.services = await widget.device.discoverServices();
+        this.bleData.services = await this.widget.device.discoverServices();
         //_findChar();
-        await this.bleData.updateCustomCharacter(widget.device);
+        await this.bleData.updateCustomCharacter(this.widget.device);
         Snackbar.show(ABC.c, "Discover Services: Success", success: true);
       } catch (e) {
         Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -213,7 +210,7 @@ Future<void> _updateRssi() async {
   Widget buildRemoteId(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
-      child: Text('${widget.device.remoteId}'),
+      child: Text('${this.widget.device.remoteId}'),
     );
   }
 
@@ -223,7 +220,7 @@ Future<void> _updateRssi() async {
     IconData iconData;
     Color iconColor;
 
-    if (widget.device.isConnected) {
+    if (this.widget.device.isConnected) {
       if (rssi >= -60) {
         iconData = Icons.signal_cellular_4_bar_sharp; // Assume this is full signal strength
         iconColor = Colors.black;
@@ -254,7 +251,7 @@ Future<void> _updateRssi() async {
 
     return Column(children: <Widget>[
       ListTile(
-        title: Text('Device: ${widget.device.platformName} (${widget.device.remoteId})'),
+        title: Text('Device: ${this.widget.device.platformName} (${this.widget.device.remoteId})'),
         subtitle: Text('Version: ${this.bleData.firmwareVersion}'),
         trailing: rssiIcon,
         onTap: () => setState(() => _isExpanded = !_isExpanded),
@@ -288,6 +285,4 @@ Future<void> _updateRssi() async {
       ),
     );
   }
-
-  // ... Remaining code including the methods: _onConnectPressed, _onDisconnectPressed, _onDiscoverServicesPressed, _onSaveSettingsPressed, _onSaveLocalPressed, _onLoadLocalPressed, _onRebootPressed, _onResetPressed
 }

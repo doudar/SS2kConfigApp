@@ -19,7 +19,7 @@ class plainTextCard extends StatefulWidget {
 }
 
 class _plainTextCardState extends State<plainTextCard> {
-  Map get c => widget.c;
+  Map get c => this.widget.c;
   final controller = TextEditingController();
   bool passwordVisible = false;
    late BLEData bleData;
@@ -27,7 +27,7 @@ class _plainTextCardState extends State<plainTextCard> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
+    bleData = BLEDataManager.forDevice(this.widget.device);
   }
   @override
   void dispose() {
@@ -67,9 +67,9 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        this.bleData.writeToSS2K( widget.device, this.c);
+        this.bleData.writeToSS2K( this.widget.device, this.c);
         setState(() {});
-        return widget.c["value"];
+        return this.widget.c["value"];
       },
     );
   }
@@ -90,9 +90,9 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        this.bleData.writeToSS2K(widget.device, this.c);
+        this.bleData.writeToSS2K(this.widget.device, this.c);
         setState(() {});
-        return widget.c["value"];
+        return this.widget.c["value"];
       },
     );
   }

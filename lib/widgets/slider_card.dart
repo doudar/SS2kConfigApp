@@ -21,7 +21,7 @@ class sliderCard extends StatefulWidget {
 }
 
 class _sliderCardState extends State<sliderCard> {
-  Map get c => widget.c;
+  Map get c => this.widget.c;
    late BLEData bleData;
   late double _currentSliderValue = double.parse(c["value"]);
   final controller = TextEditingController();
@@ -29,7 +29,7 @@ class _sliderCardState extends State<sliderCard> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
+    bleData = BLEDataManager.forDevice(this.widget.device);
   }
   @override
   void dispose() {
@@ -88,9 +88,9 @@ class _sliderCardState extends State<sliderCard> {
           textAlign: TextAlign.center,
           onSubmitted: (t) {
             this.verifyInput(t);
-            this.bleData.writeToSS2K(widget.device, this.c);
+            this.bleData.writeToSS2K(this.widget.device, this.c);
             setState(() {});
-            return widget.c["value"];
+            return this.widget.c["value"];
           },
         ),
         const SizedBox(height: 15),
@@ -103,16 +103,16 @@ class _sliderCardState extends State<sliderCard> {
           onChanged: (double v) {
             setState(() {
               this._currentSliderValue = v;
-              widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
-              controller.text = widget.c["value"];
+              this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
+              controller.text = this.widget.c["value"];
             });
           },
           onChangeEnd: (double v) {
             setState(() {
               this._currentSliderValue = v;
-              widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
-              controller.text = widget.c["value"];
-              this.bleData.writeToSS2K(widget.device, this.c);
+              this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
+              controller.text = this.widget.c["value"];
+              this.bleData.writeToSS2K(this.widget.device, this.c);
             });
           },
         ),

@@ -24,7 +24,7 @@ late BLEData bleData;
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
+    bleData = BLEDataManager.forDevice(this.widget.device);
   }
 
 
@@ -46,15 +46,15 @@ late BLEData bleData;
         ),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-        Text((widget.c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
-        Text((bool.parse(widget.c["value"]) ? "On" : "Off"), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
+        Text((this.widget.c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
+        Text((bool.parse(this.widget.c["value"]) ? "On" : "Off"), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
         Switch(
-          value: bool.parse(widget.c["value"]),
+          value: bool.parse(this.widget.c["value"]),
           onChanged: (b) {
-            widget.c["value"] = b.toString();
-            this.bleData.writeToSS2K(widget.device, widget.c);
+            this.widget.c["value"] = b.toString();
+            this.bleData.writeToSS2K(this.widget.device, this.widget.c);
             setState(() {});
-            return widget.c["value"];
+            return this.widget.c["value"];
           },
         ),
         const SizedBox(height: 15),

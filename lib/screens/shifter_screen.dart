@@ -30,7 +30,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
   @override
   void initState() {
-    bleData = BLEDataManager.forDevice(widget.device);
+    bleData = BLEDataManager.forDevice(this.widget.device);
     this.bleData.customCharacteristic.forEach((i) => i["vName"] == shiftVname ? c = i : ());
     this.bleData.isReadingOrWriting.addListener(_rwListner);
     startSubscription();
@@ -58,10 +58,10 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
   Future startSubscription() async {
     t = c["value"] ?? "Loading";
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
+    _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       if (mounted) {
         if (state == BluetoothConnectionState.connected) {
-          this.bleData.setupConnection(widget.device);
+          this.bleData.setupConnection(this.widget.device);
           t = c["value"] ?? "Loading";
         } else {
           t = "Loading";
@@ -71,7 +71,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
     });
     if (this.bleData.charReceived.value) {
       try {
-        _charSubscription = this.bleData.getMyCharacteristic(widget.device).onValueReceived.listen((data) async {
+        _charSubscription = this.bleData.getMyCharacteristic(this.widget.device).onValueReceived.listen((data) async {
           if (c["vName"] == shiftVname) {
             setState(() {
               t = c["value"] ?? "Loading";
@@ -88,7 +88,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
     if (t != "Loading") {
       String _t = (int.parse(c["value"]) + amount).toString();
       c["value"] = _t;
-      this.bleData.writeToSS2K(widget.device, c);
+      this.bleData.writeToSS2K(this.widget.device, c);
     }
     WakelockPlus.enable();
   }
@@ -155,7 +155,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
           crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisSize: MainAxisSize.max,
           children: [
-            DeviceHeader(device: widget.device, connectOnly: true),
+            DeviceHeader(device: this.widget.device, connectOnly: true),
             Spacer(flex: 1),
             _buildShiftButton(Icons.arrow_upward, () {
               shift(1);

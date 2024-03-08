@@ -31,13 +31,13 @@ class _SettingTileState extends State<SettingTile> {
   late String text = this.c["value"].toString();
   late StreamSubscription<List<int>> _lastValueSubscription;
   late BLEData bleData;
-  Map get c => widget.c;
+  Map get c => this.widget.c;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
-    _lastValueSubscription = this.bleData.getMyCharacteristic(widget.device).lastValueStream.listen((value) {
+    bleData = BLEDataManager.forDevice(this.widget.device);
+    _lastValueSubscription = this.bleData.getMyCharacteristic(this.widget.device).lastValueStream.listen((value) {
       if (mounted) {
         setState(() {});
       }
@@ -51,25 +51,25 @@ class _SettingTileState extends State<SettingTile> {
       case "float":
       case "long":
         ret = SingleChildScrollView(
-          child: sliderCard(device: widget.device, c: c),
+          child: sliderCard(device: this.widget.device, c: c),
         );
       case "string":
         if ((c["vName"] == connectedHRMVname) || (c["vName"] == connectedPWRVname)) {
           ret = SingleChildScrollView(
-            child: DropdownCard(device: widget.device, c: c),
+            child: DropdownCard(device: this.widget.device, c: c),
           );
         } else {
           ret = SingleChildScrollView(
-            child: plainTextCard(device: widget.device, c: c),
+            child: plainTextCard(device: this.widget.device, c: c),
           );
         }
       case "bool":
         ret = SingleChildScrollView(
-          child: boolCard(device: widget.device, c: c),
+          child: boolCard(device: this.widget.device, c: c),
         );
       default:
         ret = SingleChildScrollView(
-          child: plainTextCard(device: widget.device, c: c),
+          child: plainTextCard(device: this.widget.device, c: c),
         );
     }
 

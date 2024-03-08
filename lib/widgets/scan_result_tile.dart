@@ -27,7 +27,7 @@ class _ScanResultTileState extends State<ScanResultTile> {
   @override
   void initState() {
     super.initState();
-    _connectionStateSubscription = widget.result.device.connectionState.listen((state) {
+    _connectionStateSubscription = this.widget.result.device.connectionState.listen((state) {
       _connectionState = state;
       if (mounted) {
         setState(() {});
@@ -65,22 +65,22 @@ class _ScanResultTileState extends State<ScanResultTile> {
   }
 
   Widget _buildTitle(BuildContext context) {
-    if (widget.result.device.platformName.isNotEmpty) {
+    if (this.widget.result.device.platformName.isNotEmpty) {
       return Column(
         mainAxisSize: MainAxisSize.max,
         //mainAxisAlignment: MainAxisAlignment.start,
         //crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(widget.result.device.platformName,
+          Text(this.widget.result.device.platformName,
               overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge),
           Text(
-            widget.result.device.remoteId.toString(),
+            this.widget.result.device.remoteId.toString(),
             style: Theme.of(context).textTheme.bodySmall,
           )
         ],
       );
     } else {
-      return Text(widget.result.device.remoteId.toString());
+      return Text(this.widget.result.device.remoteId.toString());
     }
   }
 
@@ -91,7 +91,7 @@ class _ScanResultTileState extends State<ScanResultTile> {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
       ),
-      onPressed: (widget.result.advertisementData.connectable) ? widget.onTap : null,
+      onPressed: (this.widget.result.advertisementData.connectable) ? this.widget.onTap : null,
     );
   }
 
@@ -119,7 +119,7 @@ class _ScanResultTileState extends State<ScanResultTile> {
 
   @override
   Widget build(BuildContext context) {
-    var adv = widget.result.advertisementData;
+    var adv = this.widget.result.advertisementData;
     return ExpansionTile(
       title: _buildTitle(context),
       leading: Image.asset(
@@ -128,7 +128,7 @@ class _ScanResultTileState extends State<ScanResultTile> {
       trailing: _buildConnectButton(context),
       children: <Widget>[
         if (adv.advName.isNotEmpty) _buildAdvRow(context, 'Name', adv.advName),
-        _buildAdvRow(context, 'RSSI', '${widget.result.rssi.toString()}'),
+        _buildAdvRow(context, 'RSSI', '${this.widget.result.rssi.toString()}'),
       ],
     );
   }
