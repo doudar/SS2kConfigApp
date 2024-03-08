@@ -92,10 +92,13 @@ class Esp32OtaPackage implements OtaPackage {
     List<int> value = await bleRepo.readCharacteristic(controlCharacteristic).timeout(Duration(seconds: 10));
     print('value returned is this ------- ${value[0]}');
 
+
     int packageNumber = 0;
     for (Uint8List chunk in binaryChunks) {
-      // Write firmware chunks to dataCharacteristic
-      await bleRepo.writeDataCharacteristic(dataCharacteristic, chunk);
+      await bleRepo.writeDataCharacteristic(dataCharacteristic, chunk).timeout(Duration(seconds: 10), onTimeout: () {
+        // If a timeout occurs, throw a custom exception to be caught by the catch block
+        throw TimeoutException('Failed to write data chunk #$packageNumber');
+      });
       packageNumber++;
 
       double progress = (packageNumber / binaryChunks.length) * 100;

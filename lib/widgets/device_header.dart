@@ -12,7 +12,6 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
-import '../utils/constants.dart';
 import '../utils/bledata.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -255,7 +254,7 @@ Future<void> _updateRssi() async {
 
     return Column(children: <Widget>[
       ListTile(
-        title: Text('Device: ${widget.device.name} (${widget.device.id})'),
+        title: Text('Device: ${widget.device.platformName} (${widget.device.remoteId})'),
         subtitle: Text('Version: ${this.bleData.firmwareVersion}'),
         trailing: rssiIcon,
         onTap: () => setState(() => _isExpanded = !_isExpanded),

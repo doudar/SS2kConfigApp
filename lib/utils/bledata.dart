@@ -50,7 +50,7 @@ class BLEData {
 
   bool isConnecting = false;
   bool isDisconnecting = false;
-  bool configAppCompatableFirmware = false;
+  bool configAppCompatibleFirmware = false;
   bool isUpdatingFirmware = false;
   String firmwareVersion = "";
 
@@ -125,11 +125,11 @@ class BLEData {
           for (BluetoothService s in services) {
             if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {
               firmwareService = s;
-              configAppCompatableFirmware = true;
+              configAppCompatibleFirmware = true;
               break;
             }
           }
-          if (configAppCompatableFirmware) {
+          if (configAppCompatibleFirmware) {
             characteristics = firmwareService.characteristics;
             for (BluetoothCharacteristic c in characteristics) {
               print(c.uuid.toString());
@@ -162,7 +162,9 @@ class BLEData {
       return;
     }
     if (Platform.isAndroid) {
-      device.requestMtu(515);
+      try {
+        device.requestMtu(515);
+      } catch (e) {}
     }
     _inUpdateLoop = true;
     if (!this.getMyCharacteristic(device).isNotifying) notify(device);
@@ -189,8 +191,8 @@ class BLEData {
   }
 
   void findNSave(BluetoothDevice device, Map c, String find) {
-    // Firmware that wasn't compatable with the app would reboot whenever this command was read.
-    if (!this.configAppCompatableFirmware && c["vName"] == saveVname) {
+    // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
+    if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
       return;
     }
     if (c["vName"] == find) {
@@ -223,8 +225,8 @@ class BLEData {
   Future requestSettings(BluetoothDevice device) async {
     this.isReadingOrWriting.value = true;
     _write(Map c) {
-      // Firmware that wasn't compatable with the app would reboot whenever this command was read.
-      if (!this.configAppCompatableFirmware && c["vName"] == saveVname) {
+      // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
+      if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
         return;
       }
       try {
@@ -241,8 +243,8 @@ class BLEData {
 //request single setting
   Future requestSetting(BluetoothDevice device, String name) async {
     _request(Map c) {
-      // Firmware that wasn't compatable with the app would reboot whenever this command was read.
-      if (!this.configAppCompatableFirmware && c["vName"] == saveVname) {
+      // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
+      if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
         return;
       }
       if (c["vName"] == name) {

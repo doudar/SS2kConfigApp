@@ -50,8 +50,8 @@ void notify(BLEData bleData, BluetoothDevice device) {
 }
 
 void findNSave(BLEData bleData, BluetoothDevice device, Map c, String find) {
-  // Firmware that wasn't compatable with the app would reboot whenever this command was read.
-  if (!bleData.configAppCompatableFirmware && c["vName"] == saveVname) {
+  // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
+  if (!bleData.configAppCompatibleFirmware && c["vName"] == saveVname) {
     return;
   }
   if (c["vName"] == find) {
@@ -84,8 +84,8 @@ Future resetToDefaults(BLEData bleData, BluetoothDevice device) async {
 Future requestSettings(BLEData bleData, BluetoothDevice device) async {
   bleData.isReadingOrWriting.value = true;
   _write(Map c) {
-    // Firmware that wasn't compatable with the app would reboot whenever this command was read.
-    if (!bleData.configAppCompatableFirmware && c["vName"] == saveVname) {
+    // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
+    if (!bleData.configAppCompatibleFirmware && c["vName"] == saveVname) {
       return;
     }
     try {
@@ -102,8 +102,8 @@ Future requestSettings(BLEData bleData, BluetoothDevice device) async {
 //request single setting
 Future requestSetting(BLEData bleData, BluetoothDevice device, String name) async {
   _request(Map c) {
-    // Firmware that wasn't compatable with the app would reboot whenever this command was read.
-    if (!bleData.configAppCompatableFirmware && c["vName"] == saveVname) {
+    // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
+    if (!bleData.configAppCompatibleFirmware && c["vName"] == saveVname) {
       return;
     }
     if (c["vName"] == name) {
