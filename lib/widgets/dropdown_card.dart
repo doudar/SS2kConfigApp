@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
+import '../utils/constants.dart';
 
 class DropdownCard extends StatefulWidget {
   const DropdownCard({
@@ -41,7 +42,9 @@ class _DropdownCardState extends State<DropdownCard> {
   void buildDevicesMap() {
     late List _items;
     ddItems = [this.widget.c["value"]];
-    this.bleData.customCharacteristic
+    this
+        .bleData
+        .customCharacteristic
         .forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
 
     for (var d in _items) {
@@ -80,7 +83,9 @@ class _DropdownCardState extends State<DropdownCard> {
     });
     //reconnect devices
     this.bleData.writeToSS2K(this.widget.device, this.widget.c);
-    this.bleData.customCharacteristic
+    this
+        .bleData
+        .customCharacteristic
         .forEach((d) => d["vName"] == restartBLEVname ? this.bleData.writeToSS2K(this.widget.device, d, s: "1") : ());
   }
 
@@ -145,9 +150,15 @@ class _DropdownCardState extends State<DropdownCard> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: <Widget>[
                   TextButton(
-                    child: const Text('BACK'),
-                    onPressed: () => Navigator.pop(context),
-                  ),
+                      child: const Text('SAVE'),
+                      onPressed: () {
+                        //Find the save command and execute it
+                        this
+                            .bleData
+                            .customCharacteristic
+                            .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                        Navigator.pop(context);
+                      }),
                   const SizedBox(width: 8),
                 ],
               ),

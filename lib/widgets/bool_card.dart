@@ -8,6 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
+import '../utils/constants.dart';
 
 
 class boolCard extends StatefulWidget {
@@ -63,8 +64,10 @@ late BLEData bleData;
           children: <Widget>[
             const SizedBox(width: 8),
             TextButton(
-              child: const Text('BACK'),
+              child: const Text('SAVE'),
               onPressed: () {
+                //Find the save command and execute it
+                this.bleData.customCharacteristic.forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
                 Navigator.pop(context);
               },
             ),

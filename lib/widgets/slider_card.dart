@@ -11,6 +11,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import "../utils/snackbar.dart";
 import '../utils/bledata.dart';
+import '../utils/constants.dart';
 
 class sliderCard extends StatefulWidget {
   const sliderCard({super.key, required this.device, required this.c});
@@ -22,7 +23,7 @@ class sliderCard extends StatefulWidget {
 
 class _sliderCardState extends State<sliderCard> {
   Map get c => this.widget.c;
-   late BLEData bleData;
+  late BLEData bleData;
   late double _currentSliderValue = double.parse(c["value"]);
   final controller = TextEditingController();
 
@@ -31,6 +32,7 @@ class _sliderCardState extends State<sliderCard> {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
   }
+
   @override
   void dispose() {
     controller.dispose();
@@ -94,7 +96,7 @@ class _sliderCardState extends State<sliderCard> {
           },
         ),
         const SizedBox(height: 15),
-         Slider(
+        Slider(
           min: c["min"].toDouble(),
           max: c["max"].toDouble(),
           label: this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c)),
@@ -116,11 +118,13 @@ class _sliderCardState extends State<sliderCard> {
             });
           },
         ),
-            TextButton(
-              child: const Text('BACK'),
-              onPressed: () {
-          Navigator.pop(context);
-        },
+        TextButton(
+          child: const Text('SAVE'),
+          onPressed: () {
+            //Find the save command and execute it
+            this.bleData.customCharacteristic.forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+            Navigator.pop(context);
+          },
         ),
       ]),
     );

@@ -90,7 +90,7 @@ class _SettingTileState extends State<SettingTile> {
           ),
           SizedBox(height: 50),
           Text(
-              "Settings are immediate for the current session.\nClick save on the main screen to make them persistent.",
+              "Settings are immediate for the current session.\nClick save to make them persistent.",
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white)),
         ],
