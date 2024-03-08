@@ -8,6 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
+import '../utils/constants.dart';
 
 
 class boolCard extends StatefulWidget {
@@ -24,7 +25,7 @@ late BLEData bleData;
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
+    bleData = BLEDataManager.forDevice(this.widget.device);
   }
 
 
@@ -46,15 +47,15 @@ late BLEData bleData;
         ),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-        Text((widget.c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
-        Text((bool.parse(widget.c["value"]) ? "On" : "Off"), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
+        Text((this.widget.c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
+        Text((bool.parse(this.widget.c["value"]) ? "On" : "Off"), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
         Switch(
-          value: bool.parse(widget.c["value"]),
+          value: bool.parse(this.widget.c["value"]),
           onChanged: (b) {
-            widget.c["value"] = b.toString();
-            this.bleData.writeToSS2K(widget.device, widget.c);
+            this.widget.c["value"] = b.toString();
+            this.bleData.writeToSS2K(this.widget.device, this.widget.c);
             setState(() {});
-            return widget.c["value"];
+            return this.widget.c["value"];
           },
         ),
         const SizedBox(height: 15),
@@ -63,8 +64,10 @@ late BLEData bleData;
           children: <Widget>[
             const SizedBox(width: 8),
             TextButton(
-              child: const Text('BACK'),
+              child: const Text('SAVE'),
               onPressed: () {
+                //Find the save command and execute it
+                this.bleData.customCharacteristic.forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
                 Navigator.pop(context);
               },
             ),

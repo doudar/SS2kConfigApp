@@ -31,31 +31,31 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
-    this.bleData.connectionStateSubscription = widget.device.connectionState.listen((state) async {
+    bleData = BLEDataManager.forDevice(this.widget.device);
+    this.bleData.connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       this.bleData.connectionState = state;
       if (state == BluetoothConnectionState.connected) {
         this.bleData.services = []; // must rediscover services
       }
       if (state == BluetoothConnectionState.connected) {
-        this.bleData.rssi.value = await widget.device.readRssi();
+        this.bleData.rssi.value = await this.widget.device.readRssi();
       }
-      bleData.setupConnection(widget.device);
+      bleData.setupConnection(this.widget.device);
     });
 
     if (bleData.charReceived.value) {
-      bleData.updateCustomCharacter(widget.device);
+      bleData.updateCustomCharacter(this.widget.device);
     } else {
       bleData.charReceived.addListener(_crListener);
     }
-    bleData.isConnectingSubscription = widget.device.isConnecting.listen((value) {
+    bleData.isConnectingSubscription = this.widget.device.isConnecting.listen((value) {
       this.bleData.isConnecting = value;
       if (mounted) {
         setState(() {});
       }
     });
 
-    this.bleData.isDisconnectingSubscription = widget.device.isDisconnecting.listen((value) {
+    this.bleData.isDisconnectingSubscription = this.widget.device.isDisconnecting.listen((value) {
       this.bleData.isDisconnecting = value;
       if (mounted) {
         setState(() {});
@@ -65,7 +65,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
 
   void _crListener() {
     if (bleData.charReceived.value) {
-      bleData.updateCustomCharacter(widget.device);
+      bleData.updateCustomCharacter(this.widget.device);
     }
   }
 
@@ -109,19 +109,19 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       body: ListView(
         padding: EdgeInsets.all(8),
         children: <Widget>[
-          DeviceHeader(device: widget.device,connectOnly: true),
+          DeviceHeader(device: this.widget.device,connectOnly: true),
           SizedBox(height: 20),
           _buildCard('assets/shiftscreen.png', "Virtual Shifter", () {
             Navigator.of(context)
-                .push(MaterialPageRoute(builder: (context) => ShifterScreen(device: widget.device)));
+                .push(MaterialPageRoute(builder: (context) => ShifterScreen(device: this.widget.device)));
           }),
           _buildCard('assets/settingsScreen.png', "Settings", () {
             Navigator.of(context)
-                .push(MaterialPageRoute(builder: (context) => SettingsScreen(device: widget.device)));
+                .push(MaterialPageRoute(builder: (context) => SettingsScreen(device: this.widget.device)));
           }),
           _buildCard('assets/GitHub-logo.png', "Update Firmware", () {
             Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => FirmwareUpdateScreen(device: widget.device)));
+                MaterialPageRoute(builder: (context) => FirmwareUpdateScreen(device: this.widget.device)));
           }),
         ],
       ),

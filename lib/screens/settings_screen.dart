@@ -30,8 +30,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
+    bleData = BLEDataManager.forDevice(this.widget.device);
+    _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       if (mounted) {
         setState(() {});
       }
@@ -77,7 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _newEntry(Map c) {
           if (!this.bleData.services.isEmpty) {
             if (c["isSetting"]) {
-              settings.add(SettingTile(device: widget.device, c: c));
+              settings.add(SettingTile(device: this.widget.device, c: c));
             }
           }
         }
@@ -97,13 +97,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Scaffold(
         backgroundColor: Color(0xffebebeb),
         appBar: AppBar(
-          title: Text(widget.device.platformName),
+          title: Text(this.widget.device.platformName),
           centerTitle: true,
         ),
         body: Column(
           mainAxisSize: MainAxisSize.max,
           children: <Widget>[
-            DeviceHeader(device: widget.device),
+            DeviceHeader(device: this.widget.device),
             SizedBox(
               height: 500,
               child: ListWheelScrollView(

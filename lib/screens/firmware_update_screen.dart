@@ -57,7 +57,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
+    bleData = BLEDataManager.forDevice(this.widget.device);
     if (this.bleData.charReceived.value == true) {
       _initialize();
     } else {
@@ -86,7 +86,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     });
 
      // Monitor device disconnection during firmware update
-  charSubscription = widget.device.connectionState.listen((state) {
+  charSubscription = this.widget.device.connectionState.listen((state) {
     if (state != BluetoothConnectionState.connected && updatingFirmware && _progress < 1) {
       _showUploadCompleteDialog(false);
     }
@@ -241,7 +241,7 @@ void _showUploadCompleteDialog(bool isSuccess) {
 
     try {
       await otaPackage!.updateFirmware(
-        widget.device,
+        this.widget.device,
         type,
         this.bleData.firmwareService,
         this.bleData.firmwareDataCharacteristic,
@@ -378,7 +378,7 @@ void _showUploadCompleteDialog(bool isSuccess) {
           mainAxisAlignment: MainAxisAlignment.start,
           children: <Widget>[
             DeviceHeader(
-              device: widget.device,
+              device: this.widget.device,
               connectOnly: true,
             ),
             SizedBox(height: 50),

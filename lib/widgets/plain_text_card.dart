@@ -11,7 +11,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
 
 class plainTextCard extends StatefulWidget {
-  const plainTextCard({super.key, required this.device,required this.c});
+  const plainTextCard({super.key, required this.device, required this.c});
   final BluetoothDevice device;
   final Map c;
   @override
@@ -19,16 +19,17 @@ class plainTextCard extends StatefulWidget {
 }
 
 class _plainTextCardState extends State<plainTextCard> {
-  Map get c => widget.c;
+  Map get c => this.widget.c;
   final controller = TextEditingController();
   bool passwordVisible = false;
-   late BLEData bleData;
+  late BLEData bleData;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
+    bleData = BLEDataManager.forDevice(this.widget.device);
   }
+
   @override
   void dispose() {
     controller.dispose();
@@ -67,9 +68,9 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        this.bleData.writeToSS2K( widget.device, this.c);
+        this.bleData.writeToSS2K(this.widget.device, this.c);
         setState(() {});
-        return widget.c["value"];
+        return this.widget.c["value"];
       },
     );
   }
@@ -90,9 +91,9 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        this.bleData.writeToSS2K(widget.device, this.c);
+        this.bleData.writeToSS2K(this.widget.device, this.c);
         setState(() {});
-        return widget.c["value"];
+        return this.widget.c["value"];
       },
     );
   }
@@ -119,8 +120,13 @@ class _plainTextCardState extends State<plainTextCard> {
           children: <Widget>[
             const SizedBox(width: 8),
             TextButton(
-              child: const Text('BACK'),
+              child: const Text('SAVE'),
               onPressed: () {
+                //Find the save command and execute it
+                this
+                    .bleData
+                    .customCharacteristic
+                    .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
                 Navigator.pop(context);
               },
             ),
