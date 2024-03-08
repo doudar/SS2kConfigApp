@@ -162,7 +162,9 @@ class BLEData {
       return;
     }
     if (Platform.isAndroid) {
-      device.requestMtu(515);
+      try {
+        device.requestMtu(515);
+      } catch (e) {}
     }
     _inUpdateLoop = true;
     if (!this.getMyCharacteristic(device).isNotifying) notify(device);
