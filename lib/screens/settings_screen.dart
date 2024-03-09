@@ -17,9 +17,7 @@ import '../utils/bledata.dart';
 
 class SettingsScreen extends StatefulWidget {
   final BluetoothDevice device;
-  final BLEData bleData;
-
-  const SettingsScreen({Key? key, required this.device, required this.bleData}) : super(key: key);
+  const SettingsScreen({Key? key, required this.device}) : super(key: key);
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -27,96 +25,96 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
+  late BLEData bleData;
 
   @override
   void initState() {
     super.initState();
-
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
-      if (mounted) {
-        setState(() {});
-      }
-    });
+    bleData = BLEDataManager.forDevice(widget.device);
+    _connectionStateSubscription =
+        widget.device.connectionState.listen((state) async {
+          if (mounted) {
+            setState(() {});
+          }
+        });
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      widget.bleData.isReadingOrWriting.addListener(_rwListner);
+      bleData.isReadingOrWriting.addListener(_rwListner);
     });
   }
 
   @override
   void dispose() {
     _connectionStateSubscription.cancel();
-    widget.bleData.isReadingOrWriting.removeListener(_rwListner);
+    this.bleData.isReadingOrWriting.removeListener(_rwListner);
     super.dispose();
   }
 
   bool _refreshBlocker = true;
 
   void _rwListner() async {
-    if(_refreshBlocker){
+    if (_refreshBlocker) {
       return;
     }
     _refreshBlocker = true;
     if (mounted) {
-    await Future.delayed(Duration(microseconds: 500));
-    setState(() {});
+      await Future.delayed(Duration(microseconds: 500));
+      if (mounted) {
+        setState(() {});
+      }
+      _refreshBlocker = false;
     }
-    _refreshBlocker = false;
   }
 
 //Build the settings dropdowns
-  List<Widget> buildSettings(BuildContext context) {
-    List<Widget> settings = [];
-    if (widget.bleData.isReadingOrWriting.value) {
-      Snackbar.show(ABC.c, "Data Loading, please wait ", success: true);
-      setState(() {});
-    } else {
-      if (widget.bleData.charReceived.value) {
-        try {
-          // char = myCharacteristic;
-        } catch (e) {}
+    List<Widget> buildSettings(BuildContext context) {
+      List<Widget> settings = [];
+      if (this.bleData.isReadingOrWriting.value) {
+        Snackbar.show(ABC.c, "Data Loading, please wait ", success: true);
+        setState(() {});
+      } else {
+        if (this.bleData.charReceived.value) {
+          try {
+            // char = myCharacteristic;
+          } catch (e) {}
 
-        _newEntry(Map c) {
-          if (!widget.bleData.services.isEmpty) {
-            if (c["isSetting"]) {
-              settings.add(SettingTile(bleData: widget.bleData, device: widget.device, c: c));
+          _newEntry(Map c) {
+            if (!this.bleData.services.isEmpty) {
+              if (c["isSetting"]) {
+                settings.add(SettingTile(device: widget.device, c: c));
+              }
             }
           }
+
+          this.bleData.customCharacteristic.forEach((c) => _newEntry(c));
         }
-
-        widget.bleData.customCharacteristic.forEach((c) => _newEntry(c));
       }
+      _refreshBlocker = false;
+      return settings;
     }
-    _refreshBlocker = false;
-    return settings;
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    _refreshBlocker = true;
-    return ScaffoldMessenger(
-      key: Snackbar.snackBarKeyC,
-      child: Scaffold(
-        backgroundColor: Color(0xffebebeb),
-        appBar: AppBar(
-          title: Text(widget.device.platformName),
-          centerTitle: true,
-        ),
-        body:
-            /*Row(
-              children:
-                <Widget>[DeviceHeader(device: widget.device, bleData: widget.bleData),]
-            ),*/
-            ListView(
-                scrollDirection: Axis.vertical,
-                padding: EdgeInsets.all( 0),
-                shrinkWrap: true,
-                physics: ScrollPhysics(),
-                children: <Widget>[
-                  ...buildSettings(context),
-                  ]
-            ),
-
+    @override
+    Widget build(BuildContext context) {
+      _refreshBlocker = true;
+      return ScaffoldMessenger(
+        key: Snackbar.snackBarKeyC,
+        child: Scaffold(
+          backgroundColor: Color(0xffebebeb),
+          appBar: AppBar(
+            title: Text(widget.device.platformName),
+            centerTitle: true,
+          ),
+          body:
+          ListView(
+              scrollDirection: Axis.vertical,
+              padding: EdgeInsets.all(0),
+              shrinkWrap: true,
+              physics: ScrollPhysics(),
+              children: <Widget>[
+                DeviceHeader(device: widget.device),
+                ...buildSettings(context),
+              ]),
         ),
       );
+    }
   }
-}
+

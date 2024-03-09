@@ -8,26 +8,27 @@
 import 'dart:async';
 import 'dart:io' as io;
 import 'package:flutter/material.dart';
-import 'package:flutter_ota/ota_package.dart';
+
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../utils/bleOTA.dart';
 import '../utils/bledata.dart';
 import '../widgets/device_header.dart';
 
 class FirmwareUpdateScreen extends StatefulWidget {
   final BluetoothDevice device;
-  final BLEData bleData;
 
-  const FirmwareUpdateScreen({Key? key, required this.device, required this.bleData}) : super(key: key);
+  const FirmwareUpdateScreen({Key? key, required this.device}) : super(key: key);
 
   @override
   State<FirmwareUpdateScreen> createState() => _FirmwareUpdateState();
 }
 
 class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
+  late BLEData bleData;
   final BleRepository bleRepo = BleRepository();
   String _githubFirmwareVersion = '';
   String _builtinFirmwareVersion = '';
@@ -35,7 +36,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   Color _builtinVersionColor = Color.fromARGB(255, 242, 0, 255);
   Timer _loadingTimer = Timer.periodic(Duration(seconds: 30), (_loadingTimer) {});
 
-  late OtaPackage otaPackage;
+  OtaPackage? otaPackage;
 
   StreamSubscription<int>? progressSubscription;
   StreamSubscription<bool>? charSubscription;
@@ -56,19 +57,23 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchGithubFirmwareVersion();
-    _fetchBuiltinFirmwareVersion();
-    widget.bleData.charReceived.addListener(_charListner);
+    bleData = BLEDataManager.forDevice(widget.device);
+    if (this.bleData.charReceived.value == true) {
+      _initialize();
+    } else {
+      this.bleData.charReceived.addListener(_charListner);
+    }
+
     _loadingTimer = Timer.periodic(Duration(microseconds: 100), (_fwCheck) {
-      if (widget.bleData.firmwareVersion == "") {
+      if (this.bleData.firmwareVersion == "") {
         return;
       } else {
         _loaded = true;
         setState(() {
           _builtinVersionColor =
-              _isNewerVersion(_builtinFirmwareVersion, widget.bleData.firmwareVersion) ? Colors.green : Colors.red;
+              _isNewerVersion(_builtinFirmwareVersion, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
           _githubVersionColor =
-              _isNewerVersion(_githubFirmwareVersion, widget.bleData.firmwareVersion) ? Colors.green : Colors.red;
+              _isNewerVersion(_githubFirmwareVersion, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
         });
         _fwCheck.cancel();
       }
@@ -78,28 +83,33 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   void dispose() {
     progressSubscription?.cancel();
-    widget.bleData.charReceived.removeListener(_charListner);
+    _loadingTimer.cancel();
     WakelockPlus.disable();
     super.dispose();
   }
 
+  Future<void> _initialize() async {
+    otaPackage =
+        Esp32OtaPackage(this.bleData.firmwareDataCharacteristic, this.bleData.firmwareControlCharacteristic);
+    await _fetchGithubFirmwareVersion();
+    await _fetchBuiltinFirmwareVersion();
+    await _progressStreamSubscription();
+  }
+
   Future<void> _charListner() async {
-    if (widget.bleData.charReceived.value) {
-      await _progressStreamSubscription();
-      await _fetchGithubFirmwareVersion();
-      await _fetchBuiltinFirmwareVersion();
+    if (this.bleData.charReceived.value) {
+      _initialize();
       if (mounted) {
         setState(() {});
       }
+      //remove the listener as soon as the characteristic is received.
+      this.bleData.charReceived.removeListener(_charListner);
     }
-    progressSubscription?.cancel;
   }
 
   Future<void> _progressStreamSubscription() async {
-    if (widget.bleData.charReceived.value) {
-      otaPackage =
-          Esp32OtaPackage(widget.bleData.firmwareDataCharacteristic, widget.bleData.firmwareControlCharacteristic);
-      progressSubscription = otaPackage.percentageStream.listen((event) {
+    if (this.bleData.charReceived.value) {
+      progressSubscription = otaPackage!.percentageStream.listen((event) {
         _progress = event / 100.0;
         setState(() {
           updateProgress();
@@ -113,9 +123,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     setState(() {
       _builtinFirmwareVersion = builtinVersion.trim();
       _builtinVersionColor =
-          _isNewerVersion(_builtinFirmwareVersion, widget.bleData.firmwareVersion) ? Colors.green : Colors.red;
+          _isNewerVersion(_builtinFirmwareVersion, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
       _builtinVersionColor =
-          (widget.bleData.firmwareVersion == "") ? Color.fromARGB(255, 242, 0, 255) : _builtinVersionColor;
+          (this.bleData.firmwareVersion == "") ? Color.fromARGB(255, 242, 0, 255) : _builtinVersionColor;
     });
   }
 
@@ -125,11 +135,11 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       final githubVersion = response.body.trim();
       setState(() {
         _githubFirmwareVersion = githubVersion;
-        // Assuming widget.bleData.firmwareVersion is in 'major.minor.patch' format
+        // Assuming this.bleData.firmwareVersion is in 'major.minor.patch' format
         _githubVersionColor =
-            _isNewerVersion(githubVersion, widget.bleData.firmwareVersion) ? Colors.green : Colors.red;
+            _isNewerVersion(githubVersion, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
         _githubVersionColor =
-            (widget.bleData.firmwareVersion == "") ? Color.fromARGB(255, 242, 0, 255) : _githubVersionColor;
+            (this.bleData.firmwareVersion == "") ? Color.fromARGB(255, 242, 0, 255) : _githubVersionColor;
       });
     } else {
       // Handle HTTP request error...
@@ -187,17 +197,18 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   }
 
   void startFirmwareUpdate(type) async {
+    this.bleData.isUpdatingFirmware = true;
     setState(() {
       updatingFirmware = true;
     });
 
     try {
-      await otaPackage.updateFirmware(
+      await otaPackage!.updateFirmware(
         widget.device,
         type,
-        widget.bleData.firmwareService,
-        widget.bleData.firmwareDataCharacteristic,
-        widget.bleData.firmwareControlCharacteristic,
+        this.bleData.firmwareService,
+        this.bleData.firmwareDataCharacteristic,
+        this.bleData.firmwareControlCharacteristic,
         binFilePath: 'assets/firmware.bin',
         url: URLString,
       );
@@ -220,6 +231,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         updatingFirmware = false;
       });
     }
+    this.bleData.isUpdatingFirmware = false;
   }
 
   List<Widget> _buildUpdateButtons() {
@@ -330,12 +342,11 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           children: <Widget>[
             DeviceHeader(
               device: widget.device,
-              bleData: widget.bleData,
               connectOnly: true,
             ),
             SizedBox(height: 50),
             Column(
-              children: widget.bleData.configAppCompatableFirmware ? _buildUpdateButtons() : _notBLECompatable(),
+              children: this.bleData.configAppCompatableFirmware ? _buildUpdateButtons() : _notBLECompatable(),
             ),
             _ledgend(),
           ],

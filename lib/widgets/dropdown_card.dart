@@ -9,18 +9,15 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
-import '../utils/customcharhelpers.dart';
-import '../utils/constants.dart'; 
+import '../utils/constants.dart';
 
 class DropdownCard extends StatefulWidget {
   const DropdownCard({
     Key? key,
-    required this.bleData,
     required this.device,
     required this.c,
   }) : super(key: key);
 
-  final BLEData bleData;
   final BluetoothDevice device;
   final Map c;
 
@@ -31,10 +28,12 @@ class DropdownCard extends StatefulWidget {
 class _DropdownCardState extends State<DropdownCard> {
   List<String> ddItems = [];
   String? selectedValue;
+  late BLEData bleData;
 
   @override
   void initState() {
     super.initState();
+    bleData = BLEDataManager.forDevice(widget.device);
     buildDevicesMap();
     selectedValue = ddItems.isNotEmpty ? ddItems[0] : null;
   }
@@ -42,26 +41,47 @@ class _DropdownCardState extends State<DropdownCard> {
   void buildDevicesMap() {
     late List _items;
     ddItems = [widget.c["value"]];
-    widget.bleData.customCharacteristic.forEach((d) => {
-          if (d["vName"] == foundDevicesVname)
-            {
-              _items = jsonDecode(d["value"]),
-              for (var d in _items)
-                {
-                  for (var subd in d.values)
-                    {
-                      if (subd["UUID"] == '0x1818' ||
-                          subd["UUID"] == '0x1826' ||
-                          subd["UUID"] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' ||
-                          subd["UUID"] == '0bf669f0-45f2-11e7-9598-0800200c9a66')
-                        {
-                          ddItems.add(subd["name"] ?? subd["address"]),
-                        }
-                    }
-                }
+    this.bleData.customCharacteristic
+        .forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
+
+    for (var d in _items) {
+      for (var subd in d.values) {
+        if (widget.c["vName"] == connectedPWRVname) {
+          if (subd["UUID"] == '0x1818' ||
+              subd["UUID"] == '0x1826' ||
+              subd["UUID"] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' ||
+              subd["UUID"] == '0bf669f0-45f2-11e7-9598-0800200c9a66') {
+            if (subd["name"] == null) {
+              ddItems.add(subd["address"]);
+            } else {
+              ddItems.add(subd["name"]);
             }
-        });
+          }
+        }
+        if (widget.c["vName"] == connectedHRMVname) {
+          if (subd["UUID"] == "0x180d") {
+            if (subd["name"] == null) {
+              ddItems.add(subd["address"]);
+            } else {
+              ddItems.add(subd["name"]);
+            }
+          }
+        }
+      }
+    }
+    //remove duplicates:
     ddItems = ddItems.toSet().toList(); // Remove duplicates
+  }
+
+  Future _changeBLEDevice(BuildContext context) async {
+    setState(() {
+      widget.c["value"] = selectedValue!;
+      // Assuming writeToSS2K is your method to handle selection
+    });
+    //reconnect devices
+    this.bleData.writeToSS2K(widget.device, widget.c);
+    this.bleData.customCharacteristic
+        .forEach((d) => d["vName"] == restartBLEVname ? this.bleData.writeToSS2K(widget.device, d, s: "1") : ());
   }
 
   @override
@@ -90,6 +110,7 @@ class _DropdownCardState extends State<DropdownCard> {
                   textAlign: TextAlign.left,
                 ),
               ),
+              Text(widget.c["value"]),
               SizedBox(height: 20),
               Expanded(
                 child: ListWheelScrollView.useDelegate(
@@ -111,12 +132,8 @@ class _DropdownCardState extends State<DropdownCard> {
                         ),
                         titleAlignment: ListTileTitleAlignment.top,
                         onTap: () {
-                          setState(() {
-                            selectedValue = ddItems[index];
-                            widget.c["value"] = selectedValue!;
-                            // Assuming writeToSS2K is your method to handle selection
-                            writeToSS2K(widget.bleData, widget.device, widget.c);
-                          });
+                          selectedValue = ddItems[index];
+                          _changeBLEDevice(context);
                         },
                       );
                     },

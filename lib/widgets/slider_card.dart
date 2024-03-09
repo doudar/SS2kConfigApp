@@ -7,16 +7,13 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import "../utils/snackbar.dart";
-import "../utils/customcharhelpers.dart";
 import '../utils/bledata.dart';
 
 class sliderCard extends StatefulWidget {
-  const sliderCard({super.key, required this.bleData, required this.device, required this.c});
-  final BLEData bleData;
+  const sliderCard({super.key, required this.device, required this.c});
   final BluetoothDevice device;
   final Map c;
   @override
@@ -25,10 +22,15 @@ class sliderCard extends StatefulWidget {
 
 class _sliderCardState extends State<sliderCard> {
   Map get c => widget.c;
-  BluetoothCharacteristic get characteristic => widget.bleData.getMyCharacteristic(widget.device);
+   late BLEData bleData;
   late double _currentSliderValue = double.parse(c["value"]);
   final controller = TextEditingController();
 
+  @override
+  void initState() {
+    super.initState();
+    bleData = BLEDataManager.forDevice(widget.device);
+  }
   @override
   void dispose() {
     controller.dispose();
@@ -63,30 +65,25 @@ class _sliderCardState extends State<sliderCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: Colors.black,
-          width: 2.0,
+    return Container(
+      child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+        ListTile(
+        title: Text(widget.c["textDescription"]),
+        dense: true,
         ),
-      ),
-      child: Column(children: <Widget>[
-        Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
-        Text((c["value"]), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
+        //Text((c["value"]), textAlign: TextAlign.left),
         TextField(
           controller: this.controller,
           decoration: InputDecoration(
+            border: OutlineInputBorder(),
+            labelText: c["humanReadableName"],
             prefixIcon: Icon(Icons.edit_attributes),
             fillColor: Colors.white,
-          ),
-          style: TextStyle(
-            fontSize: 30,
           ),
           textAlign: TextAlign.center,
           onSubmitted: (t) {
             this.verifyInput(t);
-            writeToSS2K(widget.bleData, widget.device, this.c);
+            this.bleData.writeToSS2K(widget.device, this.c);
             setState(() {});
             return widget.c["value"];
           },
@@ -95,30 +92,24 @@ class _sliderCardState extends State<sliderCard> {
          Slider(
           min: c["min"].toDouble(),
           max: c["max"].toDouble(),
-          label: this._currentSliderValue.toStringAsFixed(getPrecision(c)),
+          label: this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c)),
           divisions: 100,
           value: constrainValue(this._currentSliderValue),
           onChanged: (double v) {
             setState(() {
               this._currentSliderValue = v;
-              widget.c["value"] = this._currentSliderValue.toStringAsFixed(getPrecision(c));
+              widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
               controller.text = widget.c["value"];
             });
           },
           onChangeEnd: (double v) {
             setState(() {
               this._currentSliderValue = v;
-              widget.c["value"] = this._currentSliderValue.toStringAsFixed(getPrecision(c));
+              widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
               controller.text = widget.c["value"];
-              writeToSS2K(widget.bleData, widget.device, this.c);
+              this.bleData.writeToSS2K(widget.device, this.c);
             });
           },
-        ),
-            TextButton(
-              child: const Text('BACK'),
-              onPressed: () {
-          Navigator.pop(context);
-        },
         ),
       ]),
     );
