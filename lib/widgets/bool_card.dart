@@ -38,7 +38,7 @@ late BLEData bleData;
 
     return SwitchListTile(
       subtitle: Text(widget.c["textDescription"]),
-      value: bool.parse(widget.c["value"] ? "On" : "Off"),
+      value: bool.parse(widget.c["value"]),
       onChanged: (b) {
         widget.c["value"] = b.toString();
         this.bleData.writeToSS2K(widget.device, widget.c);

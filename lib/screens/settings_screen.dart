@@ -63,6 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       _refreshBlocker = false;
     }
+  }
 
 //Build the settings dropdowns
     List<Widget> buildSettings(BuildContext context) {
@@ -109,10 +110,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               shrinkWrap: true,
               physics: ScrollPhysics(),
               children: <Widget>[
+                DeviceHeader(device: widget.device),
                 ...buildSettings(context),
               ]),
         ),
       );
     }
   }
-}
+
