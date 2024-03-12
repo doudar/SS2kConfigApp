@@ -31,8 +31,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   @override
   void initState() {
     bleData = BLEDataManager.forDevice(this.widget.device);
-    this.bleData.customCharacteristic.forEach((i) => i["vName"] == shiftVname ? c = i : ());
-    this.bleData.isReadingOrWriting.addListener(_rwListner);
+    this.bleData.customCharacteristic.forEach((i) => i["vName"] == shifterPositionVname ? c = i : ());
     startSubscription();
     super.initState();
   }
@@ -43,17 +42,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
     if (this.bleData.charReceived.value) {
       _charSubscription?.cancel();
     }
-    this.bleData.isReadingOrWriting.removeListener(_rwListner);
+    //   this.bleData.isReadingOrWriting.removeListener(_rwListner);
     WakelockPlus.disable();
     super.dispose();
-  }
-
-  void _rwListner() {
-    if (mounted) {
-      setState(() {
-        t = c["value"] ?? "Loading";
-      });
-    }
   }
 
   Future startSubscription() async {
@@ -61,27 +52,29 @@ class _ShifterScreenState extends State<ShifterScreen> {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       if (mounted) {
         if (state == BluetoothConnectionState.connected) {
-          this.bleData.setupConnection(this.widget.device);
-          t = c["value"] ?? "Loading";
-        } else {
-          t = "Loading";
+          await this.bleData.setupConnection(this.widget.device);
+          if (this.bleData.charReceived.value) {
+            try {
+              _charSubscription =
+                  this.bleData.getMyCharacteristic(this.widget.device).onValueReceived.listen((data) async {
+                if (mounted) {
+                  setState(() {
+                    t = c["value"] ?? "Loading";
+                  });
+                }
+              });
+            } catch (e) {
+              print("Subscription Failed, $e");
+            }
+          }
+        } else if (state == BluetoothConnectionState.disconnected) {
+          c["value"] = "Loading";
         }
-        setState(() {});
+        setState(() {
+          t = c["value"] ?? "Loading";
+        });
       }
     });
-    if (this.bleData.charReceived.value) {
-      try {
-        _charSubscription = this.bleData.getMyCharacteristic(this.widget.device).onValueReceived.listen((data) async {
-          if (c["vName"] == shiftVname) {
-            setState(() {
-              t = c["value"] ?? "Loading";
-            });
-          }
-        });
-      } catch (e) {
-        print("Subscription Failed, $e");
-      }
-    }
   }
 
   shift(int amount) {
