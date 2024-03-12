@@ -97,13 +97,8 @@ class _DropdownCardState extends State<DropdownCard> {
           maxHeight: MediaQuery.of(context).size.height * 0.3,
         ),
         child: Card(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(
-              color: Colors.black,
-              width: 2.0,
-            ),
-          ),
+          elevation: 15,
+          shape: RoundedRectangleBorder(),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[

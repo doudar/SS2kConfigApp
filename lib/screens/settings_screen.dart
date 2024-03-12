@@ -107,6 +107,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             DeviceHeader(device: this.widget.device),
                SizedBox(
                height: _size.height * .80,
+               width: _size.width * .90,
                 child:
             ListView(clipBehavior: Clip.antiAlias, itemExtent: 100, children: <Widget>[
               ...buildSettings(context),

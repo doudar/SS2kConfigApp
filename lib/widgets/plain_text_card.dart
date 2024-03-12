@@ -101,12 +101,9 @@ class _plainTextCardState extends State<plainTextCard> {
   @override
   Widget build(BuildContext context) {
     return Card(
+      elevation: 15,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: Colors.black,
-          width: 2.0,
-        ),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
         Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),

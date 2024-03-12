@@ -39,12 +39,9 @@ late BLEData bleData;
 
     return Column(
       children: <Widget>[Card(
+        elevation: 15,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: Colors.black,
-          width: 2.0,
-        ),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
         Text((this.widget.c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
