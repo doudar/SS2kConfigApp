@@ -68,12 +68,9 @@ class _sliderCardState extends State<sliderCard> {
   @override
   Widget build(BuildContext context) {
     return Card(
+      elevation: 15,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: Colors.black,
-          width: 2.0,
-        ),
       ),
       child: Column(children: <Widget>[
         Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),

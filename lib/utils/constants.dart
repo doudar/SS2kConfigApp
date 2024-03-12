@@ -27,7 +27,6 @@ final String connectedHRMVname = "BLE_connectedHeartMonitor";
 final String connectedPWRVname = "BLE_connectedPowerMeter";
 final String rebootVname = "BLE_reboot";
 final String resetVname = "BLE_resetToDefaults";
-final String shiftVname = "BLE_shifterPosition";
 final String fwVname = "BLE_firmwareVer";
 final String restartBLEVname = "BLE_restartBLE";
 final String shiftStepVname = "BLE_shiftStep";
@@ -57,7 +56,6 @@ final String stepperSpeedVname = "BLE_stepperSpeed";
 final String syncModeVname = "BLE_syncMode";
 final String minBrakeWattsVname = "BLE_minBrakeWatts";
 final String maxBrakeWattsVname = "BLE_maxBrakeWatts";
-final String restartBLEVname2 = "BLE_restartBLE"; // Duplicate for demonstration
 final String scanBLEVname = "BLE_scanBLE";
 
 // Refactored customCharacteristicFramework to directly use Dart map
@@ -123,6 +121,17 @@ final dynamic customCharacteristicFramework = [
     "max": 1,
     "textDescription":
         "This setting controls the direction the shifter buttons turn the knob. Toggle this if you need to adjust the direction of the shifters."
+  },
+    {
+    "vName": saveVname,
+    "reference": "0x18",
+    "isSetting": false,
+    "type": "bool",
+    "humanReadableName": "Save to SmartSpin2k",
+    "min": 0,
+    "max": 1,
+    "textDescription":
+        "Saves all of the configuration to the filesystem"
   },
   {
     "vName": inclineMultiplierVname,
@@ -409,5 +418,16 @@ final dynamic customCharacteristicFramework = [
     "max": 1,
     "textDescription":
         "Scan for BLE devices. Scanning is automatic (not needed to be used) unless all devices are connected."
+  },
+    {
+    "vName": rebootVname,
+    "reference": "0x1C",
+    "isSetting": false,
+    "type": "bool",
+    "humanReadableName": "Reboot",
+    "min": 0,
+    "max": 1,
+    "textDescription":
+        "Reboots The SmartSpin2k"
   }
 ];

@@ -29,19 +29,40 @@ class SettingTile extends StatefulWidget {
 
 class _SettingTileState extends State<SettingTile> {
   late String text = this.c["value"].toString();
-  late StreamSubscription<List<int>> _lastValueSubscription;
+  StreamSubscription? _charSubscription;
   late BLEData bleData;
   Map get c => this.widget.c;
+  late String _value;
 
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
-    _lastValueSubscription = this.bleData.getMyCharacteristic(this.widget.device).lastValueStream.listen((value) {
-      if (mounted) {
-        setState(() {});
+    _value = valueFormatter();
+    startSubscription();
+  }
+
+  @override
+  void dispose() {
+    _charSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future startSubscription() async {
+    if (this.bleData.charReceived.value) {
+      try {
+        _charSubscription = this.bleData.getMyCharacteristic(this.widget.device).onValueReceived.listen((data) async {
+          if (_value != c["value"]) {
+            _value = valueFormatter();
+            setState(() {
+              _value;
+            });
+          }
+        });
+      } catch (e) {
+        print("Subscription Failed, $e");
       }
-    });
+    }
   }
 
   Widget widgetPicker() {
@@ -82,17 +103,14 @@ class _SettingTileState extends State<SettingTile> {
           Center(
             child: Hero(
                 tag: c["vName"],
-                //flightShuttleBuilder: _flightShuttleBuilder,
                 child: Material(
                   child: ret,
                   type: MaterialType.transparency,
                 )),
           ),
           SizedBox(height: 50),
-          Text(
-              "Settings are immediate for the current session.\nClick save to make them persistent.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white)),
+          Text("Settings are immediate for the current session.\nClick save to make them persistent.",
+              textAlign: TextAlign.center, style: TextStyle(color: Colors.white)),
         ],
         crossAxisAlignment: CrossAxisAlignment.center,
         mainAxisAlignment: MainAxisAlignment.center,
@@ -110,54 +128,45 @@ class _SettingTileState extends State<SettingTile> {
   }
 
   @override
-  void dispose() {
-    _lastValueSubscription.cancel();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     SizedBox(height: 10);
-    return Material(
-      color: Color(0xffebebeb),
-      child: Hero(
-        tag: c["vName"],
-        //flightShuttleBuilder: _flightShuttleBuilder,
-        child: Material(
-          type: MaterialType.transparency,
-          child: Card(
-            child: ListTile(
-              shape: RoundedRectangleBorder(
-                side: BorderSide(color: Colors.black, width: 2),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              title: Column(
-                children: <Widget>[
-                  Text((c["humanReadableName"]),
-                      textAlign: TextAlign.left, style: Theme.of(context).textTheme.labelLarge),
-                  Text(
-                    valueFormatter(),
-                    textAlign: TextAlign.right,
-                  ),
-                  Icon(Icons.edit_note_sharp),
-                ],
-              ),
-              tileColor: (c["value"] == noFirmSupport) ? deactiveBackgroundColor : Colors.black12,
-              onTap: () {
-                if (c["value"] == noFirmSupport) {
-                } else {
-                  Navigator.push(
-                    context,
-                    fadeRoute(
-                      Scaffold(
-                        appBar: AppBar(title: const Text('Edit Setting')),
-                        body: Center(child: widgetPicker()),
-                      ),
-                    ),
-                  );
-                }
-              },
+    return Hero(
+      tag: c["vName"],
+      child: Material(
+        type: MaterialType.transparency,
+        child: Card(
+          margin: EdgeInsets.fromLTRB(10, 5, 10, 5),
+          elevation: 4,
+          child: ListTile(
+            shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+             ),
+            title: Column(
+              children: <Widget>[
+                Text((c["humanReadableName"]),
+                    textAlign: TextAlign.left, style: Theme.of(context).textTheme.labelLarge),
+                Text(
+                  _value,
+                  textAlign: TextAlign.right,
+                ),
+                Icon(Icons.edit_note_sharp),
+              ],
             ),
+            tileColor: (c["value"] == noFirmSupport) ? deactiveBackgroundColor : Colors.black12,
+            onTap: () {
+              if (c["value"] == noFirmSupport) {
+              } else {
+                Navigator.push(
+                  context,
+                  fadeRoute(
+                    Scaffold(
+                      appBar: AppBar(title: const Text('Edit Setting')),
+                      body: Center(child: widgetPicker()),
+                    ),
+                  ),
+                );
+              }
+            },
           ),
         ),
       ),

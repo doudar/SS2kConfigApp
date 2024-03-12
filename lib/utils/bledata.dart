@@ -61,6 +61,7 @@ class BLEData {
       await _discoverServices(device);
       if (services.length > 1) {
         await _findChar();
+        await updateCustomCharacter(device);
       }
     }
   }
@@ -456,7 +457,7 @@ class BLEData {
         }
       }
       this.isReadingOrWriting.value = false;
-    });
-    device.cancelWhenDisconnected(subscription);
+    }); //VV This is handled by the subscription flag. 
+   // device.cancelWhenDisconnected(subscription);
   }
 }

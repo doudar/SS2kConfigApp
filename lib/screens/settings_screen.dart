@@ -91,6 +91,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Size _size = MediaQuery.of(context).size;
     _refreshBlocker = true;
     return ScaffoldMessenger(
       key: Snackbar.snackBarKeyC,
@@ -104,17 +105,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisSize: MainAxisSize.max,
           children: <Widget>[
             DeviceHeader(device: this.widget.device),
-            SizedBox(
-              height: 500,
-              child: ListWheelScrollView(
-                  //child: Column(
-                  clipBehavior: Clip.antiAlias,
-                  itemExtent: 100,
-                  children: <Widget>[
-                    ...buildSettings(context),
-                  ]),
-              //),
-            ),
+               SizedBox(
+               height: _size.height * .80,
+               width: _size.width * .90,
+                child:
+            ListView(clipBehavior: Clip.antiAlias, itemExtent: 100, children: <Widget>[
+              ...buildSettings(context),
+            ]),
+
+              ),
           ],
         ),
       ),

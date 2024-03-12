@@ -223,10 +223,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     if (this.widget.device.isConnected) {
       if (rssi >= -60) {
         iconData = Icons.signal_cellular_4_bar_sharp; // Assume this is full signal strength
-        iconColor = Colors.black;
+        iconColor = Colors.green;
       } else if (rssi >= -70) {
         iconData = Icons.signal_cellular_alt_sharp; // Assume this is 4 bars
-        iconColor = Colors.green;
+        iconColor = Colors.lightGreenAccent;
       } else if (rssi >= -80) {
         iconData = Icons.signal_cellular_alt_2_bar_sharp; // Assume this is 3 bars
         iconColor = Colors.yellow;
@@ -251,9 +251,15 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
     return Column(children: <Widget>[
       ListTile(
+        leading: rssiIcon,
         title: Text('Device: ${this.widget.device.platformName} (${this.widget.device.remoteId})'),
         subtitle: Text('Version: ${this.bleData.firmwareVersion}'),
-        trailing: rssiIcon,
+        trailing:
+            // Expand/Collapse Icon
+            Icon(
+          _isExpanded ? Icons.expand_less : Icons.expand_more, size: 40,
+          color: Theme.of(context).primaryColor,
+        ),
         onTap: () => setState(() => _isExpanded = !_isExpanded),
       ),
       AnimatedCrossFade(
