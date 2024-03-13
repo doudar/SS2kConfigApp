@@ -164,6 +164,16 @@ class _DropdownCardState extends State<DropdownCard> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: <Widget>[
                   TextButton(
+                      child: const Text('SCAN'),
+                      onPressed: () {
+                        //Find the save command and execute it
+                        this
+                            .bleData
+                            .customCharacteristic
+                            .forEach((c) => this.bleData.findNSave(this.widget.device, c, scanBLEVname));
+                      }),
+                  const SizedBox(width: 8),
+                  TextButton(
                       child: const Text('BACK'),
                       onPressed: () {
                         Navigator.pop(context);
