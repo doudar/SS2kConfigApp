@@ -112,24 +112,28 @@ class _plainTextCardState extends State<plainTextCard> {
             : Text((c["value"]), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
         (c["vName"] == passwordVname) ? passwordTextField() : regularTextField(),
         const SizedBox(height: 15),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: <Widget>[
-            const SizedBox(width: 8),
-            TextButton(
-              child: const Text('SAVE'),
-              onPressed: () {
-                //Find the save command and execute it
-                this
-                    .bleData
-                    .customCharacteristic
-                    .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
-                Navigator.pop(context);
-              },
-            ),
-            const SizedBox(width: 8),
-          ],
-        ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  TextButton(
+                      child: const Text('BACK'),
+                      onPressed: () {
+                        Navigator.pop(context);
+                      }),
+                  const SizedBox(width: 8),
+                  TextButton(
+                      child: const Text('SAVE'),
+                      onPressed: () {
+                        //Find the save command and execute it
+                        this
+                            .bleData
+                            .customCharacteristic
+                            .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                        Navigator.pop(context);
+                      }),
+                  const SizedBox(width: 8),
+                ],
+              ),
       ]),
     );
   }

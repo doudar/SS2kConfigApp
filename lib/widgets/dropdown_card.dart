@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
-import '../utils/constants.dart';
+import 'dart:async';
 
 class DropdownCard extends StatefulWidget {
   const DropdownCard({
@@ -30,6 +30,7 @@ class _DropdownCardState extends State<DropdownCard> {
   List<String> ddItems = [];
   String? selectedValue;
   late BLEData bleData;
+  StreamSubscription? _charSubscription;
 
   @override
   void initState() {
@@ -37,6 +38,24 @@ class _DropdownCardState extends State<DropdownCard> {
     bleData = BLEDataManager.forDevice(this.widget.device);
     buildDevicesMap();
     selectedValue = ddItems.isNotEmpty ? ddItems[0] : null;
+    try {
+      _charSubscription = this.bleData.getMyCharacteristic(this.widget.device).onValueReceived.listen((data) async {
+        if (mounted) {
+          buildDevicesMap();
+          setState(() {
+            ddItems;
+          });
+        }
+      });
+    } catch (e) {
+      print("Subscription Failed, $e");
+    }
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+    _charSubscription?.cancel();
   }
 
   void buildDevicesMap() {
@@ -144,6 +163,22 @@ class _DropdownCardState extends State<DropdownCard> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: <Widget>[
+                  TextButton(
+                      child: const Text('SCAN'),
+                      onPressed: () {
+                        //Find the save command and execute it
+                        this
+                            .bleData
+                            .customCharacteristic
+                            .forEach((c) => this.bleData.findNSave(this.widget.device, c, scanBLEVname));
+                      }),
+                  const SizedBox(width: 8),
+                  TextButton(
+                      child: const Text('BACK'),
+                      onPressed: () {
+                        Navigator.pop(context);
+                      }),
+                  const SizedBox(width: 8),
                   TextButton(
                       child: const Text('SAVE'),
                       onPressed: () {
