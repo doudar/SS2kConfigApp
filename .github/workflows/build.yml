@@ -68,7 +68,7 @@ jobs:
       - name: Create artifacts
         run: |
           mkdir -p artifacts
-          zip -r artifacts/build_outputs_${{ needs.prepare.outputs.version }}.zip build/app/outputs/flutter-apk/app-release.apk build/ios/iphoneos build/macos/Build/Products/Release
+          zip -r artifacts/SmartSpin2k_ConfigApp_${{ needs.prepare.outputs.version }}.zip build/android/SmartSpin2k.apk build/ios/SmartSpin2k.app build/macos/Build/Products/Release
           
       - name: Archive
         uses: actions/upload-artifact@v4
