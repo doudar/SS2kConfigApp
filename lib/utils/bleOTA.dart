@@ -97,6 +97,8 @@ class Esp32OtaPackage implements OtaPackage {
     for (Uint8List chunk in binaryChunks) {
       await bleRepo.writeDataCharacteristic(dataCharacteristic, chunk).timeout(Duration(seconds: 10), onTimeout: () {
         // If a timeout occurs, throw a custom exception to be caught by the catch block
+         firmwareupdate = false;
+        _percentageController.close();
         throw TimeoutException('Failed to write data chunk #$packageNumber');
       });
       packageNumber++;
@@ -122,6 +124,7 @@ class Esp32OtaPackage implements OtaPackage {
       print('OTA update failed');
       firmwareupdate = false; // Firmware update failed
     }
+    _percentageController.close();
   }
 
   // Convert Uint8List to List<int>

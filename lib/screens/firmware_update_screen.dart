@@ -46,7 +46,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   String timeRemaining = 'Calculating...';
 
   bool firmwareCharReceived = false;
-
+  bool _uploadCompleteDialogShown = false;
   bool updatingFirmware = false;
 
   final int BINARY = 1;
@@ -85,12 +85,12 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       }
     });
 
-     // Monitor device disconnection during firmware update
-  charSubscription = this.widget.device.connectionState.listen((state) {
-    if (state != BluetoothConnectionState.connected && updatingFirmware && _progress < 1) {
-      _showUploadCompleteDialog(false);
-    }
-  });
+    // Monitor device disconnection during firmware update
+    charSubscription = this.widget.device.connectionState.listen((state) {
+      if (state != BluetoothConnectionState.connected && updatingFirmware && _progress < 1) {
+        _showUploadCompleteDialog(false);
+      }
+    });
   }
 
   @override
@@ -102,30 +102,62 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   }
 
   // Method to display dialog based on firmware update success or failure
-void _showUploadCompleteDialog(bool isSuccess) {
-  String title = isSuccess ? "Upload Successful" : "Upload Failed";
-  String content = isSuccess
-      ? "The firmware upload was successful."
-      : "The device disconnected before the upload could complete.";
+  void _showUploadCompleteDialog(bool isSuccess) {
+    if (!_uploadCompleteDialogShown) {
+      //Only show this dialog once.
+      _uploadCompleteDialogShown = true;
+      String title = isSuccess ? "Upload Successful" : "Upload Failed";
+      String content = isSuccess
+          ? "The firmware upload was successful."
+          : "The device disconnected before the upload could complete.";
 
-  showDialog(
-    context: context,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        title: Text(title),
-        content: Text(content),
-        actions: <Widget>[
-          TextButton(
-            child: Text("OK"),
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
-          ),
-        ],
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text(title),
+            content: Text(content),
+            actions: <Widget>[
+              TextButton(
+                child: Text("OK"),
+                onPressed: () {
+                  _uploadCompleteDialogShown = false;
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          );
+        },
       );
-    },
-  );
-}
+    }
+  }
+
+  Future<bool> _showConfirmDialog() async {
+    return await showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text('Confirm Firmware Update'),
+              content: Text('This process may take up to 5 minutes. \nAre you sure you want to update the firmware?'),
+              actions: <Widget>[
+                TextButton(
+                  child: Text('Cancel'),
+                  onPressed: () {
+                    Navigator.of(context).pop(false); // User cancels the update
+                  },
+                ),
+                TextButton(
+                  child: Text('Confirm'),
+                  onPressed: () {
+                    Navigator.of(context).pop(true); // User confirms the update
+                  },
+                ),
+              ],
+            );
+          },
+        ) ??
+        false; // Return false if the dialog is dismissed
+  }
 
   Future<void> _initialize() async {
     otaPackage = Esp32OtaPackage(this.bleData.firmwareDataCharacteristic, this.bleData.firmwareControlCharacteristic);
@@ -149,6 +181,9 @@ void _showUploadCompleteDialog(bool isSuccess) {
     if (this.bleData.charReceived.value) {
       progressSubscription = otaPackage!.percentageStream.listen((event) {
         _progress = event / 100.0;
+        if (event == 100) {
+          _showUploadCompleteDialog(true);
+        }
         setState(() {
           updateProgress();
         });
@@ -273,7 +308,7 @@ void _showUploadCompleteDialog(bool isSuccess) {
 
   List<Widget> _buildUpdateButtons() {
     return <Widget>[
-      Text("Don't leave this screen until the update completes"),
+      updatingFirmware ? Text("Don't leave this screen until the update completes", textAlign: TextAlign.center,) : Text("Use this tool to update the firmware over BLE. \n Note: It's recommended to update using the OTA web page instead.", textAlign: TextAlign.center,),
       SizedBox(height: 20),
       updatingFirmware ? Text('   ${(_progress * 100).round()}%') : SizedBox(),
       SizedBox(height: 20),
@@ -290,9 +325,12 @@ void _showUploadCompleteDialog(bool isSuccess) {
           : Column(
               children: <Widget>[
                 ElevatedButton(
-                  onPressed: () {
-                    WakelockPlus.enable();
-                    startFirmwareUpdate(BINARY);
+                  onPressed: () async {
+                    bool confirm = await _showConfirmDialog();
+                    if (confirm) {
+                      WakelockPlus.enable();
+                      startFirmwareUpdate(BINARY);
+                    }
                   },
                   child: Text(
                     textAlign: TextAlign.center,
@@ -304,17 +342,23 @@ void _showUploadCompleteDialog(bool isSuccess) {
                 io.Platform.isMacOS
                     ? SizedBox()
                     : ElevatedButton(
-                        onPressed: () {
-                          WakelockPlus.enable();
-                          startFirmwareUpdate(PICKER);
+                        onPressed: () async {
+                          bool confirm = await _showConfirmDialog();
+                          if (confirm) {
+                            WakelockPlus.enable();
+                            startFirmwareUpdate(PICKER);
+                          }
                         },
                         child: Text(textAlign: TextAlign.center, 'Choose Firmware From Dialog'),
                       ),
                 SizedBox(height: 10),
                 ElevatedButton(
-                  onPressed: () {
-                    WakelockPlus.enable();
-                    startFirmwareUpdate(URL);
+                  onPressed: () async {
+                    bool confirm = await _showConfirmDialog();
+                    if (confirm) {
+                      WakelockPlus.enable();
+                      startFirmwareUpdate(URL);
+                    }
                   },
                   child: Text(
                     textAlign: TextAlign.center,
