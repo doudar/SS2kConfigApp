@@ -36,11 +36,15 @@ class _plainTextCardState extends State<plainTextCard> {
     super.dispose();
   }
 
-  void verifyInput(String t) {
-    c["value"] = t.trim();
-    controller.text = c["value"];
-
-    setState(() {});
+  bool verifyInput(String t) {
+    // Example validation: Ensure input is not empty
+    bool isValid = t.trim().isNotEmpty;
+    if (isValid) {
+      c["value"] = t.trim();
+      controller.text = c["value"];
+      setState(() {});
+    }
+    return isValid;
   }
 
   Widget passwordTextField() {
@@ -112,28 +116,36 @@ class _plainTextCardState extends State<plainTextCard> {
             : Text((c["value"]), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
         (c["vName"] == passwordVname) ? passwordTextField() : regularTextField(),
         const SizedBox(height: 15),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: <Widget>[
-                  TextButton(
-                      child: const Text('BACK'),
-                      onPressed: () {
-                        Navigator.pop(context);
-                      }),
-                  const SizedBox(width: 8),
-                  TextButton(
-                      child: const Text('SAVE'),
-                      onPressed: () {
-                        //Find the save command and execute it
-                        this
-                            .bleData
-                            .customCharacteristic
-                            .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
-                        Navigator.pop(context);
-                      }),
-                  const SizedBox(width: 8),
-                ],
-              ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: <Widget>[
+            TextButton(
+                child: const Text('BACK'),
+                onPressed: () {
+                  Navigator.pop(context);
+                }),
+            const SizedBox(width: 8),
+            TextButton(
+                child: const Text('SAVE'),
+                onPressed: () {
+                  // Use the controller's text for validation
+                  bool inputIsValid = verifyInput(controller.text);
+                  if (inputIsValid) {
+                    // Proceed with saving if input is valid
+                    this
+                        .bleData
+                        .customCharacteristic
+                        .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                    Navigator.pop(context);
+                  } else {
+                    // Handle invalid input, e.g., show an error message
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(SnackBar(content: Text('Invalid input! Please check your input and try again.')));
+                  }
+                }),
+            const SizedBox(width: 8),
+          ],
+        ),
       ]),
     );
   }
