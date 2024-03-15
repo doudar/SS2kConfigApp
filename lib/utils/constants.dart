@@ -116,11 +116,11 @@ final dynamic customCharacteristicFramework = [
     "reference": "0x20",
     "isSetting": true,
     "type": "bool",
-    "humanReadableName": "Shifter Direction",
+    "humanReadableName": "Swap Shifter Direction",
     "min": 0,
     "max": 1,
     "textDescription":
-        "This setting controls the direction the shifter buttons turn the knob. Toggle this if you need to adjust the direction of the shifters."
+        "This setting controls which shifter button is up and which is down. Toggle this if you need to invert the direction of the shifters."
   },
     {
     "vName": saveVname,
