@@ -27,7 +27,7 @@ class MainDeviceScreen extends StatefulWidget {
 
 class _MainDeviceScreenState extends State<MainDeviceScreen> {
   late BLEData bleData;
-  
+
   @override
   void initState() {
     super.initState();
@@ -102,14 +102,14 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        foregroundColor: ThemeData().colorScheme.onPrimary,
+        backgroundColor: ThemeData().colorScheme.primary,
         title: Text("Main Device Screen"),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
       ),
       body: ListView(
         padding: EdgeInsets.all(8),
         children: <Widget>[
-          DeviceHeader(device: this.widget.device,connectOnly: true),
+          DeviceHeader(device: this.widget.device, connectOnly: true),
           SizedBox(height: 20),
           _buildCard('assets/shiftscreen.png', "Virtual Shifter", () {
             Navigator.of(context)
@@ -120,8 +120,8 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                 .push(MaterialPageRoute(builder: (context) => SettingsScreen(device: this.widget.device)));
           }),
           _buildCard('assets/GitHub-logo.png', "Update Firmware", () {
-            Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => FirmwareUpdateScreen(device: this.widget.device)));
+            Navigator.of(context)
+                .push(MaterialPageRoute(builder: (context) => FirmwareUpdateScreen(device: this.widget.device)));
           }),
         ],
       ),

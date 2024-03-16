@@ -70,9 +70,10 @@ class _ShifterScreenState extends State<ShifterScreen> {
         } else if (state == BluetoothConnectionState.disconnected) {
           c["value"] = "Loading";
         }
+        if(mounted){
         setState(() {
           t = c["value"] ?? "Loading";
-        });
+        });}
       }
     });
   }
@@ -89,8 +90,10 @@ class _ShifterScreenState extends State<ShifterScreen> {
   Widget _buildShiftButton(IconData icon, VoidCallback onPressed) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.grey[300], // Button color
-        foregroundColor: Colors.black, // Icon color
+        elevation: 5,
+        //foregroundColor: ThemeData().colorScheme.primaryContainer, // Button color
+       // backgroundColor: ThemeData().colorScheme.onPrimaryContainer, // Icon color
+       // shadowColor: ThemeData().colorScheme.background.withOpacity(0.5),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(20))), // Oval shape
         padding: EdgeInsets.symmetric(vertical: 48, horizontal: 30), // Padding for oval shape
       ),
@@ -103,11 +106,11 @@ class _ShifterScreenState extends State<ShifterScreen> {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 16, horizontal: 32),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: ThemeData().colorScheme.tertiary,
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.5),
+            color: ThemeData().colorScheme.surface.withOpacity(0.5),
             spreadRadius: 5,
             blurRadius: 7,
             offset: Offset(0, 3),
@@ -117,6 +120,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
       child: Text(
         gearNumber,
         style: TextStyle(
+         color: ThemeData().colorScheme.onTertiary,
           fontSize: 48,
           fontWeight: FontWeight.bold,
         ),
@@ -128,8 +132,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
   Widget build(BuildContext context) {
     return ScaffoldMessenger(
         child: Scaffold(
-      backgroundColor: Color(0xffebebeb),
       appBar: AppBar(
+        foregroundColor: ThemeData().colorScheme.onPrimary,
+        backgroundColor: ThemeData().colorScheme.primary,
         centerTitle: true,
         title: Text(
           "Virtual Shifter",
@@ -137,7 +142,6 @@ class _ShifterScreenState extends State<ShifterScreen> {
             fontWeight: FontWeight.w400,
             fontStyle: FontStyle.normal,
             fontSize: 20,
-            color: Color(0xff000000),
           ),
         ),
       ),

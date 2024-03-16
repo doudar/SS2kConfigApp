@@ -308,7 +308,15 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   List<Widget> _buildUpdateButtons() {
     return <Widget>[
-      updatingFirmware ? Text("Don't leave this screen until the update completes", textAlign: TextAlign.center,) : Text("Use this tool to update the firmware over BLE. \n Note: It's recommended to update using the OTA web page instead.", textAlign: TextAlign.center,),
+      updatingFirmware
+          ? Text(
+              "Don't leave this screen until the update completes",
+              textAlign: TextAlign.center,
+            )
+          : Text(
+              "Use this tool to update the firmware over BLE. \n Note: It's recommended to update using the OTA web page instead.",
+              textAlign: TextAlign.center,
+            ),
       SizedBox(height: 20),
       updatingFirmware ? Text('   ${(_progress * 100).round()}%') : SizedBox(),
       SizedBox(height: 20),
@@ -413,8 +421,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xffebebeb),
       appBar: AppBar(
+        foregroundColor: ThemeData().colorScheme.onPrimary,
+        backgroundColor: ThemeData().colorScheme.primary,
         title: Text('Firmware Update'),
       ),
       body: Center(

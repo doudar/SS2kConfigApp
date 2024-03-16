@@ -15,6 +15,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 //import 'theme/custom_color.g.dart';
 import 'screens/bluetooth_off_screen.dart';
 import 'screens/scan_screen.dart';
+import 'theme/theme.dart';
 
 void main() {
   FlutterBluePlus.setLogLevel(LogLevel.verbose, color: true);
@@ -61,7 +62,9 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
         : BluetoothOffScreen(adapterState: _adapterState);
 
     return MaterialApp(
-      themeMode: ThemeMode.system,
+      theme: MyAppThemes.lightTheme,
+      darkTheme: MyAppThemes.darkTheme,
+      themeMode: ThemeMode.light,
       home: screen,
       navigatorObservers: [BluetoothAdapterStateObserver()],
     );
