@@ -28,6 +28,7 @@ class _plainTextCardState extends State<plainTextCard> {
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+    controller.text = c["value"];
   }
 
   @override
@@ -132,6 +133,7 @@ class _plainTextCardState extends State<plainTextCard> {
                   bool inputIsValid = verifyInput(controller.text);
                   if (inputIsValid) {
                     // Proceed with saving if input is valid
+                    this.bleData.writeToSS2K(this.widget.device, this.widget.c);
                     this
                         .bleData
                         .customCharacteristic
