@@ -15,7 +15,7 @@ final Color deactiveBackgroundColor = Color.fromARGB(255, 90, 91, 100);
 // String that's inserted if the response from the server is not supported.
 final String noFirmSupport = "Not supported by firmware version.";
 
-// Any and None selections pre-formatted so they can be appended to the JSON from the SmartSpin2k easily. 
+// Any and None selections pre-formatted so they can be appended to the JSON from the SmartSpin2k easily.
 String defaultDevices =
     '''[{"device -4": {"name": "any", "UUID": "0x180d"},"device -3": {"name": "none", "UUID": "0x180d"},"device -2": {"name": "any", "UUID": "0x1818"},"device -1": {"name": "none", "UUID": "0x1818"},''';
 
@@ -122,7 +122,7 @@ final dynamic customCharacteristicFramework = [
     "textDescription":
         "This setting controls which shifter button is up and which is down. Toggle this if you need to invert the direction of the shifters."
   },
-    {
+  {
     "vName": saveVname,
     "reference": "0x18",
     "isSetting": false,
@@ -130,8 +130,7 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Save to SmartSpin2k",
     "min": 0,
     "max": 1,
-    "textDescription":
-        "Saves all of the configuration to the filesystem"
+    "textDescription": "Saves all of the configuration to the filesystem"
   },
   {
     "vName": inclineMultiplierVname,
@@ -419,7 +418,7 @@ final dynamic customCharacteristicFramework = [
     "textDescription":
         "Scan for BLE devices. Scanning is automatic (not needed to be used) unless all devices are connected."
   },
-    {
+  {
     "vName": rebootVname,
     "reference": "0x1C",
     "isSetting": false,
@@ -427,7 +426,16 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Reboot",
     "min": 0,
     "max": 1,
-    "textDescription":
-        "Reboots The SmartSpin2k"
+    "textDescription": "Reboots The SmartSpin2k"
+  },
+  {
+    "vName": resetVname,
+    "reference": "0x1D",
+    "isSetting": false,
+    "type": "bool",
+    "humanReadableName": "Reconnect Devices",
+    "min": 0,
+    "max": 1,
+    "textDescription": "Disconnect the BLE devices (scan will then happen along with reconnect)."
   }
 ];

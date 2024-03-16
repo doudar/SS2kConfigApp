@@ -362,7 +362,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                   },
                   child: Text(
                     textAlign: TextAlign.center,
-                    'Use Latest Firmware from Github\n${_githubFirmwareVersion}',
+                    'Latest Stable Firmware from Github\n${_githubFirmwareVersion}',
                     style: TextStyle(color: _githubVersionColor),
                   ),
                 ),

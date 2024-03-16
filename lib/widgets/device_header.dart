@@ -167,7 +167,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Future onResetPressed() async {
     try {
       await this.bleData.resetToDefaults(this.widget.device);
-      await discoverServices();
+      await onConnectPressed();
       Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Reset Failed ", e), success: false);
