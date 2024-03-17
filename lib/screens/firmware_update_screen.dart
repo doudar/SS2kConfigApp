@@ -333,6 +333,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           : Column(
               children: <Widget>[
                 ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary),
+
                   onPressed: () async {
                     bool confirm = await _showConfirmDialog();
                     if (confirm) {
@@ -350,6 +352,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                 io.Platform.isMacOS
                     ? SizedBox()
                     : ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary),
+
                         onPressed: () async {
                           bool confirm = await _showConfirmDialog();
                           if (confirm) {
@@ -361,6 +365,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                       ),
                 SizedBox(height: 10),
                 ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary),
+
                   onPressed: () async {
                     bool confirm = await _showConfirmDialog();
                     if (confirm) {

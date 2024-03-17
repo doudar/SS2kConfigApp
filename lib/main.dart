@@ -9,17 +9,23 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-//import 'package:dynamic_color/dynamic_color.dart';
 
 //import 'theme/color_schemes.g.dart';
-//import 'theme/custom_color.g.dart';
 import 'screens/bluetooth_off_screen.dart';
 import 'screens/scan_screen.dart';
-import 'theme/theme.dart';
+//import 'theme/theme.dart';
+import 'package:json_theme/json_theme.dart';
+import 'package:flutter/services.dart';
+import 'dart:convert';
 
-void main() {
+void main() async {
   FlutterBluePlus.setLogLevel(LogLevel.verbose, color: true);
-  runApp(const SmartSpin2kApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  final themeStr = await rootBundle.loadString('assets/appainter_theme.json');
+  final themeJson = jsonDecode(themeStr);
+  final theme = ThemeDecoder.decodeThemeData(themeJson)!;
+
+  runApp(SmartSpin2kApp(theme: theme));
 }
 
 //
@@ -27,7 +33,8 @@ void main() {
 // ScanScreen depending on the adapter state
 //
 class SmartSpin2kApp extends StatefulWidget {
-  const SmartSpin2kApp({Key? key}) : super(key: key);
+  final ThemeData theme;
+  const SmartSpin2kApp({Key? key, required this.theme}) : super(key: key);
 
   @override
   State<SmartSpin2kApp> createState() => _SmartSpin2kAppState();
@@ -62,9 +69,8 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
         : BluetoothOffScreen(adapterState: _adapterState);
 
     return MaterialApp(
-      theme: MyAppThemes.lightTheme,
-      darkTheme: MyAppThemes.darkTheme,
-      themeMode: ThemeMode.light,
+      themeMode: ThemeMode.system,
+      theme: widget.theme,
       home: screen,
       navigatorObservers: [BluetoothAdapterStateObserver()],
     );
