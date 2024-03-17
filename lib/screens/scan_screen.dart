@@ -107,21 +107,22 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Widget buildScanButton(BuildContext context) {
     if (FlutterBluePlus.isScanningNow) {
-      return OutlinedButton(
+      return ElevatedButton(
         child: const Icon(Icons.stop),
         onPressed: onStopPressed,
-        style: OutlinedButton.styleFrom(
-          backgroundColor: Color.fromARGB(255, 241, 5, 5),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: ThemeData().colorScheme.error, foregroundColor: ThemeData().colorScheme.onError,
           //maximumSize: Size.fromWidth(100),
         ),
       );
     } else {
-      return OutlinedButton(
+      return ElevatedButton(
         child: const Text("SCAN"),
         onPressed: onScanPressed,
-        style: OutlinedButton.styleFrom(
-            //maximumSize: Size.fromWidth(50),
-            ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary,
+          //maximumSize: Size.fromWidth(50),
+        ),
       );
     }
   }
@@ -147,7 +148,6 @@ class _ScanScreenState extends State<ScanScreen> {
           titleTextStyle: TextStyle(
             fontSize: 30,
           ),
-          backgroundColor: Color.fromARGB(255, 18, 58, 189),
         ),
         body: RefreshIndicator(
           onRefresh: onRefresh,

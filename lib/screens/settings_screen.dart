@@ -96,7 +96,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return ScaffoldMessenger(
       key: Snackbar.snackBarKeyC,
       child: Scaffold(
-        backgroundColor: Color(0xffebebeb),
         appBar: AppBar(
           title: Text(this.widget.device.platformName),
           centerTitle: true,
@@ -105,15 +104,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisSize: MainAxisSize.max,
           children: <Widget>[
             DeviceHeader(device: this.widget.device),
-               SizedBox(
-               height: _size.height * .80,
-               width: _size.width * .90,
-                child:
-            ListView(clipBehavior: Clip.antiAlias, itemExtent: 100, children: <Widget>[
-              ...buildSettings(context),
-            ]),
-
-              ),
+            SizedBox(
+              height: _size.height * .80,
+              width: _size.width * .90,
+              child: ListView(clipBehavior: Clip.antiAlias, itemExtent: 100, children: <Widget>[
+                ...buildSettings(context),
+              ]),
+            ),
           ],
         ),
       ),

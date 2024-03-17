@@ -23,9 +23,11 @@ dependencies:
   wakelock_plus: ^1.1.4
   http: ^1.1.0
   font_awesome_flutter: ^10.7.0
+  json_theme: ^4.0.0
 
 flutter:
   uses-material-design: true
 
   assets:
     - assets/
+    - assets/appainter_theme.json

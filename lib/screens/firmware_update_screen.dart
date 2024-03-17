@@ -308,7 +308,15 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   List<Widget> _buildUpdateButtons() {
     return <Widget>[
-      updatingFirmware ? Text("Don't leave this screen until the update completes", textAlign: TextAlign.center,) : Text("Use this tool to update the firmware over BLE. \n Note: It's recommended to update using the OTA web page instead.", textAlign: TextAlign.center,),
+      updatingFirmware
+          ? Text(
+              "Don't leave this screen until the update completes",
+              textAlign: TextAlign.center,
+            )
+          : Text(
+              "Use this tool to update the firmware over BLE. \n Note: It's recommended to update using the OTA web page instead.",
+              textAlign: TextAlign.center,
+            ),
       SizedBox(height: 20),
       updatingFirmware ? Text('   ${(_progress * 100).round()}%') : SizedBox(),
       SizedBox(height: 20),
@@ -325,6 +333,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           : Column(
               children: <Widget>[
                 ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary),
+
                   onPressed: () async {
                     bool confirm = await _showConfirmDialog();
                     if (confirm) {
@@ -342,6 +352,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                 io.Platform.isMacOS
                     ? SizedBox()
                     : ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary),
+
                         onPressed: () async {
                           bool confirm = await _showConfirmDialog();
                           if (confirm) {
@@ -353,6 +365,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                       ),
                 SizedBox(height: 10),
                 ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary),
+
                   onPressed: () async {
                     bool confirm = await _showConfirmDialog();
                     if (confirm) {
@@ -413,7 +427,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xffebebeb),
       appBar: AppBar(
         title: Text('Firmware Update'),
       ),

@@ -201,8 +201,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     return Padding(
       padding: const EdgeInsets.all(14.0),
       child: CircularProgressIndicator(
-          //backgroundColor: Colors.black12,
-          //color: Colors.black26,
           ),
     );
   }
@@ -285,10 +283,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       icon: Icon(icon),
       label: Text(text),
       onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        backgroundColor: Theme.of(context).colorScheme.secondary,
-        foregroundColor: Colors.white,
-      ),
     );
   }
 }
