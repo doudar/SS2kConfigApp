@@ -102,8 +102,6 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        foregroundColor: ThemeData().colorScheme.onPrimary,
-        backgroundColor: ThemeData().colorScheme.primary,
         title: Text("Main Device Screen"),
       ),
       body: ListView(

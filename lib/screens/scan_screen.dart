@@ -144,8 +144,6 @@ class _ScanScreenState extends State<ScanScreen> {
       key: Snackbar.snackBarKeyB,
       child: Scaffold(
         appBar: AppBar(
-          foregroundColor: ThemeData().colorScheme.onPrimary,
-          backgroundColor: ThemeData().colorScheme.primary,
           title: Text('Find Your SmartSpin2k:'),
           titleTextStyle: TextStyle(
             fontSize: 30,

@@ -32,7 +32,7 @@ class _DropdownCardState extends State<DropdownCard> {
   late BLEData bleData;
   StreamSubscription? _charSubscription;
   double _wheelVisibility = 0.0;
-  Timer _wheelVisibilityTimer = Timer.periodic(Duration(seconds: 1), (_wheelVisibilityTimer) {});
+  Timer _wheelVisibilityTimer = Timer.periodic(Duration(milliseconds: 500), (_wheelVisibilityTimer) {});
 
   @override
   void initState() {
@@ -40,7 +40,7 @@ class _DropdownCardState extends State<DropdownCard> {
     bleData = BLEDataManager.forDevice(this.widget.device);
     buildDevicesMap();
     selectedValue = ddItems.isNotEmpty ? ddItems[0] : null;
-    _wheelVisibilityTimer = Timer.periodic(Duration(seconds: 1), (_wheelVisibilityTimer) {
+    _wheelVisibilityTimer = Timer.periodic(Duration(milliseconds: 500), (_wheelVisibilityTimer) {
       _wheelVisibility = 1;
       if (mounted) setState(() {});
     });
@@ -156,8 +156,6 @@ class _DropdownCardState extends State<DropdownCard> {
                         return SizedBox(
                           width: MediaQuery.of(context).size.width * 0.65,
                           child: ListTile(
-                            tileColor: ThemeData().colorScheme.tertiary,
-                            textColor: ThemeData().colorScheme.onTertiary,
                             enableFeedback: true,
                             shape: RoundedRectangleBorder(
                               //side: BorderSide(color: Colors.black, width: 2),

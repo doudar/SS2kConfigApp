@@ -428,8 +428,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        foregroundColor: ThemeData().colorScheme.onPrimary,
-        backgroundColor: ThemeData().colorScheme.primary,
         title: Text('Firmware Update'),
       ),
       body: Center(

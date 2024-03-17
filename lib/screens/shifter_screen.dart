@@ -106,7 +106,6 @@ class _ShifterScreenState extends State<ShifterScreen> {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 16, horizontal: 32),
       decoration: BoxDecoration(
-        color: ThemeData().colorScheme.tertiary,
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
@@ -120,7 +119,6 @@ class _ShifterScreenState extends State<ShifterScreen> {
       child: Text(
         gearNumber,
         style: TextStyle(
-         color: ThemeData().colorScheme.onTertiary,
           fontSize: 48,
           fontWeight: FontWeight.bold,
         ),
@@ -133,8 +131,6 @@ class _ShifterScreenState extends State<ShifterScreen> {
     return ScaffoldMessenger(
         child: Scaffold(
       appBar: AppBar(
-        foregroundColor: ThemeData().colorScheme.onPrimary,
-        backgroundColor: ThemeData().colorScheme.primary,
         centerTitle: true,
         title: Text(
           "Virtual Shifter",

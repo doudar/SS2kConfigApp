@@ -97,8 +97,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       key: Snackbar.snackBarKeyC,
       child: Scaffold(
         appBar: AppBar(
-          foregroundColor: ThemeData().colorScheme.onPrimary,
-          backgroundColor: ThemeData().colorScheme.primary,
           title: Text(this.widget.device.platformName),
           centerTitle: true,
         ),
