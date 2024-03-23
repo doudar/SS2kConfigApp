@@ -23,6 +23,7 @@ class _plainTextCardState extends State<plainTextCard> {
   final controller = TextEditingController();
   bool passwordVisible = false;
   late BLEData bleData;
+  final String _currentValue = "Current Value: ";
 
   @override
   void initState() {
@@ -50,7 +51,8 @@ class _plainTextCardState extends State<plainTextCard> {
 
   Widget passwordTextField() {
     return TextField(
-      obscureText: passwordVisible,
+      controller: this.controller,
+      obscureText: !passwordVisible,
       decoration: InputDecoration(
         border: UnderlineInputBorder(),
         hintText: "Password",
@@ -113,7 +115,7 @@ class _plainTextCardState extends State<plainTextCard> {
       child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
         Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
         (c["vName"] == passwordVname)
-            ? Text("**********")
+            ? ((passwordVisible) ? Text(_currentValue + c["value"]) : Text(_currentValue + "**********"))
             : Text((c["value"]), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
         (c["vName"] == passwordVname) ? passwordTextField() : regularTextField(),
         const SizedBox(height: 15),
@@ -131,6 +133,7 @@ class _plainTextCardState extends State<plainTextCard> {
                 onPressed: () {
                   // Use the controller's text for validation
                   bool inputIsValid = verifyInput(controller.text);
+                  print("**********************************" + controller.text);
                   if (inputIsValid) {
                     // Proceed with saving if input is valid
                     this.bleData.writeToSS2K(this.widget.device, this.widget.c);

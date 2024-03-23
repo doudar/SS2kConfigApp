@@ -71,12 +71,9 @@ class _ScanResultTileState extends State<ScanResultTile> {
         //mainAxisAlignment: MainAxisAlignment.start,
         //crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(this.widget.result.device.platformName,
+          Text(this.widget.result.device.advName,
               overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge),
-          Text(
-            this.widget.result.device.remoteId.toString(),
-            style: Theme.of(context).textTheme.bodySmall,
-          )
+          _rssiRow(context),
         ],
       );
     } else {
@@ -88,7 +85,8 @@ class _ScanResultTileState extends State<ScanResultTile> {
     return ElevatedButton(
       child: isConnected ? const Text('OPEN') : const Text('CONNECT'),
       onPressed: (this.widget.result.advertisementData.connectable) ? this.widget.onTap : null,
-      style: ElevatedButton.styleFrom(backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary),
+      style: ElevatedButton.styleFrom(
+          backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary),
     );
   }
 
@@ -111,6 +109,53 @@ class _ScanResultTileState extends State<ScanResultTile> {
           ),
         ],
       ),
+    );
+  }
+
+  Color _getColor(int index) {
+    // Define the thresholds for signal strength
+    final int worstRSSI = -100; // Adjust this based on your requirement
+    final int bestRSSI = -60; // Adjust this based on your requirement
+    final int signalStrength = (index + 1) * 2;
+
+    // Interpolate the color based on RSSI value
+    final double ratio = 2* (signalStrength - worstRSSI) / (bestRSSI - worstRSSI);
+    final int red = (255 * (1 - ratio)).toInt();
+    final int green = (255 * ratio).toInt();
+
+    // Return the color based on interpolation
+    return Color.fromRGBO(red, green, 0, 1.0);
+  }
+
+  Widget _rssiRow(BuildContext context) {
+    int numBoxesToShow = ((this.widget.result.rssi + 100) / 2.5).ceil();
+    return Row(
+      children: [
+        Text(
+          'Signal strength:',
+          style: TextStyle(fontSize: 12, color: ThemeData().colorScheme.onBackground),
+        ),
+        SizedBox(width: 8),
+        Row(
+          children: List.generate(10, (index) {
+            if (index < numBoxesToShow) {
+              return Container(
+                width: 5,
+                height: 10,
+                margin: EdgeInsets.symmetric(horizontal: 1),
+                color: _getColor(index),
+              );
+            } else {
+              return Container(
+                width: 5,
+                height: 10,
+                margin: EdgeInsets.symmetric(horizontal: 1),
+                color: Colors.transparent,
+              );
+            }
+          }),
+        ),
+      ],
     );
   }
 

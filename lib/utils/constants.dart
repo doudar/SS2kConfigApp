@@ -78,7 +78,7 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Saved Power Meter",
     "min": 0,
     "max": 2000,
-    "textDescription": "Select your Power Meter from the list below"
+    "textDescription": "Select your Power Meter from the list. \n Device Not showing up? Check that it's not connected to anything else and press scan again."
   },
   {
     "vName": connectedHRMVname,
@@ -88,7 +88,7 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Saved HRM",
     "min": 0,
     "max": 2000,
-    "textDescription": "Select your Heart Rate Monitor from the list below"
+    "textDescription": "Select your Heart Rate Monitor from the list. \n Device Not showing up? Check that it's not connected to anything else and press scan again."
   },
   {
     "vName": foundDevicesVname,
@@ -222,7 +222,7 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Name of SmartSpin2k",
     "min": 0,
     "max": 0,
-    "textDescription": "Set the name for your SmartSpin2k device."
+    "textDescription": "Set the name for your SmartSpin2k device. This will also change the URL of the device on the local network to yourName.local"
   },
   {
     "vName": stepperPowerVname,
@@ -255,7 +255,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0.4,
     "max": 2.0,
     "textDescription":
-        "Increase or decrease this setting to correct the power reported from your bike. This is typically only needed if your bike is over or under reporting power by a significant amount. IC4/C6 users may want to try a value around 0.3x."
+        "Increase or decrease this setting to correct the power reported from your bike. This is typically only needed if your bike is over or under reporting power by a significant amount. IC4/C6 users may want to try a value around 0.7 to .8"
   },
   {
     "vName": simulateHrVname,
@@ -312,17 +312,17 @@ final dynamic customCharacteristicFramework = [
     "reference": "0x12",
     "isSetting": true,
     "type": "string",
-    "humanReadableName": "SSID",
+    "humanReadableName": "WiFi SSID (2.4 Ghz)",
     "min": 0,
     "max": 2000,
-    "textDescription": "Enter the SSID of a 2.4GHz WiFi network to access SmartSpin2k settings over WiFi."
+    "textDescription": "Enter the SSID of a 2.4GHz WiFi network to access SmartSpin2k settings over WiFi. If it doesn't connect, it will start and access point with the device name."
   },
   {
     "vName": passwordVname,
     "reference": "0x13",
     "isSetting": true,
     "type": "string",
-    "humanReadableName": "Password",
+    "humanReadableName": "WiFi Password",
     "min": 0,
     "max": 2000,
     "textDescription": "Enter your WiFi password."
