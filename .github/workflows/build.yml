@@ -1,4 +1,4 @@
-ame: Build and Release Applications
+name: Build and Release Applications
 
 on:
   push:
