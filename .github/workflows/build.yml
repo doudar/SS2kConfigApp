@@ -57,13 +57,13 @@ jobs:
           flutter-version: '3.19.3'
 
       - name: Build Android APK
-        run: flutter build apk
+        run: flutter build apk --no-tree-shake-icons
 
       - name: Build iOS App
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --no-tree-shake-icons
 
       - name: Build macOS App
-        run: flutter build macos --release
+        run: flutter build macos --release --no-tree-shake-icons
 
       - name: Create artifacts
         run: |
