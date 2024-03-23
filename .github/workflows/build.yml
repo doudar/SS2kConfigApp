@@ -1,4 +1,4 @@
-name: Build and Release Applications
+ame: Build and Release Applications
 
 on:
   push:
@@ -59,6 +59,9 @@ jobs:
       - name: Build Android APK
         run: flutter build apk --no-tree-shake-icons
 
+      - name: Rename APK to SS2kConfigApp.apk
+        run: mv build/app/outputs/flutter-apk/app-release.apk build/SS2kConfigApp.apk
+
       - name: Build iOS App
         run: flutter build ios --release --no-codesign --no-tree-shake-icons
 
@@ -68,7 +71,7 @@ jobs:
       - name: Create artifacts
         run: |
           mkdir -p artifacts
-          zip -r artifacts/build_outputs_${{ needs.prepare.outputs.version }}.zip build/app/outputs/flutter-apk/app-release.apk build/ios/iphoneos build/macos/Build/Products/Release          
+          zip -r artifacts/SS2kConfigApp${{ needs.prepare.outputs.version }}.zip build/SS2kConfigApp.apk build/ios/iphoneos build/macos/Build/Products/Release
 
       - name: Archive
         uses: actions/upload-artifact@v4
@@ -91,4 +94,4 @@ jobs:
           prerelease: false
           generate_release_notes: true
           body: ${{ github.event.head_commit.message }}
-          files: artifacts/build_outputs_${{ needs.prepare.outputs.version }}.zip
+          files: artifacts/SS2kConfigApp${{ needs.prepare.outputs.version }}.zip
