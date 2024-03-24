@@ -53,4 +53,7 @@ class DemoDevice {
 
     return mockScanResult;
   }
+
+
+
 }

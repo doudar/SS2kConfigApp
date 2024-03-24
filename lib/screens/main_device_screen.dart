@@ -32,6 +32,10 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+    if (this.widget.device.remoteId.toString() == "SmartSpin2k Demo") {
+      _demoDeviceSetup(context);
+      return;
+    }
     this.bleData.connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       this.bleData.connectionState = state;
       if (state == BluetoothConnectionState.connected) {
@@ -76,6 +80,13 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     this.bleData.isDisconnectingSubscription.cancel();
     this.bleData.charReceived.removeListener(_crListener);
     super.dispose();
+  }
+
+  void _demoDeviceSetup(context) {
+    this.bleData.customCharacteristic.forEach((key) {
+      key["value"] = key["defaultData"] ?? "Default Value";
+    });
+    this.bleData.charReceived.value = true;
   }
 
   Widget _buildCard(String assetPath, String title, VoidCallback onPressed) {

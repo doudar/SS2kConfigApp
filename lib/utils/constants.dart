@@ -125,7 +125,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription":
-        "This setting controls which shifter button is up and which is down. Toggle this if you need to invert the direction of the shifters."
+        "This setting controls which shifter button is up and which is down. Toggle this if you need to invert the direction of the shifters.",
     "defaultData" : "1"
   },
   {
@@ -136,7 +136,7 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Save to SmartSpin2k",
     "min": 0,
     "max": 1,
-    "textDescription": "Saves all of the configuration to the filesystem"
+    "textDescription": "Saves all of the configuration to the filesystem",
     "defaultData" : "0"
   },
   {
@@ -148,7 +148,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 10,
     "textDescription":
-        "This setting affects how much you will feel the impact of hills in sim mode rides. Pick the setting which feels most realistic to you. Higher values will make hills feel steeper while lower values will flatten out the hills."
+        "This setting affects how much you will feel the impact of hills in sim mode rides. Pick the setting which feels most realistic to you. Higher values will make hills feel steeper while lower values will flatten out the hills.",
     "defaultData" : "5.0"
   },
   {
@@ -160,7 +160,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 10,
     "textDescription":
-        "This setting will impact the sensitivity of Erg Mode. Too low will cause the Erg to be slow at reaching target wattage. Too high will cause it to overshoot and oscillate before settling. Start with the default value of 5 and adjust if necessary."
+        "This setting will impact the sensitivity of Erg Mode. Too low will cause the Erg to be slow at reaching target wattage. Too high will cause it to overshoot and oscillate before settling. Start with the default value of 5 and adjust if necessary.",
     "defaultData" : "5.0"
   },
   {
