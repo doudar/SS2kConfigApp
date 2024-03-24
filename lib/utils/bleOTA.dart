@@ -1,3 +1,10 @@
+/*
+ * Copyright (C) 2020  Anthony Doud
+ * All rights reserved
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
+
 // ignore_for_file: annotate_overrides, avoid_print, prefer_const_constructors
 
 // Import necessary libraries

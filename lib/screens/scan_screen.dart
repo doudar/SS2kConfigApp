@@ -138,6 +138,14 @@ class _ScanScreenState extends State<ScanScreen> {
         .toList();
   }
 
+    void onDemoModePressed() {
+    // TODO: Implement the functionality to enable demo mode
+    // For now, we can just print something to the console or show a Snackbar
+    print("Demo mode activated!");
+    // Navigate to a screen as if a device was connected, you'll need to implement this
+    // Or modify the state to reflect that the device is "connected"
+  }
+
   @override
   Widget build(BuildContext context) {
     return ScaffoldMessenger(
@@ -149,44 +157,59 @@ class _ScanScreenState extends State<ScanScreen> {
             fontSize: 30,
           ),
         ),
-        body: RefreshIndicator(
-          onRefresh: onRefresh,
-          child: ListView(
-            children: <Widget>[
-              ..._buildScanResultTiles(context),
-              if (_scanResults.isEmpty) // This line checks if there are no scan results
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Having Trouble?',
-                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+        body: Stack(
+          children: [
+            RefreshIndicator(
+              onRefresh: onRefresh,
+              child: ListView(
+                children: <Widget>[
+                  ..._buildScanResultTiles(context),
+                  if (_scanResults.isEmpty) // This line checks if there are no scan results
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Having Trouble?',
+                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                          ),
+                          SizedBox(height: 10),
+                          Text(
+                            'If you cannot find your SmartSpin2k, try the following steps:',
+                            style: TextStyle(fontSize: 18),
+                          ),
+                          SizedBox(height: 10),
+                          Text(
+                            '1. Ensure your SmartSpin2k is powered on and within range.\n'
+                            '2. Turn off and on the Bluetooth on your device, then try scanning again.\n'
+                            '3. Restart your SmartSpin2k device.\n'
+                            '4. Make sure the SmartSpin2k is not connected to another ConfigApp or QZ.\n'
+                            '5. If none of these steps work, please contact support for further assistance.',
+                            style: TextStyle(fontSize: 16),
+                          ),
+                        ],
                       ),
-                      SizedBox(height: 10),
-                      Text(
-                        'If you cannot find your SmartSpin2k, try the following steps:',
-                        style: TextStyle(fontSize: 18),
-                      ),
-                      SizedBox(height: 10),
-                      Text(
-                        '1. Ensure your SmartSpin2k is powered on and within range.\n'
-                        '2. Turn off and on the Bluetooth on your device, then try scanning again.\n'
-                        '3. Restart your SmartSpin2k device.\n'
-                        '4. Make sure the SmartSpin2k is not connected to another ConfigApp or QZ.\n'
-                        '5. If none of these steps work, please contact support for further assistance.',
-                        style: TextStyle(fontSize: 16),
-                      ),
-                    ],
+                    ),
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(100, 8, 100, 15),
+                    child: buildScanButton(context),
                   ),
-                ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(100, 8, 100, 15),
-                child: buildScanButton(context),
+                ],
               ),
-            ],
-          ),
+            ),if(_scanResults.isEmpty)
+            Positioned(
+              left: 10, // Distance from left edge
+              bottom: 10, // Distance from bottom edge
+              child: ElevatedButton(
+                onPressed: onDemoModePressed,
+                child: Text('Demo Mode'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepOrange, // Background color
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
