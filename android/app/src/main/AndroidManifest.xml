@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.lib.SmartSpin2k">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.ss2kconfigapp">
 
      <!-- Allow Bluetooth -->
      <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
@@ -20,7 +21,6 @@
 
      <application
          android:label="SmartSpin2k"
-         android:name="${applicationName}"
          android:icon="@mipmap/launcher_icon">
          <activity
              android:name=".MainActivity"
