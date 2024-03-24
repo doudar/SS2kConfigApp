@@ -6,9 +6,8 @@
  */
 // This is a mock demo utility to simulate SmartSpin2k device connections
 
-import 'dart:async';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-
+import '../utils/constants.dart';
 class DemoDevice {
   static final DemoDevice _singleton = DemoDevice._internal();
 
@@ -30,17 +29,19 @@ class DemoDevice {
 
     // Create a mock BluetoothDevice
     final BluetoothDevice mockDevice = BluetoothDevice(
-      id: DeviceIdentifier('00:00:00:00:00:00'),
-      name: 'SmartSpin2k',
-      type: BluetoothDeviceType.le, // Assuming it's a low energy device
-      // ...initialize other properties as necessary
+      remoteId: DeviceIdentifier('00:00:00:00:00:00'),
     );
 
     // Create a mock ScanResult
     final ScanResult mockScanResult = ScanResult(
       device: mockDevice,
+      timeStamp: DateTime.now(),
       advertisementData: AdvertisementData(
-        localName: mockAdData['localName'],
+        advName: mockAdData['localName'],
+        appearance: 1,
+        connectable: true,
+        serviceUuids: [Guid(csUUID)],
+        serviceData: {},
         txPowerLevel: int.tryParse(mockAdData['txPowerLevel']),
         manufacturerData: mockAdData['manufacturerData'],
         // ...initialize other advertisement data as necessary
