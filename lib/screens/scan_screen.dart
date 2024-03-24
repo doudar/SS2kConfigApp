@@ -15,6 +15,7 @@ import 'main_device_screen.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 import '../widgets/scan_result_tile.dart';
+import '../utils/demo.dart';
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({Key? key}) : super(key: key);
@@ -138,12 +139,16 @@ class _ScanScreenState extends State<ScanScreen> {
         .toList();
   }
 
-    void onDemoModePressed() {
-    // TODO: Implement the functionality to enable demo mode
-    // For now, we can just print something to the console or show a Snackbar
-    print("Demo mode activated!");
-    // Navigate to a screen as if a device was connected, you'll need to implement this
-    // Or modify the state to reflect that the device is "connected"
+  void onDemoModePressed() {
+    // Use the DemoDevice to simulate finding a SmartSpin2k device
+    final demoDevice = DemoDevice();
+    ScanResult simulatedScanResult = demoDevice.simulateSmartSpin2kScan();
+
+    // Update the UI to display the simulated scan result
+    setState(() {
+      _scanResults = [simulatedScanResult]; // Replace existing scan results with the simulated one
+      // If you want to keep existing scan results and add the simulated one, use `_scanResults.add(simulatedScanResult);` instead
+    });
   }
 
   @override
@@ -197,18 +202,19 @@ class _ScanScreenState extends State<ScanScreen> {
                   ),
                 ],
               ),
-            ),if(_scanResults.isEmpty)
-            Positioned(
-              left: 10, // Distance from left edge
-              bottom: 10, // Distance from bottom edge
-              child: ElevatedButton(
-                onPressed: onDemoModePressed,
-                child: Text('Demo Mode'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepOrange, // Background color
+            ),
+            if (_scanResults.isEmpty)
+              Positioned(
+                left: 10, // Distance from left edge
+                bottom: 10, // Distance from bottom edge
+                child: ElevatedButton(
+                  onPressed: onDemoModePressed,
+                  child: Text('Demo Mode'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepOrange, // Background color
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),

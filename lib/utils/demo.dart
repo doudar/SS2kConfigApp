@@ -8,6 +8,7 @@
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/constants.dart';
+
 class DemoDevice {
   static final DemoDevice _singleton = DemoDevice._internal();
 
@@ -16,20 +17,22 @@ class DemoDevice {
   }
 
   DemoDevice._internal();
-
+  // Mock manufacturer ID and data
+  static const int mockManufacturerId = 123; 
+  final List<int> mockManufacturerData = [0x00, 0x01, 0x02];
   // This function simulates finding a SmartSpin2k device during a scan
   ScanResult simulateSmartSpin2kScan() {
     // Generate mock advertising data for a SmartSpin2k device
     final Map<String, dynamic> mockAdData = {
-      'localName': 'SmartSpin2k',
-      'txPowerLevel': '0',
-      'manufacturerData': '...',
+      'localName': 'SmartSpin2k Demo',
+      'txPowerLevel': '50',
+      'manufacturerData': {mockManufacturerId: mockManufacturerData},
       // Add other advertising data fields that a SmartSpin2k would normally include
     };
 
     // Create a mock BluetoothDevice
     final BluetoothDevice mockDevice = BluetoothDevice(
-      remoteId: DeviceIdentifier('00:00:00:00:00:00'),
+      remoteId: DeviceIdentifier('SmartSpin2k Demo'),
     );
 
     // Create a mock ScanResult
@@ -44,7 +47,6 @@ class DemoDevice {
         serviceData: {},
         txPowerLevel: int.tryParse(mockAdData['txPowerLevel']),
         manufacturerData: mockAdData['manufacturerData'],
-        // ...initialize other advertisement data as necessary
       ),
       rssi: -59, // Sample signal strength
     );
@@ -52,4 +54,3 @@ class DemoDevice {
     return mockScanResult;
   }
 }
-
