@@ -32,6 +32,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+    //Are we running a demo?
     if (this.widget.device.remoteId.toString() == "SmartSpin2k Demo") {
       _demoDeviceSetup(context);
       return;
@@ -75,18 +76,24 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
 
   @override
   void dispose() {
-    this.bleData.connectionStateSubscription.cancel();
-    this.bleData.isConnectingSubscription.cancel();
-    this.bleData.isDisconnectingSubscription.cancel();
+    this.bleData.connectionStateSubscription?.cancel();
+    this.bleData.isConnectingSubscription?.cancel();
+    this.bleData.isDisconnectingSubscription?.cancel();
     this.bleData.charReceived.removeListener(_crListener);
     super.dispose();
   }
 
+  //Setup a dummy demo device if we are running in demo mode
   void _demoDeviceSetup(context) {
+    // Assuming bleData.services expects a similar structure
+    this.bleData.isSimulated = true;
+
     this.bleData.customCharacteristic.forEach((key) {
       key["value"] = key["defaultData"] ?? "Default Value";
     });
     this.bleData.charReceived.value = true;
+    this.bleData.firmwareVersion = "24.1.3";
+    this.bleData.configAppCompatibleFirmware = true;
   }
 
   Widget _buildCard(String assetPath, String title, VoidCallback onPressed) {

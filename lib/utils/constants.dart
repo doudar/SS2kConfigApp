@@ -126,7 +126,7 @@ final dynamic customCharacteristicFramework = [
     "max": 1,
     "textDescription":
         "This setting controls which shifter button is up and which is down. Toggle this if you need to invert the direction of the shifters.",
-    "defaultData" : "1"
+    "defaultData" : "true"
   },
   {
     "vName": saveVname,
@@ -137,7 +137,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Saves all of the configuration to the filesystem",
-    "defaultData" : "0"
+    "defaultData" : "false"
   },
   {
     "vName": inclineMultiplierVname,
@@ -262,7 +262,7 @@ final dynamic customCharacteristicFramework = [
     "max": 1,
     "textDescription":
         "This silences the stepper motor. Leave it on unless it is causing issues. Turning it off may provide some additional torque if you have a felt resistance bike.",
-    "defaultData" : "1"
+    "defaultData" : "true"
   },
   {
     "vName": powerCorrectionFactorVname,
@@ -285,7 +285,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Enable to generate simulated heart rate monitor data.",
-    "defaultData" : "0"
+    "defaultData" : "false"
   },
   {
     "vName": simulateWattsVname,
@@ -296,7 +296,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Enable to generate simulated power meter data.",
-    "defaultData" : "0"
+    "defaultData" : "false"
   },
   {
     "vName": simulateCadVname,
@@ -307,7 +307,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Enable to generate simulated cadence sensor data.",
-    "defaultData" : "0"
+    "defaultData" : "false"
   },
   {
     "vName": FTMSModeVname,
@@ -329,7 +329,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Toggle to enable or disable automatic firmware updates.",
-    "defaultData" : "1"
+    "defaultData" : "true"
   },
   {
     "vName": ssidVname,
@@ -384,7 +384,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Indicates if the device is under external control.",
-    "defaultData" : "0"
+    "defaultData" : "false"
   },
   {
     "vName": stepperSpeedVname,
@@ -439,7 +439,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Disconnect the BLE devices (scan will then happen along with reconnect).",
-    "defaultData" : "0"
+    "defaultData" : "false"
   },
   {
     "vName": scanBLEVname,
@@ -451,7 +451,7 @@ final dynamic customCharacteristicFramework = [
     "max": 1,
     "textDescription":
         "Scan for BLE devices. Scanning is automatic (not needed to be used) unless all devices are connected.",
-    "defaultData" : "0"
+    "defaultData" : "false"
   },
   {
     "vName": rebootVname,
@@ -462,7 +462,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Reboots The SmartSpin2k",
-    "defaultData" : "0"
+    "defaultData" : "false"
   },
   {
     "vName": resetVname,
@@ -473,6 +473,6 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Disconnect the BLE devices (scan will then happen along with reconnect).",
-    "defaultData" : "0"
+    "defaultData" : "false"
   }
 ];

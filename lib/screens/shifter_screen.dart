@@ -26,19 +26,24 @@ class _ShifterScreenState extends State<ShifterScreen> {
   late Map c;
   String t = "Loading";
   StreamSubscription? _charSubscription;
-  late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
+  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
 
   @override
   void initState() {
+    super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
     this.bleData.customCharacteristic.forEach((i) => i["vName"] == shifterPositionVname ? c = i : ());
+    //special setup for demo mode
+    if (bleData.isSimulated) {
+      t = "0";
+      return;
+    }
     startSubscription();
-    super.initState();
   }
 
   @override
   void dispose() {
-    _connectionStateSubscription.cancel();
+    _connectionStateSubscription?.cancel();
     if (this.bleData.charReceived.value) {
       _charSubscription?.cancel();
     }
@@ -70,10 +75,11 @@ class _ShifterScreenState extends State<ShifterScreen> {
         } else if (state == BluetoothConnectionState.disconnected) {
           c["value"] = "Loading";
         }
-        if(mounted){
-        setState(() {
-          t = c["value"] ?? "Loading";
-        });}
+        if (mounted) {
+          setState(() {
+            t = c["value"] ?? "Loading";
+          });
+        }
       }
     });
   }
@@ -84,6 +90,11 @@ class _ShifterScreenState extends State<ShifterScreen> {
       c["value"] = _t;
       this.bleData.writeToSS2K(this.widget.device, c);
     }
+    if (bleData.isSimulated) {
+      setState(() {
+        t = c["value"];
+      });
+    }
     WakelockPlus.enable();
   }
 
@@ -92,8 +103,8 @@ class _ShifterScreenState extends State<ShifterScreen> {
       style: ElevatedButton.styleFrom(
         elevation: 5,
         //foregroundColor: ThemeData().colorScheme.primaryContainer, // Button color
-       // backgroundColor: ThemeData().colorScheme.onPrimaryContainer, // Icon color
-       // shadowColor: ThemeData().colorScheme.background.withOpacity(0.5),
+        // backgroundColor: ThemeData().colorScheme.onPrimaryContainer, // Icon color
+        // shadowColor: ThemeData().colorScheme.background.withOpacity(0.5),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(20))), // Oval shape
         padding: EdgeInsets.symmetric(vertical: 48, horizontal: 30), // Padding for oval shape
       ),
