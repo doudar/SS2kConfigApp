@@ -102,7 +102,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "The following devices have been found",
-    "defaultData" : ""
+    "defaultData" : "[{\"device 0\":{\"name\":\"Polar OH1 B9B6D624 d6\",\"UUID\":\"0x180d\"},\"device 1\":{\"name\":\"Wahoo Kicker\",\"UUID\":\"0x1818\"} }]"
   },
   {
     "vName": shiftStepVname,
