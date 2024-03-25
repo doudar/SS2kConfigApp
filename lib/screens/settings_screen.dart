@@ -24,13 +24,29 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
+  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   late BLEData bleData;
 
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+
+    // If the data is simulated, wait for a second before calling setState
+    if (bleData.isSimulated) {
+      this.bleData.isReadingOrWriting.value = true;
+      Timer(Duration(seconds: 2), () {
+        this.bleData.isReadingOrWriting.value = false;
+        if (mounted) {
+          print("demo delay");
+          setState(() {
+            // This empty setState call triggers a rebuild of the widget
+            // after the demo data has been "loaded"
+          });
+        }
+      });
+    }
+
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       if (mounted) {
         setState(() {});
@@ -43,7 +59,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
-    _connectionStateSubscription.cancel();
+    _connectionStateSubscription?.cancel();
     this.bleData.isReadingOrWriting.removeListener(_rwListner);
     super.dispose();
   }
@@ -70,12 +86,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {});
     } else {
       if (this.bleData.charReceived.value) {
-        try {
-          // char = myCharacteristic;
-        } catch (e) {}
-
         _newEntry(Map c) {
-          if (!this.bleData.services.isEmpty) {
+          if ((!this.bleData.services.isEmpty) || this.bleData.isSimulated) {
             if (c["isSetting"]) {
               settings.add(SettingTile(device: this.widget.device, c: c));
             }
@@ -97,8 +109,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       key: Snackbar.snackBarKeyC,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(this.widget.device.platformName),
-          centerTitle: true,
+          title: Text(
+            "Settings",
+            style: TextStyle(
+              fontWeight: FontWeight.w400,
+              fontStyle: FontStyle.normal,
+              fontSize: 20,
+            ),
+          ),
         ),
         body: Column(
           mainAxisSize: MainAxisSize.max,

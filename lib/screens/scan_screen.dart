@@ -15,6 +15,7 @@ import 'main_device_screen.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 import '../widgets/scan_result_tile.dart';
+import '../utils/demo.dart';
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({Key? key}) : super(key: key);
@@ -26,8 +27,10 @@ class ScanScreen extends StatefulWidget {
 class _ScanScreenState extends State<ScanScreen> {
   List<ScanResult> _scanResults = [];
   bool _isScanning = false;
-  late StreamSubscription<List<ScanResult>> _scanResultsSubscription;
-  late StreamSubscription<bool> _isScanningSubscription;
+  StreamSubscription<List<ScanResult>>? _scanResultsSubscription;
+  StreamSubscription<bool>? _isScanningSubscription;
+  int _tapCount = 0; // Tap counter
+  bool _showDemoButton = false; // Initially, the demo button is not shown
 
   @override
   void initState() {
@@ -52,12 +55,14 @@ class _ScanScreenState extends State<ScanScreen> {
 
   @override
   void dispose() {
-    _scanResultsSubscription.cancel();
-    _isScanningSubscription.cancel();
+    _scanResultsSubscription?.cancel();
+    _isScanningSubscription?.cancel();
     super.dispose();
   }
 
   Future onScanPressed() async {
+    //don't allow scan in demo mode - it ruins the setup
+    if (_showDemoButton) return;
     try {
       // android is slow when asking for all advertisements,
       // so instead we only ask for 1/8 of them
@@ -138,6 +143,28 @@ class _ScanScreenState extends State<ScanScreen> {
         .toList();
   }
 
+  void _incrementTapCount() {
+    setState(() {
+      _tapCount++;
+      if (_tapCount >= 5) {
+        _showDemoButton = true; // Show the button after 5 taps
+        // _tapCount = 0; // Reset the counter
+      }
+    });
+  }
+
+  void onDemoModePressed(context) {
+    // Use the DemoDevice to simulate finding a SmartSpin2k device
+    final demoDevice = DemoDevice();
+    ScanResult simulatedScanResult = demoDevice.simulateSmartSpin2kScan();
+
+    // Update the UI to display the simulated scan result
+    setState(() {
+      _scanResults = [simulatedScanResult]; // Replace existing scan results with the simulated one
+      // If you want to keep existing scan results and add the simulated one, use `_scanResults.add(simulatedScanResult);` instead
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return ScaffoldMessenger(
@@ -149,44 +176,79 @@ class _ScanScreenState extends State<ScanScreen> {
             fontSize: 30,
           ),
         ),
-        body: RefreshIndicator(
-          onRefresh: onRefresh,
-          child: ListView(
-            children: <Widget>[
-              ..._buildScanResultTiles(context),
-              if (_scanResults.isEmpty) // This line checks if there are no scan results
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Having Trouble?',
-                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+        body: Stack(
+          children: [
+            RefreshIndicator(
+              onRefresh: onRefresh,
+              child: ListView(
+                children: <Widget>[
+                  ..._buildScanResultTiles(context),
+                  if (_scanResults.isEmpty) // This line checks if there are no scan results
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Having Trouble?',
+                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                          ),
+                          SizedBox(height: 10),
+                          Text(
+                            'If you cannot find your SmartSpin2k, try the following steps:',
+                            style: TextStyle(fontSize: 18),
+                          ),
+                          SizedBox(height: 10),
+                          Text(
+                            '1. Ensure your SmartSpin2k is powered on and within range.\n'
+                            '2. Turn off and on the Bluetooth on your device, then try scanning again.\n'
+                            '3. Restart your SmartSpin2k device.\n'
+                            '4. Make sure the SmartSpin2k is not connected to another ConfigApp or QZ.\n'
+                            '5. If none of these steps work, please contact support for further assistance.',
+                            style: TextStyle(fontSize: 16),
+                          ),
+                        ],
                       ),
-                      SizedBox(height: 10),
-                      Text(
-                        'If you cannot find your SmartSpin2k, try the following steps:',
-                        style: TextStyle(fontSize: 18),
-                      ),
-                      SizedBox(height: 10),
-                      Text(
-                        '1. Ensure your SmartSpin2k is powered on and within range.\n'
-                        '2. Turn off and on the Bluetooth on your device, then try scanning again.\n'
-                        '3. Restart your SmartSpin2k device.\n'
-                        '4. Make sure the SmartSpin2k is not connected to another ConfigApp or QZ.\n'
-                        '5. If none of these steps work, please contact support for further assistance.',
-                        style: TextStyle(fontSize: 16),
-                      ),
-                    ],
+                    ),
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(100, 8, 100, 15),
+                    child: buildScanButton(context),
+                  ),
+                ],
+              ),
+            ),
+            if (_scanResults.isEmpty)
+              Positioned(
+                left: 0,
+                bottom: 0,
+                child: GestureDetector(
+                  onTap: _incrementTapCount,
+                  behavior: HitTestBehavior.translucent,
+                  child: Container(
+                    width: 100, // Adjust the size as needed
+                    height: 100, // Adjust the size as needed
+                    color: Colors.transparent,
                   ),
                 ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(100, 8, 100, 15),
-                child: buildScanButton(context),
               ),
-            ],
-          ),
+            Visibility(
+              child: ElevatedButton(
+                onPressed: _showDemoButton
+                    ? () {
+                        // Enter demo mode logic here
+                        onDemoModePressed(context); // Assuming this is your method to set up demo data
+
+                        setState(() {
+                          _showDemoButton = false; // Hide the button again after entering demo mode
+                        });
+                      }
+                    : null, // Button does nothing if _showDemoButton is false
+                child: Text("Tap Here to Enter\n Demo Mode"),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+              ),
+              visible: _showDemoButton,
+            ),
+          ],
         ),
       ),
     );

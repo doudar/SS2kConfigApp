@@ -160,10 +160,13 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   }
 
   Future<void> _initialize() async {
-    otaPackage = Esp32OtaPackage(this.bleData.firmwareDataCharacteristic, this.bleData.firmwareControlCharacteristic);
+    //check for demo mode
+    if (!bleData.isSimulated) {
+      otaPackage = Esp32OtaPackage(this.bleData.firmwareDataCharacteristic, this.bleData.firmwareControlCharacteristic);
+      await _progressStreamSubscription();
+    }
     await _fetchGithubFirmwareVersion();
     await _fetchBuiltinFirmwareVersion();
-    await _progressStreamSubscription();
   }
 
   Future<void> _charListener() async {
@@ -269,6 +272,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   }
 
   void startFirmwareUpdate(type) async {
+    if(this.bleData.isSimulated) return;
     this.bleData.isUpdatingFirmware = true;
     setState(() {
       updatingFirmware = true;
@@ -333,8 +337,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           : Column(
               children: <Widget>[
                 ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary),
-
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: ThemeData().colorScheme.secondary,
+                      foregroundColor: ThemeData().colorScheme.onSecondary),
                   onPressed: () async {
                     bool confirm = await _showConfirmDialog();
                     if (confirm) {
@@ -352,8 +357,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                 io.Platform.isMacOS
                     ? SizedBox()
                     : ElevatedButton(
-                            style: ElevatedButton.styleFrom(backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary),
-
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: ThemeData().colorScheme.secondary,
+                            foregroundColor: ThemeData().colorScheme.onSecondary),
                         onPressed: () async {
                           bool confirm = await _showConfirmDialog();
                           if (confirm) {
@@ -365,8 +371,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                       ),
                 SizedBox(height: 10),
                 ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary),
-
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: ThemeData().colorScheme.secondary,
+                      foregroundColor: ThemeData().colorScheme.onSecondary),
                   onPressed: () async {
                     bool confirm = await _showConfirmDialog();
                     if (confirm) {

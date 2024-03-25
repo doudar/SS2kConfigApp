@@ -48,7 +48,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
   @override
   void dispose() {
-    _connectionStateSubscription!.cancel();
+    _connectionStateSubscription?.cancel();
     rssiTimer.cancel();
 
     super.dispose();
