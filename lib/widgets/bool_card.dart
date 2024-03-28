@@ -50,7 +50,7 @@ late BLEData bleData;
           value: bool.parse(this.widget.c["value"]),
           onChanged: (b) {
             this.widget.c["value"] = b.toString();
-            this.bleData.writeToSS2K(this.widget.device, this.widget.c);
+            this.bleData.writeToSS2k(this.widget.device, this.widget.c);
             setState(() {});
             return this.widget.c["value"];
           },

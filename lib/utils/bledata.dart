@@ -214,7 +214,7 @@ class BLEData {
   Future saveAllSettings(BluetoothDevice device) async {
     if(this.isSimulated) return;
     this.isReadingOrWriting.value = true;
-    await this.customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2K(device, c) : ());
+    await this.customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2k(device, c) : ());
     await this.customCharacteristic.forEach((c) => findNSave(device, c, saveVname));
     this.isReadingOrWriting.value = false;
   }
@@ -287,7 +287,7 @@ class BLEData {
     return precision;
   }
 
-  void writeToSS2K(BluetoothDevice device, Map c, {String s = ""}) {
+  void writeToSS2k(BluetoothDevice device, Map c, {String s = ""}) {
     if(this.isSimulated) return;
     //If a specific value wasn't passed, use the previously saved value
     if (s == "") {

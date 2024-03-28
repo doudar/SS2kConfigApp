@@ -75,7 +75,7 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        this.bleData.writeToSS2K(this.widget.device, this.c);
+        this.bleData.writeToSS2k(this.widget.device, this.c);
         setState(() {});
         return this.widget.c["value"];
       },
@@ -98,7 +98,7 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        this.bleData.writeToSS2K(this.widget.device, this.c);
+        this.bleData.writeToSS2k(this.widget.device, this.c);
         setState(() {});
         return this.widget.c["value"];
       },
@@ -136,7 +136,7 @@ class _plainTextCardState extends State<plainTextCard> {
                   print("**********************************" + controller.text);
                   if (inputIsValid) {
                     // Proceed with saving if input is valid
-                    this.bleData.writeToSS2K(this.widget.device, this.widget.c);
+                    this.bleData.writeToSS2k(this.widget.device, this.widget.c);
                     this
                         .bleData
                         .customCharacteristic

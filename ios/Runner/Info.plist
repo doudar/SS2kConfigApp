@@ -29,9 +29,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>We need BT access because it's a BT App.</string>
+	<string>This app requires Bluetooth to communicate with the SmartSpin2k.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>We need BT access because it's a BT App.</string>
+	<string>This app requires Bluetooth to communicate with the SmartSpin2k.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>We need access in order to store and upload firmware to our device.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

@@ -265,7 +265,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         secondChild: Column(children: <Widget>[
           _buildActionButton('Connect', FontAwesomeIcons.plug, onConnectPressed),
           _buildActionButton('Refresh', FontAwesomeIcons.rotate, onDiscoverServicesPressed),
-          _buildActionButton('Reboot SS2K', FontAwesomeIcons.arrowRotateRight, onRebootPressed),
+          _buildActionButton('Reboot SS2k', FontAwesomeIcons.arrowRotateRight, onRebootPressed),
           _buildActionButton('Set Defaults', FontAwesomeIcons.arrowRotateLeft, onResetPressed),
           _buildActionButton('Save To SS2k', FontAwesomeIcons.floppyDisk, onSaveSettingsPressed),
           _buildActionButton('Backup Settings', FontAwesomeIcons.solidFloppyDisk, onSaveLocalPressed),

@@ -105,14 +105,14 @@ class _DropdownCardState extends State<DropdownCard> {
   Future _changeBLEDevice(BuildContext context) async {
     setState(() {
       this.widget.c["value"] = selectedValue!;
-      // Assuming writeToSS2K is your method to handle selection
+      // Assuming writeToSS2k is your method to handle selection
     });
     //reconnect devices
-    this.bleData.writeToSS2K(this.widget.device, this.widget.c);
+    this.bleData.writeToSS2k(this.widget.device, this.widget.c);
     this
         .bleData
         .customCharacteristic
-        .forEach((d) => d["vName"] == restartBLEVname ? this.bleData.writeToSS2K(this.widget.device, d, s: "1") : ());
+        .forEach((d) => d["vName"] == restartBLEVname ? this.bleData.writeToSS2k(this.widget.device, d, s: "1") : ());
   }
 
   @override

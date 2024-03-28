@@ -88,7 +88,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
     if (t != "Loading") {
       String _t = (int.parse(c["value"]) + amount).toString();
       c["value"] = _t;
-      this.bleData.writeToSS2K(this.widget.device, c);
+      this.bleData.writeToSS2k(this.widget.device, c);
     }
     if (bleData.isSimulated) {
       setState(() {

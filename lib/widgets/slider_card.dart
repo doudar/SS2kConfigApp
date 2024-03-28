@@ -87,7 +87,7 @@ class _sliderCardState extends State<sliderCard> {
           textAlign: TextAlign.center,
           onSubmitted: (t) {
             this.verifyInput(t);
-            this.bleData.writeToSS2K(this.widget.device, this.c);
+            this.bleData.writeToSS2k(this.widget.device, this.c);
             setState(() {});
             return this.widget.c["value"];
           },
@@ -111,7 +111,7 @@ class _sliderCardState extends State<sliderCard> {
               this._currentSliderValue = v;
               this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
               controller.text = this.widget.c["value"];
-              this.bleData.writeToSS2K(this.widget.device, this.c);
+              this.bleData.writeToSS2k(this.widget.device, this.c);
             });
           },
         ),
