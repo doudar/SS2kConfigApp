@@ -174,6 +174,15 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     }
   }
 
+    Future onResetPowerTablePressed() async {
+    try {
+      await this.bleData.resetPowerTable(this.widget.device);
+      Snackbar.show(ABC.c, "The Power Table has been deleted.", success: true);
+    } catch (e) {
+      Snackbar.show(ABC.c, prettyException("Reset Power Table Failed ", e), success: false);
+    }
+  }
+
   Future discoverServices() async {
     if (mounted) {
       setState(() {
