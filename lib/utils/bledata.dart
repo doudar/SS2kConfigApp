@@ -92,7 +92,7 @@ class BLEData {
   }
 
   Future _discoverServices(BluetoothDevice device) async {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     if (!isReadingOrWriting.value) {
       isReadingOrWriting.value = true;
       try {
@@ -107,7 +107,7 @@ class BLEData {
   }
 
   Future _findChar() async {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     if (!isReadingOrWriting.value) {
       isReadingOrWriting.value = true;
       while (!charReceived.value) {
@@ -162,7 +162,7 @@ class BLEData {
   bool _inUpdateLoop = false;
 
   Future updateCustomCharacter(BluetoothDevice device) async {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     if (_inUpdateLoop) {
       return;
     }
@@ -186,7 +186,7 @@ class BLEData {
   }
 
   void notify(BluetoothDevice device) {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     if (!this.getMyCharacteristic(device).isNotifying) {
       try {
         this.getMyCharacteristic(device).setNotifyValue(true);
@@ -197,7 +197,7 @@ class BLEData {
   }
 
   void findNSave(BluetoothDevice device, Map c, String find) {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
     if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
       return;
@@ -212,7 +212,7 @@ class BLEData {
   }
 
   Future saveAllSettings(BluetoothDevice device) async {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     this.isReadingOrWriting.value = true;
     await this.customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2k(device, c) : ());
     await this.customCharacteristic.forEach((c) => findNSave(device, c, saveVname));
@@ -220,20 +220,27 @@ class BLEData {
   }
 
   Future reboot(BluetoothDevice device) async {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     await this.customCharacteristic.forEach((c) => findNSave(device, c, rebootVname));
   }
 
   Future resetToDefaults(BluetoothDevice device) async {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     this.isReadingOrWriting.value = true;
     await this.customCharacteristic.forEach((c) => findNSave(device, c, resetVname));
     this.isReadingOrWriting.value = false;
   }
 
+  Future resetPowerTable(BluetoothDevice device) async {
+    if (this.isSimulated) return;
+    this.isReadingOrWriting.value = true;
+    await this.customCharacteristic.forEach((c) => findNSave(device, c, resetPowerTableVname));
+    this.isReadingOrWriting.value = false;
+  }
+
 //request all settings
   Future requestSettings(BluetoothDevice device) async {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     this.isReadingOrWriting.value = true;
     _write(Map c) {
       // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
@@ -253,7 +260,7 @@ class BLEData {
 
 //request single setting
   Future requestSetting(BluetoothDevice device, String name) async {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     _request(Map c) {
       // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
       if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
@@ -288,7 +295,7 @@ class BLEData {
   }
 
   void writeToSS2k(BluetoothDevice device, Map c, {String s = ""}) {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     //If a specific value wasn't passed, use the previously saved value
     if (s == "") {
       s = c["value"];
@@ -354,7 +361,7 @@ class BLEData {
   }
 
   void write(BluetoothDevice device, List<int> value) {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     this.isReadingOrWriting.value = true;
     if (this.getMyCharacteristic(device).device.isConnected) {
       try {
@@ -369,7 +376,7 @@ class BLEData {
   }
 
   void decode(BluetoothDevice device) {
-    if(this.isSimulated) return;
+    if (this.isSimulated) return;
     final subscription = this.getMyCharacteristic(device).onValueReceived.listen((value) {
       this.isReadingOrWriting.value = true;
       _subscribed = true;
@@ -471,7 +478,7 @@ class BLEData {
         }
       }
       this.isReadingOrWriting.value = false;
-    }); //VV This is handled by the subscription flag. 
-   // device.cancelWhenDisconnected(subscription);
+    }); //VV This is handled by the subscription flag.
+    // device.cancelWhenDisconnected(subscription);
   }
 }
