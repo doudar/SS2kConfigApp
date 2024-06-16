@@ -276,7 +276,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
           _buildActionButton('Refresh', FontAwesomeIcons.rotate, onDiscoverServicesPressed),
           _buildActionButton('Reboot SS2k', FontAwesomeIcons.arrowRotateRight, onRebootPressed),
           _buildActionButton('Set Defaults', FontAwesomeIcons.arrowRotateLeft, onResetPressed),
-          _buildActionButton('Clear Powertable', FontAwesomeIcons.arrowRotateLeft, onResetPowerTablePressed),
+          _buildActionButton('Clear Powertable', FontAwesomeIcons.xmark, onResetPowerTablePressed),
           _buildActionButton('Save To SS2k', FontAwesomeIcons.floppyDisk, onSaveSettingsPressed),
           _buildActionButton('Backup Settings', FontAwesomeIcons.solidFloppyDisk, onSaveLocalPressed),
           _buildActionButton('Load Backup', FontAwesomeIcons.upload, onLoadLocalPressed),
