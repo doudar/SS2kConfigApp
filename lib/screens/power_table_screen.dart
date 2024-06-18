@@ -105,8 +105,8 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
                 LineChartData(
                   lineBarsData: _createLineBarsData(),
                   titlesData: FlTitlesData(
-                    bottomTitles: SideTitles(showTitles: true),
-                    leftTitles: SideTitles(showTitles: true),
+                    bottomTitles: AxisTitles(),
+                    leftTitles: AxisTitles(),
                   ),
                   borderData: FlBorderData(show: true),
                   gridData: FlGridData(show: true),
@@ -147,7 +147,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
       return LineChartBarData(
         spots: spots,
         isCurved: true,
-        colors: [colors[index % colors.length]],
+        color: colors[index % colors.length],
         barWidth: 2,
         dotData: FlDotData(show: false),
         belowBarData: BarAreaData(show: false),
