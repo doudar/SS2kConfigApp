@@ -4,6 +4,9 @@
  *
  * SPDX-License-Identifier: GPL-2.0-only
  */
+import 'dart:ffi';
+import 'dart:math';
+
 import 'package:flutter/services.dart';
 
 final String csUUID = "77776277-7877-7774-4466-896665500000";
@@ -58,6 +61,7 @@ final String minBrakeWattsVname = "BLE_minBrakeWatts";
 final String maxBrakeWattsVname = "BLE_maxBrakeWatts";
 final String scanBLEVname = "BLE_scanBLE";
 final String resetPowerTableVname = "BLE_resetPowerTable";
+final String powerTableDataVname = "BLE_powerTableData";
 
 // Refactored customCharacteristicFramework to directly use Dart map
 final dynamic customCharacteristicFramework = [
@@ -490,6 +494,17 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Delete the active and saved power table",
+    "defaultData": "false"
+  },
+  {
+    "vName": powerTableDataVname,
+    "reference": "0x27",
+    "isSetting": false,
+    "type": "powerTableData",
+    "humanReadableName": "Power Table Data",
+    "min": -32768,
+    "max": 32768,
+    "textDescription": "Read or Write Data to the Power Table",
     "defaultData": "false"
   }
 ];
