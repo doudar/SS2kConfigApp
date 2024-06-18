@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+import 'package:SS2kConfigApp/screens/power_table_screen.dart';
 import 'package:SS2kConfigApp/widgets/device_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -134,6 +135,10 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
           _buildCard('assets/settingsScreen.png', "Settings", () {
             Navigator.of(context)
                 .push(MaterialPageRoute(builder: (context) => SettingsScreen(device: this.widget.device)));
+          }),
+          _buildCard('assets/settingsScreen.png', "Power Table", () {
+            Navigator.of(context)
+                .push(MaterialPageRoute(builder: (context) => PowerTableScreen(device: this.widget.device)));
           }),
           _buildCard('assets/GitHub-logo.png', "Update Firmware", () {
             Navigator.of(context)

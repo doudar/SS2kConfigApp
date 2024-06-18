@@ -55,6 +55,11 @@ class BLEData {
   bool isUpdatingFirmware = false;
   String firmwareVersion = "";
 
+  List<List<int?>> powerTableData = List.generate(
+    10,
+    (i) => List.generate(38, (j) => null),
+  );
+
   var customCharacteristic = customCharacteristicFramework;
 
   setupConnection(BluetoothDevice device) async {
@@ -259,7 +264,7 @@ class BLEData {
   }
 
 //request single setting
-  Future requestSetting(BluetoothDevice device, String name) async {
+  Future requestSetting(BluetoothDevice device, String name, {int? extraByte}) async {
     if (this.isSimulated) return;
     _request(Map c) {
       // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
@@ -268,12 +273,16 @@ class BLEData {
       }
       if (c["vName"] == name) {
         try {
-          write(device, [0x01, int.parse(c["reference"])]);
+          List<int> value = [0x01, int.parse(c["reference"])];
+          if (extraByte != null) {
+            value.add(extraByte);
+          }
+          write(device, value);
         } catch (e) {
           Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
         }
       } else {
-        //skipped
+        // skipped
       }
     }
 
@@ -350,6 +359,39 @@ class BLEData {
           int.parse(out.elementAt(3))
         ];
         break;
+      case "powerTableData":
+        // Define the INT_MIN value for uint16_t in little endian format
+        const int intMinValue = -32768;
+
+        // Loop through each row of the tableData
+        for (int rowIndex = 0; rowIndex < this.powerTableData.length; rowIndex++) {
+          List<int?> row = this.powerTableData[rowIndex];
+          List<int> rowValue = [];
+
+          // Convert each entry in the row to its little-endian byte representation
+          for (int? entry in row) {
+            int valueToConvert = entry ?? intMinValue;
+            final list = Uint16List.fromList([valueToConvert]);
+            final bytes = Uint8List.view(list.buffer);
+            final out = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+            print('bytes: ${out}');
+            rowValue.add(bytes[0]); // Low byte
+            rowValue.add(bytes[1]); // High byte
+          }
+
+          // Combine the request, reference, and row data
+          List<int> rowToSend = [0x02, int.parse(c["reference"]), rowIndex + 1] + rowValue;
+
+          // Write the data to the device
+          try {
+            write(device, rowToSend);
+          } catch (e) {
+            Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
+            return;
+          }
+        }
+        break;
+
       default:
       //value = [0xff];
     }
@@ -460,6 +502,19 @@ class BLEData {
                   if (c["vName"] == fwVname) this.firmwareVersion = c["value"];
                   break;
                 }
+              case "powerTableData":
+                int cadenceRow = value[2];
+                if (cadenceRow >= 0 && cadenceRow < this.powerTableData.length) {
+                  List<int?> row = [];
+                  for (int i = 3; i < value.length; i += 2) {
+                    if(data.getInt16(i, Endian.little) == -32768){
+                      row.add(null);
+                    }else{
+                    row.add(data.getInt16(i, Endian.little));}
+                  }
+                  this.powerTableData[cadenceRow] = row;
+                }
+                break;
               default:
                 {
                   String type = c["type"];
