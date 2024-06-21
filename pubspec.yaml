@@ -24,7 +24,7 @@ dependencies:
   http: ^1.1.0
   font_awesome_flutter: ^10.7.0
   json_theme: ^6.4.1
-  fl_chart: ^0.40.0
+  fl_chart: ^0.68.0
 
 flutter:
   uses-material-design: true
