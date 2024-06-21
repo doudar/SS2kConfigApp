@@ -147,6 +147,8 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
       return LineChartBarData(
         spots: spots,
         isCurved: true,
+        curveSmoothness: .15,
+        preventCurveOverShooting: true,
         colors: [colors[index % colors.length]],
         barWidth: 2,
         dotData: FlDotData(show: false),
