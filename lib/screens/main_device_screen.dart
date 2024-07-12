@@ -136,7 +136,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
             Navigator.of(context)
                 .push(MaterialPageRoute(builder: (context) => SettingsScreen(device: this.widget.device)));
           }),
-          _buildCard('assets/settingsScreen.png', "Power Table", () {
+          _buildCard('assets/resistanceChart.png', "Power Table", () {
             Navigator.of(context)
                 .push(MaterialPageRoute(builder: (context) => PowerTableScreen(device: this.widget.device)));
           }),

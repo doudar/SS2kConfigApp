@@ -4,8 +4,6 @@
  *
  * SPDX-License-Identifier: GPL-2.0-only
  */
-import 'dart:ffi';
-import 'dart:math';
 
 import 'package:flutter/services.dart';
 

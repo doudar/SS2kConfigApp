@@ -7,10 +7,9 @@
 import 'dart:async';
 
 import 'package:SS2kConfigApp/utils/constants.dart';
+import 'package:SS2kConfigApp/utils/extra.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../widgets/device_header.dart';
-import '../utils/snackbar.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../utils/bledata.dart';
 
@@ -31,6 +30,22 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
     requestAllCadenceLines();
+    // refresh the screen completely every VV seconds.
+    Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
+      if (!this.widget.device.isConnected) {
+        try {
+          this.widget.device.connectAndUpdateStream();
+        } catch (e) {
+          print("failed to reconnect.");
+        }
+      } else {
+        if (mounted) {
+          requestAllCadenceLines();
+        } else {
+          refreshTimer.cancel();
+        }
+      }
+    });
     // If the data is simulated, wait for a second before calling setState
     if (bleData.isSimulated) {
       this.bleData.isReadingOrWriting.value = true;
@@ -147,11 +162,9 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
       return LineChartBarData(
         spots: spots,
         isCurved: true,
-        curveSmoothness: .15,
-        preventCurveOverShooting: true,
         color: colors[index % colors.length],
-        barWidth: 2,
-        dotData: FlDotData(show: false),
+        barWidth: 3,
+        dotData: FlDotData(show: true),
         belowBarData: BarAreaData(show: false),
       );
     });
