@@ -6,6 +6,7 @@
  */
 import 'dart:async';
 import 'package:SS2kConfigApp/utils/constants.dart';
+import 'package:SS2kConfigApp/utils/extra.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -38,6 +39,21 @@ class _ShifterScreenState extends State<ShifterScreen> {
       t = "0";
       return;
     }
+    Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
+      if (!this.widget.device.isConnected) {
+        try {
+          this.widget.device.connectAndUpdateStream();
+        } catch (e) {
+          print("failed to reconnect.");
+        }
+      } else {
+        if (mounted) {
+
+        } else {
+          refreshTimer.cancel();
+        }
+      }
+    });
     startSubscription();
   }
 

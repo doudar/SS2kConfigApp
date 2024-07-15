@@ -72,6 +72,20 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
 
   bool _refreshBlocker = false;
 
+    final List<Color> colors = [
+      Colors.red,
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.brown,
+      Colors.pink,
+      Colors.teal,
+      Colors.cyan,
+      Colors.lime,
+      Colors.indigo,
+    ];
+
   Future rwSubscription() async {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       if (mounted) {
@@ -114,14 +128,24 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          children: [
+          children: <Widget>[
+            const Text(
+              'Power Table',
+              style: TextStyle(
+                fontSize: 25,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
+            ),
             Expanded(
               child: LineChart(
                 LineChartData(
                   lineBarsData: _createLineBarsData(),
                   titlesData: FlTitlesData(
-                    bottomTitles: AxisTitles(),
-                    leftTitles: AxisTitles(),
+                    bottomTitles: AxisTitles(axisNameWidget: Text('Cadences:'),),
+                    rightTitles: AxisTitles(),
+                    topTitles: AxisTitles(axisNameWidget: Text('Watts'),),
+                    leftTitles: AxisTitles(axisNameWidget: Text('Motor Tension') )
                   ),
                   borderData: FlBorderData(show: true),
                   gridData: FlGridData(show: true),
@@ -137,20 +161,6 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   }
 
   List<LineChartBarData> _createLineBarsData() {
-    final List<Color> colors = [
-      Colors.red,
-      Colors.blue,
-      Colors.green,
-      Colors.orange,
-      Colors.purple,
-      Colors.brown,
-      Colors.pink,
-      Colors.teal,
-      Colors.cyan,
-      Colors.lime,
-      Colors.indigo,
-    ];
-
     return List.generate(bleData.powerTableData.length, (index) {
       final List<FlSpot> spots = [];
       for (int i = 0; i < bleData.powerTableData[index].length; i++) {
@@ -171,20 +181,6 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   }
 
   Widget _buildLegend() {
-    final List<Color> colors = [
-      Colors.red,
-      Colors.blue,
-      Colors.green,
-      Colors.orange,
-      Colors.purple,
-      Colors.brown,
-      Colors.pink,
-      Colors.teal,
-      Colors.cyan,
-      Colors.lime,
-      Colors.indigo,
-    ];
-
     return Wrap(
       spacing: 8,
       children: List.generate(cadences.length, (index) {
@@ -192,12 +188,12 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 16,
-              height: 16,
+              width: 10,
+              height: 10,
               color: colors[index % colors.length],
             ),
             SizedBox(width: 4),
-            Text('${cadences[index]} rpm'),
+            Text('${cadences[index]}rpm', style: TextStyle(fontSize: 10),),
           ],
         );
       }),

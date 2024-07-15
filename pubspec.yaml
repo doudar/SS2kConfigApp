@@ -13,15 +13,15 @@ dependencies:
   flutter:
     sdk: flutter
 
-  flutter_blue_plus: ^1.31.15
+  flutter_blue_plus: ^1.32.8
   #dynamic_color: ^1.6.9
   flutter_launcher_icons: ^0.13.1
   flutter_native_splash: ^2.3.9
-  shared_preferences: ^2.2.0
-  file_picker: ^5.3.3
+  shared_preferences: ^2.2.2
+  file_picker: ^5.5.0
   #flutter_ota: ^0.1.4
-  wakelock_plus: ^1.1.4
-  http: ^1.1.0
+  wakelock_plus: ^1.2.5
+  http: ^1.2.0
   font_awesome_flutter: ^10.7.0
   json_theme: ^6.4.1
   fl_chart: ^0.68.0
