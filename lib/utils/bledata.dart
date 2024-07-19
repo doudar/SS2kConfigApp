@@ -34,6 +34,26 @@ class BLEDataManager {
   }
 }
 
+class FtmsData {
+  late int cadence;
+  late int watts;
+  late int targetERG;
+  late int resistance;
+  late int mode;
+  late int heartRate;
+  late int speed;
+
+  FtmsData({
+    this.cadence = 0,
+    this.watts = 0,
+    this.targetERG = 0,
+    this.mode = 0, // 0 = no control, 1 = sim, 2 = ERG.
+    this.resistance = 0,
+    this.heartRate = 0,
+    this.speed = 0,
+  });
+}
+
 class BLEData {
   ValueNotifier<int> rssi = ValueNotifier(0);
   ValueNotifier<bool> charReceived = ValueNotifier(false);
@@ -45,9 +65,11 @@ class BLEData {
   late BluetoothCharacteristic firmwareDataCharacteristic;
   late BluetoothCharacteristic firmwareControlCharacteristic;
   BluetoothCharacteristic? _myCharacteristic;
+  BluetoothCharacteristic? ftmsControlPointCharacteristic;
+  BluetoothCharacteristic? indoorBikeCharacteristic;
   BluetoothConnectionState connectionState = BluetoothConnectionState.disconnected;
   List<BluetoothService> services = [];
-
+  FtmsData ftmsData = new FtmsData();
   bool isSimulated = false; //Is this a demo device?
   bool isConnecting = false;
   bool isDisconnecting = false;
@@ -74,12 +96,6 @@ class BLEData {
 
   BluetoothCharacteristic getMyCharacteristic(BluetoothDevice device) {
     late BluetoothCharacteristic _char;
-    //while (_myCharacteristic == null) {
-    //   if (device.isDisconnected) {
-    //if (FlutterBluePlus.isScanningNow) {
-    //  FlutterBluePlus.stopScan();
-    //}
-    //device.connectAndUpdateStream().catchError((e) {});
 
     if (device.isConnected) {
       _discoverServices(device);
@@ -117,6 +133,7 @@ class BLEData {
       isReadingOrWriting.value = true;
       while (!charReceived.value) {
         try {
+          // custom characteristic
           BluetoothService cs = services.first;
           for (BluetoothService s in services) {
             if (s.uuid == Guid(csUUID)) {
@@ -128,9 +145,10 @@ class BLEData {
           for (BluetoothCharacteristic c in characteristics) {
             if (c.uuid == Guid(ccUUID)) {
               _myCharacteristic = c;
-              break;
+              _myCharacteristic!.setNotifyValue(true);
             }
           }
+          // firmware
           for (BluetoothService s in services) {
             if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {
               firmwareService = s;
@@ -148,6 +166,27 @@ class BLEData {
               if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130003")) {
                 firmwareControlCharacteristic = c;
               }
+            }
+          }
+          //ftms
+          BluetoothService ftmsService = services.first;
+          for (BluetoothService s in services) {
+            if (s.uuid == Guid(ftmsServiceUUID)) {
+              ftmsService = s;
+              characteristics = ftmsService.characteristics;
+              break;
+            }
+          }
+          for (BluetoothCharacteristic c in characteristics) {
+            if (c.uuid == Guid(ftmsIndoorBikeDataUUID)) {
+              indoorBikeCharacteristic = c;
+              indoorBikeCharacteristic!.setNotifyValue(true);
+              print("subscribed to indoor bike characteristic");
+            }
+            if (c.uuid == Guid(ftmsControlPointUUID)) {
+              ftmsControlPointCharacteristic = c;
+              ftmsControlPointCharacteristic!.setNotifyValue(true);
+              print("subscribed to ftms control point characteristic");
             }
           }
           charReceived.value = true;
@@ -177,8 +216,10 @@ class BLEData {
       } catch (e) {}
     }
     _inUpdateLoop = true;
-    if (!this.getMyCharacteristic(device).isNotifying) notify(device);
-    if (!_subscribed) decode(device);
+    if (!_subscribed) {
+      decode(device);
+      updateIndoorBikeData(device);
+    }
     if (!_lastRequestStopwatch.isRunning) {
       await requestSettings(device);
       _lastRequestStopwatch.start();
@@ -190,15 +231,86 @@ class BLEData {
     _inUpdateLoop = false;
   }
 
-  void notify(BluetoothDevice device) {
-    if (this.isSimulated) return;
-    if (!this.getMyCharacteristic(device).isNotifying) {
-      try {
-        this.getMyCharacteristic(device).setNotifyValue(true);
-      } catch (e) {
-        Snackbar.show(ABC.c, "Failed to subscribe to notifications", success: false);
+  void updateIndoorBikeData(device) {
+    try {
+      if (!indoorBikeCharacteristic!.isNotifying) {
+        indoorBikeCharacteristic!.setNotifyValue(true);
       }
+      ;
+    } catch (e) {
+      print("no FTMS characteristic");
+      return;
     }
+
+    // TODO handle cancelling subscription
+
+    final subscription = indoorBikeCharacteristic!.onValueReceived.listen((value) {
+      if (value.length < 2) {
+        throw ArgumentError('FTMS Characteristic data list is too short');
+      }
+
+      Uint8List data = Uint8List.fromList(value);
+      ByteData byteData = ByteData.sublistView(data);
+
+      int flags = byteData.getUint16(0, Endian.little);
+      int index = 2;
+
+      // Print flags in binary format for debugging
+      String binaryFlags = flags.toRadixString(2).padLeft(16, '0');
+      print('Flags (binary): $binaryFlags');
+
+      // Reset fields
+      ftmsData.cadence = 0;
+      ftmsData.watts = 0;
+      ftmsData.heartRate = 0;
+      ftmsData.speed = 0;
+
+      ftmsData.speed = byteData.getUint16(index, Endian.little) ~/ 100; // resolution 0.01
+      index += 2;
+
+      if ((flags & (1 << 1)) != 0) {
+        // not used
+        index += 2;
+      }
+
+      if ((flags & (1 << 2)) != 0) {
+        ftmsData.cadence = byteData.getUint16(index, Endian.little) ~/ 2; // resolution 0.5
+        index += 2;
+      }
+
+      if ((flags & (1 << 3)) != 0) {
+        // not used
+        index += 2;
+      }
+      if ((flags & (1 << 4)) != 0) {
+        // not used
+        index += 3;
+      }
+
+      if ((flags & (1 << 5)) != 0) {
+        ftmsData.resistance = byteData.getInt16(index, Endian.little);
+        index += 2;
+      }
+
+      if ((flags & (1 << 6)) != 0) {
+        ftmsData.watts = byteData.getInt16(index, Endian.little);
+        index += 2;
+      }
+
+      if ((flags & (1 << 7)) != 0) {
+        // not used
+        index += 2;
+      }
+      if ((flags & (1 << 8)) != 0) {
+        // not used
+        index += 1;
+      }
+
+      if ((flags & (1 << 9)) != 0) {
+        ftmsData.heartRate = byteData.getUint8(index);
+        index += 1;
+      }
+    });
   }
 
   void findNSave(BluetoothDevice device, Map c, String find) {
@@ -507,10 +619,11 @@ class BLEData {
                 if (cadenceRow >= 0 && cadenceRow < this.powerTableData.length) {
                   List<int?> row = [];
                   for (int i = 3; i < value.length; i += 2) {
-                    if(data.getInt16(i, Endian.little) == -32768){
+                    if (data.getInt16(i, Endian.little) == -32768) {
                       row.add(null);
-                    }else{
-                    row.add(data.getInt16(i, Endian.little));}
+                    } else {
+                      row.add(data.getInt16(i, Endian.little));
+                    }
                   }
                   this.powerTableData[cadenceRow] = row;
                 }

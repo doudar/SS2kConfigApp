@@ -10,6 +10,10 @@ import 'package:flutter/services.dart';
 final String csUUID = "77776277-7877-7774-4466-896665500000";
 final String ccUUID = "77776277-7877-7774-4466-896665500001";
 
+final String ftmsServiceUUID = "00001826-0000-1000-8000-00805f9b34fb";
+final String ftmsControlPointUUID = "00002AD9-0000-1000-8000-00805f9b34fb";
+final String ftmsIndoorBikeDataUUID = "00002AD2-0000-1000-8000-00805f9b34fb";
+
 final Color activeBackgroundColor = Color(0xffc9ccf5);
 final Color deactiveBackgroundColor = Color.fromARGB(255, 90, 91, 100);
 

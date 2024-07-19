@@ -24,7 +24,7 @@ class PowerTableScreen extends StatefulWidget {
 class _PowerTableScreenState extends State<PowerTableScreen> {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   late BLEData bleData;
-
+  String statusString = '';
   @override
   void initState() {
     super.initState();
@@ -72,19 +72,19 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
 
   bool _refreshBlocker = false;
 
-    final List<Color> colors = [
-      Colors.red,
-      Colors.blue,
-      Colors.green,
-      Colors.orange,
-      Colors.purple,
-      Colors.brown,
-      Colors.pink,
-      Colors.teal,
-      Colors.cyan,
-      Colors.lime,
-      Colors.indigo,
-    ];
+  final List<Color> colors = [
+    Colors.red,
+    Colors.blue,
+    Colors.green,
+    Colors.orange,
+    Colors.purple,
+    Colors.brown,
+    Colors.pink,
+    Colors.teal,
+    Colors.cyan,
+    Colors.lime,
+    Colors.indigo,
+  ];
 
   Future rwSubscription() async {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
@@ -104,6 +104,12 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     _refreshBlocker = true;
     await Future.delayed(Duration(microseconds: 500));
     print("refreshing chart...");
+    statusString = 'Watts:' +
+        bleData.ftmsData.watts.toString() +
+        " CAD:" +
+        bleData.ftmsData.cadence.toString() +
+        " HR:" +
+        bleData.ftmsData.heartRate.toString();
     if (mounted) {
       setState(() {});
     }
@@ -129,8 +135,8 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: <Widget>[
-            const Text(
-              'Power Table',
+            Text(
+              statusString,
               style: TextStyle(
                 fontSize: 25,
                 fontWeight: FontWeight.bold,
@@ -142,11 +148,11 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
                 LineChartData(
                   lineBarsData: _createLineBarsData(),
                   titlesData: FlTitlesData(
-                    bottomTitles: AxisTitles(axisNameWidget: Text('Cadences:'),),
-                    rightTitles: AxisTitles(),
-                    topTitles: AxisTitles(axisNameWidget: Text('Watts'),),
-                    leftTitles: AxisTitles(axisNameWidget: Text('Motor Tension') )
-                  ),
+                      bottomTitles: AxisTitles(
+                        axisNameWidget: Text('Cadences:'),
+                      ),
+                      rightTitles: AxisTitles(),
+                      leftTitles: AxisTitles(axisNameWidget: Text('Motor Tension'))),
                   borderData: FlBorderData(show: true),
                   gridData: FlGridData(show: true),
                 ),
@@ -193,7 +199,10 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
               color: colors[index % colors.length],
             ),
             SizedBox(width: 4),
-            Text('${cadences[index]}rpm', style: TextStyle(fontSize: 10),),
+            Text(
+              '${cadences[index]}rpm',
+              style: TextStyle(fontSize: 10),
+            ),
           ],
         );
       }),
