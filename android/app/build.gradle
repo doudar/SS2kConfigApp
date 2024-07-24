@@ -25,7 +25,7 @@ if (flutterVersionName == null) {
 android {
     namespace "com.example.ss2kconfigapp"
     compileSdkVersion 34
-    ndkVersion flutter.ndkVersion
+    ndkVersion "25.1.8937393"
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -42,10 +42,10 @@ android {
 
     defaultConfig {
         applicationId "com.smartspin2k.app"
+        minSdk 34
+        targetSdk 34
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
-        minSdkVersion 21
-        targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }
