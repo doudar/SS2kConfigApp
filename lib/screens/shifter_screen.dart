@@ -26,14 +26,16 @@ class _ShifterScreenState extends State<ShifterScreen> {
   late BLEData bleData;
   late Map c;
   String t = "Loading";
-  StreamSubscription? _charSubscription;
+  String statusString = '';
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  bool _refreshBlocker = false;
 
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
     this.bleData.customCharacteristic.forEach((i) => i["vName"] == shifterPositionVname ? c = i : ());
+    t = c["value"] ?? "Loading";
     //special setup for demo mode
     if (bleData.isSimulated) {
       t = "0";
@@ -48,56 +50,52 @@ class _ShifterScreenState extends State<ShifterScreen> {
         }
       } else {
         if (mounted) {
-
         } else {
           refreshTimer.cancel();
         }
       }
     });
-    startSubscription();
+    rwSubscription();
   }
 
   @override
   void dispose() {
     _connectionStateSubscription?.cancel();
-    if (this.bleData.charReceived.value) {
-      _charSubscription?.cancel();
-    }
-    //   this.bleData.isReadingOrWriting.removeListener(_rwListner);
+    this.bleData.isReadingOrWriting.removeListener(_rwListner);
     WakelockPlus.disable();
     super.dispose();
   }
 
-  Future startSubscription() async {
-    t = c["value"] ?? "Loading";
+  Future rwSubscription() async {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       if (mounted) {
-        if (state == BluetoothConnectionState.connected) {
-          await this.bleData.setupConnection(this.widget.device);
-          if (this.bleData.charReceived.value) {
-            try {
-              _charSubscription =
-                  this.bleData.getMyCharacteristic(this.widget.device).onValueReceived.listen((data) async {
-                if (mounted) {
-                  setState(() {
-                    t = c["value"] ?? "Loading";
-                  });
-                }
-              });
-            } catch (e) {
-              print("Subscription Failed, $e");
-            }
-          }
-        } else if (state == BluetoothConnectionState.disconnected) {
-          c["value"] = "Loading";
-        }
-        if (mounted) {
-          setState(() {
-            t = c["value"] ?? "Loading";
-          });
-        }
+        setState(() {});
       }
     });
+    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      bleData.isReadingOrWriting.addListener(_rwListner);
+    });
+  }
+
+  void _rwListner() async {
+    if (_refreshBlocker) {
+      return;
+    }
+    _refreshBlocker = true;
+    await Future.delayed(Duration(microseconds: 500));
+
+    if (mounted) {
+      setState(() {
+        t = c["value"] ?? "Loading";
+        statusString = bleData.ftmsData.watts.toString() +
+            "w   " +
+            bleData.ftmsData.cadence.toString() +
+            "rpm " +
+            bleData.ftmsData.heartRate.toString() +
+            "bpm ";
+      });
+    }
+    _refreshBlocker = false;
   }
 
   shift(int amount) {
@@ -176,6 +174,14 @@ class _ShifterScreenState extends State<ShifterScreen> {
           mainAxisSize: MainAxisSize.max,
           children: [
             DeviceHeader(device: this.widget.device, connectOnly: true),
+            Text(
+              statusString,
+              style: TextStyle(
+                fontSize: 25,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
+            ),
             Spacer(flex: 1),
             _buildShiftButton(Icons.arrow_upward, () {
               shift(1);

@@ -37,7 +37,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       if (this.widget.device.isConnected) {
         this.bleData.rssi.value = await this.widget.device.readRssi();
       } else {
+        print("*********Detected Disconnect**************");
         this.bleData.rssi.value = 0;
+        await this.widget.device.connectAndUpdateStream();
+        await this.bleData.setupConnection(this.widget.device);
       }
       if (mounted) {
         setState(() {});
@@ -56,6 +59,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
   void _startRssiTimer() {
     rssiTimer = Timer.periodic(Duration(seconds: 20), (Timer t) {
+      print("*********UPDATE TIMER**************");
       _updateRssi();
     });
   }
@@ -73,6 +77,12 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       } catch (e) {
         this.bleData.rssi.value = 0;
       }
+    } else {
+      this.bleData.rssi.value = 0;
+      try {
+        // this.widget.device.connectAndUpdateStream();
+        // this.bleData.setupConnection(this.widget.device);
+      } catch (e) {}
     }
   }
 
@@ -174,7 +184,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     }
   }
 
-    Future onResetPowerTablePressed() async {
+  Future onResetPowerTablePressed() async {
     try {
       await this.bleData.resetPowerTable(this.widget.device);
       Snackbar.show(ABC.c, "The Power Table has been deleted.", success: true);
@@ -209,8 +219,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Widget buildSpinner(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(14.0),
-      child: CircularProgressIndicator(
-          ),
+      child: CircularProgressIndicator(),
     );
   }
 
@@ -264,7 +273,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         trailing:
             // Expand/Collapse Icon
             Icon(
-          _isExpanded ? Icons.expand_less : Icons.expand_more, size: 40,
+          _isExpanded ? Icons.expand_less : Icons.expand_more,
+          size: 40,
           color: Theme.of(context).primaryColor,
         ),
         onTap: () => setState(() => _isExpanded = !_isExpanded),

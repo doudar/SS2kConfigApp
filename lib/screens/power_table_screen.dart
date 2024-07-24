@@ -103,13 +103,12 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     }
     _refreshBlocker = true;
     await Future.delayed(Duration(microseconds: 500));
-    print("refreshing chart...");
-    statusString = 'Watts:' +
-        bleData.ftmsData.watts.toString() +
-        " CAD:" +
+    statusString = bleData.ftmsData.watts.toString() +
+        "w   " +
         bleData.ftmsData.cadence.toString() +
-        " HR:" +
-        bleData.ftmsData.heartRate.toString();
+        "rpm " +
+        bleData.ftmsData.heartRate.toString() +
+        "bpm ";
     if (mounted) {
       setState(() {});
     }

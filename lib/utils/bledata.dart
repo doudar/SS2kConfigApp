@@ -87,6 +87,7 @@ class BLEData {
   setupConnection(BluetoothDevice device) async {
     if (device.isConnected) {
       await _discoverServices(device);
+      this.subscribed = false;
       if (services.length > 1) {
         await _findChar();
         await updateCustomCharacter(device);
@@ -200,7 +201,7 @@ class BLEData {
 
   ///Data Helpers****************************************************************
 
-  bool _subscribed = false;
+  bool subscribed = false;
   final _lastRequestStopwatch = Stopwatch();
 // only used as a flag to prevent multiple concurrent instances of updateCustomCharacter
   bool _inUpdateLoop = false;
@@ -216,7 +217,7 @@ class BLEData {
       } catch (e) {}
     }
     _inUpdateLoop = true;
-    if (!_subscribed) {
+    if (!subscribed) {
       decode(device);
       updateIndoorBikeData(device);
     }
@@ -311,6 +312,7 @@ class BLEData {
         index += 1;
       }
     });
+    device.cancelWhenDisconnected(subscription);
   }
 
   void findNSave(BluetoothDevice device, Map c, String find) {
@@ -533,7 +535,7 @@ class BLEData {
     if (this.isSimulated) return;
     final subscription = this.getMyCharacteristic(device).onValueReceived.listen((value) {
       this.isReadingOrWriting.value = true;
-      _subscribed = true;
+      subscribed = true;
       if (value[0] == 0x80) {
         var length = value.length;
         var t = new Uint8List(length);
@@ -647,6 +649,6 @@ class BLEData {
       }
       this.isReadingOrWriting.value = false;
     }); //VV This is handled by the subscription flag.
-    // device.cancelWhenDisconnected(subscription);
+    device.cancelWhenDisconnected(subscription);
   }
 }
