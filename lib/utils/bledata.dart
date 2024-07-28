@@ -115,8 +115,8 @@ class BLEData {
 
   Future _discoverServices(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    if (!isReadingOrWriting.value) {
-      isReadingOrWriting.value = true;
+    if (!this.isReadingOrWriting.value) {
+      this.isReadingOrWriting.value = true;
       try {
         if (services.length < 1) {
           services = await device.discoverServices();
@@ -124,14 +124,14 @@ class BLEData {
       } catch (e) {
         print(e);
       }
-      isReadingOrWriting.value = false;
+      this.isReadingOrWriting.value = false;
     }
   }
 
   Future _findChar() async {
     if (this.isSimulated) return;
-    if (!isReadingOrWriting.value) {
-      isReadingOrWriting.value = true;
+    if (!this.isReadingOrWriting.value) {
+      this.isReadingOrWriting.value = true;
       while (!charReceived.value) {
         try {
           // custom characteristic
@@ -249,7 +249,7 @@ class BLEData {
       if (value.length < 2) {
         throw ArgumentError('FTMS Characteristic data list is too short');
       }
-
+      this.isReadingOrWriting.value = true;
       Uint8List data = Uint8List.fromList(value);
       ByteData byteData = ByteData.sublistView(data);
 
@@ -311,6 +311,7 @@ class BLEData {
         ftmsData.heartRate = byteData.getUint8(index);
         index += 1;
       }
+      this.isReadingOrWriting.value = false;
     });
     device.cancelWhenDisconnected(subscription);
   }

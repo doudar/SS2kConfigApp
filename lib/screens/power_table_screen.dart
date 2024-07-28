@@ -107,8 +107,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         "w   " +
         bleData.ftmsData.cadence.toString() +
         "rpm " +
-        bleData.ftmsData.heartRate.toString() +
-        "bpm ";
+        (bleData.ftmsData.heartRate == 0 ? "" : bleData.ftmsData.heartRate.toString() + "bpm ");
     if (mounted) {
       setState(() {});
     }

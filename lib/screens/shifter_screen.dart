@@ -91,8 +91,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
             "w   " +
             bleData.ftmsData.cadence.toString() +
             "rpm " +
-            bleData.ftmsData.heartRate.toString() +
-            "bpm ";
+            (bleData.ftmsData.heartRate == 0 ? "" : bleData.ftmsData.heartRate.toString() + "bpm ");
       });
     }
     _refreshBlocker = false;
