@@ -8,6 +8,7 @@ publish_to: "none"
 
 environment:
   sdk: ">=3.3.0 <=4.0.0"
+  # change this in ci_post_clone.sh as well
   flutter: "3.19.4"
 
 dependencies:
