@@ -7,7 +7,9 @@ version: 1.0.2+4
 publish_to: "none"
 
 environment:
-  sdk: ">=3.2.4 <=3.5.0"
+  sdk: ">=3.3.0 <=4.0.0"
+  # change this in ci_post_clone.sh as well
+  flutter: "3.19.4"
 
 dependencies:
   flutter:
@@ -17,13 +19,13 @@ dependencies:
   #dynamic_color: ^1.6.9
   flutter_launcher_icons: ^0.13.1
   flutter_native_splash: ^2.3.9
-  shared_preferences: ^2.2.2
-  file_picker: ^5.5.0
+  shared_preferences: ^2.2.0
+  file_picker: ^7.0.0
   #flutter_ota: ^0.1.4
   wakelock_plus: ^1.2.5
   http: ^1.2.0
   font_awesome_flutter: ^10.7.0
-  json_theme: ^6.4.1
+  json_theme: ^6.4.1+5
   fl_chart: ^0.68.0
 
 flutter:

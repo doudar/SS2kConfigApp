@@ -133,7 +133,7 @@ class _ScanResultTileState extends State<ScanResultTile> {
       children: [
         Text(
           'Signal strength:',
-          style: TextStyle(fontSize: 12, color: ThemeData().colorScheme.onBackground),
+          style: TextStyle(fontSize: 12, color: ThemeData().colorScheme.onSurface),
         ),
         SizedBox(width: 8),
         Row(
