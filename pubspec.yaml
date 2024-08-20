@@ -1,6 +1,6 @@
 name: SS2kConfigApp
 description: Configures the SmartSpin2k using BLE
-version: 1.0.2+4
+version: 1.0.3+1
 
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -9,7 +9,7 @@ publish_to: "none"
 environment:
   sdk: ">=3.3.0 <=4.0.0"
   # change this in ci_post_clone.sh as well
-  flutter: "3.19.4"
+  flutter: ">3.19.0 <=3.24.0"
 
 dependencies:
   flutter:
