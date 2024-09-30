@@ -6,6 +6,7 @@
  */
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -76,6 +77,10 @@ class BLEData {
   bool configAppCompatibleFirmware = false;
   bool isUpdatingFirmware = false;
   String firmwareVersion = "";
+  String simulatedTargetWatts = "";
+  int targetWatts = 0;
+  String ERGmode = "";
+  int intERGmode = 0;
 
   List<List<int?>> powerTableData = List.generate(
     10,
@@ -270,7 +275,7 @@ class BLEData {
       index += 2;
 
       if ((flags & (1 << 1)) != 0) {
-        // not used
+        //not used
         index += 2;
       }
 
@@ -284,7 +289,7 @@ class BLEData {
         index += 2;
       }
       if ((flags & (1 << 4)) != 0) {
-        // not used
+        //not used
         index += 3;
       }
 
@@ -299,11 +304,11 @@ class BLEData {
       }
 
       if ((flags & (1 << 7)) != 0) {
-        // not used
+        //not used
         index += 2;
       }
       if ((flags & (1 << 8)) != 0) {
-        // not used
+        //not used
         index += 1;
       }
 
@@ -555,6 +560,16 @@ class BLEData {
                     c["value"] = noFirmSupport;
                   } else {
                     c["value"] = data.getInt16(2, Endian.little).toString();
+                    if(c["vName"]==simulatedTargetWattsVname){
+                      this.simulatedTargetWatts = c["value"];
+                      targetWatts = int.parse(this.simulatedTargetWatts);
+                      print('Target Watts = $targetWatts');
+                    }
+                    if(c["vName"]==FTMSModeVname) {
+                      this.ERGmode = c["value"];
+                      intERGmode = int.parse(this.ERGmode);
+                      print('FTMSmode = $intERGmode');
+                    }
                   }
                   break;
                 }

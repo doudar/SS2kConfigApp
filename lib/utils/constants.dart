@@ -64,6 +64,8 @@ final String maxBrakeWattsVname = "BLE_maxBrakeWatts";
 final String scanBLEVname = "BLE_scanBLE";
 final String resetPowerTableVname = "BLE_resetPowerTable";
 final String powerTableDataVname = "BLE_powerTableData";
+final String simulatedTargetWattsVname = "BLE_simulatedTargetWatts";
+final String simulateTargetWattsVname = "BLE_simulateTargetWatts";
 
 // Refactored customCharacteristicFramework to directly use Dart map
 final dynamic customCharacteristicFramework = [
@@ -218,6 +220,17 @@ final dynamic customCharacteristicFramework = [
     "defaultData": "0"
   },
   {
+    "vName": simulatedTargetWattsVname,
+    "reference": "0x28",
+    "isSetting": false,
+    "type": "int",
+    "humanReadableName": "Current TW",
+    "min": 0,
+    "max": 2000,
+    "textDescription": "Your current target watts.",
+    "defaultData": "0"
+  },
+  {
     "vName": simulatedCadVname,
     "reference": "0x05",
     "isSetting": false,
@@ -307,6 +320,18 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Enable to generate simulated power meter data.",
+    "defaultData": "false"
+  },
+  {
+    "vName": simulateTargetWattsVname,
+    "reference": "0x29",
+    "isSetting": false,
+    "type": "bool",
+    "humanReadableName": "Simulate Watts",
+    "min": 0,
+    "max": 1,
+    "textDescription": "Simulate Watts",
+    "textDescription": "Enable to generate simulated target watts meter data.",
     "defaultData": "false"
   },
   {
