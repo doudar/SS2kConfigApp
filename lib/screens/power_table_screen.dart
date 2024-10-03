@@ -103,10 +103,8 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     }
     _refreshBlocker = true;
     await Future.delayed(Duration(microseconds: 500));
-    if(bleData.intERGmode == 0){
+    if(bleData.FTMSmode == 0  || bleData.simulateTargetWatts==false){
       bleData.targetWatts = 0;
-    } else if(bleData.intERGmode == 5){
-      bleData.targetWatts = int.parse(bleData.simulatedTargetWatts);
     }
     statusString =
         (bleData.targetWatts == 0 ? "" : bleData.simulatedTargetWatts + "tw   ") +

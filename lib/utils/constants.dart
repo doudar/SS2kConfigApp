@@ -327,7 +327,7 @@ final dynamic customCharacteristicFramework = [
     "reference": "0x29",
     "isSetting": false,
     "type": "bool",
-    "humanReadableName": "Simulate Watts",
+    "humanReadableName": "Simulate Target Watts",
     "min": 0,
     "max": 1,
     "textDescription": "Enable to generate simulated target watts meter data.",

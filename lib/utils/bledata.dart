@@ -78,8 +78,9 @@ class BLEData {
   String firmwareVersion = "";
   String simulatedTargetWatts = "";
   int targetWatts = 0;
-  String ERGmode = "";
-  int intERGmode = 0;
+  String simulatedFTMSmode = "";
+  int FTMSmode = 0;
+  bool simulateTargetWatts = false;
 
   List<List<int?>> powerTableData = List.generate(
     10,
@@ -562,12 +563,10 @@ class BLEData {
                     if(c["vName"]==simulatedTargetWattsVname){
                       this.simulatedTargetWatts = c["value"];
                       targetWatts = int.parse(this.simulatedTargetWatts);
-                      print('Target Watts = $targetWatts');
                     }
                     if(c["vName"]==FTMSModeVname) {
-                      this.ERGmode = c["value"];
-                      intERGmode = int.parse(this.ERGmode);
-                      print('FTMSmode = $intERGmode');
+                      this.simulatedFTMSmode = c["value"];
+                      FTMSmode = int.parse(this.simulatedFTMSmode);
                     }
                   }
                   break;
@@ -576,6 +575,15 @@ class BLEData {
                 {
                   String b = (value[2] == 0) ? "false" : "true";
                   c["value"] = b;
+                  if(c["vName"]==simulateTargetWattsVname){
+                    if(b == "true"){
+                      this.simulateTargetWatts = true;
+                      print('Simulate target watts = $simulateTargetWatts');
+                    }else if(b=="false") {
+                      this.simulateTargetWatts = false;
+                      print('Simulate target watts = $simulateTargetWatts');
+                    }
+                  }
                   break;
                 }
               case "float":
