@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../utils/bledata.dart';
+import '../widgets/metric_card.dart';
 
 class PowerTableScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -103,11 +104,6 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     }
     _refreshBlocker = true;
     await Future.delayed(Duration(microseconds: 500));
-    statusString = bleData.ftmsData.watts.toString() +
-        "w   " +
-        bleData.ftmsData.cadence.toString() +
-        "rpm " +
-        (bleData.ftmsData.heartRate == 0 ? "" : bleData.ftmsData.heartRate.toString() + "bpm ");
     if (mounted) {
       setState(() {});
     }
@@ -133,12 +129,42 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: <Widget>[
-            Text(
-              statusString,
-              style: TextStyle(
-                fontSize: 25,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2,
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  if (bleData.simulatedTargetWatts != "")
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: MetricBox(
+                        value: bleData.simulatedTargetWatts.toString(),
+                        label: 'Target Watts',
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: MetricBox(
+                      value: bleData.ftmsData.watts.toString(),
+                      label: 'Watts',
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: MetricBox(
+                      value: bleData.ftmsData.cadence.toString(),
+                      label: 'RPM',
+                    ),
+                  ),
+                  if (bleData.ftmsData.heartRate != 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: MetricBox(
+                        value: bleData.ftmsData.heartRate.toString(),
+                        label: 'BPM',
+                      ),
+                    )
+                ],
               ),
             ),
             Expanded(

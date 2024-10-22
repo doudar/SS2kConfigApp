@@ -76,6 +76,7 @@ class BLEData {
   bool configAppCompatibleFirmware = false;
   bool isUpdatingFirmware = false;
   String firmwareVersion = "";
+  String simulatedTargetWatts = "";
 
   List<List<int?>> powerTableData = List.generate(
     10,
@@ -555,9 +556,12 @@ class BLEData {
                     c["value"] = noFirmSupport;
                   } else {
                     c["value"] = data.getInt16(2, Endian.little).toString();
+                    simulatedTargetWatts = (c["reference"] == "0x28") ? c["value"] : simulatedTargetWatts;
                   }
+
                   break;
                 }
+
               case "bool":
                 {
                   String b = (value[2] == 0) ? "false" : "true";
