@@ -532,5 +532,27 @@ final dynamic customCharacteristicFramework = [
     "max": 32768,
     "textDescription": "Read or Write Data to the Power Table",
     "defaultData": "false"
+  },
+  {
+    "vName": simulatedTargetWattsVname,
+    "reference": "0x28",
+    "isSetting": false,
+    "type": "int",
+    "humanReadableName": "Target Watts",
+    "min": 0,
+    "max": 2000,
+    "textDescription": "Your target watt output.",
+    "defaultData": "0"
+  },
+  {
+    "vName": simulateTargetWattsVname,
+    "reference": "0x29",
+    "isSetting": false,
+    "type": "bool",
+    "humanReadableName": "Target Simulate Watts",
+    "min": 0,
+    "max": 1,
+    "textDescription": "Enable to generate simulated target watt data.",
+    "defaultData": "false"
   }
 ];
