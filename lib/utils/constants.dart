@@ -122,8 +122,8 @@ final dynamic customCharacteristicFramework = [
     "isSetting": true,
     "type": "int",
     "humanReadableName": "Shift Step",
-    "min": 100,
-    "max": 2000,
+    "min": 10,
+    "max": 6000,
     "textDescription":
         "This setting controls how much each click of the shifter turns the dial. The ideal setting is different for each bike and person. Try aiming for a +/- 30 watt change when you click the shifter. Higher values will turn the knob further.",
     "defaultData": "1500"
@@ -169,8 +169,8 @@ final dynamic customCharacteristicFramework = [
     "isSetting": true,
     "type": "float",
     "humanReadableName": "ERG Sensitivity",
-    "min": 0,
-    "max": 10,
+    "min": 0.1,
+    "max": 20,
     "textDescription":
         "This setting will impact the sensitivity of Erg Mode. Too low will cause the Erg to be slow at reaching target wattage. Too high will cause it to overshoot and oscillate before settling. Start with the default value of 5 and adjust if necessary.",
     "defaultData": "5.0"
@@ -220,6 +220,17 @@ final dynamic customCharacteristicFramework = [
     "defaultData": "0"
   },
   {
+    "vName": simulatedTargetWattsVname,
+    "reference": "0x28",
+    "isSetting": false,
+    "type": "int",
+    "humanReadableName": "Current TW",
+    "min": 0,
+    "max": 2000,
+    "textDescription": "Your current target watts.",
+    "defaultData": "0"
+  },
+  {
     "vName": simulatedCadVname,
     "reference": "0x05",
     "isSetting": false,
@@ -259,7 +270,7 @@ final dynamic customCharacteristicFramework = [
     "isSetting": true,
     "type": "int",
     "humanReadableName": "Stepper Power",
-    "min": 0,
+    "min": 100,
     "max": 2000,
     "textDescription":
         "Adjust this setting if you are experiencing overheat issues or if you need additional torque for a felt resistance bike. Do not exceed your power supply's rated limits.",
@@ -284,7 +295,7 @@ final dynamic customCharacteristicFramework = [
     "type": "float",
     "humanReadableName": "Power Correction Factor",
     "min": 0.4,
-    "max": 2.0,
+    "max": 2.5,
     "textDescription":
         "Increase or decrease this setting to correct the power reported from your bike. This is typically only needed if your bike is over or under reporting power by a significant amount. IC4/C6 users may want to try a value around 0.7 to .8",
     "defaultData": "1.0"
@@ -309,6 +320,17 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Enable to generate simulated power meter data.",
+    "defaultData": "false"
+  },
+  {
+    "vName": simulateTargetWattsVname,
+    "reference": "0x29",
+    "isSetting": false,
+    "type": "bool",
+    "humanReadableName": "Simulate Target Watts",
+    "min": 0,
+    "max": 1,
+    "textDescription": "Enable to generate simulated target watts meter data.",
     "defaultData": "false"
   },
   {
@@ -429,7 +451,7 @@ final dynamic customCharacteristicFramework = [
     "type": "int",
     "humanReadableName": "Min Brake Watts",
     "min": 0,
-    "max": 100,
+    "max": 200,
     "textDescription": "Minimum amount of resistance you can pedal without hitting the low limit stop on your bike.",
     "defaultData": "50"
   },

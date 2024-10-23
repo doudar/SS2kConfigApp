@@ -77,6 +77,10 @@ class BLEData {
   bool isUpdatingFirmware = false;
   String firmwareVersion = "";
   String simulatedTargetWatts = "";
+  String simulatedFTMSmode = "";
+  int FTMSmode = 0;
+  bool simulateTargetWatts = false;
+
 
   List<List<int?>> powerTableData = List.generate(
     10,
@@ -271,7 +275,7 @@ class BLEData {
       index += 2;
 
       if ((flags & (1 << 1)) != 0) {
-        // not used
+        //not used
         index += 2;
       }
 
@@ -285,7 +289,7 @@ class BLEData {
         index += 2;
       }
       if ((flags & (1 << 4)) != 0) {
-        // not used
+        //not used
         index += 3;
       }
 
@@ -300,11 +304,11 @@ class BLEData {
       }
 
       if ((flags & (1 << 7)) != 0) {
-        // not used
+        //not used
         index += 2;
       }
       if ((flags & (1 << 8)) != 0) {
-        // not used
+        //not used
         index += 1;
       }
 
@@ -556,7 +560,12 @@ class BLEData {
                     c["value"] = noFirmSupport;
                   } else {
                     c["value"] = data.getInt16(2, Endian.little).toString();
+
                     simulatedTargetWatts = (c["reference"] == "0x28") ? c["value"] : simulatedTargetWatts;
+                    if(c["vName"]==FTMSModeVname) {
+                      this.simulatedFTMSmode = c["value"];
+                      FTMSmode = int.parse(this.simulatedFTMSmode);
+                    }
                   }
 
                   break;
@@ -566,6 +575,15 @@ class BLEData {
                 {
                   String b = (value[2] == 0) ? "false" : "true";
                   c["value"] = b;
+                  if(c["vName"]==simulateTargetWattsVname){
+                    if(b == "true"){
+                      this.simulateTargetWatts = true;
+                      print('Simulate target watts = $simulateTargetWatts');
+                    }else if(b=="false") {
+                      this.simulateTargetWatts = false;
+                      print('Simulate target watts = $simulateTargetWatts');
+                    }
+                  }
                   break;
                 }
               case "float":
