@@ -105,8 +105,8 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     _refreshBlocker = true;
     await Future.delayed(Duration(microseconds: 500));
 
-    if(bleData.FTMSmode == 0  || bleData.simulateTargetWatts==false){
-      bleData.simulatedTargetWatts = "";
+    if (bleData.FTMSmode == 0 || bleData.simulateTargetWatts == false) {
+      print('Something is likely wrong');
     }
     if (mounted) {
       setState(() {});

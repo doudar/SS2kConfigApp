@@ -76,11 +76,10 @@ class BLEData {
   bool configAppCompatibleFirmware = false;
   bool isUpdatingFirmware = false;
   String firmwareVersion = "";
-  String simulatedTargetWatts = "";
-  String simulatedFTMSmode = "";
   int FTMSmode = 0;
+  String simulatedFTMSmode = "";
   bool simulateTargetWatts = false;
-
+  String simulatedTargetWatts = "";
 
   List<List<int?>> powerTableData = List.generate(
     10,
@@ -562,7 +561,7 @@ class BLEData {
                     c["value"] = data.getInt16(2, Endian.little).toString();
 
                     simulatedTargetWatts = (c["reference"] == "0x28") ? c["value"] : simulatedTargetWatts;
-                    if(c["vName"]==FTMSModeVname) {
+                    if (c["vName"] == FTMSModeVname) {
                       this.simulatedFTMSmode = c["value"];
                       FTMSmode = int.parse(this.simulatedFTMSmode);
                     }
@@ -575,11 +574,11 @@ class BLEData {
                 {
                   String b = (value[2] == 0) ? "false" : "true";
                   c["value"] = b;
-                  if(c["vName"]==simulateTargetWattsVname){
-                    if(b == "true"){
+                  if (c["vName"] == simulateTargetWattsVname) {
+                    if (b == "true") {
                       this.simulateTargetWatts = true;
                       print('Simulate target watts = $simulateTargetWatts');
-                    }else if(b=="false") {
+                    } else if (b == "false") {
                       this.simulateTargetWatts = false;
                       print('Simulate target watts = $simulateTargetWatts');
                     }
