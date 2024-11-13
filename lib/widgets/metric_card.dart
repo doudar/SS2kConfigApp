@@ -21,7 +21,7 @@ class _MetricBoxState extends State<MetricBox> {
       width: 65,
       height: 65,
       decoration: BoxDecoration(
-        color: const Color.fromARGB(255, 188, 22, 19),
+        color: const Color.fromARGB(255, 226, 226, 226),
         borderRadius: BorderRadius.circular(14.0),
       ),
       child: Column(
@@ -32,7 +32,6 @@ class _MetricBoxState extends State<MetricBox> {
             widget.value,
             style: const TextStyle(
               fontSize: 22,
-              color: Colors.white,
             ),
           ),
           const SizedBox(height: 4.0),
@@ -40,7 +39,6 @@ class _MetricBoxState extends State<MetricBox> {
             widget.label,
             style: const TextStyle(
               fontSize: 9,
-              color: Colors.white,
             ),
           ),
         ],

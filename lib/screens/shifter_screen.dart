@@ -13,6 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../widgets/device_header.dart';
 import '../utils/bledata.dart';
+import '../widgets/metric_card.dart';
 
 class ShifterScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -93,6 +94,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
             "rpm " +
             (bleData.ftmsData.heartRate == 0 ? "" : bleData.ftmsData.heartRate.toString() + "bpm ");
       });
+      if (bleData.FTMSmode == 0 || bleData.simulateTargetWatts == false) {
+        bleData.simulatedTargetWatts = "";
+      }
     }
     _refreshBlocker = false;
   }
@@ -173,15 +177,46 @@ class _ShifterScreenState extends State<ShifterScreen> {
           mainAxisSize: MainAxisSize.max,
           children: [
             DeviceHeader(device: this.widget.device, connectOnly: true),
-            Text(
-              statusString,
-              style: TextStyle(
-                fontSize: 25,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2,
+            SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  if (bleData.simulatedTargetWatts != "")
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: MetricBox(
+                        value: bleData.simulatedTargetWatts.toString(),
+                        label: 'Target Watts',
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: MetricBox(
+                      value: bleData.ftmsData.watts.toString(),
+                      label: 'Watts',
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: MetricBox(
+                      value: bleData.ftmsData.cadence.toString(),
+                      label: 'RPM',
+                    ),
+                  ),
+                  if (bleData.ftmsData.heartRate != 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: MetricBox(
+                        value: bleData.ftmsData.heartRate.toString(),
+                        label: 'BPM',
+                      ),
+                    )
+                ],
               ),
             ),
-            Spacer(flex: 1),
+            SizedBox(height: 12),
             _buildShiftButton(Icons.arrow_upward, () {
               shift(1);
             }),

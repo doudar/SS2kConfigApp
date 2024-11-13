@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 import 'dart:async';
+import 'dart:math';
 
 import 'package:SS2kConfigApp/utils/constants.dart';
 import 'package:SS2kConfigApp/utils/extra.dart';
@@ -22,15 +23,37 @@ class PowerTableScreen extends StatefulWidget {
   State<PowerTableScreen> createState() => _PowerTableScreenState();
 }
 
-class _PowerTableScreenState extends State<PowerTableScreen> {
+class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerProviderStateMixin {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   late BLEData bleData;
   String statusString = '';
+  late AnimationController _pulseController;
+  double maxResistance = 0;
+  final GlobalKey _chartKey = GlobalKey();
+
+  // Trail tracking
+  final List<Map<String, double>> _positionHistory = [];
+  static const int maxTrailLength = 10;
+  DateTime _lastPositionUpdate = DateTime.now();
+
+  // Chart padding percentages
+  static const double leftPaddingPercent = 0.005; // 12% for Y axis
+  static const double rightPaddingPercent = 0.05; // 5% for right padding
+  static const double topPaddingPercent = 0.65; // 5% for top padding
+  static const double bottomPaddingPercent = -2.9; // 12% for X axis
+
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
     requestAllCadenceLines();
+
+    // Initialize pulse animation
+    _pulseController = AnimationController(
+      duration: const Duration(seconds: 1),
+      vsync: this,
+    )..repeat(reverse: true);
+
     // refresh the screen completely every VV seconds.
     Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
       if (!this.widget.device.isConnected) {
@@ -47,6 +70,14 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         }
       }
     });
+
+    // Request target position every second
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted && this.widget.device.isConnected) {
+        bleData.requestSetting(this.widget.device, targetPositionVname);
+      }
+    });
+
     // If the data is simulated, wait for a second before calling setState
     if (bleData.isSimulated) {
       this.bleData.isReadingOrWriting.value = true;
@@ -68,7 +99,30 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   void dispose() {
     _connectionStateSubscription?.cancel();
     this.bleData.isReadingOrWriting.removeListener(_rwListner);
+    _pulseController.dispose();
     super.dispose();
+  }
+
+  Color getCadenceColor(int cadence) {
+    if (cadence < 60) return Colors.red;
+    if (cadence < 80) return Colors.orange;
+    if (cadence <= 100) return Colors.green;
+    return Colors.red; // Too high cadence
+  }
+
+  Color getInterpolatedCadenceColor(int cadence) {
+    if (cadence < 60) {
+      return Colors.red;
+    } else if (cadence < 80) {
+      double t = (cadence - 60) / 20.0; // normalize to 0-1 range
+      return Color.lerp(Colors.red, Colors.orange, t)!;
+    } else if (cadence <= 100) {
+      double t = (cadence - 80) / 20.0; // normalize to 0-1 range
+      return Color.lerp(Colors.orange, Colors.green, t)!;
+    } else {
+      double t = min((cadence - 100) / 20.0, 1.0); // normalize to 0-1 range, cap at 1
+      return Color.lerp(Colors.green, Colors.red, t)!;
+    }
   }
 
   bool _refreshBlocker = false;
@@ -89,6 +143,10 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
 
   Future rwSubscription() async {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
+      if (state == BluetoothConnectionState.connected) {
+        // Request power table data when connection is restored
+        requestAllCadenceLines();
+      }
       if (mounted) {
         setState(() {});
       }
@@ -107,6 +165,8 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
 
     if (bleData.FTMSmode == 0 || bleData.simulateTargetWatts == false) {
       print('Something is likely wrong');
+      bleData.simulatedTargetWatts = "";
+
     }
     if (mounted) {
       setState(() {});
@@ -120,11 +180,139 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     }
   }
 
-  final List<int> watts = List.generate(40, (index) => index * 30); // Replace with your actual watts values
-  final List<int> cadences = [60, 65, 70, 75, 80, 85, 90, 95, 100, 105]; // Replace with your actual cadences
+  // Generate watts values up to 1000w in 30w increments
+  final List<int> watts = List.generate((1000 ~/ 30) + 1, (index) => index * 30);
+  final List<int> cadences = [60, 65, 70, 75, 80, 85, 90, 95, 100, 105];
+
+  // Calculate max resistance from plotted data (excluding points above 1000w)
+  double calculateMaxResistance() {
+    double maxRes = 0;
+    for (var row in bleData.powerTableData) {
+      for (int i = 0; i < row.length && i * 30 <= 1000; i++) {
+        if (row[i] != null && row[i]! > maxRes) {
+          maxRes = row[i]!.toDouble();
+        }
+      }
+    }
+    return maxRes;
+  }
+
+  void _updatePositionHistory(double x, double y) {
+    final now = DateTime.now();
+    if (now.difference(_lastPositionUpdate).inMilliseconds >= 100) {
+      // Update every 100ms
+      _positionHistory.add({'x': x, 'y': y});
+      if (_positionHistory.length > maxTrailLength) {
+        _positionHistory.removeAt(0);
+      }
+      _lastPositionUpdate = now;
+    }
+  }
+
+  Widget _buildChart(BuildContext context, BoxConstraints constraints) {
+    final chart = LineChart(
+      LineChartData(
+        lineBarsData: _createLineBarsData(),
+        titlesData: FlTitlesData(
+            bottomTitles: AxisTitles(
+              axisNameWidget: Text('Watts (max 1000w)'),
+            ),
+            rightTitles: AxisTitles(),
+            leftTitles: AxisTitles(axisNameWidget: Text('Motor Tension'))),
+        borderData: FlBorderData(show: true),
+        gridData: FlGridData(show: true),
+        maxX: 1000,
+        minX: 0,
+        maxY: maxResistance,
+        minY: 0,
+      ),
+    );
+
+    if (bleData.ftmsData.watts > 0 && bleData.ftmsData.watts <= 1000 && maxResistance > 0) {
+      final dotX = _calculateDotXPosition(constraints.maxWidth);
+      final dotY = _calculateDotYPosition(constraints.maxHeight);
+      _updatePositionHistory(dotX, dotY);
+    }
+
+    return Stack(
+      children: [
+        chart,
+        // Trail
+        if (_positionHistory.isNotEmpty)
+          ..._positionHistory.asMap().entries.map((entry) {
+            final index = entry.key;
+            final position = entry.value;
+            final opacity = (index + 1) / _positionHistory.length;
+            return Positioned(
+              left: position['x']! - 6,
+              bottom: position['y']! - 6,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: getInterpolatedCadenceColor(bleData.ftmsData.cadence).withOpacity(opacity * 0.3),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            );
+          }).toList(),
+        // Current dot
+        if (bleData.ftmsData.watts > 0 && bleData.ftmsData.watts <= 1000 && maxResistance > 0)
+          Positioned(
+            left: _calculateDotXPosition(constraints.maxWidth) - 6,
+            bottom: _calculateDotYPosition(constraints.maxHeight) - 6,
+            child: AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, child) {
+                return Container(
+                  width: 12 + (_pulseController.value * 4),
+                  height: 12 + (_pulseController.value * 4),
+                  decoration: BoxDecoration(
+                    color: getInterpolatedCadenceColor(bleData.ftmsData.cadence),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: getInterpolatedCadenceColor(bleData.ftmsData.cadence).withOpacity(0.5),
+                        blurRadius: 10 * _pulseController.value,
+                        spreadRadius: 2 * _pulseController.value,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  double _calculateDotXPosition(double chartWidth) {
+    // Calculate padding based on percentages
+    final double leftPadding = chartWidth * leftPaddingPercent;
+    final double rightPadding = chartWidth * rightPaddingPercent;
+    final double availableWidth = chartWidth - leftPadding - rightPadding;
+
+    // Calculate position based on current watts (0-1000 range)
+    final double xPosition = (bleData.ftmsData.watts * availableWidth) / 1000;
+    return leftPadding + xPosition;
+  }
+
+  double _calculateDotYPosition(double chartHeight) {
+    // Calculate padding based on percentages
+    final double topPadding = chartHeight * topPaddingPercent;
+    final double bottomPadding = chartHeight * bottomPaddingPercent;
+    final double availableHeight = chartHeight - topPadding - bottomPadding;
+
+    // Calculate position based on current resistance (0-maxResistance range)
+    final double yPosition = (bleData.ftmsData.resistance * availableHeight) / maxResistance;
+    return yPosition;
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Update maxResistance whenever we rebuild
+    maxResistance = calculateMaxResistance();
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Resistance Chart'),
@@ -172,18 +360,8 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
               ),
             ),
             Expanded(
-              child: LineChart(
-                LineChartData(
-                  lineBarsData: _createLineBarsData(),
-                  titlesData: FlTitlesData(
-                      bottomTitles: AxisTitles(
-                        axisNameWidget: Text('Cadences:'),
-                      ),
-                      rightTitles: AxisTitles(),
-                      leftTitles: AxisTitles(axisNameWidget: Text('Motor Tension'))),
-                  borderData: FlBorderData(show: true),
-                  gridData: FlGridData(show: true),
-                ),
+              child: LayoutBuilder(
+                builder: _buildChart,
               ),
             ),
             SizedBox(height: 16),
@@ -197,7 +375,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   List<LineChartBarData> _createLineBarsData() {
     return List.generate(bleData.powerTableData.length, (index) {
       final List<FlSpot> spots = [];
-      for (int i = 0; i < bleData.powerTableData[index].length; i++) {
+      for (int i = 0; i < bleData.powerTableData[index].length && i * 30 <= 1000; i++) {
         final resistance = bleData.powerTableData[index][i];
         if (resistance != null) {
           spots.add(FlSpot(watts[i].toDouble(), resistance.toDouble()));

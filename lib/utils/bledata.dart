@@ -79,7 +79,9 @@ class BLEData {
   int FTMSmode = 0;
   String simulatedFTMSmode = "";
   bool simulateTargetWatts = false;
+
   String simulatedTargetWatts = "";
+
 
   List<List<int?>> powerTableData = List.generate(
     10,
@@ -224,6 +226,9 @@ class BLEData {
     if (!subscribed) {
       decode(device);
       updateIndoorBikeData(device);
+    }
+    if(!_myCharacteristic!.isNotifying){
+      _myCharacteristic!.setNotifyValue(true);
     }
     if (!_lastRequestStopwatch.isRunning) {
       await requestSettings(device);
@@ -635,7 +640,10 @@ class BLEData {
                     print(c["value"]);
                   }
                   //Set the firmware version
-                  if (c["vName"] == fwVname) this.firmwareVersion = c["value"];
+                  if (c["vName"] == fwVname) {
+                    this.firmwareVersion = c["value"];
+                    print("FW Version Was Updated!! ${c['value']} ${this.firmwareVersion}");
+                  }
                   break;
                 }
               case "powerTableData":

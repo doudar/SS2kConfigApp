@@ -72,33 +72,38 @@ class Esp32OtaPackage implements OtaPackage {
     print("MTU size for current device $mtuSize");
 
     // Prepare a byte list to write MTU size to controlCharacteristic
-
     Uint8List byteList = Uint8List(2);
     byteList[0] = chunkSize & 0xFF;
     byteList[1] = (chunkSize >> 8) & 0xFF;
 
     List<Uint8List> binaryChunks;
 
-    // Choose firmware source based on firmwareType
-    if (firmwareType == 1 && binFilePath != null && binFilePath.isNotEmpty) {
-      binaryChunks = await getFirmware(firmwareType, chunkSize, binFilePath: binFilePath);
-    } else if (firmwareType == 2) {
-      binaryChunks = await _getFirmwareFromPicker(chunkSize);
-    } else if (firmwareType == 3 && url != null && url.isNotEmpty) {
-      binaryChunks = await _getFirmwareFromUrl(url, chunkSize);
+    // Get firmware chunks based on the type and provided file path
+    if (binFilePath != null && binFilePath.isNotEmpty) {
+      if (firmwareType == 1) {
+        // Built-in firmware
+        binaryChunks = await _readBinaryFile(binFilePath, chunkSize);
+      } else if (firmwareType == 2) {
+        // File picker
+        binaryChunks = await _getFirmwareFromPicker(chunkSize);
+      } else {
+        // URL or Beta firmware - read from the downloaded file
+        binaryChunks = await _readLocalFile(binFilePath, chunkSize);
+      }
     } else {
-      binaryChunks = [];
+      throw Exception('No firmware file path provided');
+    }
+
+    if (binaryChunks.isEmpty) {
+      throw Exception('No firmware data available');
     }
 
     // Write x01 to the controlCharacteristic and check if it returns value of 0x02
-    // await bleRepo.writeDataCharacteristic(dataCharacteristic, byteList);
     await bleRepo.writeDataCharacteristic(controlCharacteristic, Uint8List.fromList([1]));
 
     // Read value from controlCharacteristic
-    // List<int> value = [0,0];
     List<int> value = await bleRepo.readCharacteristic(controlCharacteristic).timeout(Duration(seconds: 10));
     print('value returned is this ------- ${value[0]}');
-
 
     int packageNumber = 0;
     for (Uint8List chunk in binaryChunks) {
@@ -117,18 +122,15 @@ class Esp32OtaPackage implements OtaPackage {
       _percentageController.add(roundedProgress);
     }
 
-    // Write x04 to the controlCharacteristic to finish the update process
-    // await bleRepo.writeDataCharacteristic(controlCharacteristic, Uint8List.fromList([4]));
-
     // Check if controlCharacteristic reads 0x05, indicating OTA update finished
     value = await bleRepo.readCharacteristic(controlCharacteristic).timeout(Duration(seconds: 600));
     print('value returned is this ------- ${value[0]}');
 
     if (value[0] == 5) {
-      print('OTA update finished');
+      print('BLE OTA update finished');
       firmwareupdate = true; // Firmware update was successful
     } else {
-      print('OTA update failed');
+      print('BLE OTA update failed');
       firmwareupdate = false; // Firmware update failed
     }
     _percentageController.close();
@@ -139,18 +141,28 @@ class Esp32OtaPackage implements OtaPackage {
     return uint8List.toList();
   }
 
-  // Read binary file and split it into chunks
+  // Read binary file from assets and split it into chunks
   Future<List<Uint8List>> _readBinaryFile(String filePath, int chunkSize) async {
     final ByteData data = await rootBundle.load(filePath);
     final List<int> bytes = data.buffer.asUint8List();
+    return _splitIntoChunks(bytes, chunkSize);
+  }
+
+  // Read binary file from local filesystem and split it into chunks
+  Future<List<Uint8List>> _readLocalFile(String filePath, int chunkSize) async {
+    final bytes = await File(filePath).readAsBytes();
+    return _splitIntoChunks(bytes, chunkSize);
+  }
+
+  // Helper method to split bytes into chunks
+  List<Uint8List> _splitIntoChunks(List<int> bytes, int chunkSize) {
     List<Uint8List> chunks = [];
     for (int i = 0; i < bytes.length; i += chunkSize) {
       int end = i + chunkSize;
       if (end > bytes.length) {
         end = bytes.length;
       }
-      Uint8List chunk = Uint8List.fromList(bytes.sublist(i, end));
-      chunks.add(chunk);
+      chunks.add(Uint8List.fromList(bytes.sublist(i, end)));
     }
     return chunks;
   }
@@ -162,6 +174,8 @@ class Esp32OtaPackage implements OtaPackage {
       return _getFirmwareFromPicker(chunkSize);
     } else if (firmwareType == 1 && binFilePath != null && binFilePath.isNotEmpty) {
       return _readBinaryFile(binFilePath, chunkSize);
+    } else if (binFilePath != null && binFilePath.isNotEmpty) {
+      return _readLocalFile(binFilePath, chunkSize);
     } else {
       return Future.value([]);
     }
@@ -197,16 +211,7 @@ class Esp32OtaPackage implements OtaPackage {
   // Open file, read bytes, and split into chunks
   Future<List<Uint8List>> _openFileAndGetFirmwareData(PlatformFile file, int chunkSize) async {
     final bytes = await File(file.path!).readAsBytes();
-    List<Uint8List> firmwareData = [];
-
-    for (int i = 0; i < bytes.length; i += chunkSize) {
-      int end = i + chunkSize;
-      if (end > bytes.length) {
-        end = bytes.length;
-      }
-      firmwareData.add(Uint8List.fromList(bytes.sublist(i, end)));
-    }
-    return firmwareData;
+    return _splitIntoChunks(bytes, chunkSize);
   }
 
   // Fetch firmware chunks from a URL
@@ -217,16 +222,7 @@ class Esp32OtaPackage implements OtaPackage {
       // Check if the HTTP request was successful (status code 200)
       if (response.statusCode == 200) {
         final List<int> bytes = response.bodyBytes;
-        List<Uint8List> chunks = [];
-        for (int i = 0; i < bytes.length; i += chunkSize) {
-          int end = i + chunkSize;
-          if (end > bytes.length) {
-            end = bytes.length;
-          }
-          Uint8List chunk = Uint8List.fromList(bytes.sublist(i, end));
-          chunks.add(chunk);
-        }
-        return chunks;
+        return _splitIntoChunks(bytes, chunkSize);
       } else {
         // Handle HTTP error (e.g., status code is not 200)
         throw 'HTTP Error: ${response.statusCode} - ${response.reasonPhrase}';

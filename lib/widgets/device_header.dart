@@ -5,15 +5,15 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 import '../utils/bledata.dart';
+import '../utils/presets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../utils/constants.dart';
 
 class DeviceHeader extends StatefulWidget {
   final BluetoothDevice device;
@@ -28,19 +28,29 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   Timer rssiTimer = Timer.periodic(Duration(seconds: 30), (rssiTimer) {});
   late BLEData bleData;
+  bool _isRefreshing = false;
+  String _fwVersion = "";
+
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
 
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
-      if (this.widget.device.isConnected) {
+      if (state == BluetoothConnectionState.connected) {
+        // When device connects/reconnects, update RSSI and refresh services
         this.bleData.rssi.value = await this.widget.device.readRssi();
+        await this.bleData.setupConnection(this.widget.device);
+        _fwVersion = this.bleData.firmwareVersion;
+        if (!_isRefreshing) {
+          await _refreshDeviceInfo();
+        }
       } else {
         print("*********Detected Disconnect**************");
         this.bleData.rssi.value = 0;
         await this.widget.device.connectAndUpdateStream();
         await this.bleData.setupConnection(this.widget.device);
+        _fwVersion = this.bleData.firmwareVersion;
       }
       if (mounted) {
         setState(() {});
@@ -49,11 +59,35 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     _startRssiTimer();
   }
 
+  Future<void> _refreshDeviceInfo() async {
+    if (_isRefreshing) return;
+
+    try {
+      _isRefreshing = true;
+
+      // Wait a bit for the device to stabilize after connection
+      await Future.delayed(Duration(seconds: 1));
+
+      // Discover services to get new firmware version
+      this.bleData.services = await this.widget.device.discoverServices();
+      bleData.requestSetting(this.widget.device, fwVname);
+
+      if (mounted) {
+        setState(() {
+          _fwVersion = this.bleData.firmwareVersion;
+        });
+      }
+    } catch (e) {
+      print('Error refreshing device info: $e');
+    } finally {
+      _isRefreshing = false;
+    }
+  }
+
   @override
   void dispose() {
     _connectionStateSubscription?.cancel();
     rssiTimer.cancel();
-
     super.dispose();
   }
 
@@ -71,18 +105,17 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     if (this.widget.device.isConnected) {
       try {
         this.bleData.rssi.value = await this.widget.device.readRssi();
+        bleData.requestSetting(this.widget.device, fwVname);
         if (mounted) {
-          setState(() {});
+          setState(() {
+            _fwVersion = this.bleData.firmwareVersion;
+          });
         }
       } catch (e) {
         this.bleData.rssi.value = 0;
       }
     } else {
       this.bleData.rssi.value = 0;
-      try {
-        // this.widget.device.connectAndUpdateStream();
-        // this.bleData.setupConnection(this.widget.device);
-      } catch (e) {}
     }
   }
 
@@ -120,9 +153,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       });
     }
     try {
-      this.bleData.services = await this.widget.device.discoverServices();
-      //await _findChar();
-      await this.bleData.updateCustomCharacter(this.widget.device);
+      await _refreshDeviceInfo();
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
@@ -134,33 +165,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     }
   }
 
-  Future onSaveSettingsPressed() async {
-    try {
-      await this.bleData.saveAllSettings(this.widget.device);
-      Snackbar.show(ABC.c, "Settings Saved", success: true);
-    } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Save Settings Failed ", e), success: false);
-    }
-  }
-
-  Future onSaveLocalPressed() async {
-    try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      prefs.setString('user', jsonEncode(this.bleData.customCharacteristic));
-      Snackbar.show(ABC.c, "Settings Saved", success: true);
-    } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Save Local Failed ", e), success: false);
-    }
-  }
-
-  Future onLoadLocalPressed() async {
-    try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      this.bleData.customCharacteristic = jsonDecode(prefs.getString('user')!);
-      Snackbar.show(ABC.c, "Settings Loaded", success: true);
-    } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Load local failed. Do you have a backup?", e), success: false);
-    }
+  Future onPresetsPressed() async {
+    await PresetManager.showPresetsMenu(context, bleData, widget.device);
   }
 
   Future onRebootPressed() async {
@@ -193,29 +199,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     }
   }
 
-  Future discoverServices() async {
-    if (mounted) {
-      setState(() {
-        this.bleData.isReadingOrWriting.value = true;
-      });
-    }
-    if (this.widget.device.isConnected) {
-      try {
-        this.bleData.services = await this.widget.device.discoverServices();
-        //_findChar();
-        await this.bleData.updateCustomCharacter(this.widget.device);
-        Snackbar.show(ABC.c, "Discover Services: Success", success: true);
-      } catch (e) {
-        Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
-      }
-    }
-    if (mounted) {
-      setState(() {
-        this.bleData.isReadingOrWriting.value = false;
-      });
-    }
-  }
-
   Widget buildSpinner(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(14.0),
@@ -238,23 +221,23 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
     if (this.widget.device.isConnected) {
       if (rssi >= -60) {
-        iconData = Icons.signal_cellular_4_bar_sharp; // Assume this is full signal strength
+        iconData = Icons.signal_cellular_4_bar_sharp;
         iconColor = Colors.green;
       } else if (rssi >= -70) {
-        iconData = Icons.signal_cellular_alt_sharp; // Assume this is 4 bars
+        iconData = Icons.signal_cellular_alt_sharp;
         iconColor = Colors.lightGreenAccent;
       } else if (rssi >= -80) {
-        iconData = Icons.signal_cellular_alt_2_bar_sharp; // Assume this is 3 bars
+        iconData = Icons.signal_cellular_alt_2_bar_sharp;
         iconColor = Colors.yellow;
       } else if (rssi >= -90) {
-        iconData = Icons.signal_cellular_alt_1_bar_sharp; // Assume this is 2 bars
+        iconData = Icons.signal_cellular_alt_1_bar_sharp;
         iconColor = Colors.orange;
       } else {
-        iconData = Icons.signal_cellular_0_bar_sharp; // Assume this is 1 bar
+        iconData = Icons.signal_cellular_0_bar_sharp;
         iconColor = Colors.red;
       }
     } else {
-      iconData = Icons.signal_cellular_off_sharp; // Assume this is 1 bar
+      iconData = Icons.signal_cellular_off_sharp;
       iconColor = Colors.red;
     }
 
@@ -269,10 +252,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       ListTile(
         leading: rssiIcon,
         title: Text('Device: ${this.widget.device.platformName} (${this.widget.device.remoteId})'),
-        subtitle: Text('Version: ${this.bleData.firmwareVersion}'),
-        trailing:
-            // Expand/Collapse Icon
-            Icon(
+        subtitle: Text('Version: ${_fwVersion}'),
+        trailing: Icon(
           _isExpanded ? Icons.expand_less : Icons.expand_more,
           size: 40,
           color: Theme.of(context).primaryColor,
@@ -287,9 +268,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
           _buildActionButton('Reboot SS2k', FontAwesomeIcons.arrowRotateRight, onRebootPressed),
           _buildActionButton('Set Defaults', FontAwesomeIcons.arrowRotateLeft, onResetPressed),
           _buildActionButton('Clear Powertable', FontAwesomeIcons.xmark, onResetPowerTablePressed),
-          _buildActionButton('Save To SS2k', FontAwesomeIcons.floppyDisk, onSaveSettingsPressed),
-          _buildActionButton('Backup Settings', FontAwesomeIcons.solidFloppyDisk, onSaveLocalPressed),
-          _buildActionButton('Load Backup', FontAwesomeIcons.upload, onLoadLocalPressed),
+          _buildActionButton('Presets', FontAwesomeIcons.sliders, onPresetsPressed),
         ]),
         crossFadeState: _isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
         duration: Duration(milliseconds: 500),

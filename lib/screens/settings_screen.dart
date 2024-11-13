@@ -23,9 +23,10 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>{
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   late BLEData bleData;
+   bool _refreshBlocker = true;
 
   @override
   void initState() {
@@ -45,6 +46,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           });
         }
       });
+    } else {
+  
     }
 
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
@@ -63,8 +66,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     this.bleData.isReadingOrWriting.removeListener(_rwListner);
     super.dispose();
   }
-
-  bool _refreshBlocker = true;
 
   void _rwListner() async {
     if (_refreshBlocker) {
