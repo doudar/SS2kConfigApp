@@ -33,10 +33,16 @@ dependencies:
   provider: ^6.1.1
   path_provider: ^2.1.5
   xml: ^6.5.0
-  file_picker: ^8.1.4
+  # file_picker: ^8.1.7  Doesn't work on Android >14
+  # add https://github.com/cypherstack/flutter_file_picker.git:
+    # branch: master
+  file_picker:
+    git:
+      url: https://github.com/cypherstack/flutter_file_picker.git
+      ref: master
   audioplayers: ^6.1.0
   just_audio: ^0.9.36
-  share_plus: ^10.1.2
+  share_plus: ^10.0.0
   fit_tool: ^1.0.5
   gpx: ^2.2.1
   flutter_tts: ^4.2.0
