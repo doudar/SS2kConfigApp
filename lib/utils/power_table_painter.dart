@@ -8,6 +8,7 @@ class PowerTablePainter extends CustomPainter {
   final List<int> cadences;
   final List<Color> colors;
   final double maxResistance;
+  final double minResistance;
   final double? homingMin;
   final double? homingMax;
   final double currentWatts;
@@ -20,6 +21,7 @@ class PowerTablePainter extends CustomPainter {
     required this.cadences,
     required this.colors,
     required this.maxResistance,
+    required this.minResistance,
     this.homingMin,
     this.homingMax,
     required this.currentWatts,
@@ -65,8 +67,8 @@ class PowerTablePainter extends CustomPainter {
       textAlign: TextAlign.right,
     );
 
-    // Determine min and max resistance values
-    double minRes = 0;  // Always start at 0
+    // Use the calculated min resistance value
+    double minRes = minResistance;
     double maxRes = max(
       MIN_RESISTANCE_RANGE,
       homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE)
@@ -134,7 +136,7 @@ class PowerTablePainter extends CustomPainter {
     bool isFirstPoint = true;
     Offset? lastValidPoint;
 
-    double minRes = 0;  // Always start at 0
+    double minRes = minResistance;
     double maxRes = max(
       MIN_RESISTANCE_RANGE,
       homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE)
@@ -179,7 +181,7 @@ class PowerTablePainter extends CustomPainter {
         ..style = PaintingStyle.fill;
 
       final x = leftPadding + (position['x']! * (size.width - leftPadding) / MIN_POWER_RANGE);
-      double minRes = 0;  // Always start at 0
+      double minRes = minResistance;
       double maxRes = max(
         MIN_RESISTANCE_RANGE,
         homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE)
@@ -198,7 +200,7 @@ class PowerTablePainter extends CustomPainter {
   void _drawCurrentPosition(Canvas canvas, Size size) {
     
     final x = leftPadding + (currentWatts * (size.width - leftPadding) / MIN_POWER_RANGE);
-    double minRes = 0;  // Always start at 0
+    double minRes = minResistance;
     double maxRes = max(
       MIN_RESISTANCE_RANGE,
       homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE)

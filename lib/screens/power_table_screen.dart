@@ -30,6 +30,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
   String statusString = '';
   late AnimationController _pulseController;
   double maxResistance = 0;
+  double minResistance = 0;
   double? homingMin;
   double? homingMax;
   final GlobalKey _chartKey = GlobalKey();
@@ -78,14 +79,14 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
           requestAllCadenceLines();
         } else {
           refreshTimer.cancel();
-        return;
+          return;
         }
       }
     });
 
     // Request target position every second
     Timer _targetTimer = Timer.periodic(const Duration(seconds: 1), (_targetTimer) {
-      if(this.bleData.isUserDisconnect) {
+      if (this.bleData.isUserDisconnect) {
         _targetTimer.cancel();
       }
       if (mounted && this.widget.device.isConnected) {
@@ -235,6 +236,23 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
     return maxRes;
   }
 
+  // Calculate min resistance from plotted data (excluding points above 1000w)
+  double calculateMinResistance() {
+    double minRes = 0;
+    bool hasNegativeResistance = false;
+
+    for (var row in bleData.powerTableData) {
+      for (int i = 0; i < row.length && i * 30 <= 1000; i++) {
+        if (row[i] != null && row[i]! < 0) {
+          hasNegativeResistance = true;
+          minRes = min(minRes, row[i]!.toDouble());
+        }
+      }
+    }
+
+    return hasNegativeResistance ? minRes : 0;
+  }
+
   void _updatePositionHistory(double x, double y) {
     final now = DateTime.now();
     if (now.difference(_lastPositionUpdate).inMilliseconds >= 100) {
@@ -260,6 +278,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
         cadences: cadences,
         colors: colors,
         maxResistance: maxResistance,
+        minResistance: minResistance,
         homingMin: homingMin,
         homingMax: homingMax,
         currentWatts: bleData.ftmsData.watts.toDouble(),
@@ -274,7 +293,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
   Widget build(BuildContext context) {
     // Update maxResistance whenever we rebuild
     maxResistance = calculateMaxResistance();
-
+    minResistance = calculateMinResistance();
     return Scaffold(
       appBar: SS2KAppBar(
         device: widget.device,
