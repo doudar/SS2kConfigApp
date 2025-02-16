@@ -143,42 +143,20 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
     }
   }
 
-  Color getCadenceColor(int cadence) {
-    if (cadence < 60) return Colors.red;
-    if (cadence < 80) return Colors.orange;
-    if (cadence <= 100) return Colors.green;
-    return Colors.red; // Too high cadence
-  }
-
-  Color getInterpolatedCadenceColor(int cadence) {
-    if (cadence < 60) {
-      return Colors.red;
-    } else if (cadence < 80) {
-      double t = (cadence - 60) / 20.0; // normalize to 0-1 range
-      return Color.lerp(Colors.red, Colors.orange, t)!;
-    } else if (cadence <= 100) {
-      double t = (cadence - 80) / 20.0; // normalize to 0-1 range
-      return Color.lerp(Colors.orange, Colors.green, t)!;
-    } else {
-      double t = min((cadence - 100) / 20.0, 1.0); // normalize to 0-1 range, cap at 1
-      return Color.lerp(Colors.green, Colors.red, t)!;
-    }
-  }
-
   bool _refreshBlocker = false;
 
   final List<Color> colors = [
-    Colors.red,
-    Colors.blue,
-    Colors.green,
-    Colors.orange,
     Colors.purple,
-    Colors.brown,
-    Colors.pink,
-    Colors.teal,
-    Colors.cyan,
-    Colors.lime,
     Colors.indigo,
+    Colors.blue,
+    Colors.cyan,
+    Colors.teal,
+    Colors.green,
+    Colors.lime,
+    Colors.orange,
+    Colors.red,
+    Colors.pink,
+    Colors.brown,
   ];
 
   Future rwSubscription() async {

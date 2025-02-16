@@ -29,7 +29,6 @@ class PowerTablePainter extends CustomPainter {
   });
 
   @override
-
   final leftPadding = 20.0;
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
@@ -66,17 +65,14 @@ class PowerTablePainter extends CustomPainter {
     );
 
     // Determine min and max resistance values
-    double minRes = 0;  // Always start at 0
-    double maxRes = max(
-      MIN_RESISTANCE_RANGE,
-      homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE)
-    );
+    double minRes = 0; // Always start at 0
+    double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
     double range = maxRes - minRes;
 
     // Draw horizontal resistance lines
     for (double resistance = minRes; resistance <= maxRes; resistance += range / 5) {
       final y = size.height - ((resistance - minRes) * size.height / range);
-      
+
       // Draw grid line
       canvas.drawLine(
         Offset(leftPadding, y),
@@ -102,7 +98,7 @@ class PowerTablePainter extends CustomPainter {
     // Draw vertical watts lines
     for (double watts = 0; watts <= MIN_POWER_RANGE; watts += 100) {
       final x = leftPadding + (watts * (size.width - leftPadding) / MIN_POWER_RANGE);
-      
+
       // Draw grid line
       canvas.drawLine(
         Offset(x, 0),
@@ -129,16 +125,12 @@ class PowerTablePainter extends CustomPainter {
   }
 
   void _drawPowerCurve(Canvas canvas, Size size, List<double?> data, Paint paint) {
-    
     final path = Path();
     bool isFirstPoint = true;
     Offset? lastValidPoint;
 
-    double minRes = 0;  // Always start at 0
-    double maxRes = max(
-      MIN_RESISTANCE_RANGE,
-      homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE)
-    );
+    double minRes = 0; // Always start at 0
+    double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
     double range = maxRes - minRes;
 
     for (int i = 0; i < data.length && i * 30 <= MIN_POWER_RANGE; i++) {
@@ -168,22 +160,17 @@ class PowerTablePainter extends CustomPainter {
   }
 
   void _drawPositionHistory(Canvas canvas, Size size) {
-    
-    
     for (int i = 0; i < positionHistory.length; i++) {
       final position = positionHistory[i];
       final opacity = (i + 1) / positionHistory.length;
-      
+
       final paint = Paint()
         ..color = _getCadenceColor(currentCadence).withOpacity(opacity * 0.3)
         ..style = PaintingStyle.fill;
 
       final x = leftPadding + (position['x']! * (size.width - leftPadding) / MIN_POWER_RANGE);
-      double minRes = 0;  // Always start at 0
-      double maxRes = max(
-        MIN_RESISTANCE_RANGE,
-        homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE)
-      );
+      double minRes = 0; // Always start at 0
+      double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
       double range = maxRes - minRes;
       final y = size.height - ((position['y']! - minRes) * size.height / range);
 
@@ -196,15 +183,11 @@ class PowerTablePainter extends CustomPainter {
   }
 
   void _drawCurrentPosition(Canvas canvas, Size size) {
-    
     final x = leftPadding + (currentWatts * (size.width - leftPadding) / MIN_POWER_RANGE);
-    double minRes = 0;  // Always start at 0
-    double maxRes = max(
-      MIN_RESISTANCE_RANGE,
-      homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE)
-    );
+    double minRes = 0; // Always start at 0
+    double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
     double range = maxRes - minRes;
-    final y = size.height - ((currentResistance/100 - minRes) * size.height / range);
+    final y = size.height - ((currentResistance / 100 - minRes) * size.height / range);
 
     final paint = Paint()
       ..color = _getCadenceColor(currentCadence)
@@ -217,19 +200,11 @@ class PowerTablePainter extends CustomPainter {
     );
   }
 
+// return color from <List>Color based on cadence. <60 should be lowest in the list, >105 should be highest
   Color _getCadenceColor(int cadence) {
-    if (cadence < 60) {
-      return Colors.red;
-    } else if (cadence < 80) {
-      double t = (cadence - 60) / 20.0;
-      return Color.lerp(Colors.red, Colors.orange, t)!;
-    } else if (cadence <= 100) {
-      double t = (cadence - 80) / 20.0;
-      return Color.lerp(Colors.orange, Colors.green, t)!;
-    } else {
-      double t = (cadence - 100) / 20.0;
-      return Color.lerp(Colors.green, Colors.red, t.clamp(0.0, 1.0))!;
-    }
+    if (cadence < 62) return colors[0];
+    if (cadence > 107) return colors[colors.length - 1];
+    return colors[((cadence - 60) / 5).round()];
   }
 
   @override
