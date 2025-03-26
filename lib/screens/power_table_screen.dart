@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 import 'dart:async';
-import 'dart:math';
 
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:ss2kconfigapp/utils/extra.dart';

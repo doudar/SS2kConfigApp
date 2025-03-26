@@ -74,6 +74,7 @@ final String simulateTargetWattsVname = "BLE_simulateTargetWatts";
 final String BLE_hMinVname = "BLE_homingMin";
 final String BLE_hMaxVname = "BLE_homingMax";
 final String homingSensitivityVname = "BLE_homingSensitivity";
+final String pTab4pwrVname = "BLE_pTab4pwr";
 
 // Refactored customCharacteristicFramework to directly use Dart map
 final dynamic customCharacteristicFramework = [
@@ -595,5 +596,16 @@ final dynamic customCharacteristicFramework = [
     "max": 100,
     "textDescription": "Adjust lower if homing hits the limit too hard/grinds, higher if it stops too soon.",
     "defaultData": "50"
+  },
+  {
+    "vName": pTab4pwrVname,
+    "reference": "0x2D",
+    "isSetting": true,
+    "type": "bool",
+    "humanReadableName": "Power Table for Power",
+    "min": 0,
+    "max": 1,
+    "textDescription": "Enable to use the power table for power instead of a power meter",
+    "defaultData": "false"
   }
 ];
