@@ -12,6 +12,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import './bledata.dart';
 import './snackbar.dart';
 import './power_table_sharing.dart';
+import './constants.dart';
 
 class PowerTableManager {
   static const String _powerTablesListKey = 'power_tables_list';
@@ -95,9 +96,18 @@ class PowerTableManager {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       List<String> tablesList = prefs.getStringList(_powerTablesListKey) ?? [];
 
-      // Save the power table data
+      // Get current HMax value from the device
+      String hMaxValue = bleData.getVnameValue(BLE_hMaxVname);
+      
+      // Create a data structure that includes both power table and HMax
+      Map<String, dynamic> tableData = {
+        'powerTable': bleData.powerTableData,
+        'hMax': hMaxValue != noFirmSupport ? hMaxValue : null
+      };
+      
+      // Save the power table data with HMax
       String tableKey = _powerTablePrefix + tableName;
-      await prefs.setString(tableKey, jsonEncode(bleData.powerTableData));
+      await prefs.setString(tableKey, jsonEncode(tableData));
 
       // Add to tables list if not already present
       if (!tablesList.contains(tableName)) {
@@ -112,6 +122,68 @@ class PowerTableManager {
       if (context.mounted) {
         Snackbar.show(ABC.c, prettyException("Save power table failed ", e), success: false);
       }
+    }
+  }
+
+  // Send power table data to device
+  static Future<bool> sendPowerTableToDevice(BuildContext context, BLEData bleData, BluetoothDevice device, {String? hMaxValue}) async {
+    try {
+      // Send each row of the power table separately
+      const int intMinValue = -32768; // INT16_MIN for missing values
+
+      for (int rowIndex = 0; rowIndex < bleData.powerTableData.length; rowIndex++) {
+        List<int?> row = bleData.powerTableData[rowIndex];
+        List<int> rowValue = [];
+
+        // Convert each entry in the row to its little-endian byte representation
+        for (int? entry in row) {
+          int valueToConvert = entry ?? intMinValue;
+          final bytes = Uint8List(2)..buffer.asByteData().setInt16(0, valueToConvert, Endian.little);
+          rowValue.addAll(bytes);
+        }
+
+        // Combine command (0x02), reference (0x27), row index, and resistance values
+        List<int> command = [0x02, 0x27, rowIndex, ...rowValue];
+
+        try {
+          if (!device.isConnected) {
+            throw Exception("Device not connected");
+          }
+          bleData.write(device, command);
+          // Add a small delay between rows to prevent overwhelming the device
+          await Future.delayed(Duration(milliseconds: 100));
+        } catch (e) {
+          if (context.mounted) {
+            Snackbar.show(ABC.c, "Failed to send row ${rowIndex + 1}: $e", success: false);
+          }
+          return false;
+        }
+      }
+      
+      // Send HMax to the device if available
+      if (hMaxValue != null && hMaxValue != noFirmSupport) {
+        try {
+          // Find HMax in custom characteristic framework and write to device
+          for (var c in bleData.customCharacteristic) {
+            if (c["vName"] == BLE_hMaxVname) {
+              bleData.writeToSS2k(device, c, s: hMaxValue);
+              break;
+            }
+          }
+        } catch (e) {
+          if (context.mounted) {
+            Snackbar.show(ABC.c, "Failed to set HMax: $e", success: false);
+          }
+          // Continue even if HMax setting fails, as the power table itself was sent successfully
+        }
+      }
+      
+      return true;
+    } catch (e) {
+      if (context.mounted) {
+        Snackbar.show(ABC.c, prettyException("Failed to send power table", e), success: false);
+      }
+      return false;
     }
   }
 
@@ -183,45 +255,29 @@ class PowerTableManager {
         return;
       }
 
+      // Parse saved data
+      dynamic decodedData = jsonDecode(tableData);
+      String? hMaxValue;
+      List<dynamic> jsonPowerTableData;
+      
+      // Handle both old format (just array) and new format (object with powerTable and hMax)
+      if (decodedData is Map) {
+        jsonPowerTableData = decodedData['powerTable'] as List<dynamic>;
+        hMaxValue = decodedData['hMax'] as String?;
+      } else {
+        // Legacy format - just an array of power table data
+        jsonPowerTableData = decodedData as List<dynamic>;
+      }
+      
       // Load the power table data
-      List<dynamic> jsonData = jsonDecode(tableData);
       bleData.powerTableData = List<List<int?>>.from(
-        jsonData.map((row) => List<int?>.from(row.map((value) => value as int?))),
+        jsonPowerTableData.map((row) => List<int?>.from(row.map((value) => value as int?))),
       );
 
-      // Send each row of the power table separately
-      const int intMinValue = -32768; // INT16_MIN for missing values
+      // Send power table data to device
+      bool success = await sendPowerTableToDevice(context, bleData, device, hMaxValue: hMaxValue);
 
-      for (int rowIndex = 0; rowIndex < bleData.powerTableData.length; rowIndex++) {
-        List<int?> row = bleData.powerTableData[rowIndex];
-        List<int> rowValue = [];
-
-        // Convert each entry in the row to its little-endian byte representation
-        for (int? entry in row) {
-          int valueToConvert = entry ?? intMinValue;
-          final bytes = Uint8List(2)..buffer.asByteData().setInt16(0, valueToConvert, Endian.little);
-          rowValue.addAll(bytes);
-        }
-
-        // Combine command (0x02), reference (0x27), row index, and resistance values
-        List<int> command = [0x02, 0x27, rowIndex, ...rowValue];
-
-        try {
-          if (!device.isConnected) {
-            throw Exception("Device not connected");
-          }
-          bleData.write(device, command);
-          // Add a small delay between rows to prevent overwhelming the device
-          await Future.delayed(Duration(milliseconds: 100));
-        } catch (e) {
-          if (context.mounted) {
-            Snackbar.show(ABC.c, "Failed to send row ${rowIndex + 1}: $e", success: false);
-          }
-          return;
-        }
-      }
-
-      if (context.mounted) {
+      if (success && context.mounted) {
         Snackbar.show(ABC.c, "Power table loaded and sent to device", success: true);
       }
     } catch (e) {
@@ -451,7 +507,7 @@ class PowerTableManager {
         }
         break;
       case 'import':
-        await PowerTableSharing.importPowerTable(context, bleData);
+        await PowerTableSharing.importPowerTable(context, bleData, device);
         break;
     }
   }

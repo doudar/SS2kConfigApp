@@ -10,14 +10,21 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import './bledata.dart';
 import './snackbar.dart';
 import './power_table_management.dart';
+import './constants.dart';
 
 class PowerTableSharing {
   // Convert power table data to CSV format
-  static String convertToCSV(List<List<int?>> powerTableData) {
+  static String convertToCSV(List<List<int?>> powerTableData, String? hMaxValue) {
     final StringBuffer csv = StringBuffer();
+    
+    // Add metadata header for HMax (if available)
+    if (hMaxValue != null && hMaxValue != noFirmSupport) {
+      csv.write('# METADATA:HMax=${hMaxValue}\n');
+    }
     
     // Add header row with power values (0-1000W in 30W increments)
     csv.write('Cadence/Power,');
@@ -41,13 +48,30 @@ class PowerTableSharing {
     return csv.toString();
   }
 
-  // Parse CSV data back into power table format
-  static List<List<int?>> parseCSV(String csvContent) {
+  // Parse CSV data back into power table format with option for HMax
+  static Map<String, dynamic> parseCSV(String csvContent) {
     final List<String> lines = LineSplitter.split(csvContent).toList();
     final List<List<int?>> powerTableData = [];
+    String? hMaxValue;
 
-    // Skip header row
-    for (int i = 1; i < lines.length; i++) {
+    // Process lines
+    int startIndex = 0;
+    
+    // Check for metadata in the first line
+    if (lines.isNotEmpty && lines[0].startsWith('# METADATA:')) {
+      String metadataLine = lines[0];
+      startIndex = 1; // Skip metadata line
+      
+      // Parse HMax value if present
+      RegExp hmaxRegex = RegExp(r'HMax=(\d+)');
+      RegExpMatch? match = hmaxRegex.firstMatch(metadataLine);
+      if (match != null && match.groupCount >= 1) {
+        hMaxValue = match.group(1);
+      }
+    }
+
+    // Skip header row (starts after metadata if present)
+    for (int i = startIndex + 1; i < lines.length; i++) {
       if (lines[i].trim().isEmpty) continue;
       
       final List<String> values = lines[i].split(',');
@@ -62,7 +86,10 @@ class PowerTableSharing {
       powerTableData.add(row);
     }
 
-    return powerTableData;
+    return {
+      'powerTable': powerTableData,
+      'hMax': hMaxValue
+    };
   }
 
   // Export power table as .ptab file
@@ -71,8 +98,12 @@ class PowerTableSharing {
       final directory = await getApplicationDocumentsDirectory();
       final String filePath = '${directory.path}/$fileName.ptab';
       
-      // Convert power table to CSV and save to temporary file
-      final String csvContent = convertToCSV(bleData.powerTableData);
+      // Get HMax value
+      String hMaxValue = bleData.getVnameValue(BLE_hMaxVname);
+      
+      // Convert power table to CSV including HMax and save to temporary file
+      final String csvContent = convertToCSV(bleData.powerTableData,
+          hMaxValue != noFirmSupport ? hMaxValue : null);
       await File(filePath).writeAsString(csvContent);
 
       // Get the RenderBox for positioning the share dialog on macOS
@@ -116,7 +147,7 @@ class PowerTableSharing {
   }
 
   // Import power table from .ptab file
-  static Future<void> importPowerTable(BuildContext context, BLEData bleData) async {
+  static Future<void> importPowerTable(BuildContext context, BLEData bleData, [BluetoothDevice? device]) async {
     try {
       // Pick file
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -160,14 +191,36 @@ class PowerTableSharing {
       }
 
       // Parse CSV content
-      final List<List<int?>> importedData = parseCSV(csvContent);
+      final Map<String, dynamic> parsedData = parseCSV(csvContent);
+      final List<List<int?>> importedPowerTable = parsedData['powerTable'] as List<List<int?>>;
+      final String? importedHMax = parsedData['hMax'] as String?;
       
       // Update power table data
-      bleData.powerTableData = importedData;
+      bleData.powerTableData = importedPowerTable;
+      
+      // If device is provided, send the power table to the device
+      bool sentToDevice = false;
+      if (device != null) {
+        sentToDevice = await PowerTableManager.sendPowerTableToDevice(
+          context,
+          bleData,
+          device,
+          hMaxValue: importedHMax
+        );
+      }
       
       // Save imported table
       if (context.mounted) {
         await PowerTableManager.savePowerTable(context, bleData, saveName);
+        
+        // Show appropriate message based on whether the table was sent to device
+        if (sentToDevice) {
+          Snackbar.show(ABC.c, "Power table imported, saved, and sent to device", success: true);
+        } else if (device != null) {
+          Snackbar.show(ABC.c, "Power table imported and saved, but failed to send to device", success: false);
+        } else {
+          Snackbar.show(ABC.c, "Power table imported and saved", success: true);
+        }
       }
     } catch (e) {
       if (context.mounted) {
