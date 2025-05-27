@@ -14,6 +14,7 @@ class PowerTablePainter extends CustomPainter {
   final double currentResistance;
   final int currentCadence;
   final List<Map<String, double>> positionHistory;
+  final double tableDivisor;
 
   PowerTablePainter({
     required this.powerTableData,
@@ -26,6 +27,7 @@ class PowerTablePainter extends CustomPainter {
     required this.currentResistance,
     required this.currentCadence,
     required this.positionHistory,
+    required this.tableDivisor
   });
 
   @override
@@ -103,7 +105,7 @@ class PowerTablePainter extends CustomPainter {
       canvas.drawLine(
         Offset(x, 0),
         Offset(x, size.height),
-        gridPaint,
+        gridPaint,0
       );
 
       // Draw watts label (skip 0W to avoid overlap with resistance label)
@@ -187,7 +189,7 @@ class PowerTablePainter extends CustomPainter {
     double minRes = 0; // Always start at 0
     double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
     double range = maxRes - minRes;
-    final y = size.height - ((currentResistance / 100 - minRes) * size.height / range);
+    final y = size.height - ((currentResistance / tableDivisor - minRes) * size.height / range);
 
     final paint = Paint()
       ..color = _getCadenceColor(currentCadence)

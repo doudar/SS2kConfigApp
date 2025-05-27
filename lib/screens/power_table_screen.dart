@@ -77,14 +77,14 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
           requestAllCadenceLines();
         } else {
           refreshTimer.cancel();
-        return;
+          return;
         }
       }
     });
 
     // Request target position every second
     Timer _targetTimer = Timer.periodic(const Duration(seconds: 1), (_targetTimer) {
-      if(this.bleData.isUserDisconnect) {
+      if (this.bleData.isUserDisconnect) {
         _targetTimer.cancel();
       }
       if (mounted && this.widget.device.isConnected) {
@@ -123,22 +123,23 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
     if (mounted && this.widget.device.isConnected) {
       await bleData.requestSetting(this.widget.device, BLE_hMinVname);
       await bleData.requestSetting(this.widget.device, BLE_hMaxVname);
-
+      await bleData.requestSetting(this.widget.device, pTab4pwrVname);
       // Parse values from BLE data
-      for (var c in bleData.customCharacteristic) {
-        if (c["vName"] == BLE_hMinVname && c["value"] != noFirmSupport) {
-          double? value = double.tryParse(c["value"]);
-          setState(() {
-            homingMin = (value == INT32_MIN) ? null : value! / 100;
-          });
-        }
-        if (c["vName"] == BLE_hMaxVname && c["value"] != noFirmSupport) {
-          double? value = double.tryParse(c["value"]);
-          setState(() {
-            homingMax = (value == INT32_MIN) ? null : value! / 100;
-          });
-        }
+      String test = bleData.getVnameValue(BLE_hMinVname, returnNoFirmSupport: true);
+      if (test == noFirmSupport) {
+        return;
       }
+      double? value = double.tryParse(bleData.getVnameValue(BLE_hMinVname));
+      double? value2 = double.tryParse(bleData.getVnameValue(BLE_hMaxVname));
+
+      bleData.tableDivisor = (bleData.getVnameValue(pTab4pwrVname, returnNoFirmSupport: true) == noFirmSupport)
+          ? bleData.tableOldDivisor
+          : bleData.tableNewDivisor;
+
+      setState(() {
+        homingMin = (value == INT32_MIN) ? null : value! / bleData.tableDivisor;
+        homingMax = (value2 == INT32_MIN) ? null : value2! / bleData.tableDivisor;
+      });
     }
   }
 
@@ -243,6 +244,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
         currentResistance: double.tryParse(bleData.getVnameValue(targetPositionVname)) ?? 0,
         currentCadence: bleData.ftmsData.cadence,
         positionHistory: _positionHistory,
+        tableDivisor: bleData.tableDivisor,
       ),
     );
   }

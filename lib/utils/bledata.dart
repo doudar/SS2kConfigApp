@@ -104,6 +104,9 @@ class BLEData {
   String simulatedFTMSmode = "";
   int FTMSmode = 0;
   bool simulateTargetWatts = false;
+  final double tableOldDivisor = 100.0;
+  final double tableNewDivisor = 10.0;
+  double tableDivisor = 100.0; // Default divisor for power table data
 
   List<List<int?>> powerTableData = List.generate(
     10,
@@ -112,12 +115,20 @@ class BLEData {
 
   var customCharacteristic = customCharacteristicFramework;
 
-  String getVnameValue(String vName) {
+
+  /// @brief
+  /// Returns the value of a custom characteristic by its vName.
+  /// If the value is not found or is [noFirmSupport] and [returnNoFirmSupport] is false, returns "0".
+  String getVnameValue(String vName, {bool returnNoFirmSupport = false}) {
     var characteristic = customCharacteristic.firstWhere(
-      (c) => c["vName"] == vName && c["value"] != noFirmSupport,
+      (c) => c["vName"] == vName,
       orElse: () => {"value": "0"},
     );
-    return characteristic["value"].toString();
+    var value = characteristic["value"].toString();
+    if (!returnNoFirmSupport && value == noFirmSupport) {
+      return "0";
+    }
+    return value;
   }
 
   setupConnection(BluetoothDevice device) async {
