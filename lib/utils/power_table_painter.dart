@@ -105,7 +105,7 @@ class PowerTablePainter extends CustomPainter {
       canvas.drawLine(
         Offset(x, 0),
         Offset(x, size.height),
-        gridPaint,0
+        gridPaint,
       );
 
       // Draw watts label (skip 0W to avoid overlap with resistance label)
