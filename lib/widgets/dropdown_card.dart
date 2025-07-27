@@ -31,8 +31,10 @@ class _DropdownCardState extends State<DropdownCard> {
   String? selectedValue;
   late BLEData bleData;
   StreamSubscription? _charSubscription;
+  FixedExtentScrollController wheelScroller = FixedExtentScrollController(initialItem: 0);
   double _wheelVisibility = 0.0;
   Timer _wheelVisibilityTimer = Timer.periodic(Duration(milliseconds: 500), (_wheelVisibilityTimer) {});
+  int _deviceCounter = 0;
 
   @override
   void initState() {
@@ -66,6 +68,7 @@ class _DropdownCardState extends State<DropdownCard> {
   }
 
   void buildDevicesMap() {
+    _deviceCounter = ddItems.length;
     late List _items;
     ddItems = [this.widget.c["value"]];
     this
@@ -101,6 +104,10 @@ class _DropdownCardState extends State<DropdownCard> {
     }
     //remove duplicates:
     ddItems = ddItems.toSet().toList(); // Remove duplicates
+    if(ddItems.length != _deviceCounter) {
+      // If the length has changed, update the wheel scroller
+      wheelScroller.jumpToItem(ddItems.length);
+    } 
   }
 
   Future _changeBLEDevice(BuildContext context) async {
@@ -146,31 +153,45 @@ class _DropdownCardState extends State<DropdownCard> {
                   opacity: _wheelVisibility,
                   duration: const Duration(seconds: 1),
                   child: ListWheelScrollView.useDelegate(
-                    itemExtent: 40,
-                    diameterRatio: 1.5,
-                    perspective: 0.003,
+                    itemExtent: 50,
+                    diameterRatio: 2.5,
+                    perspective: 0.005,
+                    clipBehavior: Clip.none,
+                    renderChildrenOutsideViewport: true,
                     physics: FixedExtentScrollPhysics(),
-                    controller: FixedExtentScrollController(initialItem: ddItems.length),
+                    controller: wheelScroller,
                     childDelegate: ListWheelChildBuilderDelegate(
                       childCount: ddItems.length,
                       builder: (BuildContext context, int index) {
                         return SizedBox(
                           width: MediaQuery.of(context).size.width * 0.65,
-                          child: ListTile(
-                            enableFeedback: true,
-                            shape: RoundedRectangleBorder(
-                              //side: BorderSide(color: Colors.black, width: 2),
-                              borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Theme.of(context).dividerColor.withOpacity(0.3),
+                                width: 1,
+                              ),
                             ),
-                            title: Text(
-                              ddItems[index],
-                              textAlign: TextAlign.center,
+                            child: ListTile(
+                              enableFeedback: true,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              title: Text(
+                                ddItems[index],
+                                textAlign: TextAlign.center,
+                                textScaler: TextScaler.linear(1.1),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              titleAlignment: ListTileTitleAlignment.center,
+                              onTap: () {
+                                selectedValue = ddItems[index];
+                                _changeBLEDevice(context);
+                              },
                             ),
-                            titleAlignment: ListTileTitleAlignment.top,
-                            onTap: () {
-                              selectedValue = ddItems[index];
-                              _changeBLEDevice(context);
-                            },
                           ),
                         );
                       },
