@@ -53,7 +53,8 @@ jobs:
           echo "Version written to assets/version.txt: $version_tag"
 
       # Commit and push firmware.bin and version.txt to the repository
-      - name: Commit and push updated firmware and version
+
+      - name: Commit, push, and open PR for updated firmware and version
         if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,7 +70,23 @@ jobs:
             exit 0
           fi
           git commit -m "chore: update firmware.bin and version.txt from latest SmartSpin2k release"
-          git push origin HEAD:${{ github.ref_name }}
+          # Try to push to the current branch (will fail if protected)
+          if git push origin HEAD:${{ github.ref_name }}; then
+            echo "Pushed directly to ${{ github.ref_name }}."
+            exit 0
+          fi
+          # If push fails, create a new branch and open a PR
+          update_branch="auto/firmware-update-$(date +%Y%m%d%H%M%S)"
+          git checkout -b "$update_branch"
+          git push origin "$update_branch"
+          echo "Creating pull request to ${{ github.ref_name }}..."
+          # Install GitHub CLI if not present
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "Installing GitHub CLI..."
+            sudo apt-get update && sudo apt-get install -y gh
+          fi
+          gh auth login --with-token < <(echo "$GITHUB_TOKEN")
+          gh pr create --base "${{ github.ref_name }}" --head "$update_branch" --title "chore: update firmware.bin and version.txt from latest SmartSpin2k release" --body "Automated update of firmware.bin and version.txt from the latest SmartSpin2k release."
       
       - name: Extract version from pubspec.yaml
         id: extract_version
