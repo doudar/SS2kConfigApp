@@ -186,6 +186,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
     }
     if (mounted) {
       setState(() {});
+      maxResistance = calculateMaxResistance();
     }
     _refreshBlocker = false;
   }
@@ -200,11 +201,11 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
   final List<int> watts = List.generate((1000 ~/ 30) + 1, (index) => index * 30);
   final List<int> cadences = [60, 65, 70, 75, 80, 85, 90, 95, 100, 105];
 
-  // Calculate max resistance from plotted data (excluding points above 1000w)
+  // Calculate max resistance from plotted data
   double calculateMaxResistance() {
     double maxRes = 0;
     for (var row in bleData.powerTableData) {
-      for (int i = 0; i < row.length && i * 30 <= 1000; i++) {
+      for (int i = 0; i < row.length; i++) {
         if (row[i] != null && row[i]! > maxRes) {
           maxRes = row[i]!.toDouble();
         }
