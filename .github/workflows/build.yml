@@ -85,7 +85,7 @@ jobs:
             echo "Installing GitHub CLI..."
             sudo apt-get update && sudo apt-get install -y gh
           fi
-          gh auth login --with-token < <(echo "$GITHUB_TOKEN")
+          # Use GH_TOKEN for authentication (no gh auth login needed in CI)
           gh pr create --base "${{ github.ref_name }}" --head "$update_branch" --title "chore: update firmware.bin and version.txt from latest SmartSpin2k release" --body "Automated update of firmware.bin and version.txt from the latest SmartSpin2k release."
       
       - name: Extract version from pubspec.yaml
