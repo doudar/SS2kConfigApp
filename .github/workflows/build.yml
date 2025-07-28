@@ -43,6 +43,33 @@ jobs:
           fi
           mv /tmp/firmware_extracted/firmware.bin assets/firmware.bin
           echo "Firmware placed at assets/firmware.bin"
+          # Extract version tag and write to assets/version.txt
+          version_tag=$(echo "$release_json" | grep '"tag_name"' | head -n1 | cut -d '"' -f4)
+          if [ -z "$version_tag" ]; then
+            echo "No version tag found in release!" >&2
+            exit 1
+          fi
+          echo "$version_tag" > assets/version.txt
+          echo "Version written to assets/version.txt: $version_tag"
+
+      # Commit and push firmware.bin and version.txt to the repository
+      - name: Commit and push updated firmware and version
+        if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin
+          git checkout ${{ github.ref_name }}
+          git add assets/firmware.bin assets/version.txt
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: update firmware.bin and version.txt from latest SmartSpin2k release"
+          git push origin HEAD:${{ github.ref_name }}
       
       - name: Extract version from pubspec.yaml
         id: extract_version
