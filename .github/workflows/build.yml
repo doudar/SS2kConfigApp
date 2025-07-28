@@ -17,6 +17,32 @@ jobs:
       version: ${{ steps.set_version.outputs.version }}
     steps:
       - uses: actions/checkout@v2
+
+      # Download and extract latest SmartSpin2k firmware.bin from GitHub release
+      - name: Download and extract latest SmartSpin2k firmware
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          mkdir -p assets
+          # Get latest release info
+          release_json=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/doudar/SmartSpin2k/releases/latest)
+          # Find .bin.zip asset URL
+          asset_url=$(echo "$release_json" | grep 'browser_download_url' | grep '.bin.zip' | head -n1 | cut -d '"' -f4)
+          if [ -z "$asset_url" ]; then
+            echo "No .bin.zip asset found in latest release!" >&2
+            exit 1
+          fi
+          echo "Downloading: $asset_url"
+          curl -L -o /tmp/firmware.zip "$asset_url"
+          unzip -o /tmp/firmware.zip -d /tmp/firmware_extracted
+          if [ ! -f /tmp/firmware_extracted/firmware.bin ]; then
+            echo "firmware.bin not found in zip!" >&2
+            exit 1
+          fi
+          mv /tmp/firmware_extracted/firmware.bin assets/firmware.bin
+          echo "Firmware placed at assets/firmware.bin"
       
       - name: Extract version from pubspec.yaml
         id: extract_version
