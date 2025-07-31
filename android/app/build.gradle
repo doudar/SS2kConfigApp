@@ -43,7 +43,7 @@ android {
     defaultConfig {
         applicationId "com.smartspin2k.app"
         minSdk 21
-        targetSdk 34
+        targetSdk 35
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
         versionCode flutterVersionCode.toInteger()
