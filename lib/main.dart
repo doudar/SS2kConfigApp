@@ -14,6 +14,7 @@ import 'package:app_links/app_links.dart';
 import 'package:provider/provider.dart';
 
 import 'services/strava_service.dart';
+import 'services/intervals_service.dart';
 import 'screens/bluetooth_off_screen.dart';
 import 'screens/scan_screen.dart';
 import 'utils/theme_provider.dart';
@@ -156,6 +157,77 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
             _scaffoldKey.currentState?.showSnackBar(
               const SnackBar(
                 content: Text('Failed to connect to Strava'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        });
+      }
+    }
+    
+    // Handle Intervals.icu OAuth callback
+    if (uri.scheme == 'smartspin2k' && uri.host == 'intervals_redirect') {
+      final code = uri.queryParameters['code'];
+      final error = uri.queryParameters['error'];
+      
+      if (error != null) {
+        debugPrint('Intervals.icu auth error: $error');
+        _scaffoldKey.currentState?.showSnackBar(
+          SnackBar(
+            content: Text('Intervals.icu authentication error: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      if (code != null) {
+        debugPrint('Received Intervals.icu auth code: $code');
+        
+        // Show loading dialog
+        showDialog(
+          context: _navigatorKey.currentContext!,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Connecting to Intervals.icu...'),
+              ],
+            ),
+          ),
+        );
+
+        IntervalsService.handleAuthCallback(code).then((success) {
+          debugPrint('Intervals.icu auth callback result: $success');
+          
+          // Close loading dialog
+          Navigator.of(_navigatorKey.currentContext!).pop();
+          
+          if (success && mounted) {
+            _scaffoldKey.currentState?.showSnackBar(
+              const SnackBar(
+                content: Text('Successfully connected to Intervals.icu'),
+                backgroundColor: Color(0xFF1B4F72),
+                duration: Duration(seconds: 3),
+              ),
+            );
+
+            // Ensure we're showing the main screen when returning from auth
+            while (_navigatorKey.currentState?.canPop() ?? false) {
+              _navigatorKey.currentState?.pop();
+            }
+            // Rebuild the screen to ensure proper state
+            if (mounted) {
+              setState(() {});
+            }
+          } else if (mounted) {
+            _scaffoldKey.currentState?.showSnackBar(
+              const SnackBar(
+                content: Text('Failed to connect to Intervals.icu'),
                 backgroundColor: Colors.red,
                 duration: Duration(seconds: 3),
               ),

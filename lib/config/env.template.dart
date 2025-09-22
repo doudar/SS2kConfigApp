@@ -22,6 +22,13 @@ class Environment {
   static const String stravaClientId = 'your_strava_client_id_here';
   static const String stravaClientSecret = 'your_strava_client_secret_here';
   
+  // Intervals.icu API credentials
+  static const String intervalsClientId = 'your_intervals_client_id_here';
+  static const String intervalsClientSecret = 'your_intervals_client_secret_here';
+  
   static bool get hasStravaConfig => 
     stravaClientId.isNotEmpty && stravaClientSecret.isNotEmpty;
+    
+  static bool get hasIntervalsConfig => 
+    intervalsClientId.isNotEmpty && intervalsClientSecret.isNotEmpty;
 }

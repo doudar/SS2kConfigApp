@@ -14,6 +14,7 @@ import '../utils/workout/gpx_file_exporter.dart';
 import '../utils/workout/workout_file_manager.dart';
 import '../utils/workout/workout_tts_settings.dart';
 import '../utils/workout/workout_connected_accounts.dart';
+import '../services/intervals_service.dart';
 import '../utils/bledata.dart';
 import '../widgets/workout_library.dart';
 import '../widgets/audio_coach_dialog.dart';
@@ -170,6 +171,91 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error loading default workout: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadTodaysWorkoutFromIntervals() async {
+    try {
+      // Check if Intervals.icu is connected
+      if (!await IntervalsService.isAuthenticated()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please connect to Intervals.icu first in Connected Accounts'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Loading today\'s workout from Intervals.icu...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Fetch today's workout
+      final todaysWorkout = await IntervalsService.getTodaysWorkout();
+      
+      if (todaysWorkout == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No planned workout found for today on Intervals.icu'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Extract the workout XML content
+      final workoutDoc = todaysWorkout['workout_doc'];
+      if (workoutDoc == null || workoutDoc['workout_file'] == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Today\'s workout does not contain structured data'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Load the workout
+      final workoutContent = workoutDoc['workout_file'] as String;
+      _workoutController.loadWorkout(workoutContent);
+      _currentWorkoutContent = workoutContent;
+      
+      // Update workout name
+      final workoutName = todaysWorkout['name'] ?? 'Today\'s Workout';
+      setState(() {
+        _workoutName = workoutName;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Successfully loaded: $workoutName'),
+            backgroundColor: const Color(0xFF1B4F72),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading today\'s workout: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -520,6 +606,9 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                     },
                   );
                   break;
+                case 'intervals_today':
+                  _loadTodaysWorkoutFromIntervals();
+                  break;
                 case 'select':
                   _showWorkoutLibrary(selectionMode: true);
                   break;
@@ -551,6 +640,16 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                     Icon(Icons.file_upload),
                     SizedBox(width: 8),
                     Text('Import ZWO'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'intervals_today',
+                child: Row(
+                  children: [
+                    Icon(Icons.calendar_today),
+                    SizedBox(width: 8),
+                    Text('Today\'s Workout (Intervals.icu)'),
                   ],
                 ),
               ),
