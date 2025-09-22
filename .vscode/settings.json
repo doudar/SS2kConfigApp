@@ -1,5 +1,6 @@
 {
     "dart.lineLength": 120,
     "java.configuration.updateBuildConfiguration": "interactive",
-    "cmake.configureOnOpen": false
+    "cmake.configureOnOpen": false,
+    "java.compile.nullAnalysis.mode": "automatic"
 }
