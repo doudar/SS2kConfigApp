@@ -92,7 +92,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       key["value"] = key["defaultData"] ?? "Default Value";
     });
     this.bleData.charReceived.value = true;
-    this.bleData.firmwareVersion = "24.1.3";
+    this.bleData.firmwareVersion.value = "24.1.3";
     this.bleData.configAppCompatibleFirmware = true;
   }
 

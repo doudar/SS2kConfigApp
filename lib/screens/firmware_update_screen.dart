@@ -74,17 +74,17 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       this.bleData.charReceived.addListener(_charListener);
     }
     _loadingTimer = Timer.periodic(Duration(microseconds: 100), (_fwCheck) {
-      if (this.bleData.firmwareVersion == "") {
+      if (this.bleData.firmwareVersion.value == "") {
         return;
       } else {
         _loaded = true;
         setState(() {
           _builtinVersionColor =
-              _isNewerVersion(_builtinFirmwareVersion, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
+              _isNewerVersion(_builtinFirmwareVersion, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
           _githubVersionColor =
-              _isNewerVersion(_githubFirmwareVersion, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
+              _isNewerVersion(_githubFirmwareVersion, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
           _betaVersionColor =
-              _isNewerVersion(_betaFirmwareVersion, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
+              _isNewerVersion(_betaFirmwareVersion, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
         });
         _fwCheck.cancel();
       }
@@ -212,9 +212,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     setState(() {
       _builtinFirmwareVersion = builtinVersion.trim();
       _builtinVersionColor =
-          _isNewerVersion(_builtinFirmwareVersion, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
+          _isNewerVersion(_builtinFirmwareVersion, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
       _builtinVersionColor =
-          (this.bleData.firmwareVersion == "") ? Color.fromARGB(255, 242, 0, 255) : _builtinVersionColor;
+          (this.bleData.firmwareVersion.value == "") ? Color.fromARGB(255, 242, 0, 255) : _builtinVersionColor;
     });
   }
 
@@ -224,9 +224,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       final githubVersion = response.body.trim();
       setState(() {
         _githubFirmwareVersion = githubVersion;
-        _githubVersionColor = _isNewerVersion(githubVersion, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
+        _githubVersionColor = _isNewerVersion(githubVersion, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
         _githubVersionColor =
-            (this.bleData.firmwareVersion == "") ? Color.fromARGB(255, 242, 0, 255) : _githubVersionColor;
+            (this.bleData.firmwareVersion.value == "") ? Color.fromARGB(255, 242, 0, 255) : _githubVersionColor;
       });
     }
   }
@@ -248,9 +248,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
         setState(() {
           _betaFirmwareVersion = tagName;
-          _betaVersionColor = _isNewerVersion(tagName, this.bleData.firmwareVersion) ? Colors.green : Colors.red;
+          _betaVersionColor = _isNewerVersion(tagName, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
           _betaVersionColor =
-              (this.bleData.firmwareVersion == "") ? Color.fromARGB(255, 242, 0, 255) : _betaVersionColor;
+              (this.bleData.firmwareVersion.value == "") ? Color.fromARGB(255, 242, 0, 255) : _betaVersionColor;
         });
       }
     } catch (e) {
