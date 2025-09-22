@@ -32,11 +32,25 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   late BLEData bleData;
   bool _isRefreshing = false;
   String _fwVersion = "";
+  VoidCallback? _firmwareVersionListener;
 
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+
+    // Listen for firmware version changes to automatically update the UI
+    _firmwareVersionListener = () {
+      if (mounted) {
+        setState(() {
+          _fwVersion = bleData.firmwareVersion.value;
+        });
+      }
+    };
+    bleData.firmwareVersion.addListener(_firmwareVersionListener!);
+
+    // Initialize firmware version
+    _fwVersion = bleData.firmwareVersion.value;
 
     // Only create subscription if it doesn't exist
     _connectionStateSubscription ??= this.widget.device.connectionState.listen((state) async {
@@ -44,7 +58,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         // When device connects/reconnects, update RSSI and refresh services
         this.bleData.rssi.value = await this.widget.device.readRssi();
         await this.bleData.setupConnection(this.widget.device);
-        _fwVersion = this.bleData.firmwareVersion;
         if (!_isRefreshing) {
           await _refreshDeviceInfo();
         }
@@ -53,7 +66,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         this.bleData.rssi.value = 0;
         await this.widget.device.connectAndUpdateStream();
         await this.bleData.setupConnection(this.widget.device);
-        _fwVersion = this.bleData.firmwareVersion;
       }
       if (mounted) {
         setState(() {});
@@ -75,11 +87,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       this.bleData.services = await this.widget.device.discoverServices();
       bleData.requestSetting(this.widget.device, fwVname);
 
-      if (mounted) {
-        setState(() {
-          _fwVersion = this.bleData.firmwareVersion;
-        });
-      }
+      // No need for manual setState here anymore - the listener will handle it
     } catch (e) {
       print('Error refreshing device info: $e');
     } finally {
@@ -92,6 +100,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     _connectionStateSubscription?.cancel();
     _connectionStateSubscription = null;
     rssiTimer.cancel();
+    setupTimer.cancel();
+    if (_firmwareVersionListener != null) {
+      bleData.firmwareVersion.removeListener(_firmwareVersionListener!);
+    }
     super.dispose();
   }
 
@@ -117,11 +129,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       try {
         this.bleData.rssi.value = await this.widget.device.readRssi();
         bleData.requestSetting(this.widget.device, fwVname);
-        if (mounted) {
-          setState(() {
-            _fwVersion = this.bleData.firmwareVersion;
-          });
-        }
+        // No need for manual setState here anymore - the listener will handle firmware version updates
       } catch (e) {
         this.bleData.rssi.value = 0;
       }
