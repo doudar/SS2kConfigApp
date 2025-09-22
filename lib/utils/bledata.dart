@@ -99,7 +99,7 @@ class BLEData {
   bool isDisconnecting = false;
   bool configAppCompatibleFirmware = false;
   bool isUpdatingFirmware = false;
-  String firmwareVersion = "";
+  ValueNotifier<String> firmwareVersion = ValueNotifier("");
   String simulatedTargetWatts = "";
   String simulatedFTMSmode = "";
   int FTMSmode = 0;
@@ -716,8 +716,8 @@ class BLEData {
                   }
                   //Set the firmware version
                   if (c["vName"] == fwVname) {
-                    this.firmwareVersion = c["value"];
-                    print("FW Version Was Updated!! ${c['value']} ${this.firmwareVersion}");
+                    this.firmwareVersion.value = c["value"];
+                    print("FW Version Was Updated!! ${c['value']} ${this.firmwareVersion.value}");
                   }
                   break;
                 }
