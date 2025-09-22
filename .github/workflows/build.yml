@@ -127,9 +127,10 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v1
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.3'
+          channel: stable
+          flutter-version: '3.24.3'
 
       - name: Create env.local.dart
         env:
@@ -172,9 +173,10 @@ jobs:
       - uses: actions/checkout@v2
       
       - name: Setup Flutter
-        uses: subosito/flutter-action@v1
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.3'
+          channel: stable
+          flutter-version: '3.24.3'
 
       # Debug environment variables
       - name: Debug Environment Variables
@@ -241,9 +243,10 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v1
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.3'
+          channel: stable
+          flutter-version: '3.24.3'
 
       - name: Create env.local.dart
         env:
