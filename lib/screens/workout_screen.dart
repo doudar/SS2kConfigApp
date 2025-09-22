@@ -15,6 +15,7 @@ import '../utils/workout/workout_file_manager.dart';
 import '../utils/workout/workout_tts_settings.dart';
 import '../utils/workout/workout_connected_accounts.dart';
 import '../services/intervals_service.dart';
+import '../services/intervals_workout_converter.dart';
 import '../utils/bledata.dart';
 import '../widgets/workout_library.dart';
 import '../widgets/audio_coach_dialog.dart';
@@ -220,7 +221,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
 
       // Extract the workout XML content
       final workoutDoc = todaysWorkout['workout_doc'];
-      if (workoutDoc == null || workoutDoc['workout_file'] == null) {
+      if (workoutDoc == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -232,8 +233,10 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
         return;
       }
 
+      // Convert Intervals.icu workout to ZWO format
+      final workoutContent = IntervalsWorkoutConverter.convertToZwo(workoutDoc);
+      
       // Load the workout
-      final workoutContent = workoutDoc['workout_file'] as String;
       _workoutController.loadWorkout(workoutContent);
       _currentWorkoutContent = workoutContent;
       

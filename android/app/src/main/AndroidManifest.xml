@@ -71,6 +71,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="smartspin2k" android:host="redirect" />
             </intent-filter>
+            <!-- Deep Link for Intervals.icu OAuth callback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="smartspin2k" android:host="intervals_redirect" />
+            </intent-filter>
          </activity>
          <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

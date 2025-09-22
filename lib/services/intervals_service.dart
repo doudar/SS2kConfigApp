@@ -278,4 +278,18 @@ class IntervalsService {
       return [];
     }
   }
+
+  // Debug method to check authentication status and basic info
+  static Future<Map<String, dynamic>> getDebugInfo() async {
+    final tokens = await getStoredTokens();
+    final isAuth = await isAuthenticated();
+    
+    return {
+      'isAuthenticated': isAuth,
+      'hasAccessToken': tokens['accessToken'] != null,
+      'hasRefreshToken': tokens['refreshToken'] != null,
+      'hasAthleteId': tokens['athleteId'] != null,
+      'expiresAt': tokens['expiresAt'],
+    };
+  }
 }
