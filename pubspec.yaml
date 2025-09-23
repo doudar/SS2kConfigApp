@@ -29,7 +29,7 @@ dependencies:
     git:
       url: https://github.com/cypherstack/flutter_file_picker.git
       ref: master
-  audioplayers: ^6.1.0
+  audioplayers: 6.1.0  # Pin to avoid Android SDK compatibility issues
   just_audio: ^0.9.36
   share_plus: ^10.0.0
   fit_tool: ^1.0.5
