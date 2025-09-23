@@ -6,7 +6,6 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.1.4'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -21,24 +20,6 @@ allprojects {
 rootProject.buildDir = '../build'
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
-    project.ext.flutterSdkPath = rootProject.file('../flutter').absolutePath
-    
-    // Add common Android configuration for all subprojects
-    afterEvaluate { project ->
-        if (project.hasProperty("android")) {
-            android {
-                compileSdkVersion 35
-                buildToolsVersion = "34.0.0"
-            }
-        }
-    }
-    
-    // Ensure Flutter extension is available for plugins
-    project.ext.flutter = [
-        compileSdkVersion: 35,
-        targetSdkVersion: 35,
-        buildToolsVersion: "34.0.0"
-    ]
 }
 subprojects {
     project.evaluationDependsOn(':app')
