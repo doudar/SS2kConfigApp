@@ -13,13 +13,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_blue_plus: 1.34.5  # Pin to avoid Android configuration issues
+  flutter_blue_plus: ^1.34.5  # Updated to allow minor updates
   flutter_launcher_icons: ^0.14.2
   flutter_native_splash: ^2.3.9
   shared_preferences: ^2.2.0
   wakelock_plus: ^1.2.8
   http: ^1.2.0
-  font_awesome_flutter: 10.7.0  # Pin to avoid compatibility issues with newer versions
+  font_awesome_flutter: ^10.7.0  # Updated to allow minor updates  
   json_theme: ^6.5.4
   flutter_archive: ^6.0.3
   provider: ^6.1.1
@@ -29,14 +29,14 @@ dependencies:
     git:
       url: https://github.com/cypherstack/flutter_file_picker.git
       ref: master
-  audioplayers: 6.1.0  # Pin to avoid Android SDK compatibility issues
+  audioplayers: ^6.1.0  # Updated to allow minor updates
   just_audio: ^0.9.36
   share_plus: ^10.0.0
   fit_tool: ^1.0.5
   gpx: ^2.2.1
   flutter_tts: ^4.2.0
   url_launcher: ^6.2.5
-  app_links: 6.3.2     # Pin to pre-6.4 to avoid new Gradle plugin API requirement
+  app_links: ^6.3.2  # Updated to allow minor updates (AGP compatibility resolved with our changes)
   reorderables: ^0.6.0
 
 dev_dependencies:
@@ -53,5 +53,4 @@ flutter:
     - assets/appainter_theme_dark.json
     - assets/sounds/
 
-dependency_overrides:
-  app_links: 6.3.2
+

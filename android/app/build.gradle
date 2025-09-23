@@ -25,6 +25,7 @@ if (flutterVersionName == null) {
 android {
     namespace "com.example.ss2kconfigapp"
     compileSdkVersion 35  // Updated to support audioplayers_android requirements
+    buildToolsVersion "34.0.0"
     ndkVersion "26.1.10909125"
 
     compileOptions {
@@ -42,7 +43,7 @@ android {
 
     defaultConfig {
         applicationId "com.smartspin2k.app"
-        minSdk 21
+        minSdkVersion flutter.minSdkVersion
         targetSdk 35
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
