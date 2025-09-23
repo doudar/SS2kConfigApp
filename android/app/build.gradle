@@ -24,7 +24,7 @@ if (flutterVersionName == null) {
 
 android {
     namespace "com.example.ss2kconfigapp"
-    compileSdkVersion 34
+    compileSdkVersion 35  // Updated to support audioplayers_android requirements
     ndkVersion "26.1.10909125"
 
     compileOptions {
