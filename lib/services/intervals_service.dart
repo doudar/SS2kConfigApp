@@ -121,7 +121,7 @@ class IntervalsService {
       'client_id': Environment.intervalsClientId,
       'redirect_uri': _redirectUri,
       'response_type': 'code',
-      'scope': 'read write',
+      'scope': 'ACTIVITY:WRITE, LIBRARY:READ',
     });
 
     debugPrint('Launching Intervals.icu OAuth URL: ${authUrl.toString()}');
