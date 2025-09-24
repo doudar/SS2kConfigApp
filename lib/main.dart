@@ -93,6 +93,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 
   void _handleDeepLink(Uri uri) {
     debugPrint('Handling deep link: ${uri.toString()}');
+    debugPrint('URI scheme: ${uri.scheme}, host: ${uri.host}');
     
     // Handle Strava OAuth callback
     if (uri.scheme == 'smartspin2k' && (uri.host == 'redirect' || uri.host == 'localhost')) {
@@ -168,6 +169,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     
     // Handle Intervals.icu OAuth callback
     if (uri.scheme == 'smartspin2k' && uri.host == 'intervals_redirect') {
+      debugPrint('Handling Intervals.icu callback');
       final code = uri.queryParameters['code'];
       final error = uri.queryParameters['error'];
       
@@ -236,6 +238,9 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
         });
       }
     }
+    
+    // Add a catch-all debug log for any unhandled deep links
+    debugPrint('Unhandled deep link: ${uri.toString()} (scheme: ${uri.scheme}, host: ${uri.host})');
   }
 
   @override

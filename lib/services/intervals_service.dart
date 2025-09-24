@@ -121,18 +121,14 @@ class IntervalsService {
       'client_id': Environment.intervalsClientId,
       'redirect_uri': _redirectUri,
       'response_type': 'code',
-      'scope': 'ACTIVITY:WRITE, LIBRARY:READ',
+      'scope': 'read write',
     });
 
     debugPrint('Launching Intervals.icu OAuth URL: ${authUrl.toString()}');
 
     await launchUrlString(
       authUrl.toString(),
-      mode: Platform.isIOS ? LaunchMode.inAppWebView : LaunchMode.externalApplication,
-      webViewConfiguration: const WebViewConfiguration(
-        enableJavaScript: true,
-        enableDomStorage: true,
-      ),
+      mode: LaunchMode.externalApplication,
     );
   }
 
