@@ -155,11 +155,50 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     }
   }
 
+  /// Rebuilds the zoom animation tween using the current preview + playing minutes.
+  void _rebuildZoomAnimation() {
+    _zoomAnimation = Tween<double>(
+      begin: WorkoutDurations.previewMinutes,
+      end: WorkoutDurations.playingMinutes,
+    ).animate(CurvedAnimation(
+      parent: _zoomController,
+      curve: Curves.easeInOut,
+    ));
+  }
+
+  /// Update the preview (zoomed-out) minutes to match the currently loaded workout's
+  /// total duration (in minutes) and rebuild the zoom animation so the graph width
+  /// represents the whole workout. Ensures the preview window is never smaller than
+  /// the playing window.
+  void _updatePreviewDuration() {
+    double minutes = _workoutController.totalDuration / 60.0;
+    // Ensure preview is at least as large as the playing window to avoid inverted animation.
+    if (minutes < WorkoutDurations.playingMinutes) {
+      minutes = WorkoutDurations.playingMinutes;
+    }
+    WorkoutDurations.previewMinutes = minutes;
+
+    // Preserve whether we were zoomed-in/playing; typically after a load we're not playing yet.
+    final bool wasPlaying = _workoutController.isPlaying;
+    // Reset controller to start position for a new workout preview.
+    _zoomController.stop();
+    _zoomController.value = wasPlaying ? 1.0 : 0.0; // if already playing keep zoomed-in state
+    _rebuildZoomAnimation();
+    if (!wasPlaying) {
+      // Ensure we start at preview (value 0) visually.
+      _zoomController.value = 0.0;
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> _loadDefaultWorkout() async {
     try {
       final content = await rootBundle.loadString('assets/Anthonys_Mix.zwo');
       _workoutController.loadWorkout(content, isResume: false);
       _currentWorkoutContent = content;
+      _updatePreviewDuration();
       // Wait for the graph to be rendered
       await Future.delayed(const Duration(milliseconds: 100));
 
@@ -240,6 +279,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       // Load the workout
       _workoutController.loadWorkout(workoutContent);
       _currentWorkoutContent = workoutContent;
+  _updatePreviewDuration();
       
       // Update workout name
       final workoutName = todaysWorkout['name'] ?? 'Today\'s Workout';
@@ -431,6 +471,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
 
       _workoutController.loadWorkout(zwo);
       _currentWorkoutContent = zwo;
+      _updatePreviewDuration();
       setState(() {
         _workoutName = (selectedWorkout['name'] ?? 'Intervals.icu Workout').toString();
       });

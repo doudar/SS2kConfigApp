@@ -113,8 +113,10 @@ class WorkoutShadows {
 class WorkoutDurations {
   /// Interval for progress updates
   static const Duration progressUpdateInterval = Duration(milliseconds: 100);
-  ///Length of workout prieview
-  static const double previewMinutes = 40;
+  /// Length (in minutes) of the full workout shown in "preview" (zoomed-out) mode.
+  /// This value is updated dynamically to match the currently loaded workout
+  /// total duration. Default fallback is 90 minutes until a workout loads.
+  static double previewMinutes = 90.0;
   ///Length of workout playing window
   static const double playingMinutes = 10;
 }
