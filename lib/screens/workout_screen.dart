@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import '../utils/workout/workout_parser.dart';
 import '../utils/workout/workout_painter.dart';
 import '../utils/workout/workout_metrics.dart';
 import '../utils/workout/workout_constants.dart';
@@ -13,19 +12,15 @@ import '../utils/workout/sounds.dart';
 import '../utils/workout/gpx_file_exporter.dart';
 import '../utils/workout/workout_file_manager.dart';
 import '../utils/workout/workout_tts_settings.dart';
-import '../utils/workout/workout_connected_accounts.dart';
-import '../services/intervals_service.dart';
-import '../services/intervals_workout_converter.dart';
+// Intervals service & converter now only used inside WorkoutMenu
 import '../utils/bledata.dart';
-import '../widgets/workout_library.dart';
-import '../widgets/audio_coach_dialog.dart';
+// Workout library dialog now managed inside WorkoutMenu
+// Audio coach dialog now managed inside WorkoutMenu
 import '../utils/workout/workout_text_event_overlay.dart';
 import '../utils/workout/workout_controls.dart';
 import '../utils/workout/workout_summary.dart';
-import '../utils/ftmsControlPoint.dart';
-import '../widgets/completed_activities.dart';
 import '../widgets/ss2k_app_bar.dart';
-import '../widgets/intervals_menu.dart';
+import '../widgets/workout_menu.dart';
 
 class WorkoutScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -219,282 +214,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     }
   }
 
-  Future<void> _loadTodaysWorkoutFromIntervals() async {
-    try {
-      // Check if Intervals.icu is connected
-      if (!await IntervalsService.isAuthenticated()) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Please connect to Intervals.icu first in Connected Accounts'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Show loading indicator
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Loading today\'s workout from Intervals.icu...'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-
-      // Fetch today's workout
-      final todaysWorkout = await IntervalsService.getTodaysWorkout();
-      
-      if (todaysWorkout == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No planned workout found for today on Intervals.icu'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Extract the workout XML content
-      final workoutDoc = todaysWorkout['workout_doc'];
-      if (workoutDoc == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Today\'s workout does not contain structured data'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Convert Intervals.icu workout to ZWO format
-      final workoutContent = IntervalsWorkoutConverter.convertToZwo(workoutDoc);
-      
-      // Load the workout
-      _workoutController.loadWorkout(workoutContent);
-      _currentWorkoutContent = workoutContent;
-  _updatePreviewDuration();
-      
-      // Update workout name
-      final workoutName = todaysWorkout['name'] ?? 'Today\'s Workout';
-      setState(() {
-        _workoutName = workoutName;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Successfully loaded: $workoutName'),
-            backgroundColor: const Color(0xFF1B4F72),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading today\'s workout: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _pickWorkoutFromIntervals() async {
-    try {
-      if (!await IntervalsService.isAuthenticated()) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Please connect to Intervals.icu first in Connected Accounts'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Fetch top-level folders
-      final folders = await IntervalsService.getWorkoutFolders();
-      if (folders.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No Intervals.icu folders found'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      if (!mounted) return;
-
-      // Helper to present a folder's child workouts (non-folder children with workout_doc/file)
-      Future<Map<String, dynamic>?> pickWorkoutFromFolder(Map<String, dynamic> folder) async {
-        final children = (folder['children'] is List) ? List<Map<String, dynamic>>.from(
-          (folder['children'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e as Map)),
-        ) : <Map<String, dynamic>>[];
-
-        // Filter workouts (items with workout_doc or workout_file)
-        final workouts = children.where((c) => c['workout_doc'] != null || c['workout_file'] != null).toList();
-        if (workouts.isEmpty) {
-          return null;
-        }
-        return showDialog<Map<String, dynamic>>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text('Workouts • ${folder['name'] ?? 'Folder'}'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: workouts.length,
-                itemBuilder: (context, index) {
-                  final w = workouts[index];
-                  final name = (w['name'] ?? 'Workout').toString();
-                  // Build subtitle from moving_time (seconds) -> hh:mm:ss, training load and intensity
-                  String formatDuration(int seconds) {
-                    final h = seconds ~/ 3600;
-                    final m = (seconds % 3600) ~/ 60;
-                    final s = seconds % 60;
-                    String two(int v) => v.toString().padLeft(2, '0');
-                    if (h > 0) {
-                      return '${two(h)}:${two(m)}:${two(s)}';
-                    }
-                    return '${two(m)}:${two(s)}';
-                  }
-                  final movingTime = (w['moving_time'] is int) ? w['moving_time'] as int : int.tryParse('${w['moving_time'] ?? ''}') ?? 0;
-                  final load = (w['icu_training_load'] is num) ? (w['icu_training_load'] as num).toInt() : int.tryParse('${w['icu_training_load'] ?? ''}') ?? 0;
-                  final intensity = (w['icu_intensity'] is num) ? (w['icu_intensity'] as num).toDouble() : double.tryParse('${w['icu_intensity'] ?? ''}') ?? 0.0;
-                  final subtitleParts = <String>[];
-                  if (movingTime > 0) subtitleParts.add(formatDuration(movingTime));
-                  if (load > 0) subtitleParts.add('TL $load');
-                  if (intensity > 0) subtitleParts.add('IF ${intensity.toStringAsFixed(2)}');
-                  final subtitle = subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
-                  return ListTile(
-                    leading: const Icon(Icons.fitness_center),
-                    title: Text(name),
-                    subtitle: subtitle != null ? Text(subtitle) : null,
-                    onTap: () => Navigator.of(context).pop(w),
-                  );
-                },
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('CLOSE'),
-              ),
-            ],
-          ),
-        );
-      }
-
-      // Show top-level folders for selection
-      final selectedFolder = await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Intervals.icu Folders'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: folders.length,
-                itemBuilder: (context, index) {
-                  final f = folders[index];
-                  final name = (f['name'] ?? 'Folder').toString();
-                  final count = (f['children'] is List) ? (f['children'] as List).length : 0;
-                  return ListTile(
-                    leading: const Icon(Icons.folder),
-                    title: Text(name),
-                    subtitle: Text('$count items'),
-                    onTap: () => Navigator.of(context).pop(f),
-                  );
-                },
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('CANCEL'),
-              ),
-            ],
-          ),
-      );
-
-      if (selectedFolder == null) return;
-
-      final selectedWorkout = await pickWorkoutFromFolder(selectedFolder);
-      if (selectedWorkout == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No workouts in that folder'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      final workoutDoc = selectedWorkout['workout_doc'];
-      final workoutFile = selectedWorkout['workout_file'];
-      if (workoutDoc == null && workoutFile == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Selected item has no workout data'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Convert to ZWO (converter will handle if already XML)
-      final zwo = IntervalsWorkoutConverter.convertToZwo(
-        workoutDoc is Map<String, dynamic> ? workoutDoc : {
-          'workout_file': workoutFile,
-          'name': selectedWorkout['name'],
-          'description': selectedWorkout['description'],
-          'steps': (workoutDoc is Map<String, dynamic>) ? workoutDoc['steps'] : null,
-        },
-      );
-
-      _workoutController.loadWorkout(zwo);
-      _currentWorkoutContent = zwo;
-      _updatePreviewDuration();
-      setState(() {
-        _workoutName = (selectedWorkout['name'] ?? 'Intervals.icu Workout').toString();
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Loaded: ${_workoutName ?? 'Intervals.icu Workout'}'),
-            backgroundColor: const Color(0xFF1B4F72),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error picking Intervals.icu workout: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
+  // Intervals & other menu actions migrated to WorkoutMenu.
 
   Future<void> _showStopWorkoutDialog() async {
     final bool? shouldStop = await showDialog<bool>(
@@ -523,91 +243,9 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     }
   }
 
-  void _showAudioCoachDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AudioCoachDialog(ttsSettings: _ttsSettings),
-    );
-  }
+  // Audio coach dialog logic migrated to WorkoutMenu; method removed.
 
-  Future<void> _showCalibrationDialog() async {
-    bool isCalibrating = false;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Calibration'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (!isCalibrating)
-                    const Text('Start pedaling until the SmartSpin2k knob starts to turn.\n\nPress Start when ready.'),
-                  if (isCalibrating)
-                    const Text(
-                        'Stop pedaling and wait for the calibration to complete.\n\nThis may take a few moments...'),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('CANCEL'),
-                ),
-                if (!isCalibrating)
-                  TextButton(
-                    onPressed: () async {
-                      setState(() {
-                        isCalibrating = true;
-                      });
-
-                      try {
-                        // Get the FTMS Control Point characteristic from bleData
-                        final ftmsControlPointChar = bleData.ftmsControlPointCharacteristic;
-                        if (ftmsControlPointChar != null) {
-                          // Start the spin down procedure
-                          await FTMSControlPoint.spinDownControl(ftmsControlPointChar, true);
-
-                          // Wait for a response or timeout after 30 seconds
-                          await Future.delayed(const Duration(seconds: 30));
-
-                          if (mounted) {
-                            Navigator.of(context).pop();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Calibration completed'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          }
-                        } else {
-                          throw Exception('FTMS Control Point characteristic not found');
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Calibration failed: $e'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    child: const Text('START'),
-                  ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
+  // Calibration dialog logic migrated to WorkoutMenu; method removed here to avoid duplication.
 
   void _updateScrollPosition() {
     if (!mounted || !_scrollController.hasClients) return;
@@ -670,146 +308,9 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     super.dispose();
   }
 
-  void _showWorkoutTextSettingsDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Workout Text Settings'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Font Size: ${WorkoutTextStyle.scrollingText.toInt()}'),
-                  Slider(
-                    value: WorkoutTextStyle.scrollingText,
-                    min: 24,
-                    max: 72,
-                    divisions: 12,
-                    label: WorkoutTextStyle.scrollingText.toInt().toString(),
-                    onChanged: (value) {
-                      setState(() {
-                        WorkoutTextStyle.scrollingText = value;
-                      });
-                      WorkoutTextEventOverlay.saveTextSettings(value, WorkoutTextStyle.scrollSpeed);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Scroll Speed: ${WorkoutTextStyle.scrollSpeed.toInt()} px/s'),
-                  Slider(
-                    value: WorkoutTextStyle.scrollSpeed,
-                    min: 50,
-                    max: 300,
-                    divisions: 25,
-                    label: WorkoutTextStyle.scrollSpeed.toInt().toString(),
-                    onChanged: (value) {
-                      setState(() {
-                        WorkoutTextStyle.scrollSpeed = value;
-                      });
-                      WorkoutTextEventOverlay.saveTextSettings(WorkoutTextStyle.scrollingText, value);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) {
-                          final testSegment = WorkoutSegment(
-                            type: SegmentType.steadyState,
-                            duration: 60,
-                            powerLow: 100,
-                            powerHigh: 150,
-                            textEvents: [
-                              TextEvent(
-                                timeOffset: 0,
-                                message: 'Text Size ${WorkoutTextStyle.scrollingText.toInt()} '
-                                    ', Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
-                              ),
-                            ],
-                          );
-                          
-                          return AlertDialog(
-                            content: SizedBox(
-                              width: double.maxFinite,
-                              child: WorkoutTextEventOverlay(
-                                currentSegment: testSegment,
-                                secondsIntoSegment: 0,
-                                ttsSettings: _ttsSettings,
-                                workoutController: _workoutController,
-                                testText: 'Text Size ${WorkoutTextStyle.scrollingText.toInt()} '
-                                    'x Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
-                              ),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: const Text('CLOSE'),
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
-                    child: const Text('TEST SETTINGS'),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('CLOSE'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
+  // Workout text settings dialog removed; logic migrated to WorkoutMenu.
 
-  void _showWorkoutLibrary({required bool selectionMode}) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.8,
-          height: MediaQuery.of(context).size.height * 0.8,
-          padding: EdgeInsets.all(WorkoutPadding.standard),
-          child: Column(
-            children: [
-              Text(
-                selectionMode ? 'Select Workout' : 'Delete Workout',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              SizedBox(height: WorkoutSpacing.medium),
-              Expanded(
-                child: WorkoutLibrary(
-                  selectionMode: selectionMode,
-                  onWorkoutSelected: (content) {
-                    Navigator.pop(context);
-                    _workoutController.loadWorkout(content, isResume: false);
-                    _currentWorkoutContent = content;
-                  },
-                  onWorkoutDeleted: (name) async {
-                    await WorkoutStorage.deleteWorkout(name);
-                    if (mounted) {
-                      setState(() {});
-                    }
-                  },
-                ),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('CLOSE'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  // Workout library dialog removed; logic migrated to WorkoutMenu.
 
   @override
   Widget build(BuildContext context) {
@@ -826,24 +327,20 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
         device: widget.device,
         title: _workoutName ?? '',
         actions: [
-          IntervalsMenu(
-            onImportZwo: () => WorkoutFileManager.pickAndLoadWorkout(
-              context: context,
-              workoutController: _workoutController,
-              workoutGraphKey: _workoutGraphKey,
-              onWorkoutLoaded: (content) {
-                _currentWorkoutContent = content;
-              },
-            ),
-            onIntervalsToday: _loadTodaysWorkoutFromIntervals,
-            onIntervalsPick: _pickWorkoutFromIntervals,
-            onSelectWorkout: () => _showWorkoutLibrary(selectionMode: true),
-            onDeleteWorkout: () => _showWorkoutLibrary(selectionMode: false),
-            onAudioCoach: _showAudioCoachDialog,
-            onConnectedAccounts: () => WorkoutConnectedAccounts.showConnectedAccountsDialog(context),
-            onCalibrate: _showCalibrationDialog,
-            onCompletedActivities: () => CompletedActivities.showCompletedActivitiesDialog(context),
-            onWorkoutTextSettings: _showWorkoutTextSettingsDialog,
+          WorkoutMenu(
+            workoutController: _workoutController,
+            bleData: bleData,
+            ttsSettings: _ttsSettings,
+            workoutGraphKey: _workoutGraphKey,
+            onWorkoutLoaded: (content, {String? name}) {
+              _currentWorkoutContent = content;
+              _updatePreviewDuration();
+              if (name != null && mounted) {
+                setState(() {
+                  _workoutName = name;
+                });
+              }
+            },
           ),
         ],
       ),
