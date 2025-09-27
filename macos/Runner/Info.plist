@@ -32,5 +32,17 @@
 	<string>NSApplication</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Register custom URL scheme for deep links -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>smartspin2k</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>smartspin2k</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

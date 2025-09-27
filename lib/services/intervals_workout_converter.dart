@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 class IntervalsWorkoutConverter {
   /// Converts an Intervals.icu workout document to ZWO format for the workout controller

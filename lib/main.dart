@@ -80,7 +80,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     // Handle initial URI if the app was launched with one
     final uri = await _appLinks.getInitialLink();
     if (uri != null) {
-   _handleDeepLink(uri);
+      _handleDeepLink(uri);
     }
 
     // Handle URI when app is already running
@@ -94,13 +94,13 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   void _handleDeepLink(Uri uri) {
     debugPrint('Handling deep link: ${uri.toString()}');
     debugPrint('URI scheme: ${uri.scheme}, host: ${uri.host}');
-    
+
     // Handle Strava OAuth callback
     if (uri.scheme == 'smartspin2k' && (uri.host == 'redirect' || uri.host == 'localhost')) {
       final code = uri.queryParameters['code'];
       final error = uri.queryParameters['error'];
       final state = uri.queryParameters['state']; // Handle state parameter if present
-      
+
       if (error != null) {
         debugPrint('Strava auth error: $error');
         _scaffoldKey.currentState?.showSnackBar(
@@ -114,7 +114,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 
       if (code != null) {
         debugPrint('Received auth code: $code');
-        
+
         // Show loading dialog
         showDialog(
           context: _navigatorKey.currentContext!,
@@ -133,10 +133,10 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 
         StravaService.handleAuthCallback(code).then((success) {
           debugPrint('Auth callback result: $success');
-          
+
           // Close loading dialog
           Navigator.of(_navigatorKey.currentContext!).pop();
-          
+
           if (success && mounted) {
             _scaffoldKey.currentState?.showSnackBar(
               const SnackBar(
@@ -165,14 +165,15 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
           }
         });
       }
+      return; // handled
     }
-    
+
     // Handle Intervals.icu OAuth callback
     if (uri.scheme == 'smartspin2k' && uri.host == 'intervals_redirect') {
       debugPrint('Handling Intervals.icu callback');
       final code = uri.queryParameters['code'];
       final error = uri.queryParameters['error'];
-      
+
       if (error != null) {
         debugPrint('Intervals.icu auth error: $error');
         _scaffoldKey.currentState?.showSnackBar(
@@ -186,7 +187,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 
       if (code != null) {
         debugPrint('Received Intervals.icu auth code: $code');
-        
+
         // Show loading dialog
         showDialog(
           context: _navigatorKey.currentContext!,
@@ -205,10 +206,10 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 
         IntervalsService.handleAuthCallback(code).then((success) {
           debugPrint('Intervals.icu auth callback result: $success');
-          
+
           // Close loading dialog
           Navigator.of(_navigatorKey.currentContext!).pop();
-          
+
           if (success && mounted) {
             _scaffoldKey.currentState?.showSnackBar(
               const SnackBar(
@@ -237,9 +238,10 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
           }
         });
       }
+      return; // handled
     }
-    
-    // Add a catch-all debug log for any unhandled deep links
+
+    // Add a catch-all debug log for any truly unhandled deep links
     debugPrint('Unhandled deep link: ${uri.toString()} (scheme: ${uri.scheme}, host: ${uri.host})');
   }
 

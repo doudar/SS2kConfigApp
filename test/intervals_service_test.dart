@@ -1,7 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2kconfigapp/services/intervals_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() async {
+    // Ensure SharedPreferences uses in-memory mock storage
+    SharedPreferences.setMockInitialValues({});
+  });
   group('IntervalsService', () {
     test('should handle authentication state correctly', () async {
       // Test that unauthenticated state is handled correctly

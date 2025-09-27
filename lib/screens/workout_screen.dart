@@ -266,6 +266,146 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     }
   }
 
+  Future<void> _pickWorkoutFromIntervals() async {
+    try {
+      if (!await IntervalsService.isAuthenticated()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please connect to Intervals.icu first in Connected Accounts'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Loading Intervals.icu workout library...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // First try calendar events (planned workouts)
+      var workouts = await IntervalsService.getCalendarWorkoutEvents();
+      bool showingEvents = true;
+      if (workouts.isEmpty) {
+        // Fallback to library if no planned events found
+        showingEvents = false;
+        workouts = await IntervalsService.getWorkoutLibrary();
+        if (workouts.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No planned workout events or library workouts found'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      if (!mounted) return;
+      final selected = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text(showingEvents ? 'Select Planned Workout (Intervals.icu)' : 'Select Library Workout (Intervals.icu)'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: workouts.length,
+                itemBuilder: (context, index) {
+                  final w = workouts[index];
+                  final name = (w['name'] ?? 'Workout').toString();
+                  final type = (w['type'] ?? '').toString();
+                  final info = showingEvents
+                      ? (w['start_date_local'] ?? '')
+                      : (w['updated'] ?? '');
+                  return ListTile(
+                    leading: Icon(showingEvents ? Icons.event : Icons.folder_open),
+                    title: Text(name),
+                    subtitle: Text([type, info].where((e) => e != null && e.toString().isNotEmpty).join(' • ')),
+                    onTap: () => Navigator.of(context).pop(w),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('CANCEL'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (selected == null) return;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Downloading "${selected['name'] ?? 'Workout'}" as ZWO...'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Download priority:
+      // 1. If an event id (event_id or eventId) exists, use official events download endpoint.
+      // 2. If workout_doc present, use doc-based conversion endpoint.
+      // 3. Fall back to id-based download.
+      String? zwo;
+      final eventId = (selected['id'] ?? selected['eventId']);
+      if (eventId is int) {
+        zwo = await IntervalsService.downloadEventWorkout(eventId: eventId);
+        if (zwo == null) {
+          debugPrint('Event-based download failed, falling back to workout_doc method');
+        }
+      }
+      if (zwo == null || zwo.trim().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to mo download workout from Intervals.icu'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      _workoutController.loadWorkout(zwo);
+      _currentWorkoutContent = zwo;
+      setState(() {
+        _workoutName = (selected['name'] ?? 'Intervals.icu Workout').toString();
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Loaded: ${_workoutName ?? 'Intervals.icu Workout'}'),
+            backgroundColor: const Color(0xFF1B4F72),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error picking Intervals.icu workout: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _showStopWorkoutDialog() async {
     final bool? shouldStop = await showDialog<bool>(
       context: context,
@@ -612,6 +752,9 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                 case 'intervals_today':
                   _loadTodaysWorkoutFromIntervals();
                   break;
+                case 'intervals_pick':
+                  _pickWorkoutFromIntervals();
+                  break;
                 case 'select':
                   _showWorkoutLibrary(selectionMode: true);
                   break;
@@ -653,6 +796,16 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                     Icon(Icons.calendar_today),
                     SizedBox(width: 8),
                     Text('Today\'s Workout (Intervals.icu)'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'intervals_pick',
+                child: Row(
+                  children: [
+                    Icon(Icons.cloud_download),
+                    SizedBox(width: 8),
+                    Text('Pick from Intervals.icu'),
                   ],
                 ),
               ),

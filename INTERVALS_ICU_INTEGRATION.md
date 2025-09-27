@@ -73,7 +73,7 @@ Set environment variables:
 
 ## API Endpoints Used
 
-- **Authentication:** `https://intervals.icu/oauth/authorize` and `https://intervals.icu/oauth/token`
+- **Authentication:** `https://intervals.icu/oauth/authorize` and `https://intervals.icu/api/oauth/token`
 - **Today's Events:** `GET /api/v1/athlete/{id}/events/{date}`
 - **Upload Activity:** `POST /api/v1/athlete/{id}/activities`
 - **Workout Library:** `GET /api/v1/athlete/{id}/workouts`
