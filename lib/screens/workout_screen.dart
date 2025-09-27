@@ -320,11 +320,29 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                 itemBuilder: (context, index) {
                   final w = workouts[index];
                   final name = (w['name'] ?? 'Workout').toString();
-                  final desc = (w['description'] ?? '').toString();
+                  // Build subtitle from moving_time (seconds) -> hh:mm:ss, training load and intensity
+                  String formatDuration(int seconds) {
+                    final h = seconds ~/ 3600;
+                    final m = (seconds % 3600) ~/ 60;
+                    final s = seconds % 60;
+                    String two(int v) => v.toString().padLeft(2, '0');
+                    if (h > 0) {
+                      return '${two(h)}:${two(m)}:${two(s)}';
+                    }
+                    return '${two(m)}:${two(s)}';
+                  }
+                  final movingTime = (w['moving_time'] is int) ? w['moving_time'] as int : int.tryParse('${w['moving_time'] ?? ''}') ?? 0;
+                  final load = (w['icu_training_load'] is num) ? (w['icu_training_load'] as num).toInt() : int.tryParse('${w['icu_training_load'] ?? ''}') ?? 0;
+                  final intensity = (w['icu_intensity'] is num) ? (w['icu_intensity'] as num).toDouble() : double.tryParse('${w['icu_intensity'] ?? ''}') ?? 0.0;
+                  final subtitleParts = <String>[];
+                  if (movingTime > 0) subtitleParts.add(formatDuration(movingTime));
+                  if (load > 0) subtitleParts.add('TL $load');
+                  if (intensity > 0) subtitleParts.add('IF ${intensity.toStringAsFixed(2)}');
+                  final subtitle = subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
                   return ListTile(
                     leading: const Icon(Icons.fitness_center),
                     title: Text(name),
-                    subtitle: desc.isNotEmpty ? Text(desc, maxLines: 2, overflow: TextOverflow.ellipsis) : null,
+                    subtitle: subtitle != null ? Text(subtitle) : null,
                     onTap: () => Navigator.of(context).pop(w),
                   );
                 },
