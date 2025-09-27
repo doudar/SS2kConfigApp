@@ -25,6 +25,7 @@ import '../utils/workout/workout_summary.dart';
 import '../utils/ftmsControlPoint.dart';
 import '../widgets/completed_activities.dart';
 import '../widgets/ss2k_app_bar.dart';
+import '../widgets/intervals_menu.dart';
 
 class WorkoutScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -736,150 +737,24 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
         device: widget.device,
         title: _workoutName ?? '',
         actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              switch (value) {
-                case 'import':
-                  WorkoutFileManager.pickAndLoadWorkout(
-                    context: context,
-                    workoutController: _workoutController,
-                    workoutGraphKey: _workoutGraphKey,
-                    onWorkoutLoaded: (content) {
-                      _currentWorkoutContent = content;
-                    },
-                  );
-                  break;
-                case 'intervals_today':
-                  _loadTodaysWorkoutFromIntervals();
-                  break;
-                case 'intervals_pick':
-                  _pickWorkoutFromIntervals();
-                  break;
-                case 'select':
-                  _showWorkoutLibrary(selectionMode: true);
-                  break;
-                case 'delete':
-                  _showWorkoutLibrary(selectionMode: false);
-                  break;
-                case 'audio':
-                  _showAudioCoachDialog();
-                  break;
-                case 'connected_accounts':
-                  WorkoutConnectedAccounts.showConnectedAccountsDialog(context);
-                  break;
-                case 'calibrate':
-                  _showCalibrationDialog();
-                  break;
-                case 'completed_activities':
-                  CompletedActivities.showCompletedActivitiesDialog(context);
-                  break;
-                case 'workout_text':
-                  _showWorkoutTextSettingsDialog();
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'import',
-                child: Row(
-                  children: [
-                    Icon(Icons.file_upload),
-                    SizedBox(width: 8),
-                    Text('Import ZWO'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'intervals_today',
-                child: Row(
-                  children: [
-                    Icon(Icons.calendar_today),
-                    SizedBox(width: 8),
-                    Text('Today\'s Workout (Intervals.icu)'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'intervals_pick',
-                child: Row(
-                  children: [
-                    Icon(Icons.cloud_download),
-                    SizedBox(width: 8),
-                    Text('Pick from Intervals.icu'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'select',
-                child: Row(
-                  children: [
-                    Icon(Icons.folder_open),
-                    SizedBox(width: 8),
-                    Text('Select Workout'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'delete',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete),
-                    SizedBox(width: 8),
-                    Text('Delete Workout'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'audio',
-                child: Row(
-                  children: [
-                    Icon(Icons.record_voice_over),
-                    SizedBox(width: 8),
-                    Text('Audio Coach'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'connected_accounts',
-                child: Row(
-                  children: [
-                    Icon(Icons.link),
-                    SizedBox(width: 8),
-                    Text('Connected Accounts'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'calibrate',
-                child: Row(
-                  children: [
-                    Icon(Icons.tune),
-                    SizedBox(width: 8),
-                    Text('Calibrate'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'completed_activities',
-                child: Row(
-                  children: [
-                    Icon(Icons.history),
-                    SizedBox(width: 8),
-                    Text('Completed Activities'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'workout_text',
-                child: Row(
-                  children: [
-                    Icon(Icons.text_fields),
-                    SizedBox(width: 8),
-                    Text('Workout Text'),
-                  ],
-                ),
-              ),
-            ],
+          IntervalsMenu(
+            onImportZwo: () => WorkoutFileManager.pickAndLoadWorkout(
+              context: context,
+              workoutController: _workoutController,
+              workoutGraphKey: _workoutGraphKey,
+              onWorkoutLoaded: (content) {
+                _currentWorkoutContent = content;
+              },
+            ),
+            onIntervalsToday: _loadTodaysWorkoutFromIntervals,
+            onIntervalsPick: _pickWorkoutFromIntervals,
+            onSelectWorkout: () => _showWorkoutLibrary(selectionMode: true),
+            onDeleteWorkout: () => _showWorkoutLibrary(selectionMode: false),
+            onAudioCoach: _showAudioCoachDialog,
+            onConnectedAccounts: () => WorkoutConnectedAccounts.showConnectedAccountsDialog(context),
+            onCalibrate: _showCalibrationDialog,
+            onCompletedActivities: () => CompletedActivities.showCompletedActivitiesDialog(context),
+            onWorkoutTextSettings: _showWorkoutTextSettingsDialog,
           ),
         ],
       ),
