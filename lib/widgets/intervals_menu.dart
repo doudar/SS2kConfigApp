@@ -39,11 +39,8 @@ class IntervalsMenu extends StatelessWidget {
           case 'import':
             onImportZwo();
             break;
-          case 'intervals_today':
-            onIntervalsToday();
-            break;
-          case 'intervals_pick':
-            onIntervalsPick();
+          case 'intervals_root':
+            _showIntervalsSubMenu(context);
             break;
           case 'select':
             onSelectWorkout();
@@ -80,22 +77,14 @@ class IntervalsMenu extends StatelessWidget {
           ),
         ),
         PopupMenuItem(
-          value: 'intervals_today',
+          value: 'intervals_root',
           child: Row(
             children: [
-              Icon(Icons.calendar_today),
+              Icon(Icons.hub),
               SizedBox(width: 8),
-              Text("Today's Workout (Intervals.icu)"),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: 'intervals_pick',
-          child: Row(
-            children: [
-              Icon(Icons.cloud_download),
-              SizedBox(width: 8),
-              Text('Pick from Intervals.icu'),
+              Text('Intervals.icu'),
+              SizedBox(width: 6),
+              Icon(Icons.chevron_right, size: 20),
             ],
           ),
         ),
@@ -145,7 +134,7 @@ class IntervalsMenu extends StatelessWidget {
             children: [
               Icon(Icons.tune),
               SizedBox(width: 8),
-              Text('Calibrate'),
+              Text('Calibrate Trainer'),
             ],
           ),
         ),
@@ -170,6 +159,43 @@ class IntervalsMenu extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  void _showIntervalsSubMenu(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Intervals.icu'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.calendar_today),
+              title: const Text("Today's Workout"),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                onIntervalsToday();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cloud_download),
+              title: const Text('Pick Workout'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                onIntervalsPick();
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('CLOSE'),
+          ),
+        ],
+      ),
     );
   }
 }
