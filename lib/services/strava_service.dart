@@ -110,7 +110,95 @@ class StravaService {
         ],
       ),
     );
+    // Helper to show a snack bar safely
+    void showSnack(String msg) {
+      final scaffold = ScaffoldMessenger.maybeOf(context);
+      scaffold?.showSnackBar(
+        SnackBar(content: Text(msg), duration: const Duration(seconds: 3)),
+      );
+    }
 
+    Future<bool> _tryLaunch(Uri uri, {LaunchMode mode = LaunchMode.platformDefault}) async {
+      debugPrint('[StravaAuth] Attempting launch: $uri (mode=$mode)');
+      try {
+        final can = await canLaunchUrl(uri);
+        if (!can) {
+          debugPrint('[StravaAuth] canLaunchUrl returned false for: $uri');
+          return false;
+        }
+        final launched = await launchUrl(uri, mode: mode);
+        debugPrint('[StravaAuth] launchUrl result for $uri: $launched');
+        return launched;
+      } catch (e) {
+        debugPrint('[StravaAuth] Exception launching $uri: $e');
+        return false;
+      }
+    }
+
+    // Build common query params
+    final params = {
+      'client_id': Environment.stravaClientId,
+      'redirect_uri': _redirectUri,
+      'response_type': 'code',
+      'approval_prompt': 'auto',
+      'scope': 'activity:write,read',
+    };
+
+    // Native Strava app deep link attempt first (both platforms)
+    final stravaAppUrl = Uri.parse('strava://oauth/mobile/authorize').replace(queryParameters: params);
+
+    // Platform-specific web endpoints
+    final webMobileUrl = Uri.parse(_mobileAuthUrl).replace(queryParameters: params); // iOS preferred
+    final webStandardUrl = Uri.parse(_authUrl).replace(queryParameters: params);   // Android fallback
+
+    // Strategy:
+    // 1. Try native app deep link.
+    // 2. If iOS: try in-app webview (mobile auth URL) then external browser.
+    // 3. If Android: try external browser directly if native fails.
+    bool launched = false;
+
+    // Step 1: Native app
+    launched = await _tryLaunch(stravaAppUrl, mode: LaunchMode.externalApplication);
+
+    if (!launched) {
+      if (Platform.isIOS) {
+        // Step 2 (iOS): in-app webview attempt
+        debugPrint('[StravaAuth] Falling back to iOS in-app webview');
+        try {
+          await launchUrlString(
+            webMobileUrl.toString(),
+            mode: LaunchMode.inAppWebView,
+            webViewConfiguration: const WebViewConfiguration(
+              enableJavaScript: true,
+              enableDomStorage: true,
+            ),
+          );
+          launched = true;
+        } catch (e) {
+          debugPrint('[StravaAuth] iOS in-app webview launch failed: $e');
+        }
+        // If still not launched, final fallback external browser
+        if (!launched) {
+          debugPrint('[StravaAuth] Falling back to iOS external browser');
+          launched = await _tryLaunch(webMobileUrl, mode: LaunchMode.externalApplication);
+        }
+      } else if (Platform.isAndroid) {
+        // Android: go straight to external standard auth endpoint
+        debugPrint('[StravaAuth] Falling back to Android external auth');
+        launched = await _tryLaunch(webStandardUrl, mode: LaunchMode.externalApplication);
+      } else {
+        // Other platforms (desktop/web) - try standard URL in external browser
+        debugPrint('[StravaAuth] Non-mobile platform fallback to standard URL');
+        launched = await _tryLaunch(webStandardUrl, mode: LaunchMode.externalApplication);
+      }
+    }
+
+    if (!launched) {
+      showSnack('Unable to open Strava authorization page');
+    }
+    return;
+
+    /* Previous implementation retained below for reference (now replaced by unified strategy)
     if (Platform.isIOS) {
       // Try Strava app URL scheme first
       final stravaAppUrl = Uri.parse('strava://oauth/mobile/authorize')
@@ -185,6 +273,7 @@ class StravaService {
         mode: LaunchMode.externalApplication,
       );
     }
+    */
   }
 
   // Handle OAuth callback
