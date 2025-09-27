@@ -98,12 +98,13 @@ class IntervalsWorkoutConverter {
 
     final cadence = _toNum(step['cadence']);
 
-    if (start != null && end != null && start != end) {
-      buffer.writeln('    <Ramp Duration="$duration" PowerLow="${scale(start)}" PowerHigh="${scale(end)}"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}/>' );
-    } else {
-      final steadyVal = value ?? start ?? end ?? 0;
-      buffer.writeln('    <SteadyState Duration="$duration" Power="${scale(steadyVal)}"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}/>' );
+    // Intervals.icu: use average of start & end rather than a ramp.
+    num? avg;
+    if (start != null && end != null) {
+      avg = (start + end) / 2.0;
     }
+    final steadyVal = avg ?? value ?? start ?? end ?? 0;
+    buffer.writeln('    <SteadyState Duration="$duration" Power="${scale(steadyVal)}"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}/>' );
   }
   
   /// Extracts basic workout info from Intervals.icu event
