@@ -338,7 +338,7 @@ class IntervalsService {
       if (athleteId == null) return [];
 
       // Use only the connected athlete id (no cross-athlete fallbacks)
-      var url = Uri.parse('$_baseUrl/athlete/$athleteId/workouts');
+      var url = Uri.parse('$_baseUrl/athlete/$athleteId/folders');
       debugPrint('Fetching workout library: $url');
       var response = await http.get(
         url,
@@ -364,6 +364,48 @@ class IntervalsService {
       return [];
     } catch (e) {
       debugPrint('Error getting workout library from Intervals.icu: $e');
+      return [];
+    }
+  }
+
+  /// Fetch workout folders (hierarchical) for the connected athlete. Each
+  /// folder returned by Intervals.icu already contains its children list which
+  /// may include workouts (with `workout_doc` or `workout_file`) or nested
+  /// folders. We keep the structure so the UI can drill down.
+  static Future<List<Map<String, dynamic>>> getWorkoutFolders() async {
+    if (!await isAuthenticated()) return [];
+    try {
+      final tokens = await getStoredTokens();
+      final accessToken = tokens['accessToken'];
+      final athleteId = tokens['athleteId'];
+      if (athleteId == null) return [];
+
+      final url = Uri.parse('$_baseUrl/athlete/$athleteId/folders');
+      debugPrint('Fetching workout folders: $url');
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      );
+      debugPrint('Workout folders status: ${response.statusCode}');
+      if (response.statusCode != 200) {
+        debugPrint('Workout folders error body: ${response.body}');
+        return [];
+      }
+
+      final decoded = json.decode(response.body);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('Error fetching workout folders: $e');
       return [];
     }
   }

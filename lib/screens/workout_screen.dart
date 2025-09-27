@@ -281,41 +281,37 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
         return;
       }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Loading Intervals.icu workout library...'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-
-      // First try calendar events (planned workouts)
-      var workouts = await IntervalsService.getCalendarWorkoutEvents();
-      bool showingEvents = true;
-      if (workouts.isEmpty) {
-        // Fallback to library if no planned events found
-        showingEvents = false;
-        workouts = await IntervalsService.getWorkoutLibrary();
-        if (workouts.isEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('No planned workout events or library workouts found'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-          return;
+      // Fetch top-level folders
+      final folders = await IntervalsService.getWorkoutFolders();
+      if (folders.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No Intervals.icu folders found'),
+              backgroundColor: Colors.orange,
+            ),
+          );
         }
+        return;
       }
 
       if (!mounted) return;
-      final selected = await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: Text(showingEvents ? 'Select Planned Workout (Intervals.icu)' : 'Select Library Workout (Intervals.icu)'),
+
+      // Helper to present a folder's child workouts (non-folder children with workout_doc/file)
+      Future<Map<String, dynamic>?> pickWorkoutFromFolder(Map<String, dynamic> folder) async {
+        final children = (folder['children'] is List) ? List<Map<String, dynamic>>.from(
+          (folder['children'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e as Map)),
+        ) : <Map<String, dynamic>>[];
+
+        // Filter workouts (items with workout_doc or workout_file)
+        final workouts = children.where((c) => c['workout_doc'] != null || c['workout_file'] != null).toList();
+        if (workouts.isEmpty) {
+          return null;
+        }
+        return showDialog<Map<String, dynamic>>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Workouts • ${folder['name'] ?? 'Folder'}'),
             content: SizedBox(
               width: double.maxFinite,
               child: ListView.builder(
@@ -324,14 +320,11 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                 itemBuilder: (context, index) {
                   final w = workouts[index];
                   final name = (w['name'] ?? 'Workout').toString();
-                  final type = (w['type'] ?? '').toString();
-                  final info = showingEvents
-                      ? (w['start_date_local'] ?? '')
-                      : (w['updated'] ?? '');
+                  final desc = (w['description'] ?? '').toString();
                   return ListTile(
-                    leading: Icon(showingEvents ? Icons.event : Icons.folder_open),
+                    leading: const Icon(Icons.fitness_center),
                     title: Text(name),
-                    subtitle: Text([type, info].where((e) => e != null && e.toString().isNotEmpty).join(' • ')),
+                    subtitle: desc.isNotEmpty ? Text(desc, maxLines: 2, overflow: TextOverflow.ellipsis) : null,
                     onTap: () => Navigator.of(context).pop(w),
                   );
                 },
@@ -339,41 +332,68 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('CANCEL'),
+                onPressed: () => Navigator.pop(context),
+                child: const Text('CLOSE'),
               ),
             ],
-          );
-        },
-      );
-
-      if (selected == null) return;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Downloading "${selected['name'] ?? 'Workout'}" as ZWO...'),
-            duration: const Duration(seconds: 2),
           ),
         );
       }
 
-      // Download priority:
-      // 1. If an event id (event_id or eventId) exists, use official events download endpoint.
-      // 2. If workout_doc present, use doc-based conversion endpoint.
-      // 3. Fall back to id-based download.
-      String? zwo;
-      final eventId = (selected['id'] ?? selected['eventId']);
-      if (eventId is int) {
-        zwo = await IntervalsService.downloadEventWorkout(eventId: eventId);
-        if (zwo == null) {
-          debugPrint('Event-based download failed, falling back to workout_doc method');
-        }
-      }
-      if (zwo == null || zwo.trim().isEmpty) {
+      // Show top-level folders for selection
+      final selectedFolder = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Intervals.icu Folders'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: folders.length,
+                itemBuilder: (context, index) {
+                  final f = folders[index];
+                  final name = (f['name'] ?? 'Folder').toString();
+                  final count = (f['children'] is List) ? (f['children'] as List).length : 0;
+                  return ListTile(
+                    leading: const Icon(Icons.folder),
+                    title: Text(name),
+                    subtitle: Text('$count items'),
+                    onTap: () => Navigator.of(context).pop(f),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('CANCEL'),
+              ),
+            ],
+          ),
+      );
+
+      if (selectedFolder == null) return;
+
+      final selectedWorkout = await pickWorkoutFromFolder(selectedFolder);
+      if (selectedWorkout == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Failed to mo download workout from Intervals.icu'),
+              content: Text('No workouts in that folder'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      final workoutDoc = selectedWorkout['workout_doc'];
+      final workoutFile = selectedWorkout['workout_file'];
+      if (workoutDoc == null && workoutFile == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Selected item has no workout data'),
               backgroundColor: Colors.red,
             ),
           );
@@ -381,10 +401,20 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
         return;
       }
 
+      // Convert to ZWO (converter will handle if already XML)
+      final zwo = IntervalsWorkoutConverter.convertToZwo(
+        workoutDoc is Map<String, dynamic> ? workoutDoc : {
+          'workout_file': workoutFile,
+          'name': selectedWorkout['name'],
+          'description': selectedWorkout['description'],
+          'steps': (workoutDoc is Map<String, dynamic>) ? workoutDoc['steps'] : null,
+        },
+      );
+
       _workoutController.loadWorkout(zwo);
       _currentWorkoutContent = zwo;
       setState(() {
-        _workoutName = (selected['name'] ?? 'Intervals.icu Workout').toString();
+        _workoutName = (selectedWorkout['name'] ?? 'Intervals.icu Workout').toString();
       });
 
       if (mounted) {
