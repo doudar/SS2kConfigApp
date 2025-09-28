@@ -20,13 +20,13 @@ class Environment {
   static const String intervalsClientId = String.fromEnvironment(
     'INTERVALS_CLIENT_ID',
     // If dart-define not found, use local env
-    defaultValue: local_env.Environment.intervalsClientId
+    defaultValue: env_impl.Environment.intervalsClientId
   );
   
   static const String intervalsClientSecret = String.fromEnvironment(
     'INTERVALS_CLIENT_SECRET',
     // If dart-define not found, use local env
-    defaultValue: local_env.Environment.intervalsClientSecret
+    defaultValue: env_impl.Environment.intervalsClientSecret
   );
   
   static bool get hasStravaConfig => 
