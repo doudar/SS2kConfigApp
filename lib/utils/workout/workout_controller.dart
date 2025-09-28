@@ -111,12 +111,21 @@ class WorkoutController extends ChangeNotifier {
       loadWorkout(workoutContent, isResume: true);
 
       // Restore progress
-      progressPosition = savedState['progressPosition'] as double;
-      elapsedSeconds = savedState['elapsedSeconds'] as int;
-      _workoutProgressTime = savedState['_workoutProgressTime'] as double;
+      final savedProgress = savedState['progressPosition'];
+      if (savedProgress is num) {
+        progressPosition = savedProgress.toDouble();
+      }
+      final savedElapsed = savedState['elapsedSeconds'];
+      if (savedElapsed is num) {
+        elapsedSeconds = savedElapsed.toInt();
+      }
+      final savedWorkoutProgress = savedState['_workoutProgressTime'];
+      if (savedWorkoutProgress is num) {
+        _workoutProgressTime = savedWorkoutProgress.toDouble();
+      }
 
       // Resume if it was playing
-      if (savedState['wasPlaying'] as bool) {
+  if (savedState['wasPlaying'] == true) {
         isPlaying = true;
         startProgress();
       }
