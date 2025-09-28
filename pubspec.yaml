@@ -17,7 +17,7 @@ dependencies:
   flutter_launcher_icons: ^0.14.2
   flutter_native_splash: ^2.3.9
   shared_preferences: ^2.2.0
-  wakelock_plus: ^1.2.8
+  wakelock_plus: 1.3.3
   http: ^1.2.0
   font_awesome_flutter: 10.7.0  # Pin to avoid compatibility issues with newer versions
   json_theme: ^6.5.4
