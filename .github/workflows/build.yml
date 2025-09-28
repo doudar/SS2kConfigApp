@@ -263,11 +263,32 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Setup Flutter
+      # Use official action for amd64
+      - name: Setup Flutter (amd64)
+        if: matrix.arch == 'amd64'
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version: '3.24.3'
+
+      # Manual install for arm64 (action currently fails to resolve version on ubuntu-24.04-arm)
+      - name: Setup Flutter (arm64 manual)
+        if: matrix.arch == 'arm64'
+        run: |
+          set -e
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git curl unzip xz-utils zip
+          # Clone flutter stable at desired version (tag 3.24.3)
+          git clone https://github.com/flutter/flutter.git -b stable $HOME/flutter
+          cd $HOME/flutter
+          # Ensure we are at or past desired version; attempt to checkout tag if exists
+          if git rev-parse -q --verify refs/tags/3.24.3 >/dev/null; then
+            git fetch --tags
+            git checkout 3.24.3 || true
+          fi
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          $HOME/flutter/bin/flutter config --no-analytics
+          $HOME/flutter/bin/flutter doctor -v || true
 
       - name: Create env.local.dart
         env:
