@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/strava_service.dart';
+import '../../services/intervals_service.dart';
 import 'workout_controller.dart';
 import 'bike_shape_generator.dart';
 import 'gpx_to_fit.dart';
@@ -80,6 +81,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
 
   static Future<void> showExportDialog(BuildContext context, WorkoutController workoutController, String? currentWorkoutContent) async {
     final isStravaConnected = await StravaService.isAuthenticated();
+    final isIntervalsConnected = await IntervalsService.isAuthenticated();
 
     final String? exportChoice = await showDialog<String>(
       context: context,
@@ -97,6 +99,11 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
                 child: const Text('UPLOAD TO STRAVA'),
                 onPressed: () => Navigator.of(context).pop('strava'),
               ),
+            if (isIntervalsConnected)
+              TextButton(
+                child: const Text('UPLOAD TO INTERVALS.ICU'),
+                onPressed: () => Navigator.of(context).pop('intervals'),
+              ),
             TextButton(
               child: const Text('SAVE FILE'),
               onPressed: () => Navigator.of(context).pop('save'),
@@ -106,11 +113,12 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
       },
     );
 
-    if (exportChoice == 'save' || exportChoice == 'strava') {
+    if (exportChoice == 'save' || exportChoice == 'strava' || exportChoice == 'intervals') {
       await exportWorkoutFile(
         context, 
         workoutController,
         uploadToStrava: exportChoice == 'strava',
+        uploadToIntervals: exportChoice == 'intervals',
       );
     }
 
@@ -123,7 +131,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
   static Future<void> exportWorkoutFile(
     BuildContext context, 
     WorkoutController workoutController, 
-    {bool uploadToStrava = false}
+    {bool uploadToStrava = false, bool uploadToIntervals = false}
   ) async {
     try {
       final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
@@ -195,6 +203,31 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
               ),
             );
           }
+        } else if (uploadToIntervals) {
+          if (context.mounted) {
+            // Show uploading indicator
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Uploading to Intervals.icu...'),
+                duration: Duration(seconds: 1),
+              ),
+            );
+          }
+
+          final success = await IntervalsService.uploadWorkout(
+            fitFilePath,
+            workoutName,
+            'Workout completed using SmartSpin2k',
+          );
+
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success ? 'Successfully uploaded to Intervals.icu' : 'Failed to upload to Intervals.icu'),
+                backgroundColor: success ? const Color(0xFF1B4F72) : Colors.red,
+              ),
+            );
+          }
         } else if (context.mounted) {
           final bool? shouldShare = await showDialog<bool>(
             context: context,
@@ -240,7 +273,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
               backgroundColor: Colors.orange,
             ),
           );
-          if (!uploadToStrava) {
+          if (!uploadToStrava && !uploadToIntervals) {
             await Share.shareXFiles([XFile(gpxFile.path)]);
           }
         }

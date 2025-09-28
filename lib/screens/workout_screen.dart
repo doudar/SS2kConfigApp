@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import '../utils/workout/workout_parser.dart';
 import '../utils/workout/workout_painter.dart';
 import '../utils/workout/workout_metrics.dart';
 import '../utils/workout/workout_constants.dart';
@@ -13,16 +12,15 @@ import '../utils/workout/sounds.dart';
 import '../utils/workout/gpx_file_exporter.dart';
 import '../utils/workout/workout_file_manager.dart';
 import '../utils/workout/workout_tts_settings.dart';
-import '../utils/workout/workout_connected_accounts.dart';
+// Intervals service & converter now only used inside WorkoutMenu
 import '../utils/bledata.dart';
-import '../widgets/workout_library.dart';
-import '../widgets/audio_coach_dialog.dart';
+// Workout library dialog now managed inside WorkoutMenu
+// Audio coach dialog now managed inside WorkoutMenu
 import '../utils/workout/workout_text_event_overlay.dart';
 import '../utils/workout/workout_controls.dart';
 import '../utils/workout/workout_summary.dart';
-import '../utils/ftmsControlPoint.dart';
-import '../widgets/completed_activities.dart';
 import '../widgets/ss2k_app_bar.dart';
+import '../widgets/workout_menu.dart';
 
 class WorkoutScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -152,11 +150,50 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     }
   }
 
+  /// Rebuilds the zoom animation tween using the current preview + playing minutes.
+  void _rebuildZoomAnimation() {
+    _zoomAnimation = Tween<double>(
+      begin: WorkoutDurations.previewMinutes,
+      end: WorkoutDurations.playingMinutes,
+    ).animate(CurvedAnimation(
+      parent: _zoomController,
+      curve: Curves.easeInOut,
+    ));
+  }
+
+  /// Update the preview (zoomed-out) minutes to match the currently loaded workout's
+  /// total duration (in minutes) and rebuild the zoom animation so the graph width
+  /// represents the whole workout. Ensures the preview window is never smaller than
+  /// the playing window.
+  void _updatePreviewDuration() {
+    double minutes = _workoutController.totalDuration / 60.0;
+    // Ensure preview is at least as large as the playing window to avoid inverted animation.
+    if (minutes < WorkoutDurations.playingMinutes) {
+      minutes = WorkoutDurations.playingMinutes;
+    }
+    WorkoutDurations.previewMinutes = minutes;
+
+    // Preserve whether we were zoomed-in/playing; typically after a load we're not playing yet.
+    final bool wasPlaying = _workoutController.isPlaying;
+    // Reset controller to start position for a new workout preview.
+    _zoomController.stop();
+    _zoomController.value = wasPlaying ? 1.0 : 0.0; // if already playing keep zoomed-in state
+    _rebuildZoomAnimation();
+    if (!wasPlaying) {
+      // Ensure we start at preview (value 0) visually.
+      _zoomController.value = 0.0;
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> _loadDefaultWorkout() async {
     try {
       final content = await rootBundle.loadString('assets/Anthonys_Mix.zwo');
       _workoutController.loadWorkout(content, isResume: false);
       _currentWorkoutContent = content;
+      _updatePreviewDuration();
       // Wait for the graph to be rendered
       await Future.delayed(const Duration(milliseconds: 100));
 
@@ -176,6 +213,8 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       }
     }
   }
+
+  // Intervals & other menu actions migrated to WorkoutMenu.
 
   Future<void> _showStopWorkoutDialog() async {
     final bool? shouldStop = await showDialog<bool>(
@@ -204,91 +243,9 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     }
   }
 
-  void _showAudioCoachDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AudioCoachDialog(ttsSettings: _ttsSettings),
-    );
-  }
+  // Audio coach dialog logic migrated to WorkoutMenu; method removed.
 
-  Future<void> _showCalibrationDialog() async {
-    bool isCalibrating = false;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Calibration'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (!isCalibrating)
-                    const Text('Start pedaling until the SmartSpin2k knob starts to turn.\n\nPress Start when ready.'),
-                  if (isCalibrating)
-                    const Text(
-                        'Stop pedaling and wait for the calibration to complete.\n\nThis may take a few moments...'),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('CANCEL'),
-                ),
-                if (!isCalibrating)
-                  TextButton(
-                    onPressed: () async {
-                      setState(() {
-                        isCalibrating = true;
-                      });
-
-                      try {
-                        // Get the FTMS Control Point characteristic from bleData
-                        final ftmsControlPointChar = bleData.ftmsControlPointCharacteristic;
-                        if (ftmsControlPointChar != null) {
-                          // Start the spin down procedure
-                          await FTMSControlPoint.spinDownControl(ftmsControlPointChar, true);
-
-                          // Wait for a response or timeout after 30 seconds
-                          await Future.delayed(const Duration(seconds: 30));
-
-                          if (mounted) {
-                            Navigator.of(context).pop();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Calibration completed'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          }
-                        } else {
-                          throw Exception('FTMS Control Point characteristic not found');
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Calibration failed: $e'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    child: const Text('START'),
-                  ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
+  // Calibration dialog logic migrated to WorkoutMenu; method removed here to avoid duplication.
 
   void _updateScrollPosition() {
     if (!mounted || !_scrollController.hasClients) return;
@@ -351,146 +308,9 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     super.dispose();
   }
 
-  void _showWorkoutTextSettingsDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Workout Text Settings'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Font Size: ${WorkoutTextStyle.scrollingText.toInt()}'),
-                  Slider(
-                    value: WorkoutTextStyle.scrollingText,
-                    min: 24,
-                    max: 72,
-                    divisions: 12,
-                    label: WorkoutTextStyle.scrollingText.toInt().toString(),
-                    onChanged: (value) {
-                      setState(() {
-                        WorkoutTextStyle.scrollingText = value;
-                      });
-                      WorkoutTextEventOverlay.saveTextSettings(value, WorkoutTextStyle.scrollSpeed);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Scroll Speed: ${WorkoutTextStyle.scrollSpeed.toInt()} px/s'),
-                  Slider(
-                    value: WorkoutTextStyle.scrollSpeed,
-                    min: 50,
-                    max: 300,
-                    divisions: 25,
-                    label: WorkoutTextStyle.scrollSpeed.toInt().toString(),
-                    onChanged: (value) {
-                      setState(() {
-                        WorkoutTextStyle.scrollSpeed = value;
-                      });
-                      WorkoutTextEventOverlay.saveTextSettings(WorkoutTextStyle.scrollingText, value);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) {
-                          final testSegment = WorkoutSegment(
-                            type: SegmentType.steadyState,
-                            duration: 60,
-                            powerLow: 100,
-                            powerHigh: 150,
-                            textEvents: [
-                              TextEvent(
-                                timeOffset: 0,
-                                message: 'Text Size ${WorkoutTextStyle.scrollingText.toInt()} '
-                                    ', Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
-                              ),
-                            ],
-                          );
-                          
-                          return AlertDialog(
-                            content: SizedBox(
-                              width: double.maxFinite,
-                              child: WorkoutTextEventOverlay(
-                                currentSegment: testSegment,
-                                secondsIntoSegment: 0,
-                                ttsSettings: _ttsSettings,
-                                workoutController: _workoutController,
-                                testText: 'Text Size ${WorkoutTextStyle.scrollingText.toInt()} '
-                                    'x Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
-                              ),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: const Text('CLOSE'),
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
-                    child: const Text('TEST SETTINGS'),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('CLOSE'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
+  // Workout text settings dialog removed; logic migrated to WorkoutMenu.
 
-  void _showWorkoutLibrary({required bool selectionMode}) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.8,
-          height: MediaQuery.of(context).size.height * 0.8,
-          padding: EdgeInsets.all(WorkoutPadding.standard),
-          child: Column(
-            children: [
-              Text(
-                selectionMode ? 'Select Workout' : 'Delete Workout',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              SizedBox(height: WorkoutSpacing.medium),
-              Expanded(
-                child: WorkoutLibrary(
-                  selectionMode: selectionMode,
-                  onWorkoutSelected: (content) {
-                    Navigator.pop(context);
-                    _workoutController.loadWorkout(content, isResume: false);
-                    _currentWorkoutContent = content;
-                  },
-                  onWorkoutDeleted: (name) async {
-                    await WorkoutStorage.deleteWorkout(name);
-                    if (mounted) {
-                      setState(() {});
-                    }
-                  },
-                ),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('CLOSE'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  // Workout library dialog removed; logic migrated to WorkoutMenu.
 
   @override
   Widget build(BuildContext context) {
@@ -507,124 +327,20 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
         device: widget.device,
         title: _workoutName ?? '',
         actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              switch (value) {
-                case 'import':
-                  WorkoutFileManager.pickAndLoadWorkout(
-                    context: context,
-                    workoutController: _workoutController,
-                    workoutGraphKey: _workoutGraphKey,
-                    onWorkoutLoaded: (content) {
-                      _currentWorkoutContent = content;
-                    },
-                  );
-                  break;
-                case 'select':
-                  _showWorkoutLibrary(selectionMode: true);
-                  break;
-                case 'delete':
-                  _showWorkoutLibrary(selectionMode: false);
-                  break;
-                case 'audio':
-                  _showAudioCoachDialog();
-                  break;
-                case 'connected_accounts':
-                  WorkoutConnectedAccounts.showConnectedAccountsDialog(context);
-                  break;
-                case 'calibrate':
-                  _showCalibrationDialog();
-                  break;
-                case 'completed_activities':
-                  CompletedActivities.showCompletedActivitiesDialog(context);
-                  break;
-                case 'workout_text':
-                  _showWorkoutTextSettingsDialog();
-                  break;
+          WorkoutMenu(
+            workoutController: _workoutController,
+            bleData: bleData,
+            ttsSettings: _ttsSettings,
+            workoutGraphKey: _workoutGraphKey,
+            onWorkoutLoaded: (content, {String? name}) {
+              _currentWorkoutContent = content;
+              _updatePreviewDuration();
+              if (name != null && mounted) {
+                setState(() {
+                  _workoutName = name;
+                });
               }
             },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'import',
-                child: Row(
-                  children: [
-                    Icon(Icons.file_upload),
-                    SizedBox(width: 8),
-                    Text('Import ZWO'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'select',
-                child: Row(
-                  children: [
-                    Icon(Icons.folder_open),
-                    SizedBox(width: 8),
-                    Text('Select Workout'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'delete',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete),
-                    SizedBox(width: 8),
-                    Text('Delete Workout'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'audio',
-                child: Row(
-                  children: [
-                    Icon(Icons.record_voice_over),
-                    SizedBox(width: 8),
-                    Text('Audio Coach'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'connected_accounts',
-                child: Row(
-                  children: [
-                    Icon(Icons.link),
-                    SizedBox(width: 8),
-                    Text('Connected Accounts'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'calibrate',
-                child: Row(
-                  children: [
-                    Icon(Icons.tune),
-                    SizedBox(width: 8),
-                    Text('Calibrate'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'completed_activities',
-                child: Row(
-                  children: [
-                    Icon(Icons.history),
-                    SizedBox(width: 8),
-                    Text('Completed Activities'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'workout_text',
-                child: Row(
-                  children: [
-                    Icon(Icons.text_fields),
-                    SizedBox(width: 8),
-                    Text('Workout Text'),
-                  ],
-                ),
-              ),
-            ],
           ),
         ],
       ),
