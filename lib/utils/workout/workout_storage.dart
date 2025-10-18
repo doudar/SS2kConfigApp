@@ -6,7 +6,6 @@ class WorkoutStorage {
   static const String _ftpKey = 'workout_ftp_value';
   static const String _workoutStateKey = 'workout_state';
   static const String _workoutContentKey = 'workout_content';
-  static const String _elapsedSecondsKey = 'workout_elapsed_seconds';
   static const String _workoutProgressTime = 'workout_progress_time';
   static const String _isPlayingKey = 'workout_is_playing';
   static const String _savedWorkoutsKey = 'saved_workouts';
@@ -29,7 +28,6 @@ class WorkoutStorage {
   static Future<void> saveWorkoutState({
     required String? workoutContent,
     required double progressPosition,
-    required int elapsedSeconds,
     required double workoutProgressTime,
     required bool isPlaying,
   }) async {
@@ -45,7 +43,6 @@ class WorkoutStorage {
     });
     
     await prefs.setString(_workoutStateKey, stateJson);
-    await prefs.setInt(_elapsedSecondsKey, elapsedSeconds);
     await prefs.setDouble(_workoutProgressTime, workoutProgressTime);
     await prefs.setBool(_isPlayingKey, isPlaying);
   }
@@ -56,7 +53,6 @@ class WorkoutStorage {
     
     final workoutContent = prefs.getString(_workoutContentKey);
     final stateJson = prefs.getString(_workoutStateKey);
-    final elapsedSeconds = prefs.getInt(_elapsedSecondsKey) ?? 0;
     final workoutProgressTime = prefs.getDouble(_workoutProgressTime) ?? 0;
     final wasPlaying = prefs.getBool(_isPlayingKey) ?? false;
     
@@ -83,7 +79,6 @@ class WorkoutStorage {
     return {
       'workoutContent': workoutContent,
       'progressPosition': progressPosition,
-      'elapsedSeconds': elapsedSeconds,
       'workoutProgressTime': workoutProgressTime,
       'wasPlaying': wasPlaying,
     };
@@ -94,7 +89,6 @@ class WorkoutStorage {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_workoutStateKey);
     await prefs.remove(_workoutContentKey);
-    await prefs.remove(_elapsedSecondsKey);
     await prefs.remove(_workoutProgressTime);
     await prefs.remove(_isPlayingKey);
   }
