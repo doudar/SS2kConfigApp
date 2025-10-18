@@ -92,3 +92,7 @@ ios/build/
 ios/**/XCBuildData/
 ios/**/DerivedData/
 **/TARGET@*
+
+# Test artifacts
+test/*.fit
+test/*.gpx
