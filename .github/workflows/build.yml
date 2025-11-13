@@ -134,6 +134,12 @@ jobs:
           channel: stable
           flutter-version: '3.38.1'
 
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" || true
+
       - name: Create env.local.dart
         env:
           STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
