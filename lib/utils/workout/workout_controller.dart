@@ -366,9 +366,16 @@ class WorkoutController extends ChangeNotifier {
   void startProgress() {
     progressTimer?.cancel();
 
-    // Only initialize these if we're at the start of the workout
+    // Initialize workout start time if not set
+    if (_workoutStartTime == null) {
+      // For resumed workouts, calculate the effective start time by subtracting progress
+      _workoutStartTime = DateTime.now().subtract(
+        Duration(milliseconds: (_workoutProgressTime * 1000).round())
+      );
+    }
+
+    // Only reset track points if we're at the start of the workout
     if (progressPosition == 0) {
-      _workoutStartTime = DateTime.now();
       _lastTrackPointTime = 0;
       trackPoints.clear();
     }
