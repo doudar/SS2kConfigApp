@@ -10,6 +10,7 @@ import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:ss2kconfigapp/utils/extra.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/power_table_painter.dart';
 import '../utils/bledata.dart';
 import '../widgets/metric_card.dart';
@@ -31,7 +32,9 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
   double maxResistance = 0;
   double? homingMin;
   double? homingMax;
-  final GlobalKey _chartKey = GlobalKey();
+  // Removed unused chart key
+  bool _swapAxes = false; // false = Resistance(Y) vs Watts(X), true = Watts(Y) vs Resistance(X)
+  static const String _prefsSwapAxesKey = 'power_table_swap_axes';
 
   // Trail tracking
   final List<Map<String, double>> _positionHistory = [];
@@ -83,7 +86,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
     });
 
     // Request target position every second
-    Timer _targetTimer = Timer.periodic(const Duration(seconds: 1), (_targetTimer) {
+    _targetTimer = Timer.periodic(const Duration(seconds: 1), (_targetTimer) {
       if (this.bleData.isUserDisconnect) {
         _targetTimer.cancel();
       }
@@ -107,6 +110,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
       });
     }
     rwSubscription();
+    _loadAxisPreference();
   }
 
   @override
@@ -117,6 +121,20 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
     _homingValuesTimer?.cancel();
     _targetTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadAxisPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool(_prefsSwapAxesKey) ?? false;
+    if (mounted) {
+      setState(() => _swapAxes = saved);
+    }
+  }
+
+  Future<void> _toggleAxisOrientation() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _swapAxes = !_swapAxes);
+    await prefs.setBool(_prefsSwapAxesKey, _swapAxes);
   }
 
   void requestHomingValues() async {
@@ -246,6 +264,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
         currentCadence: bleData.ftmsData.cadence,
         positionHistory: _positionHistory,
         tableDivisor: bleData.tableDivisor,
+        swapAxes: _swapAxes,
       ),
     );
   }
@@ -259,9 +278,18 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
       appBar: SS2KAppBar(
         device: widget.device,
         title: 'Resistance Chart',
+        actions: [
+          IconButton(
+            tooltip: _swapAxes
+                ? 'Show Resistance on Y / Watts on X'
+                : 'Show Watts on Y / Resistance on X',
+            icon: Icon(_swapAxes ? Icons.swap_vert : Icons.swap_horiz),
+            onPressed: _toggleAxisOrientation,
+          ),
+        ],
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         child: Column(
           children: <Widget>[
             SingleChildScrollView(
@@ -302,6 +330,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> with SingleTickerPr
                 ],
               ),
             ),
+            const SizedBox(height: 8),
             Expanded(
               child: LayoutBuilder(
                 builder: _buildChart,
