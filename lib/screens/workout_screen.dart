@@ -40,6 +40,10 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
   late WorkoutTTSSettings _ttsSettings;
   bool _refreshBlocker = false;
   bool _ttsInitialized = false;
+  // Track whether we've applied the initial (resume) animation state to avoid a stuck fade.
+  bool _didApplyInitialAnimation = false;
+  // Guard to prevent animation calls during teardown.
+  bool _isDisposing = false;
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   final ScrollController _scrollController = ScrollController();
   double _lastScrollPosition = 0;
@@ -47,6 +51,8 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
 
   late AnimationController _zoomController;
   late Animation<double> _zoomAnimation;
+  // Keep a reference to the workout controller listener so we can detach it on dispose.
+  late VoidCallback _workoutControllerListener;
 
   void _initializeAnimationControllers() {
     _metricsAndSummaryFadeController = AnimationController(
@@ -92,34 +98,56 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       }
     });
 
-    _workoutController.addListener(() {
-      if (!mounted) return; // Skip animation updates if not mounted
+    _workoutControllerListener = () {
+      if (!mounted) return;
+      if (_isDisposing) return; // Skip any animation updates while disposing
 
-      if (_workoutController.isPlaying) {
-        _metricsAndSummaryFadeController.forward();
-        _zoomController.forward();
-        _updateScrollPosition();
+      // Apply an immediate animation state the first time we get a callback after (re)entering.
+      // This prevents the summary card from remaining permanently visible when resuming mid-workout.
+      if (!_didApplyInitialAnimation) {
+        if (_workoutController.isPlaying) {
+          _metricsAndSummaryFadeController.value = 1.0; // Summary hidden, metrics visible
+          _zoomController.value = 1.0; // Zoomed-in state
+          _updateScrollPosition();
+        } else {
+          _metricsAndSummaryFadeController.value = 0.0; // Summary visible
+          _zoomController.value = 0.0; // Preview state
+        }
+        _didApplyInitialAnimation = true;
       } else {
-        _metricsAndSummaryFadeController.reverse();
-        _zoomController.reverse();
-        // Check if workout completed naturally (reached the end)
-        if (_workoutController.progressPosition >= 1.0) {
-          //reset progress position
-          _workoutController.progressPosition = 0;
-          // Add a small delay to ensure the workout end sound plays first
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) {
-              GpxFileExporter.showExportDialog(context, _workoutController, _currentWorkoutContent);
-            }
-          });
+        // Normal animated transitions after initial state applied.
+        if (_workoutController.isPlaying) {
+          if (_metricsAndSummaryFadeController.status != AnimationStatus.forward && _metricsAndSummaryFadeController.value != 1.0) {
+            _metricsAndSummaryFadeController.forward();
+          }
+          if (_zoomController.status != AnimationStatus.forward && _zoomController.value != 1.0) {
+            _zoomController.forward();
+          }
+          _updateScrollPosition();
+        } else {
+          if (_metricsAndSummaryFadeController.status != AnimationStatus.reverse && _metricsAndSummaryFadeController.value != 0.0) {
+            _metricsAndSummaryFadeController.reverse();
+          }
+          if (_zoomController.status != AnimationStatus.reverse && _zoomController.value != 0.0) {
+            _zoomController.reverse();
+          }
+          // Check if workout completed naturally (reached the end)
+          if (_workoutController.progressPosition >= 1.0) {
+            _workoutController.progressPosition = 0;
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (mounted) {
+                GpxFileExporter.showExportDialog(context, _workoutController, _currentWorkoutContent);
+              }
+            });
+          }
         }
       }
-      if (mounted) {
-        setState(() {
-          _workoutName = _workoutController.workoutName;
-        });
-      }
-    });
+
+      setState(() {
+        _workoutName = _workoutController.workoutName;
+      });
+    };
+    _workoutController.addListener(_workoutControllerListener);
 
     Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
       if (bleData.isUserDisconnect) {
@@ -294,14 +322,20 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
 
   @override
   void dispose() {
-    WakelockPlus.disable();
+    _isDisposing = true;
+    // Remove external listeners FIRST to avoid callbacks firing while controllers are being disposed.
+    _workoutController.removeListener(_workoutControllerListener);
+    bleData.isReadingOrWriting.removeListener(_rwListener);
+    _connectionStateSubscription?.cancel();
+
+    // Now safely dispose animation + other resources.
     _metricsAndSummaryFadeController.dispose();
     _zoomController.dispose();
-    _connectionStateSubscription?.cancel();
-    bleData.isReadingOrWriting.removeListener(_rwListener);
     _scrollController.dispose();
     workoutSoundGenerator.dispose();
     _ttsSettings.dispose();
+    WakelockPlus.disable();
+
     if (_workoutController.progressPosition >= 1.0) {
       WorkoutStorage.clearWorkoutState();
     }

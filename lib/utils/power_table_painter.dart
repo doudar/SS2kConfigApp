@@ -8,13 +8,14 @@ class PowerTablePainter extends CustomPainter {
   final List<int> cadences;
   final List<Color> colors;
   final double maxResistance;
-  final double? homingMin;
+  final double? homingMin; // currently unused but preserved
   final double? homingMax;
   final double currentWatts;
   final double currentResistance;
   final int currentCadence;
-  final List<Map<String, double>> positionHistory;
+  final List<Map<String, double>> positionHistory; // stores {'x': watts, 'y': rawResistance}
   final double tableDivisor;
+  final bool swapAxes; // false: Resistance(Y)/Watts(X), true: Watts(Y)/Resistance(X)
 
   PowerTablePainter({
     required this.powerTableData,
@@ -27,30 +28,28 @@ class PowerTablePainter extends CustomPainter {
     required this.currentResistance,
     required this.currentCadence,
     required this.positionHistory,
-    required this.tableDivisor
+    required this.tableDivisor,
+    required this.swapAxes,
   });
 
-  @override
   final leftPadding = 20.0;
+
+  @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = WorkoutStroke.actualPowerLine;
 
-    // Draw grid and labels first
     _drawGrid(canvas, size);
 
-    // Draw power curves for each cadence
     for (int i = 0; i < powerTableData.length; i++) {
       paint.color = colors[i % colors.length];
       _drawPowerCurve(canvas, size, powerTableData[i], paint);
     }
 
-    // Draw position history (trail)
     _drawPositionHistory(canvas, size);
 
-    // Draw current position dot
-    if (currentWatts > 0 && currentWatts <= 1000) {
+    if (currentWatts > 0 && currentWatts <= MIN_POWER_RANGE) {
       _drawCurrentPosition(canvas, size);
     }
   }
@@ -66,62 +65,64 @@ class PowerTablePainter extends CustomPainter {
       textAlign: TextAlign.right,
     );
 
-    // Determine min and max resistance values
-    double minRes = 0; // Always start at 0
+    double minRes = 0;
     double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
     double range = maxRes - minRes;
 
-    // Draw horizontal resistance lines
-    for (double resistance = minRes; resistance <= maxRes; resistance += range / 5) {
-      final y = size.height - ((resistance - minRes) * size.height / range);
-
-      // Draw grid line
-      canvas.drawLine(
-        Offset(leftPadding, y),
-        Offset(size.width, y),
-        gridPaint,
-      );
-
-      // Draw resistance label
-      textPainter.text = TextSpan(
-        text: resistance.toStringAsFixed(1),
-        style: TextStyle(
-          color: Colors.grey[600],
-          fontSize: WorkoutFontSizes.small,
-        ),
-      );
-      textPainter.layout();
-      textPainter.paint(
-        canvas,
-        Offset(leftPadding - textPainter.width - 4, y - textPainter.height / 2),
-      );
-    }
-
-    // Draw vertical watts lines
-    for (double watts = 0; watts <= MIN_POWER_RANGE; watts += 100) {
-      final x = leftPadding + (watts * (size.width - leftPadding) / MIN_POWER_RANGE);
-
-      // Draw grid line
-      canvas.drawLine(
-        Offset(x, 0),
-        Offset(x, size.height),
-        gridPaint,
-      );
-
-      // Draw watts label (skip 0W to avoid overlap with resistance label)
-      if (watts > 0) {
+    if (!swapAxes) {
+      // Resistance on Y axis
+      for (double resistance = minRes; resistance <= maxRes; resistance += range / 5) {
+        final y = size.height - ((resistance - minRes) * size.height / range);
+        canvas.drawLine(Offset(leftPadding, y), Offset(size.width, y), gridPaint);
+        // Round resistance to nearest whole number for labels
         textPainter.text = TextSpan(
-          text: '${watts.toInt()}w',
-          style: TextStyle(
-            color: Colors.grey[600],
-            fontSize: WorkoutFontSizes.small,
-          ),
+          text: resistance.round().toString(),
+          style: TextStyle(color: Colors.grey[600], fontSize: WorkoutFontSizes.small),
         );
         textPainter.layout();
-        textPainter.paint(
-          canvas,
-          Offset(x - textPainter.width / 2, -5),
+        final double labelX = max(0.0, leftPadding - textPainter.width - 4);
+        textPainter.paint(canvas, Offset(labelX, y - textPainter.height / 2));
+      }
+      for (double watts = 0; watts <= MIN_POWER_RANGE; watts += 100) {
+        final x = leftPadding + (watts * (size.width - leftPadding) / MIN_POWER_RANGE);
+        canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+        if (watts > 0) {
+          textPainter.text = TextSpan(
+            text: '${watts.toInt()}w',
+            style: TextStyle(color: Colors.grey[600], fontSize: WorkoutFontSizes.small),
+          );
+          textPainter.layout();
+          double labelX = x - textPainter.width / 2;
+          labelX = max(0.0, min(size.width - textPainter.width, labelX));
+          textPainter.paint(canvas, Offset(labelX, -5));
+        }
+      }
+    } else {
+      // Watts on Y axis
+      for (double watts = 0; watts <= MIN_POWER_RANGE; watts += MIN_POWER_RANGE / 5) {
+        final y = size.height - (watts * size.height / MIN_POWER_RANGE);
+        canvas.drawLine(Offset(leftPadding, y), Offset(size.width, y), gridPaint);
+        textPainter.text = TextSpan(
+          text: '${watts.toInt()}w',
+          style: TextStyle(color: Colors.grey[600], fontSize: WorkoutFontSizes.small),
         );
+        textPainter.layout();
+        final double labelX = max(0.0, leftPadding - textPainter.width - 4);
+        textPainter.paint(canvas, Offset(labelX, y - textPainter.height / 2));
+      }
+      for (double resistance = minRes; resistance <= maxRes; resistance += range / 5) {
+        final x = leftPadding + ((resistance - minRes) * (size.width - leftPadding) / range);
+        canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+        if (resistance > minRes) {
+          textPainter.text = TextSpan(
+            text: resistance.round().toString(),
+            style: TextStyle(color: Colors.grey[600], fontSize: WorkoutFontSizes.small),
+          );
+          textPainter.layout();
+          double labelX = x - textPainter.width / 2;
+          labelX = max(0.0, min(size.width - textPainter.width, labelX));
+          textPainter.paint(canvas, Offset(labelX, -5));
+        }
       }
     }
   }
@@ -131,23 +132,28 @@ class PowerTablePainter extends CustomPainter {
     bool isFirstPoint = true;
     Offset? lastValidPoint;
 
-    double minRes = 0; // Always start at 0
+    double minRes = 0;
     double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
     double range = maxRes - minRes;
 
     for (int i = 0; i < data.length && i * 30 <= MIN_POWER_RANGE; i++) {
       if (data[i] != null) {
-        final x = leftPadding + (i * 30 * (size.width - leftPadding) / MIN_POWER_RANGE);
-        final y = size.height - ((data[i]! - minRes) * size.height / range);
-
-        // Check if point is within graph boundaries
+        double powerValue = i * 30;
+        double resistanceValue = data[i]!;
+        double x;
+        double y;
+        if (!swapAxes) {
+          x = leftPadding + (powerValue * (size.width - leftPadding) / MIN_POWER_RANGE);
+          y = size.height - ((resistanceValue - minRes) * size.height / range);
+        } else {
+          x = leftPadding + ((resistanceValue - minRes) * (size.width - leftPadding) / range);
+          y = size.height - (powerValue * size.height / MIN_POWER_RANGE);
+        }
         if (x >= leftPadding && x <= size.width && y >= 0 && y <= size.height) {
           if (isFirstPoint) {
             path.moveTo(x, y);
             isFirstPoint = false;
           } else {
-            // If we have a last valid point and it's not the previous point,
-            // we need to move to it before drawing the line
             if (lastValidPoint != null && lastValidPoint != Offset(x, y)) {
               path.moveTo(lastValidPoint.dx, lastValidPoint.dy);
             }
@@ -157,7 +163,6 @@ class PowerTablePainter extends CustomPainter {
         }
       }
     }
-
     canvas.drawPath(path, paint);
   }
 
@@ -165,44 +170,46 @@ class PowerTablePainter extends CustomPainter {
     for (int i = 0; i < positionHistory.length; i++) {
       final position = positionHistory[i];
       final opacity = (i + 1) / positionHistory.length;
-
       final paint = Paint()
         ..color = _getCadenceColor(currentCadence).withOpacity(opacity * 0.3)
         ..style = PaintingStyle.fill;
 
-      final x = leftPadding + (position['x']! * (size.width - leftPadding) / MIN_POWER_RANGE);
-      double minRes = 0; // Always start at 0
+      double minRes = 0;
       double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
       double range = maxRes - minRes;
-      final y = size.height - ((position['y']! - minRes) * size.height / range);
-
-      canvas.drawCircle(
-        Offset(x, y),
-        6,
-        paint,
-      );
+      double x;
+      double y;
+      if (!swapAxes) {
+        x = leftPadding + (position['x']! * (size.width - leftPadding) / MIN_POWER_RANGE); // watts
+        y = size.height - ((position['y']! - minRes) * size.height / range); // resistance
+      } else {
+        x = leftPadding + ((position['y']! - minRes) * (size.width - leftPadding) / range); // resistance
+        y = size.height - (position['x']! * size.height / MIN_POWER_RANGE); // watts
+      }
+      canvas.drawCircle(Offset(x, y), 6, paint);
     }
   }
 
   void _drawCurrentPosition(Canvas canvas, Size size) {
-    final x = leftPadding + (currentWatts * (size.width - leftPadding) / MIN_POWER_RANGE);
-    double minRes = 0; // Always start at 0
+    double minRes = 0;
     double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
     double range = maxRes - minRes;
-    final y = size.height - ((currentResistance / tableDivisor - minRes) * size.height / range);
-
+    double scaledResistance = currentResistance / tableDivisor;
+    double x;
+    double y;
+    if (!swapAxes) {
+      x = leftPadding + (currentWatts * (size.width - leftPadding) / MIN_POWER_RANGE);
+      y = size.height - ((scaledResistance - minRes) * size.height / range);
+    } else {
+      x = leftPadding + ((scaledResistance - minRes) * (size.width - leftPadding) / range);
+      y = size.height - (currentWatts * size.height / MIN_POWER_RANGE);
+    }
     final paint = Paint()
       ..color = _getCadenceColor(currentCadence)
       ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(
-      Offset(x, y),
-      6,
-      paint,
-    );
+    canvas.drawCircle(Offset(x, y), 6, paint);
   }
 
-// return color from <List>Color based on cadence. <60 should be lowest in the list, >105 should be highest
   Color _getCadenceColor(int cadence) {
     if (cadence < 62) return colors[0];
     if (cadence > 107) return colors[colors.length - 1];

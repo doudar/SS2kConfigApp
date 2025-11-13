@@ -17,6 +17,18 @@ allprojects {
     }
 }
 
+// Force all Android library subprojects (plugins) to use compileSdkVersion 36 to satisfy
+// newer androidx dependencies requiring >=34.
+subprojects { subProj ->
+    afterEvaluate { proj ->
+        if (proj.hasProperty('android') && proj.android.hasProperty('compileSdkVersion')) {
+            try {
+                proj.android.compileSdkVersion = 36
+            } catch (ignored) {}
+        }
+    }
+}
+
 rootProject.buildDir = '../build'
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
