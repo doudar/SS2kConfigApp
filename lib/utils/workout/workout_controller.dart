@@ -46,6 +46,7 @@ class WorkoutController extends ChangeNotifier {
   Timer? progressTimer;
   Map<int, double> actualPowerPoints = {}; // Map time index to power value
   double _workoutProgressTime = 0; // Track workout's progress position (authoritative source for duration/elapsed time)
+  double _skippedTime = 0; // Time skipped by user actions; excluded from elapsed
   int currentSegmentTimeRemaining = 0;
   final BLEData bleData;
   final BluetoothDevice device;
@@ -113,9 +114,13 @@ class WorkoutController extends ChangeNotifier {
       if (savedProgress is num) {
         progressPosition = savedProgress.toDouble();
       }
-      final savedWorkoutProgress = savedState['_workoutProgressTime'];
+      final savedWorkoutProgress = savedState['workoutProgressTime'];
       if (savedWorkoutProgress is num) {
         _workoutProgressTime = savedWorkoutProgress.toDouble();
+      }
+      final savedSkippedTime = savedState['skippedTime'];
+      if (savedSkippedTime is num) {
+        _skippedTime = savedSkippedTime.toDouble();
       }
 
       // Resume if it was playing
@@ -264,6 +269,10 @@ class WorkoutController extends ChangeNotifier {
         actualPowerPoints[currentTime + 1] = 0;
         actualPowerPoints[currentTime + skippedTime - 1] = 0;
 
+        // Accumulate skipped time so elapsed excludes it
+        final double skippedDelta = (nextSegmentStart - _workoutProgressTime).clamp(0, double.infinity);
+        _skippedTime += skippedDelta;
+
         // Set workout progress to the start of next segment
         _workoutProgressTime = nextSegmentStart;
         progressPosition = _workoutProgressTime / totalDuration;
@@ -310,6 +319,7 @@ class WorkoutController extends ChangeNotifier {
         _lastAltitude = 100.0;
         _totalAscent = 0;
         _workoutProgressTime = 0;
+        _skippedTime = 0;
         _lastTrackPointTime = 0;
         isPlaying = false; // Ensure workout starts in stopped state for fresh loads
       }
@@ -467,6 +477,7 @@ class WorkoutController extends ChangeNotifier {
       workoutContent: _currentWorkoutContent,
       progressPosition: progressPosition,
       workoutProgressTime: _workoutProgressTime,
+      skippedTime: _skippedTime,
       isPlaying: isPlaying,
     );
   }
@@ -538,5 +549,5 @@ class WorkoutController extends ChangeNotifier {
   double get workoutProgressSeconds => _workoutProgressTime;
   
   // Getter for elapsed seconds (based on workout progress time)
-  int get elapsedSeconds => _workoutProgressTime.round();
+  int get elapsedSeconds => (_workoutProgressTime - _skippedTime).clamp(0, double.infinity).round();
 }
