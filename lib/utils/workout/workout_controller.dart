@@ -45,7 +45,7 @@ class WorkoutController extends ChangeNotifier {
   double progressPosition = 0;
   Timer? progressTimer;
   Map<int, double> actualPowerPoints = {}; // Map time index to power value
-  double _workoutProgressTime = 0; // Track workout's progress position (single source of truth for time)
+  double _workoutProgressTime = 0; // Track workout's progress position (authoritative source for duration/elapsed time)
   int currentSegmentTimeRemaining = 0;
   final BLEData bleData;
   final BluetoothDevice device;
