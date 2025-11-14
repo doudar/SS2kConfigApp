@@ -307,6 +307,18 @@ jobs:
           $HOME/flutter/bin/flutter config --no-analytics
           $HOME/flutter/bin/flutter doctor -v || true
 
+      - name: Install Dart (arm64, stable)
+        if: matrix.arch == 'arm64'
+        run: |
+          set -e
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y apt-transport-https curl gnupg ca-certificates
+          curl -fsSL https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/dart.gpg
+          echo "deb [signed-by=/usr/share/keyrings/dart.gpg] https://storage.googleapis.com/download.dartlang.org/linux/debian stable main" | sudo tee /etc/apt/sources.list.d/dart_stable.list
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y dart
+          echo "/usr/lib/dart/bin" >> $GITHUB_PATH
+
       - name: Create env.local.dart
         env:
           STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
@@ -350,7 +362,10 @@ jobs:
           # Install additional build dependencies (clang & runtime libs)
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            clang libstdc++-12-dev libglu1-mesa fontconfig libpulse0 libasound2 || true
+            clang libstdc++-12-dev libglu1-mesa fontconfig libpulse0 || true
+          # Handle ALSA time64 transition on Ubuntu 24.04 (libasound2t64)
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libasound2 || \
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libasound2t64 || true
 
           export CXX=clang++
           flutter config --no-analytics
