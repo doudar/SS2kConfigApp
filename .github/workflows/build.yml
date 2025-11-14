@@ -132,7 +132,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: '3.38.1'
+          flutter-version-file: pubspec.yaml
 
       - name: Accept Android SDK licenses
         shell: bash
@@ -191,7 +191,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: '3.24.3'
+          flutter-version-file: pubspec.yaml
 
       # Debug environment variables
       - name: Debug Environment Variables
@@ -275,7 +275,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: '3.24.3'
+          flutter-version-file: pubspec.yaml
 
       # Manual install for arm64 (action currently fails to resolve version on ubuntu-24.04-arm)
       - name: Setup Flutter (arm64 manual)
