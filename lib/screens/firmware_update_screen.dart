@@ -31,17 +31,36 @@ class FirmwareUpdateScreen extends StatefulWidget {
   State<FirmwareUpdateScreen> createState() => _FirmwareUpdateState();
 }
 
+// Model class for firmware releases
+class FirmwareRelease {
+  final String version;
+  final String downloadUrl;
+  final bool isBuiltin;
+  final bool isMostRecent;
+
+  FirmwareRelease({
+    required this.version,
+    required this.downloadUrl,
+    this.isBuiltin = false,
+    this.isMostRecent = false,
+  });
+
+  String get displayName {
+    if (isBuiltin) return 'Built-in Firmware ($version)';
+    if (isMostRecent) return 'Most Recent Release ($version)';
+    return version;
+  }
+}
+
 class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   late BLEData bleData;
   final BleRepository bleRepo = BleRepository();
-  String _githubFirmwareVersion = '';
   String _builtinFirmwareVersion = '';
-  String _betaFirmwareVersion = '';
-  Color _githubVersionColor = Color.fromARGB(255, 242, 0, 255);
-  Color _builtinVersionColor = Color.fromARGB(255, 242, 0, 255);
-  Color _betaVersionColor = Color.fromARGB(255, 242, 0, 255);
+  Color _selectedVersionColor = Color.fromARGB(255, 242, 0, 255);
   Timer _loadingTimer = Timer.periodic(Duration(seconds: 30), (_loadingTimer) {});
-  String? _betaFirmwareUrl;
+  
+  List<FirmwareRelease> _availableReleases = [];
+  FirmwareRelease? _selectedRelease;
 
   OtaPackage? otaPackage;
 
@@ -59,10 +78,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   final int BINARY = 1;
   final int PICKER = 2;
-  final int URL = 3;
-  final int BETA = 4;
-
-  final String URLString = "https://github.com/doudar/OTAUpdates/raw/main/firmware.bin";
+  final int RELEASE = 3;
   
   @override
   void initState() {
@@ -79,12 +95,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       } else {
         _loaded = true;
         setState(() {
-          _builtinVersionColor =
-              _isNewerVersion(_builtinFirmwareVersion, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
-          _githubVersionColor =
-              _isNewerVersion(_githubFirmwareVersion, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
-          _betaVersionColor =
-              _isNewerVersion(_betaFirmwareVersion, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
+          _updateSelectedVersionColor();
         });
         _fwCheck.cancel();
       }
@@ -177,9 +188,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       otaPackage = Esp32OtaPackage(this.bleData.firmwareDataCharacteristic, this.bleData.firmwareControlCharacteristic);
       await _progressStreamSubscription();
     }
-    await _fetchGithubFirmwareVersion();
     await _fetchBuiltinFirmwareVersion();
-    await _fetchBetaFirmwareVersion();
+    await _fetchAllFirmwareReleases();
   }
 
   Future<void> _charListener() async {
@@ -209,66 +219,98 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   Future<void> _fetchBuiltinFirmwareVersion() async {
     final builtinVersion = await rootBundle.loadString('assets/version.txt');
-    setState(() {
-      _builtinFirmwareVersion = builtinVersion.trim();
-      _builtinVersionColor =
-          _isNewerVersion(_builtinFirmwareVersion, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
-      _builtinVersionColor =
-          (this.bleData.firmwareVersion.value == "") ? Color.fromARGB(255, 242, 0, 255) : _builtinVersionColor;
-    });
+    _builtinFirmwareVersion = builtinVersion.trim();
   }
 
-  Future<void> _fetchGithubFirmwareVersion() async {
-    final response = await http.get(Uri.parse('https://raw.githubusercontent.com/doudar/OTAUpdates/main/version.txt'));
-    if (response.statusCode == 200) {
-      final githubVersion = response.body.trim();
+  Future<void> _fetchAllFirmwareReleases() async {
+    try {
+      // Fetch all releases from SmartSpin2k repository
+      final response = await http.get(Uri.parse('https://api.github.com/repos/doudar/SmartSpin2k/releases'));
+      
+      if (response.statusCode == 200) {
+        final List<dynamic> releases = json.decode(response.body);
+        List<FirmwareRelease> releasesList = [];
+        
+        // Add built-in firmware first
+        releasesList.add(FirmwareRelease(
+          version: _builtinFirmwareVersion,
+          downloadUrl: 'assets/firmware.bin',
+          isBuiltin: true,
+        ));
+        
+        // Process all releases from GitHub
+        bool isFirst = true;
+        for (var release in releases) {
+          final tagName = release['tag_name'] as String;
+          final assets = release['assets'] as List;
+          
+          // Find the .bin.zip asset
+          String? downloadUrl;
+          for (var asset in assets) {
+            if (asset['name'].toString().endsWith('.bin.zip')) {
+              downloadUrl = asset['browser_download_url'] as String;
+              break;
+            }
+          }
+          
+          if (downloadUrl != null) {
+            releasesList.add(FirmwareRelease(
+              version: tagName,
+              downloadUrl: downloadUrl,
+              isMostRecent: isFirst,
+            ));
+            isFirst = false;
+          }
+        }
+        
+        setState(() {
+          _availableReleases = releasesList;
+          // Set default selection to most recent release (second item after built-in)
+          if (_availableReleases.length > 1) {
+            _selectedRelease = _availableReleases[1]; // Most recent release
+          } else if (_availableReleases.isNotEmpty) {
+            _selectedRelease = _availableReleases[0]; // Built-in if no releases
+          }
+          _updateSelectedVersionColor();
+        });
+      }
+    } catch (e) {
+      print('Error fetching firmware releases: $e');
+      // Fallback to built-in firmware only
       setState(() {
-        _githubFirmwareVersion = githubVersion;
-        _githubVersionColor = _isNewerVersion(githubVersion, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
-        _githubVersionColor =
-            (this.bleData.firmwareVersion.value == "") ? Color.fromARGB(255, 242, 0, 255) : _githubVersionColor;
+        _availableReleases = [
+          FirmwareRelease(
+            version: _builtinFirmwareVersion,
+            downloadUrl: 'assets/firmware.bin',
+            isBuiltin: true,
+          )
+        ];
+        _selectedRelease = _availableReleases.first;
+        _updateSelectedVersionColor();
       });
     }
   }
 
-  Future<void> _fetchBetaFirmwareVersion() async {
-    try {
-      final response = await http.get(Uri.parse('https://api.github.com/repos/doudar/SmartSpin2k/releases/latest'));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final tagName = data['tag_name'] as String;
-        final assets = data['assets'] as List;
-        
-        for (var asset in assets) {
-          if (asset['name'].toString().endsWith('.bin.zip')) {
-            _betaFirmwareUrl = asset['browser_download_url'] as String;
-            break;
-          }
-        }
-
-        setState(() {
-          _betaFirmwareVersion = tagName;
-          _betaVersionColor = _isNewerVersion(tagName, this.bleData.firmwareVersion.value) ? Colors.green : Colors.red;
-          _betaVersionColor =
-              (this.bleData.firmwareVersion.value == "") ? Color.fromARGB(255, 242, 0, 255) : _betaVersionColor;
-        });
-      }
-    } catch (e) {
-      print('Error fetching beta firmware version: $e');
+  void _updateSelectedVersionColor() {
+    if (_selectedRelease == null || this.bleData.firmwareVersion.value.isEmpty) {
+      _selectedVersionColor = Color.fromARGB(255, 242, 0, 255);
+      return;
     }
+    
+    setState(() {
+      _selectedVersionColor = _isNewerVersion(_selectedRelease!.version, this.bleData.firmwareVersion.value) 
+          ? Colors.green 
+          : Colors.red;
+    });
   }
 
-  Future<String> _downloadAndExtractBetaFirmware() async {
-    if (_betaFirmwareUrl == null) {
-      throw Exception('Beta firmware URL not found');
-    }
-
+  Future<String> _downloadAndExtractFirmware(String downloadUrl) async {
     final tempDir = await getTemporaryDirectory();
     final zipFile = io.File('${tempDir.path}/firmware.zip');
     final extractDir = io.Directory('${tempDir.path}/firmware');
 
     try {
-      final response = await http.get(Uri.parse(_betaFirmwareUrl!));
+      final response = await http.get(Uri.parse(downloadUrl));
       await zipFile.writeAsBytes(response.bodyBytes);
 
       if (await extractDir.exists()) {
@@ -335,7 +377,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     return "$hours:$minutes:$seconds";
   }
 
-  Future<void> startFirmwareUpdate(type) async {
+  Future<void> startFirmwareUpdate(type, {FirmwareRelease? release}) async {
     if(this.bleData.isSimulated) return;
     
     setState(() {
@@ -364,14 +406,13 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         }
         
         binFilePath = result.files.first.path!;
-      } else if (type == BETA) {
-        binFilePath = await _downloadAndExtractBetaFirmware();
-      } else if (type == URL) {
-        // Download firmware from URL first
-        final tempDir = await getTemporaryDirectory();
-        binFilePath = '${tempDir.path}/firmware.bin';
-        final response = await http.get(Uri.parse(URLString));
-        await io.File(binFilePath).writeAsBytes(response.bodyBytes);
+      } else if (type == RELEASE && release != null) {
+        // Download and extract firmware from selected release
+        if (release.isBuiltin) {
+          binFilePath = 'assets/firmware.bin';
+        } else {
+          binFilePath = await _downloadAndExtractFirmware(release.downloadUrl);
+        }
       } else {
         binFilePath = 'assets/firmware.bin';
       }
@@ -477,6 +518,71 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           : Column(
               children: <Widget>[
                 SizedBox(height: 10),
+                // Firmware version selector dropdown
+                if (_availableReleases.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Select Firmware Version:',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        SizedBox(height: 8),
+                        Container(
+                          constraints: BoxConstraints(maxHeight: 300),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: SingleChildScrollView(
+                            child: Column(
+                              children: _availableReleases.map((release) {
+                                return RadioListTile<FirmwareRelease>(
+                                  title: Text(
+                                    release.displayName,
+                                    style: TextStyle(
+                                      color: _selectedRelease == release 
+                                          ? _selectedVersionColor 
+                                          : null,
+                                    ),
+                                  ),
+                                  value: release,
+                                  groupValue: _selectedRelease,
+                                  onChanged: (FirmwareRelease? value) {
+                                    setState(() {
+                                      _selectedRelease = value;
+                                      _updateSelectedVersionColor();
+                                    });
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: 20),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: ThemeData().colorScheme.secondary,
+                        foregroundColor: ThemeData().colorScheme.onSecondary),
+                    onPressed: _selectedRelease == null ? null : () async {
+                      bool confirm = await _showConfirmDialog();
+                      if (confirm) {
+                        WakelockPlus.enable();
+                        startFirmwareUpdate(RELEASE, release: _selectedRelease);
+                      }
+                    },
+                    child: Text(
+                      textAlign: TextAlign.center,
+                      'Update to ${_selectedRelease?.displayName ?? "Selected Version"}',
+                    ),
+                  ),
+                ],
+                SizedBox(height: 10),
                 io.Platform.isMacOS
                     ? SizedBox()
                     : ElevatedButton(
@@ -492,42 +598,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                         },
                         child: Text(textAlign: TextAlign.center, 'Choose Firmware From Dialog'),
                       ),
-                SizedBox(height: 10),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: ThemeData().colorScheme.secondary,
-                      foregroundColor: ThemeData().colorScheme.onSecondary),
-                  onPressed: () async {
-                    bool confirm = await _showConfirmDialog();
-                    if (confirm) {
-                      WakelockPlus.enable();
-                      startFirmwareUpdate(URL);
-                    }
-                  },
-                  child: Text(
-                    textAlign: TextAlign.center,
-                    'Latest Stable Firmware from Github\n${_githubFirmwareVersion}',
-                    style: TextStyle(color: _githubVersionColor),
-                  ),
-                ),
-                SizedBox(height: 10),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: ThemeData().colorScheme.secondary,
-                      foregroundColor: ThemeData().colorScheme.onSecondary),
-                  onPressed: _betaFirmwareUrl == null ? null : () async {
-                    bool confirm = await _showConfirmDialog();
-                    if (confirm) {
-                      WakelockPlus.enable();
-                      startFirmwareUpdate(BETA);
-                    }
-                  },
-                  child: Text(
-                    textAlign: TextAlign.center,
-                    'Beta Firmware from Github\n${_betaFirmwareVersion}',
-                    style: TextStyle(color: _betaVersionColor),
-                  ),
-                ),
               ],
             )
     ];
