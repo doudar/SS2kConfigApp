@@ -31,10 +31,7 @@ class _DropdownCardState extends State<DropdownCard> {
   String? selectedValue;
   late BLEData bleData;
   StreamSubscription? _charSubscription;
-  FixedExtentScrollController wheelScroller = FixedExtentScrollController(initialItem: 0);
-  double _wheelVisibility = 0.0;
-  Timer _wheelVisibilityTimer = Timer.periodic(Duration(milliseconds: 500), (_wheelVisibilityTimer) {});
-  int _deviceCounter = 0;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -42,16 +39,12 @@ class _DropdownCardState extends State<DropdownCard> {
     bleData = BLEDataManager.forDevice(this.widget.device);
     buildDevicesMap();
     selectedValue = ddItems.isNotEmpty ? ddItems[0] : null;
-    _wheelVisibilityTimer = Timer.periodic(Duration(milliseconds: 500), (_wheelVisibilityTimer) {
-      _wheelVisibility = 1;
-      if (mounted) setState(() {});
-    });
     try {
       _charSubscription = this.bleData.getMyCharacteristic(this.widget.device).onValueReceived.listen((data) async {
         if (mounted) {
           buildDevicesMap();
           setState(() {
-            ddItems;
+            // Trigger rebuild
           });
         }
       });
@@ -62,14 +55,12 @@ class _DropdownCardState extends State<DropdownCard> {
 
   @override
   void dispose() {
-    super.dispose();
     _charSubscription?.cancel();
-    _wheelVisibilityTimer.cancel();
+    super.dispose();
   }
 
   void buildDevicesMap() {
-    _deviceCounter = ddItems.length;
-    late List _items;
+    List _items = [];
     ddItems = [this.widget.c["value"]];
     this
         .bleData
@@ -104,10 +95,6 @@ class _DropdownCardState extends State<DropdownCard> {
     }
     //remove duplicates:
     ddItems = ddItems.toSet().toList(); // Remove duplicates
-    if(ddItems.length != _deviceCounter) {
-      // If the length has changed, update the wheel scroller
-      wheelScroller.jumpToItem(ddItems.length);
-    } 
   }
 
   Future _changeBLEDevice(BuildContext context) async {
@@ -125,114 +112,137 @@ class _DropdownCardState extends State<DropdownCard> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    return Center(
       child: Container(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.3,
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+          maxWidth: MediaQuery.of(context).size.width * 0.9,
         ),
         child: Card(
-          elevation: 15,
+          elevation: 8,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(16),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  this.widget.c["humanReadableName"],
-                  style: TextStyle(fontSize: 20),
-                  textAlign: TextAlign.left,
-                ),
-              ),
-              Text(this.widget.c["value"]),
-              SizedBox(height: 20),
-              Expanded(
-                child: AnimatedOpacity(
-                  opacity: _wheelVisibility,
-                  duration: const Duration(seconds: 1),
-                  child: ListWheelScrollView.useDelegate(
-                    itemExtent: 50,
-                    diameterRatio: 2.5,
-                    perspective: 0.005,
-                    clipBehavior: Clip.none,
-                    renderChildrenOutsideViewport: true,
-                    physics: FixedExtentScrollPhysics(),
-                    controller: wheelScroller,
-                    childDelegate: ListWheelChildBuilderDelegate(
-                      childCount: ddItems.length,
-                      builder: (BuildContext context, int index) {
-                        return SizedBox(
-                          width: MediaQuery.of(context).size.width * 0.65,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Theme.of(context).dividerColor.withOpacity(0.3),
-                                width: 1,
-                              ),
-                            ),
-                            child: ListTile(
-                              enableFeedback: true,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              title: Text(
-                                ddItems[index],
-                                textAlign: TextAlign.center,
-                                textScaler: TextScaler.linear(1.1),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              titleAlignment: ListTileTitleAlignment.center,
-                              onTap: () {
-                                selectedValue = ddItems[index];
-                                _changeBLEDevice(context);
-                              },
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Text(
+                    this.widget.c["humanReadableName"],
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
                   ),
                 ),
-              ),
-              SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: <Widget>[
-                  TextButton(
-                      child: const Text('SCAN'),
-                      onPressed: () {
-                        //Find the save command and execute it
-                        this
-                            .bleData
-                            .customCharacteristic
-                            .forEach((c) => this.bleData.findNSave(this.widget.device, c, scanBLEVname));
-                      }),
-                  const SizedBox(width: 8),
-                  TextButton(
-                      child: const Text('BACK'),
-                      onPressed: () {
-                        Navigator.pop(context);
-                      }),
-                  const SizedBox(width: 8),
-                  TextButton(
-                      child: const Text('SAVE'),
-                      onPressed: () {
-                        //Find the save command and execute it
-                        this
-                            .bleData
-                            .customCharacteristic
-                            .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
-                        Navigator.pop(context);
-                      }),
-                  const SizedBox(width: 8),
-                ],
-              ),
-            ],
+                SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Text(
+                    "Current: ${this.widget.c["value"]}",
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+                  ),
+                ),
+                Divider(height: 24),
+                Flexible(
+                  child: ddItems.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(32.0),
+                          child: Center(child: Text("No devices found")),
+                        )
+                      : ScrollbarTheme(
+                          data: ScrollbarThemeData(
+                            thumbColor: WidgetStatePropertyAll(Colors.blueGrey),
+                            trackVisibility: WidgetStatePropertyAll(true),
+                            thickness: WidgetStatePropertyAll(20.0),
+                          ),
+                          child: Scrollbar(
+                            controller: _scrollController,
+                            thumbVisibility: true,
+                            child: ListView.separated(
+                            controller: _scrollController,
+                            shrinkWrap: true,
+                            padding: EdgeInsets.symmetric(horizontal: 8),
+                            itemCount: ddItems.length,
+                            separatorBuilder: (ctx, i) => SizedBox(height: 4),
+                            itemBuilder: (BuildContext context, int index) {
+                              final item = ddItems[index];
+                              final isSelected = item == this.widget.c["value"];
+
+                              return Material(
+                                color: isSelected ? Theme.of(context).primaryColor.withValues(alpha: 0.1) : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(8),
+                                  onTap: () {
+                                    selectedValue = item;
+                                    _changeBLEDevice(context);
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            item,
+                                            style: TextStyle(
+                                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                              fontSize: 16,
+                                              color: isSelected ? Theme.of(context).primaryColor : null,
+                                            ),
+                                          ),
+                                        ),
+                                        if (isSelected)
+                                          Icon(Icons.check_circle, color: Theme.of(context).primaryColor, size: 20),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                ),
+                Divider(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton.icon(
+                          icon: Icon(Icons.refresh),
+                          label: const Text('SCAN'),
+                          onPressed: () {
+                            //Find the save command and execute it
+                            this
+                                .bleData
+                                .customCharacteristic
+                                .forEach((c) => this.bleData.findNSave(this.widget.device, c, scanBLEVname));
+                          }),
+                      Spacer(),
+                      TextButton(
+                          child: const Text('BACK'),
+                          onPressed: () {
+                            Navigator.pop(context);
+                          }),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                          child: const Text('SAVE'),
+                          onPressed: () {
+                            //Find the save command and execute it
+                            this
+                                .bleData
+                                .customCharacteristic
+                                .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                            Navigator.pop(context);
+                          }),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

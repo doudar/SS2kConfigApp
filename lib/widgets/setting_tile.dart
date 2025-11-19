@@ -99,7 +99,7 @@ class _SettingTileState extends State<SettingTile> {
       child: Column(
         children: <Widget>[
           Text(c["textDescription"], style: TextStyle(color: Colors.white)),
-          SizedBox(height: 50),
+          SizedBox(height: 10),
           Center(
             child: Hero(
                 tag: c["vName"],
@@ -108,7 +108,7 @@ class _SettingTileState extends State<SettingTile> {
                   type: MaterialType.transparency,
                 )),
           ),
-          SizedBox(height: 50),
+          SizedBox(height: 10),
           Text("Settings are immediate for the current session.\nClick save to make them persistent.",
               textAlign: TextAlign.center, style: TextStyle(color: Colors.white)),
         ],
