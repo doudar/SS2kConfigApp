@@ -96,3 +96,4 @@ ios/**/DerivedData/
 # Test artifacts
 test/*.fit
 test/*.gpx
+android/build/reports/problems/problems-report.html
