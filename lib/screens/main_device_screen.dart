@@ -30,6 +30,7 @@ class MainDeviceScreen extends StatefulWidget {
 
 class _MainDeviceScreenState extends State<MainDeviceScreen> {
   late BLEData bleData;
+  bool _maintenanceExpanded = false;
 
   @override
   void initState() {
@@ -155,6 +156,83 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     );
   }
 
+  Widget _buildExpandableMaintenanceCard() {
+    return Card(
+      elevation: 4,
+      margin: EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        children: [
+          ListTile(
+            onTap: () {
+              setState(() {
+                _maintenanceExpanded = !_maintenanceExpanded;
+              });
+            },
+            leading: SizedBox(
+              width: 56,
+              height: 56,
+              child: Icon(
+                Icons.build_outlined,
+                size: 40,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            title: Text("Maintenance"),
+            trailing: Icon(
+              _maintenanceExpanded ? Icons.expand_less : Icons.expand_more,
+            ),
+          ),
+          if (_maintenanceExpanded) ...[
+            Divider(height: 1),
+            ListTile(
+              leading: SizedBox(
+                width: 56,
+                height: 56,
+                child: Image.asset(
+                  'assets/GitHub-logo.png',
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                  gaplessPlayback: true,
+                  isAntiAlias: true,
+                ),
+              ),
+              title: Text("Update Firmware"),
+              trailing: Icon(Icons.arrow_forward),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => FirmwareUpdateScreen(device: this.widget.device),
+                  ),
+                );
+              },
+            ),
+            Divider(height: 1),
+            ListTile(
+              leading: SizedBox(
+                width: 56,
+                height: 56,
+                child: Icon(
+                  Icons.article_outlined,
+                  size: 40,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              title: Text("View Logs"),
+              trailing: Icon(Icons.arrow_forward),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => BleLogScreen(device: this.widget.device),
+                  ),
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -182,14 +260,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
             Navigator.of(context)
                 .push(MaterialPageRoute(builder: (context) => WorkoutScreen(device: this.widget.device)));
           }),
-          _buildCard('assets/GitHub-logo.png', "Update Firmware", () {
-            Navigator.of(context)
-                .push(MaterialPageRoute(builder: (context) => FirmwareUpdateScreen(device: this.widget.device)));
-          }),
-          _buildCardWithIcon(Icons.article_outlined, "BLE Logs", () {
-            Navigator.of(context)
-                .push(MaterialPageRoute(builder: (context) => BleLogScreen(device: this.widget.device)));
-          }),
+          _buildExpandableMaintenanceCard(),
         ],
       ),
     );

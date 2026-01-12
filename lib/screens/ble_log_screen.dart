@@ -224,7 +224,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
     return Scaffold(
       appBar: SS2KAppBar(
         device: widget.device,
-        title: "BLE Logs",
+        title: "View Logs",
       ),
       body: Column(
         children: [
