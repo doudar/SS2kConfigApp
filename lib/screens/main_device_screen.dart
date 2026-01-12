@@ -14,6 +14,7 @@ import '../screens/settings_screen.dart';
 import '../screens/shifter_screen.dart';
 import '../screens/firmware_update_screen.dart';
 import '../screens/workout_screen.dart';
+import '../screens/ble_log_screen.dart';
 
 import '../utils/extra.dart';
 
@@ -126,6 +127,34 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     );
   }
 
+  Widget _buildCardWithIcon(IconData iconData, String title, VoidCallback onPressed) {
+    return Card(
+      elevation: 4,
+      margin: EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        children: [
+          ListTile(
+            onTap: onPressed,
+            leading: SizedBox(
+              width: 56,
+              height: 56,
+              child: Icon(
+                iconData,
+                size: 40,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            title: Text(title),
+            trailing: IconButton(
+              icon: Icon(Icons.arrow_forward),
+              onPressed: onPressed,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -156,6 +185,10 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
           _buildCard('assets/GitHub-logo.png', "Update Firmware", () {
             Navigator.of(context)
                 .push(MaterialPageRoute(builder: (context) => FirmwareUpdateScreen(device: this.widget.device)));
+          }),
+          _buildCardWithIcon(Icons.article_outlined, "BLE Logs", () {
+            Navigator.of(context)
+                .push(MaterialPageRoute(builder: (context) => BleLogScreen(device: this.widget.device)));
           }),
         ],
       ),

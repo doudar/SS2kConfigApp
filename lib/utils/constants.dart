@@ -75,6 +75,7 @@ final String BLE_hMinVname = "BLE_homingMin";
 final String BLE_hMaxVname = "BLE_homingMax";
 final String homingSensitivityVname = "BLE_homingSensitivity";
 final String pTab4pwrVname = "BLE_pTab4pwr";
+final String BLE_logStreamVname = "BLE_BLELogging";
 
 // Refactored customCharacteristicFramework to directly use Dart map
 final dynamic customCharacteristicFramework = [
@@ -607,5 +608,16 @@ final dynamic customCharacteristicFramework = [
     "max": 1,
     "textDescription": "Enable to use the power table for power instead of a power meter",
     "defaultData": "false"
+  },
+  {
+    "vName": BLE_logStreamVname,
+    "reference": "0x30",
+    "isSetting": false,
+    "type": "string",
+    "humanReadableName": "BLE Log Stream",
+    "min": 0,
+    "max": 2000,
+    "textDescription": "Read last BLE log message or enable/disable BLE log streaming",
+    "defaultData": ""
   }
 ];
