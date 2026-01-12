@@ -5,8 +5,11 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
 import '../widgets/ss2k_app_bar.dart';
@@ -149,17 +152,71 @@ class _BleLogScreenState extends State<BleLogScreen> {
     });
   }
 
-  void _readCurrentLog() {
-    if (bleData.isSimulated) {
-      setState(() {
-        _logMessages.add('[${DateTime.now().toIso8601String()}] Demo: Current log buffer content');
-        _scrollToBottom();
-      });
+  Future<void> _saveLogs() async {
+    if (_logMessages.isEmpty) {
       return;
     }
 
-    // Request a read from the device
-    bleData.requestSettings(widget.device);
+    try {
+      // Get the directory for saving files
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+      final filePath = '${directory.path}/ble_logs_$timestamp.txt';
+      
+      // Create the file and write logs
+      final file = File(filePath);
+      await file.writeAsString(_logMessages.join('\n'));
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Logs saved to $filePath'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save logs: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendLogs() async {
+    if (_logMessages.isEmpty) {
+      return;
+    }
+
+    try {
+      // Create a temporary file with logs
+      final directory = await getTemporaryDirectory();
+      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+      final filePath = '${directory.path}/ble_logs_$timestamp.txt';
+      
+      final file = File(filePath);
+      await file.writeAsString(_logMessages.join('\n'));
+      
+      // Share the file
+      await Share.shareXFiles(
+        [XFile(filePath)],
+        subject: 'SmartSpin2k BLE Logs',
+        text: 'BLE logs from SmartSpin2k device',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send logs: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -196,9 +253,17 @@ class _BleLogScreenState extends State<BleLogScreen> {
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: _readCurrentLog,
-                          icon: Icon(Icons.refresh),
-                          label: Text('Read Current'),
+                          onPressed: _logMessages.isNotEmpty ? _saveLogs : null,
+                          icon: Icon(Icons.save),
+                          label: Text('Save'),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _logMessages.isNotEmpty ? _sendLogs : null,
+                          icon: Icon(Icons.share),
+                          label: Text('Send'),
                         ),
                       ),
                       SizedBox(width: 8),
