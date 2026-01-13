@@ -9,8 +9,8 @@ import 'package:flutter/services.dart';
 
 // Constants
 const int INT32_MIN = -2147483648;
-const double MIN_POWER_RANGE = 1000.0;  // Minimum watts range for power table
-const double MIN_RESISTANCE_RANGE = 200.0;  // Minimum resistance range for power table
+const double MIN_POWER_RANGE = 900.0;  // Minimum watts range for power table
+const double MIN_RESISTANCE_RANGE = 2000.0;  // Minimum resistance range for power table
 
 final String csUUID = "77776277-7877-7774-4466-896665500000";
 final String ccUUID = "77776277-7877-7774-4466-896665500001";

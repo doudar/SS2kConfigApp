@@ -6,13 +6,14 @@
  */
 import 'dart:async';
 import 'package:ss2kconfigapp/utils/constants.dart';
-import 'package:ss2kconfigapp/utils/extra.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../utils/bledata.dart';
+import '../utils/extra.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/ss2k_app_bar.dart';
+import '../widgets/power_table_chart.dart';
 
 class ShifterScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -24,19 +25,28 @@ class ShifterScreen extends StatefulWidget {
 
 class _ShifterScreenState extends State<ShifterScreen> {
   late BLEData bleData;
-  late Map c;
+  Map<String, Object> c = const {};
   String t = "Loading";
-  String statusString = '';
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   bool _refreshBlocker = false;
+  double _chartOpacity = 0.15;
+  bool _showOpacityControl = false;
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+  final GlobalKey<PowerTableChartState> _chartKey = GlobalKey<PowerTableChartState>();
 
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
-    this.bleData.customCharacteristic.forEach((i) => i["vName"] == shifterPositionVname ? c = i : ());
-    t = c["value"] ?? "Loading";
+    c = this
+        .bleData
+        .customCharacteristic
+        .firstWhere(
+          (i) => i["vName"] == shifterPositionVname,
+          orElse: () => <String, Object>{},
+        );
+    t = c.isNotEmpty ? (c["value"]?.toString() ?? "Loading") : "Loading";
+
     //special setup for demo mode
     if (bleData.isSimulated) {
       t = "0";
@@ -54,6 +64,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
         }
       }
     });
+
     //Start Subscription
     rwSubscription();
   }
@@ -68,6 +79,10 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
   Future rwSubscription() async {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
+      if (state == BluetoothConnectionState.connected) {
+        _chartKey.currentState?.requestAllCadenceLines();
+        _chartKey.currentState?.requestHomingValues();
+      }
       if (mounted) {
         setState(() {});
       }
@@ -85,13 +100,13 @@ class _ShifterScreenState extends State<ShifterScreen> {
     await Future.delayed(Duration(microseconds: 500));
 
     if (mounted) {
+      // Refresh the shifter characteristic value from BLE so UI updates when it changes remotely
+      c = bleData.customCharacteristic.firstWhere(
+        (i) => i["vName"] == shifterPositionVname,
+        orElse: () => <String, Object>{},
+      );
       setState(() {
-        t = c["value"] ?? "Loading";
-        statusString = bleData.ftmsData.watts.toString() +
-            "w   " +
-            bleData.ftmsData.cadence.toString() +
-            "rpm " +
-            (bleData.ftmsData.heartRate == 0 ? "" : bleData.ftmsData.heartRate.toString() + "bpm ");
+        t = c["value"]?.toString() ?? "Loading";
       });
       if (bleData.FTMSmode == 0 || bleData.simulateTargetWatts == false) {
         bleData.simulatedTargetWatts = "";
@@ -105,13 +120,17 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
   shift(int amount) {
     if (t != "Loading") {
-      String _t = (int.parse(c["value"]) + amount).toString();
-      c["value"] = _t;
+      final current = int.tryParse(c["value"]?.toString() ?? "");
+      if (current == null) {
+        return;
+      }
+      String _t = (current + amount).toString();
+      c = Map<String, Object>.from(c)..["value"] = _t;
       this.bleData.writeToSS2k(this.widget.device, c);
     }
     if (bleData.isSimulated) {
       setState(() {
-        t = c["value"];
+        t = c["value"]?.toString() ?? t;
       });
     }
     WakelockPlus.enable();
@@ -159,66 +178,160 @@ class _ShifterScreenState extends State<ShifterScreen> {
             device: widget.device,
             title: "Virtual Shifter",
           ),
-          body: Align(
-            alignment: Alignment.center,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisSize: MainAxisSize.max,
-              children: [
-                SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      if (bleData.simulatedTargetWatts != "")
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                          child: MetricBox(
-                            value: bleData.simulatedTargetWatts.toString(),
-                            label: 'Target Watts',
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                        child: MetricBox(
-                          value: bleData.ftmsData.watts.toString(),
-                          label: 'Watts',
-                        ),
+          body: Stack(
+            children: [
+              // Background Chart
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32.0),
+                  child: Opacity(
+                    opacity: _chartOpacity,
+                    child: IgnorePointer(
+                      child: PowerTableChart(
+                        key: _chartKey,
+                        device: widget.device,
+                        bleData: bleData,
+                        pollTargetPosition: true,
                       ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                        child: MetricBox(
-                          value: bleData.ftmsData.cadence.toString(),
-                          label: 'RPM',
-                        ),
-                      ),
-                      if (bleData.ftmsData.heartRate != 0)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                          child: MetricBox(
-                            value: bleData.ftmsData.heartRate.toString(),
-                            label: 'BPM',
-                          ),
-                        )
-                    ],
+                    ),
                   ),
                 ),
-                SizedBox(height: 12),
-                _buildShiftButton(Icons.arrow_upward, () {
-                  shift(1);
-                }),
-                Spacer(flex: 1),
-                _buildGearDisplay(t), // Assuming '0' is the current gear value
-                Spacer(flex: 1),
-                _buildShiftButton(Icons.arrow_downward, () {
-                  shift(-1);
-                }),
-                Spacer(flex: 1),
-              ],
-            ),
+              ),
+              // Foreground Content
+              Align(
+                alignment: Alignment.center,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
+                    SizedBox(height: 8),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          if (bleData.simulatedTargetWatts != "")
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                              child: MetricBox(
+                                value: bleData.simulatedTargetWatts.toString(),
+                                label: 'Target Watts',
+                              ),
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: MetricBox(
+                              value: bleData.ftmsData.watts.toString(),
+                              label: 'Watts',
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: MetricBox(
+                              value: bleData.ftmsData.cadence.toString(),
+                              label: 'RPM',
+                            ),
+                          ),
+                          if (bleData.ftmsData.heartRate != 0)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                              child: MetricBox(
+                                value: bleData.ftmsData.heartRate.toString(),
+                                label: 'BPM',
+                              ),
+                            )
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    _buildShiftButton(Icons.arrow_upward, () {
+                      shift(1);
+                    }),
+                    Spacer(flex: 1),
+                    _buildGearDisplay(t), // Assuming '0' is the current gear value
+                    Spacer(flex: 1),
+                    _buildShiftButton(Icons.arrow_downward, () {
+                      shift(-1);
+                    }),
+                    Spacer(flex: 1),
+                  ],
+                ),
+              ),
+              Positioned(
+                right: 16,
+                bottom: 24,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Material(
+                      color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
+                      shape: const CircleBorder(),
+                      elevation: 4,
+                      child: IconButton(
+                        tooltip: _showOpacityControl ? 'Hide power table opacity' : 'Show power table opacity',
+                        icon: Icon(_showOpacityControl ? Icons.opacity : Icons.opacity_outlined),
+                        onPressed: () => setState(() => _showOpacityControl = !_showOpacityControl),
+                      ),
+                    ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 320),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: child,
+                        ),
+                        child: _showOpacityControl
+                            ? Padding(
+                                key: const ValueKey('opacityControl'),
+                                padding: const EdgeInsets.only(top: 8),
+                                child: _buildOpacityControl(context),
+                              )
+                            : const SizedBox.shrink(key: ValueKey('opacityControlEmpty')),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ));
+  }
+
+  Widget _buildOpacityControl(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4))],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('Power Table Opacity'),
+              const Spacer(),
+              Text('${(_chartOpacity * 100).round()}%'),
+            ],
+          ),
+          Slider(
+            value: _chartOpacity,
+            min: 0.05,
+            max: 0.5,
+            divisions: 9,
+            label: '${(_chartOpacity * 100).round()}%',
+            onChanged: (value) {
+              setState(() {
+                _chartOpacity = value;
+              });
+            },
+          ),
+        ],
+      ),
+    );
   }
 }

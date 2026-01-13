@@ -110,6 +110,9 @@ class _BleLogScreenState extends State<BleLogScreen> {
 
     if (mounted) {
       String newMessage = logCharacteristic["value"]?.toString() ?? "";
+      if (newMessage == "1") {
+        newMessage = "Initializing Logging.";
+      }
       if (newMessage.isNotEmpty && (_logMessages.isEmpty || _logMessages.last != newMessage)) {
         setState(() {
           _logMessages.add(newMessage);
