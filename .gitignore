@@ -32,7 +32,6 @@
 /build/
 
 # Web related
-lib/generated_plugin_registrant.dart
 
 # Symbolication related
 app.*.symbols
@@ -82,7 +81,6 @@ pubspec.lock
 .env.production
 
 # Generated code files
-/lib/generated_plugin_registrant.dart
 
 # Environment configuration
 lib/config/env.local.dart

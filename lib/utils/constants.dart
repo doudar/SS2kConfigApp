@@ -9,8 +9,8 @@ import 'package:flutter/services.dart';
 
 // Constants
 const int INT32_MIN = -2147483648;
-const double MIN_POWER_RANGE = 1000.0;  // Minimum watts range for power table
-const double MIN_RESISTANCE_RANGE = 200.0;  // Minimum resistance range for power table
+const double MIN_POWER_RANGE = 900.0;  // Minimum watts range for power table
+const double MIN_RESISTANCE_RANGE = 2000.0;  // Minimum resistance range for power table
 
 final String csUUID = "77776277-7877-7774-4466-896665500000";
 final String ccUUID = "77776277-7877-7774-4466-896665500001";
@@ -75,6 +75,7 @@ final String BLE_hMinVname = "BLE_homingMin";
 final String BLE_hMaxVname = "BLE_homingMax";
 final String homingSensitivityVname = "BLE_homingSensitivity";
 final String pTab4pwrVname = "BLE_pTab4pwr";
+final String BLE_logStreamVname = "BLE_BLELogging";
 
 // Refactored customCharacteristicFramework to directly use Dart map
 final dynamic customCharacteristicFramework = [
@@ -607,5 +608,16 @@ final dynamic customCharacteristicFramework = [
     "max": 1,
     "textDescription": "Enable to use the power table for power instead of a power meter",
     "defaultData": "false"
+  },
+  {
+    "vName": BLE_logStreamVname,
+    "reference": "0x30",
+    "isSetting": false,
+    "type": "string",
+    "humanReadableName": "BLE Log Stream",
+    "min": 0,
+    "max": 2000,
+    "textDescription": "Read last BLE log message or enable/disable BLE log streaming",
+    "defaultData": ""
   }
 ];
