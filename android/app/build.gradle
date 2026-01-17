@@ -22,6 +22,12 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
 
+// Release signing pulled from environment so CI can provide secrets without committing keystore.
+def releaseStoreFile = System.getenv('KEYSTORE_PATH')
+def releaseStorePassword = System.getenv('KEY_STORE_PASSWORD')
+def releaseKeyAlias = System.getenv('KEY_ALIAS')
+def releaseKeyPassword = System.getenv('KEY_PASSWORD')
+
 android {
     namespace "com.example.ss2kconfigapp"
     compileSdkVersion 36  // Updated to support audioplayers_android requirements
@@ -59,11 +65,25 @@ android {
         versionName flutterVersionName
     }
 
+    signingConfigs {
+        release {
+            if (releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword) {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig signingConfigs.debug
+            // Use CI-provided signing when available; fall back to debug for local convenience.
+            if (releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
             
             minifyEnabled true
             shrinkResources true

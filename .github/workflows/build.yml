@@ -170,6 +170,23 @@ jobs:
           envsubst < lib/config/env.local.dart > lib/config/env.local.dart.tmp
           mv lib/config/env.local.dart.tmp lib/config/env.local.dart
 
+      - name: Configure Android signing
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "No signing key provided; using debug signing."
+            exit 0
+          fi
+          echo "$SIGNING_KEY" | base64 -d > android/app/release-key.jks
+          echo "KEYSTORE_PATH=$PWD/android/app/release-key.jks" >> $GITHUB_ENV
+          echo "KEY_STORE_PASSWORD=$KEY_STORE_PASSWORD" >> $GITHUB_ENV
+          echo "KEY_ALIAS=$KEY_ALIAS" >> $GITHUB_ENV
+          echo "KEY_PASSWORD=$KEY_PASSWORD" >> $GITHUB_ENV
+
       - name: Build Android APK
         run: flutter build apk --no-tree-shake-icons
 
