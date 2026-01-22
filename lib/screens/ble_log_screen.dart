@@ -28,7 +28,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
   final List<String> _logMessages = [];
   final ScrollController _scrollController = ScrollController();
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
-  bool _refreshBlocker = false;
+  StreamSubscription<String>? _logSubscription; // New subscription
   Timer? _demoTimer;
 
   @override
@@ -96,31 +96,22 @@ class _BleLogScreenState extends State<BleLogScreen> {
       }
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      bleData.isReadingOrWriting.addListener(_rwListener);
-    });
-  }
-
-  void _rwListener() async {
-    if (_refreshBlocker) {
-      return;
-    }
-    _refreshBlocker = true;
-    await Future.delayed(Duration(milliseconds: 500));
-
-    if (mounted) {
-      String newMessage = logCharacteristic["value"]?.toString() ?? "";
+    // Subscribe directly to the log stream to catch every message
+    _logSubscription = bleData.logStream.listen((message) {
+      if (!mounted) return;
+      
+      String newMessage = message;
       if (newMessage == "1") {
         newMessage = "Initializing Logging.";
       }
-      if (newMessage.isNotEmpty && (_logMessages.isEmpty || _logMessages.last != newMessage)) {
+      
+      if (newMessage.isNotEmpty) {
         setState(() {
           _logMessages.add(newMessage);
           _scrollToBottom();
         });
       }
-    }
-    _refreshBlocker = false;
+    });
   }
 
   @override
@@ -130,7 +121,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
     
     _demoTimer?.cancel();
     _connectionStateSubscription?.cancel();
-    bleData.isReadingOrWriting.removeListener(_rwListener);
+    _logSubscription?.cancel(); // Cancel the stream subscription
     _scrollController.dispose();
     super.dispose();
   }
