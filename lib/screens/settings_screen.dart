@@ -25,6 +25,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>{
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   late BLEData bleData;
    bool _refreshBlocker = true;
 
@@ -55,28 +56,26 @@ class _SettingsScreenState extends State<SettingsScreen>{
         setState(() {});
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      bleData.isReadingOrWriting.addListener(_rwListner);
+    
+    // Subscribe to characteristic changes instead of isReadingOrWriting
+    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
+      if (!_refreshBlocker && mounted) {
+        _refreshBlocker = true;
+        Future.delayed(Duration(microseconds: 500), () {
+          if (mounted) {
+            setState(() {});
+          }
+          _refreshBlocker = false;
+        });
+      }
     });
   }
 
   @override
   void dispose() {
     _connectionStateSubscription?.cancel();
-    this.bleData.isReadingOrWriting.removeListener(_rwListner);
+    _characteristicChangeSubscription?.cancel();
     super.dispose();
-  }
-
-  void _rwListner() async {
-    if (_refreshBlocker) {
-      return;
-    }
-    _refreshBlocker = true;
-    await Future.delayed(Duration(microseconds: 500));
-    if (mounted) {
-      setState(() {});
-    }
-    _refreshBlocker = false;
   }
 
 //Build the settings dropdowns

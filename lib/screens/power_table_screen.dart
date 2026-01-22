@@ -25,6 +25,7 @@ class PowerTableScreen extends StatefulWidget {
 
 class _PowerTableScreenState extends State<PowerTableScreen> {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   late BLEData bleData;
   String statusString = '';
   final GlobalKey<PowerTableChartState> _chartKey = GlobalKey<PowerTableChartState>();
@@ -73,7 +74,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   @override
   void dispose() {
     _connectionStateSubscription?.cancel();
-    this.bleData.isReadingOrWriting.removeListener(_rwListner);
+    _characteristicChangeSubscription?.cancel();
     super.dispose();
   }
 
@@ -95,25 +96,22 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         setState(() {});
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      bleData.isReadingOrWriting.addListener(_rwListner);
+    
+    // Subscribe to characteristic changes instead of isReadingOrWriting
+    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
+      if (!_refreshBlocker && mounted) {
+        _refreshBlocker = true;
+        Future.delayed(Duration(microseconds: 500), () {
+          if (bleData.FTMSmode == 0 || bleData.FTMSmode == 17) {
+            bleData.simulatedTargetWatts = "";
+          }
+          if (mounted) {
+            setState(() {});
+          }
+          _refreshBlocker = false;
+        });
+      }
     });
-  }
-
-  void _rwListner() async {
-    if (_refreshBlocker) {
-      return;
-    }
-    _refreshBlocker = true;
-    await Future.delayed(Duration(microseconds: 500));
-
-    if (bleData.FTMSmode == 0 || bleData.FTMSmode == 17) {
-      bleData.simulatedTargetWatts = "";
-    }
-    if (mounted) {
-      setState(() {});
-    }
-    _refreshBlocker = false;
   }
 
   @override

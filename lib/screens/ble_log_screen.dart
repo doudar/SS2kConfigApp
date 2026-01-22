@@ -28,6 +28,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
   final List<String> _logMessages = [];
   final ScrollController _scrollController = ScrollController();
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   bool _refreshBlocker = false;
   Timer? _demoTimer;
 
@@ -96,31 +97,27 @@ class _BleLogScreenState extends State<BleLogScreen> {
       }
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      bleData.isReadingOrWriting.addListener(_rwListener);
-    });
-  }
-
-  void _rwListener() async {
-    if (_refreshBlocker) {
-      return;
-    }
-    _refreshBlocker = true;
-    await Future.delayed(Duration(milliseconds: 500));
-
-    if (mounted) {
-      String newMessage = logCharacteristic["value"]?.toString() ?? "";
-      if (newMessage == "1") {
-        newMessage = "Initializing Logging.";
-      }
-      if (newMessage.isNotEmpty && (_logMessages.isEmpty || _logMessages.last != newMessage)) {
-        setState(() {
-          _logMessages.add(newMessage);
-          _scrollToBottom();
+    // Subscribe to characteristic changes instead of isReadingOrWriting
+    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
+      if (!_refreshBlocker && mounted) {
+        _refreshBlocker = true;
+        Future.delayed(Duration(milliseconds: 500), () {
+          if (mounted) {
+            String newMessage = logCharacteristic["value"]?.toString() ?? "";
+            if (newMessage == "1") {
+              newMessage = "Initializing Logging.";
+            }
+            if (newMessage.isNotEmpty && (_logMessages.isEmpty || _logMessages.last != newMessage)) {
+              setState(() {
+                _logMessages.add(newMessage);
+                _scrollToBottom();
+              });
+            }
+          }
+          _refreshBlocker = false;
         });
       }
-    }
-    _refreshBlocker = false;
+    });
   }
 
   @override
@@ -130,7 +127,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
     
     _demoTimer?.cancel();
     _connectionStateSubscription?.cancel();
-    bleData.isReadingOrWriting.removeListener(_rwListener);
+    _characteristicChangeSubscription?.cancel();
     _scrollController.dispose();
     super.dispose();
   }

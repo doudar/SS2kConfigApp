@@ -45,6 +45,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
   // Guard to prevent animation calls during teardown.
   bool _isDisposing = false;
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   final ScrollController _scrollController = ScrollController();
   double _lastScrollPosition = 0;
   final GlobalKey _workoutGraphKey = GlobalKey();
@@ -304,20 +305,18 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       }
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      bleData.isReadingOrWriting.addListener(_rwListener);
+    // Subscribe to characteristic changes instead of isReadingOrWriting
+    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
+      if (!_refreshBlocker && mounted) {
+        _refreshBlocker = true;
+        Future.delayed(const Duration(microseconds: 500), () {
+          if (mounted) {
+            setState(() {});
+          }
+          _refreshBlocker = false;
+        });
+      }
     });
-  }
-
-  void _rwListener() async {
-    if (_refreshBlocker) return;
-    _refreshBlocker = true;
-    await Future.delayed(const Duration(microseconds: 500));
-
-    if (mounted) {
-      setState(() {});
-    }
-    _refreshBlocker = false;
   }
 
   @override
@@ -325,7 +324,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     _isDisposing = true;
     // Remove external listeners FIRST to avoid callbacks firing while controllers are being disposed.
     _workoutController.removeListener(_workoutControllerListener);
-    bleData.isReadingOrWriting.removeListener(_rwListener);
+    _characteristicChangeSubscription?.cancel();
     _connectionStateSubscription?.cancel();
 
     // Now safely dispose animation + other resources.

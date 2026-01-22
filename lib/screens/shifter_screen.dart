@@ -28,6 +28,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   Map<String, Object> c = const {};
   String t = "Loading";
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   bool _refreshBlocker = false;
   double _chartOpacity = 0.15;
   bool _showOpacityControl = false;
@@ -72,7 +73,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   @override
   void dispose() {
     _connectionStateSubscription?.cancel();
-    this.bleData.isReadingOrWriting.removeListener(_rwListner);
+    _characteristicChangeSubscription?.cancel();
     WakelockPlus.disable();
     super.dispose();
   }
@@ -87,35 +88,20 @@ class _ShifterScreenState extends State<ShifterScreen> {
         setState(() {});
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      bleData.isReadingOrWriting.addListener(_rwListner);
-    });
-  }
-
-  void _rwListner() async {
-    if (_refreshBlocker) {
-      return;
-    }
-    _refreshBlocker = true;
-    await Future.delayed(Duration(microseconds: 500));
-
-    if (mounted) {
-      // Refresh the shifter characteristic value from BLE so UI updates when it changes remotely
-      c = bleData.customCharacteristic.firstWhere(
-        (i) => i["vName"] == shifterPositionVname,
-        orElse: () => <String, Object>{},
-      );
-      setState(() {
-        t = c["value"]?.toString() ?? "Loading";
-      });
-      if (bleData.FTMSmode == 0 || bleData.simulateTargetWatts == false) {
-        bleData.simulatedTargetWatts = "";
+    
+    // Subscribe to characteristic changes instead of isReadingOrWriting
+    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
+      // Only refresh on shifterPosition changes
+      if (event.vName == shifterPositionVname && !_refreshBlocker && mounted) {
+        _refreshBlocker = true;
+        Future.delayed(Duration(microseconds: 500), () {
+          if (mounted) {
+            setState(() {});
+          }
+          _refreshBlocker = false;
+        });
       }
-   //   if(t == "Loading"){
-   //     bleData.requestSettings(widget.device);
-   //   }
-    }
-    _refreshBlocker = false;
+    });
   }
 
   shift(int amount) {
