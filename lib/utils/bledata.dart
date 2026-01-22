@@ -17,6 +17,21 @@ import 'bleConstants.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
 
+/// Event model for characteristic changes
+class CharacteristicChangeEvent {
+  final String vName;
+  final String reference;
+  final String value;
+  final String type;
+
+  CharacteristicChangeEvent({
+    required this.vName,
+    required this.reference,
+    required this.value,
+    required this.type,
+  });
+}
+
 class BLEDataManager {
   static final Map<String, BLEData> _dataMap = {};
 
@@ -107,6 +122,14 @@ class BLEData {
   final double tableOldDivisor = 100.0;
   final double tableNewDivisor = 10.0;
   double tableDivisor = 100.0; // Default divisor for power table data
+
+  // Stream controller for characteristic changes
+  final StreamController<CharacteristicChangeEvent> _characteristicChangeController =
+      StreamController<CharacteristicChangeEvent>.broadcast();
+
+  /// Stream of characteristic changes
+  Stream<CharacteristicChangeEvent> get characteristicChanges => _characteristicChangeController.stream;
+
 
   List<List<int?>> powerTableData = List.generate(
     10,
@@ -646,7 +669,8 @@ class BLEData {
                       FTMSmode = int.parse(this.simulatedFTMSmode);
                     }
                   }
-
+                  // Emit characteristic change event
+                  _emitCharacteristicChange(c);
                   break;
                 }
 
@@ -663,17 +687,22 @@ class BLEData {
                       print('Simulate target watts = $simulateTargetWatts');
                     }
                   }
+                  // Emit characteristic change event
+                  _emitCharacteristicChange(c);
                   break;
                 }
               case "float":
                 {
                   c["value"] = (data.getInt16(2, Endian.little) / 10).toString();
+                  // Emit characteristic change event
+                  _emitCharacteristicChange(c);
                   break;
                 }
               case "long":
                 {
                   c["value"] = data.getInt32(2, Endian.little).toString();
-
+                  // Emit characteristic change event
+                  _emitCharacteristicChange(c);
                   break;
                 }
               case "string":
@@ -719,6 +748,8 @@ class BLEData {
                     this.firmwareVersion.value = c["value"];
                     print("FW Version Was Updated!! ${c['value']} ${this.firmwareVersion.value}");
                   }
+                  // Emit characteristic change event
+                  _emitCharacteristicChange(c);
                   break;
                 }
               case "powerTableData":
@@ -734,6 +765,8 @@ class BLEData {
                   }
                   this.powerTableData[cadenceRow] = row;
                 }
+                // Emit characteristic change event
+                _emitCharacteristicChange(c);
                 break;
               default:
                 {
@@ -749,11 +782,30 @@ class BLEData {
         for (var c in this.customCharacteristic) {
           if (int.parse(c["reference"]) == value[1]) {
             c["value"] = noFirmSupport;
+            // Emit characteristic change event
+            _emitCharacteristicChange(c);
           }
         }
       }
       this.isReadingOrWriting.value = false;
     }); //VV This is handled by the subscription flag.
     device.cancelWhenDisconnected(subscription);
+  }
+
+  /// Helper method to emit characteristic change events
+  void _emitCharacteristicChange(Map c) {
+    if (!_characteristicChangeController.isClosed) {
+      _characteristicChangeController.add(CharacteristicChangeEvent(
+        vName: c["vName"] ?? "",
+        reference: c["reference"] ?? "",
+        value: c["value"]?.toString() ?? "",
+        type: c["type"] ?? "",
+      ));
+    }
+  }
+
+  /// Dispose of resources
+  void dispose() {
+    _characteristicChangeController.close();
   }
 }
