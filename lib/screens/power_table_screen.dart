@@ -85,6 +85,17 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     setState(() {}); // refresh the icon state
   }
 
+  String _getGearValue() {
+    var c = bleData.customCharacteristic.firstWhere(
+      (i) => i["vName"] == shifterPositionVname,
+      orElse: () => <String, Object>{},
+    );
+    // In simulation, default to "0" if not set, otherwise check value or return "-"
+    if (bleData.isSimulated && (c.isEmpty || c["value"] == null)) return "0";
+
+    return c.isNotEmpty ? (c["value"]?.toString() ?? "-") : "-";
+  }
+
   Future rwSubscription() async {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       if (state == BluetoothConnectionState.connected) {
@@ -168,7 +179,14 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
                         value: bleData.ftmsData.heartRate.toString(),
                         label: 'BPM',
                       ),
-                    )
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: MetricBox(
+                      value: _getGearValue(),
+                      label: 'Gear',
+                    ),
+                  ),
                 ],
               ),
             ),

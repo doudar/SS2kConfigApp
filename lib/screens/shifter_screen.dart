@@ -131,32 +131,33 @@ class _ShifterScreenState extends State<ShifterScreen> {
     WakelockPlus.enable();
   }
 
-  Widget _buildShiftButton(IconData icon, VoidCallback onPressed) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        elevation: 5,
-        //foregroundColor: ThemeData().colorScheme.primaryContainer, // Button color
-        // backgroundColor: ThemeData().colorScheme.onPrimaryContainer, // Icon color
-        // shadowColor: ThemeData().colorScheme.background.withOpacity(0.5),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(20))), // Oval shape
-        padding: EdgeInsets.symmetric(vertical: 48, horizontal: 30), // Padding for oval shape
+  Widget _buildShiftButton(IconData icon, VoidCallback onPressed, {double height = 150}) {
+    return SizedBox(
+      height: height,
+      width: height * 0.8,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          elevation: 5,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(height * 0.15))),
+          padding: EdgeInsets.zero,
+        ),
+        child: Icon(icon, size: height * 0.4),
+        onPressed: onPressed,
       ),
-      child: Icon(icon, size: 60), // Icon size
-      onPressed: onPressed,
     );
   }
 
-  Widget _buildGearDisplay(String gearNumber) {
+  Widget _buildGearDisplay(String gearNumber, {double fontSize = 48}) {
     return Container(
-      padding: EdgeInsets.symmetric(vertical: 16, horizontal: 32),
+      padding: EdgeInsets.symmetric(vertical: fontSize * 0.3, horizontal: fontSize * 0.6),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(14.0),
+        borderRadius: BorderRadius.circular(fontSize * 0.3),
       ),
       child: Text(
         gearNumber,
         style: TextStyle(
-          fontSize: 48,
+          fontSize: fontSize,
           fontWeight: FontWeight.bold,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
@@ -193,64 +194,72 @@ class _ShifterScreenState extends State<ShifterScreen> {
                 ),
               ),
               // Foreground Content
-              Align(
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.max,
-                  children: [
-                    SizedBox(height: 8),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: <Widget>[
-                          if (bleData.simulatedTargetWatts != "")
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                              child: MetricBox(
-                                value: bleData.simulatedTargetWatts.toString(),
-                                label: 'Target Watts',
+              Positioned.fill(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final double availH = constraints.maxHeight;
+                    // Calculate dynamic sizes based on available height
+                    double buttonHeight = (availH * 0.22).clamp(60.0, 160.0);
+                    double gearFontSize = (buttonHeight * 0.4).clamp(24.0, 48.0);
+                    
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.max,
+                      children: [
+                        SizedBox(height: 8),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: <Widget>[
+                              if (bleData.simulatedTargetWatts != "")
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                  child: MetricBox(
+                                    value: bleData.simulatedTargetWatts.toString(),
+                                    label: 'Target Watts',
+                                  ),
+                                ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                child: MetricBox(
+                                  value: bleData.ftmsData.watts.toString(),
+                                  label: 'Watts',
+                                ),
                               ),
-                            ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                            child: MetricBox(
-                              value: bleData.ftmsData.watts.toString(),
-                              label: 'Watts',
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                            child: MetricBox(
-                              value: bleData.ftmsData.cadence.toString(),
-                              label: 'RPM',
-                            ),
-                          ),
-                          if (bleData.ftmsData.heartRate != 0)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                              child: MetricBox(
-                                value: bleData.ftmsData.heartRate.toString(),
-                                label: 'BPM',
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                child: MetricBox(
+                                  value: bleData.ftmsData.cadence.toString(),
+                                  label: 'RPM',
+                                ),
                               ),
-                            )
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: 12),
-                    _buildShiftButton(Icons.arrow_upward, () {
-                      shift(1);
-                    }),
-                    Spacer(flex: 1),
-                    _buildGearDisplay(t), // Assuming '0' is the current gear value
-                    Spacer(flex: 1),
-                    _buildShiftButton(Icons.arrow_downward, () {
-                      shift(-1);
-                    }),
-                    Spacer(flex: 1),
-                  ],
+                              if (bleData.ftmsData.heartRate != 0)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                  child: MetricBox(
+                                    value: bleData.ftmsData.heartRate.toString(),
+                                    label: 'BPM',
+                                  ),
+                                )
+                            ],
+                          ),
+                        ),
+                        SizedBox(height: 12),
+                        _buildShiftButton(Icons.arrow_upward, () {
+                          shift(1);
+                        }, height: buttonHeight),
+                        Spacer(flex: 1),
+                        _buildGearDisplay(t, fontSize: gearFontSize),
+                        Spacer(flex: 1),
+                        _buildShiftButton(Icons.arrow_downward, () {
+                          shift(-1);
+                        }, height: buttonHeight),
+                        Spacer(flex: 1),
+                      ],
+                    );
+                  }
                 ),
               ),
               Positioned(
