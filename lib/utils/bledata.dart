@@ -419,6 +419,16 @@ class BLEData {
         index += 1;
       }
       this.isReadingOrWriting.value = false;
+      
+      // Emit a characteristic change event for FTMS data updates
+      if (!_characteristicChangeController.isClosed) {
+        _characteristicChangeController.add(CharacteristicChangeEvent(
+          vName: "FTMS_DATA",
+          reference: "FTMS",
+          value: "updated",
+          type: "ftms",
+        ));
+      }
     });
     device.cancelWhenDisconnected(subscription);
   }
