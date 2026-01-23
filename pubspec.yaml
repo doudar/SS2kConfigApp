@@ -7,7 +7,7 @@ publish_to: "none"
 
 environment:
   sdk: ">=3.10.0 <=4.0.0" # Updated for current Dart 3.10
-  flutter: ">=3.38.1 <4.0.0" # Allow Flutter 3.38.1 and later
+  flutter: 3.38.1
 
 dependencies:
   flutter:
