@@ -28,8 +28,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
   final List<String> _logMessages = [];
   final ScrollController _scrollController = ScrollController();
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
-  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
-  bool _refreshBlocker = false;
+  StreamSubscription<String>? _logSubscription; // New subscription
   Timer? _demoTimer;
 
   @override
@@ -97,24 +96,19 @@ class _BleLogScreenState extends State<BleLogScreen> {
       }
     });
 
-    // Subscribe to characteristic changes instead of isReadingOrWriting
-    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
-      if (!_refreshBlocker && mounted) {
-        _refreshBlocker = true;
-        Future.delayed(Duration(milliseconds: 500), () {
-          if (mounted) {
-            String newMessage = logCharacteristic["value"]?.toString() ?? "";
-            if (newMessage == "1") {
-              newMessage = "Initializing Logging.";
-            }
-            if (newMessage.isNotEmpty && (_logMessages.isEmpty || _logMessages.last != newMessage)) {
-              setState(() {
-                _logMessages.add(newMessage);
-                _scrollToBottom();
-              });
-            }
-          }
-          _refreshBlocker = false;
+    // Subscribe directly to the log stream to catch every message
+    _logSubscription = bleData.logStream.listen((message) {
+      if (!mounted) return;
+      
+      String newMessage = message;
+      if (newMessage == "1") {
+        newMessage = "Initializing Logging.";
+      }
+      
+      if (newMessage.isNotEmpty) {
+        setState(() {
+          _logMessages.add(newMessage);
+          _scrollToBottom();
         });
       }
     });
@@ -127,7 +121,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
     
     _demoTimer?.cancel();
     _connectionStateSubscription?.cancel();
-    _characteristicChangeSubscription?.cancel();
+    _logSubscription?.cancel(); // Cancel the stream subscription
     _scrollController.dispose();
     super.dispose();
   }

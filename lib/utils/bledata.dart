@@ -115,6 +115,11 @@ class BLEData {
   bool configAppCompatibleFirmware = false;
   bool isUpdatingFirmware = false;
   ValueNotifier<String> firmwareVersion = ValueNotifier("");
+  
+  // Create a broadcast stream controller for logs
+  final StreamController<String> _logStreamController = StreamController<String>.broadcast();
+  Stream<String> get logStream => _logStreamController.stream;
+
   String simulatedTargetWatts = "";
   String simulatedFTMSmode = "";
   int FTMSmode = 0;
@@ -723,6 +728,12 @@ class BLEData {
                     subT[i] = t[i + 2];
                   }
                   c["value"] = utf8.decode(subT);
+
+                  // Push to log stream immediately after decoding
+                  if (c["vName"] == BLE_logStreamVname) {
+                    _logStreamController.add(c["value"]);
+                  }
+
                   // Format Found Devices into a JSON String
                   if (c["vName"] == foundDevicesVname) {
                     String _pm = "";
