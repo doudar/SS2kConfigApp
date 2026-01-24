@@ -127,9 +127,28 @@ class _SettingTileState extends State<SettingTile> {
     return _ret;
   }
 
+  Color _getTileColor() {
+    if (c["value"] == noFirmSupport) return deactiveBackgroundColor;
+    
+    switch (c["settingType"]) {
+      case SettingType.basic:
+        return Colors.green;
+      case SettingType.bluetooth:
+        return Colors.blue;
+      case SettingType.network:
+        return Colors.orange;
+      case SettingType.advanced:
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     SizedBox(height: 10);
+    Color baseColor = _getTileColor();
+    
     return Hero(
       tag: c["vName"],
       child: Material(
@@ -137,58 +156,86 @@ class _SettingTileState extends State<SettingTile> {
         child: Card(
           margin: EdgeInsets.fromLTRB(10, 5, 10, 5),
           elevation: 4,
-          child: ListTile(
-            shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-             ),
-            title: Column(
-              children: <Widget>[
-                Text((c["humanReadableName"]),
-                    textAlign: TextAlign.left, style: Theme.of(context).textTheme.labelLarge),
-                Text(
-                  _value,
-                  textAlign: TextAlign.right,
-                ),
-                Icon(Icons.edit_note_sharp),
-              ],
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  baseColor.withOpacity(0.7),
+                  baseColor.withOpacity(0.3),
+                ],
+              ),
             ),
-            tileColor: (c["value"] == noFirmSupport) ? deactiveBackgroundColor : Colors.black12,
-            trailing: IconButton(
-              icon: Icon(Icons.info_outline),
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (BuildContext context) {
-                    return AlertDialog(
-                      title: Text(c["humanReadableName"]),
-                      content: Text(c["textDescription"] ?? "No description available."),
-                      actions: [
-                        TextButton(
-                          child: Text("Close"),
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                          },
-                        ),
-                      ],
-                    );
-                  },
-                );
+            child: ListTile(
+              contentPadding: EdgeInsets.symmetric(vertical: 25.0, horizontal: 16.0),
+              shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+               ),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    (c["humanReadableName"]),
+                    textAlign: TextAlign.left, 
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    )
+                  ),
+                  SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _value,
+                        style: TextStyle(color: Colors.white70, fontSize: 16),
+                      ),
+                      Icon(Icons.edit, color: Colors.white54, size: 20),
+                    ],
+                  ),
+                ],
+              ),
+              // tileColor property removed as we use Container decoration
+              trailing: IconButton(
+                icon: Icon(Icons.info_outline, color: Colors.white),
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return AlertDialog(
+                        title: Text(c["humanReadableName"]),
+                        content: Text(c["textDescription"] ?? "No description available."),
+                        actions: [
+                          TextButton(
+                            child: Text("Close"),
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                            },
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+              onTap: () {
+                if (c["value"] == noFirmSupport) {
+                } else {
+                  Navigator.push(
+                    context,
+                    fadeRoute(
+                      Scaffold(
+                        appBar: AppBar(title: const Text('Edit Setting')),
+                        body: Center(child: widgetPicker()),
+                      ),
+                    ),
+                  );
+                }
               },
             ),
-            onTap: () {
-              if (c["value"] == noFirmSupport) {
-              } else {
-                Navigator.push(
-                  context,
-                  fadeRoute(
-                    Scaffold(
-                      appBar: AppBar(title: const Text('Edit Setting')),
-                      body: Center(child: widgetPicker()),
-                    ),
-                  ),
-                );
-              }
-            },
           ),
         ),
       ),

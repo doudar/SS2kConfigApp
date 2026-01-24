@@ -80,26 +80,52 @@ class _SettingsScreenState extends State<SettingsScreen>{
     super.dispose();
   }
 
-  Widget _buildCategoryCard(BuildContext context, String title, SettingType type, IconData icon) {
+  Widget _buildCategoryTile(BuildContext context, String title, SettingType type, IconData icon, Color color) {
     return Card(
-      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-      child: Center(
-        child: ListTile(
-          leading: Icon(icon, size: 30),
-          title: Text(title),
-          trailing: Icon(Icons.chevron_right),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => SettingsCategoryScreen(
-                  device: widget.device,
-                  title: title,
-                  settingType: type,
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => SettingsCategoryScreen(
+                device: widget.device,
+                title: title,
+                settingType: type,
+              ),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(15),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(15),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                color.withOpacity(0.7),
+                color.withOpacity(0.3),
+              ],
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 50, color: Colors.white),
+              SizedBox(height: 10),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
-            );
-          },
+            ],
+          ),
         ),
       ),
     );
@@ -107,7 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen>{
 
   @override
   Widget build(BuildContext context) {
-    Size _size = MediaQuery.of(context).size;
+    // Size _size = MediaQuery.of(context).size; // Unused
     _refreshBlocker = true;
     return ScaffoldMessenger(
       key: Snackbar.snackBarKeyC,
@@ -116,38 +142,53 @@ class _SettingsScreenState extends State<SettingsScreen>{
           device: widget.device,
           title: "Settings",
         ),
-        body: Stack(
-          children: <Widget>[
-            Align(
-              alignment: Alignment.topCenter,
-              child: SizedBox(
-                height: _size.height * .90,
-                width: _size.width * .80,
-                child: ListView(
-                  clipBehavior: Clip.antiAlias,
-                  itemExtent: 100,
-                  children: <Widget>[
-                    Card(
-                      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                      child: Center(
-                        child: ListTile(
-                          leading: Icon(Icons.settings_system_daydream, size: 30),
-                          title: Text('Settings Manager'),
-                          subtitle: Text('Load, Save, Import & Export Configuration'),
-                          onTap: () => PresetManager.showPresetsMenu(context, bleData, widget.device),
-                          trailing: Icon(Icons.chevron_right),
-                        ),
-                      ),
-                    ),
-                    _buildCategoryCard(context, "Basic Settings", SettingType.basic, Icons.settings),
-                    _buildCategoryCard(context, "Bluetooth Settings", SettingType.bluetooth, Icons.bluetooth),
-                    _buildCategoryCard(context, "Network Settings", SettingType.network, Icons.wifi),
-                    _buildCategoryCard(context, "Advanced Settings", SettingType.advanced, Icons.build),
+        body: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                color: Colors.blueGrey[800],
+                child: ListTile(
+                  contentPadding: EdgeInsets.all(16),
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.blueGrey[600],
+                    radius: 30,
+                    child: Icon(Icons.settings_system_daydream, size: 30, color: Colors.white),
+                  ),
+                  title: Text(
+                    'Settings Manager',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    'Load, Save, Import & Export Configuration',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  onTap: () => PresetManager.showPresetsMenu(context, bleData, widget.device),
+                  trailing: Icon(Icons.chevron_right, color: Colors.white),
+                ),
+              ),
+              SizedBox(height: 20),
+              Expanded(
+                child: GridView.count(
+                  crossAxisCount: 4,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  children: [
+                    _buildCategoryTile(
+                        context, "Basic Settings", SettingType.basic, Icons.settings, Colors.green),
+                    _buildCategoryTile(
+                        context, "Bluetooth Settings", SettingType.bluetooth, Icons.bluetooth, Colors.blue),
+                    _buildCategoryTile(
+                        context, "Network Settings", SettingType.network, Icons.wifi, Colors.orange),
+                    _buildCategoryTile(
+                        context, "Advanced Settings", SettingType.advanced, Icons.build, Colors.red),
                   ],
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
