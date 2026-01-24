@@ -80,7 +80,8 @@ class _SettingsScreenState extends State<SettingsScreen>{
     super.dispose();
   }
 
-  Widget _buildCategoryTile(BuildContext context, String title, SettingType type, IconData icon, Color color) {
+  Widget _buildCategoryTile(BuildContext context, String title, SettingType type, IconData icon) {
+    Color color = type.color;
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -177,13 +178,13 @@ class _SettingsScreenState extends State<SettingsScreen>{
                   mainAxisSpacing: 16,
                   children: [
                     _buildCategoryTile(
-                        context, "Basic Settings", SettingType.basic, Icons.settings, Colors.green),
+                        context, "Basic Settings", SettingType.basic, Icons.settings),
                     _buildCategoryTile(
-                        context, "Bluetooth Settings", SettingType.bluetooth, Icons.bluetooth, Colors.blue),
+                        context, "Bluetooth Settings", SettingType.bluetooth, Icons.bluetooth),
                     _buildCategoryTile(
-                        context, "Network Settings", SettingType.network, Icons.wifi, Colors.orange),
+                        context, "Network Settings", SettingType.network, Icons.wifi),
                     _buildCategoryTile(
-                        context, "Advanced Settings", SettingType.advanced, Icons.build, Colors.red),
+                        context, "Advanced Settings", SettingType.advanced, Icons.build),
                   ],
                 ),
               ),

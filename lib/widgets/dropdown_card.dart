@@ -110,8 +110,14 @@ class _DropdownCardState extends State<DropdownCard> {
         .forEach((d) => d["vName"] == restartBLEVname ? this.bleData.writeToSS2k(this.widget.device, d, s: "1") : ());
   }
 
+  Color _getTileColor() {
+    if (widget.c["value"] == noFirmSupport) return deactiveBackgroundColor;
+    return (widget.c["settingType"] as SettingType).color;
+  }
+
   @override
   Widget build(BuildContext context) {
+    Color baseColor = _getTileColor();
     return Center(
       child: Container(
         constraints: BoxConstraints(
@@ -121,9 +127,20 @@ class _DropdownCardState extends State<DropdownCard> {
         child: Card(
           elevation: 8,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(15),
           ),
-          child: Padding(
+          child: Container(
+             decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    baseColor.withOpacity(0.95), // Higher opacity for legibility
+                    baseColor.withOpacity(0.7),
+                  ],
+                ),
+            ),
             padding: const EdgeInsets.symmetric(vertical: 16.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -132,7 +149,11 @@ class _DropdownCardState extends State<DropdownCard> {
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: Text(
                     this.widget.c["humanReadableName"],
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold, 
+                      color: Colors.white,
+                      shadows: [Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black45)]
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -141,21 +162,25 @@ class _DropdownCardState extends State<DropdownCard> {
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: Text(
                     "Current: ${this.widget.c["value"]}",
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.white70,
+                      shadows: [Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black45)]
+                    ),
                   ),
                 ),
-                Divider(height: 24),
+                Divider(height: 24, color: Colors.white24),
                 Flexible(
                   child: ddItems.isEmpty
                       ? Padding(
                           padding: const EdgeInsets.all(32.0),
-                          child: Center(child: Text("No devices found")),
+                          child: Center(child: Text("No devices found", style: TextStyle(color: Colors.white))),
                         )
                       : ScrollbarTheme(
                           data: ScrollbarThemeData(
-                            thumbColor: WidgetStatePropertyAll(Colors.blueGrey),
+                            thumbColor: WidgetStatePropertyAll(Colors.white54),
                             trackVisibility: WidgetStatePropertyAll(true),
-                            thickness: WidgetStatePropertyAll(20.0),
+                            thickness: WidgetStatePropertyAll(8.0),
+                            radius: Radius.circular(10),
                           ),
                           child: Scrollbar(
                             controller: _scrollController,
@@ -171,7 +196,7 @@ class _DropdownCardState extends State<DropdownCard> {
                               final isSelected = item == this.widget.c["value"];
 
                               return Material(
-                                color: isSelected ? Theme.of(context).primaryColor.withValues(alpha: 0.1) : Colors.transparent,
+                                color: isSelected ? Colors.white.withOpacity(0.2) : Colors.transparent,
                                 borderRadius: BorderRadius.circular(8),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(8),
@@ -189,12 +214,13 @@ class _DropdownCardState extends State<DropdownCard> {
                                             style: TextStyle(
                                               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                               fontSize: 16,
-                                              color: isSelected ? Theme.of(context).primaryColor : null,
+                                              color: Colors.white,
+                                              shadows: [Shadow(offset: Offset(1, 1), blurRadius: 1, color: Colors.black26)]
                                             ),
                                           ),
                                         ),
                                         if (isSelected)
-                                          Icon(Icons.check_circle, color: Theme.of(context).primaryColor, size: 20),
+                                          Icon(Icons.check_circle, color: Colors.white, size: 20),
                                       ],
                                     ),
                                   ),
@@ -205,15 +231,15 @@ class _DropdownCardState extends State<DropdownCard> {
                         ),
                       ),
                 ),
-                Divider(height: 24),
+                Divider(height: 24, color: Colors.white24),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: <Widget>[
                       TextButton.icon(
-                          icon: Icon(Icons.refresh),
-                          label: const Text('SCAN'),
+                          icon: Icon(Icons.refresh, color: Colors.white70),
+                          label: const Text('SCAN', style: TextStyle(color: Colors.white)),
                           onPressed: () {
                             //Find the save command and execute it
                             this
@@ -223,13 +249,14 @@ class _DropdownCardState extends State<DropdownCard> {
                           }),
                       Spacer(),
                       TextButton(
-                          child: const Text('BACK'),
+                          child: const Text('BACK', style: TextStyle(color: Colors.white)),
                           onPressed: () {
                             Navigator.pop(context);
                           }),
                       const SizedBox(width: 8),
                       FilledButton(
-                          child: const Text('SAVE'),
+                          style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: baseColor),
+                          child: const Text('SAVE', style: TextStyle(fontWeight: FontWeight.bold)),
                           onPressed: () {
                             //Find the save command and execute it
                             this

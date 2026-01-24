@@ -129,19 +129,7 @@ class _SettingTileState extends State<SettingTile> {
 
   Color _getTileColor() {
     if (c["value"] == noFirmSupport) return deactiveBackgroundColor;
-    
-    switch (c["settingType"]) {
-      case SettingType.basic:
-        return Colors.green;
-      case SettingType.bluetooth:
-        return Colors.blue;
-      case SettingType.network:
-        return Colors.orange;
-      case SettingType.advanced:
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
+    return (c["settingType"] as SettingType).color;
   }
 
   @override
@@ -177,22 +165,50 @@ class _SettingTileState extends State<SettingTile> {
               title: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text(
-                    (c["humanReadableName"]),
-                    textAlign: TextAlign.left, 
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    )
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      (c["humanReadableName"]),
+                      textAlign: TextAlign.left, 
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(1.0, 1.0),
+                            blurRadius: 15.0,
+                            color: Colors.black45,
+                          ),
+                        ],
+                      )
+                    ),
                   ),
                   SizedBox(height: 4),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        _value,
-                        style: TextStyle(color: Colors.white70, fontSize: 16),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            _value,
+                            style: TextStyle(
+                              color: Colors.white70, 
+                              fontSize: 18,
+                              shadows: [
+                                Shadow(
+                                  offset: Offset(1.0, 1.0),
+                                  blurRadius: 15.0,
+                                  color: Colors.black45,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
+                      SizedBox(width: 8),
                       Icon(Icons.edit, color: Colors.white54, size: 20),
                     ],
                   ),
@@ -229,7 +245,11 @@ class _SettingTileState extends State<SettingTile> {
                     fadeRoute(
                       Scaffold(
                         appBar: AppBar(title: const Text('Edit Setting')),
-                        body: Center(child: widgetPicker()),
+                        body: Center(
+                          child: SingleChildScrollView(
+                            child: widgetPicker(),
+                          ),
+                        ),
                       ),
                     ),
                   );

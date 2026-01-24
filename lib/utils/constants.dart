@@ -5,13 +5,27 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 enum SettingType {
   basic,
   bluetooth,
   network,
-  advanced
+  advanced;
+
+  Color get color {
+    switch (this) {
+      case SettingType.basic:
+        return Colors.green;
+      case SettingType.bluetooth:
+        return Colors.blue;
+      case SettingType.network:
+        return Colors.orange;
+      case SettingType.advanced:
+        return Colors.red;
+    }
+  }
 }
 
 // Constants

@@ -65,79 +65,145 @@ class _sliderCardState extends State<sliderCard> {
     setState(() {});
   }
 
+  Color _getTileColor() {
+    if (c["value"] == noFirmSupport) return deactiveBackgroundColor;
+    return (c["settingType"] as SettingType).color;
+  }
+
   @override
   Widget build(BuildContext context) {
+    Color baseColor = _getTileColor();
     return Card(
       elevation: 15,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(15),
       ),
-      child: Column(children: <Widget>[
-        Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
-        Text((c["value"]), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
-        TextField(
-          controller: this.controller,
-          decoration: InputDecoration(
-            prefixIcon: Icon(Icons.edit_attributes),
-            fillColor: Colors.white,
-          ),
-          style: TextStyle(
-            fontSize: 30,
-          ),
-          textAlign: TextAlign.center,
-          onSubmitted: (t) {
-            this.verifyInput(t);
-            this.bleData.writeToSS2k(this.widget.device, this.c);
-            setState(() {});
-            return this.widget.c["value"];
-          },
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(15),
+          gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                baseColor.withOpacity(0.7),
+                baseColor.withOpacity(0.3),
+              ],
+            ),
         ),
-        const SizedBox(height: 15),
-        Slider(
-          min: c["min"].toDouble(),
-          max: c["max"].toDouble(),
-          label: this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c)),
-          divisions: 100,
-          value: constrainValue(this._currentSliderValue),
-          onChanged: (double v) {
-            setState(() {
-              this._currentSliderValue = v;
-              this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
-              controller.text = this.widget.c["value"];
-            });
-          },
-          onChangeEnd: (double v) {
-            setState(() {
-              this._currentSliderValue = v;
-              this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
-              controller.text = this.widget.c["value"];
-              this.bleData.writeToSS2k(this.widget.device, this.c);
-            });
-          },
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(children: <Widget>[
+            Text((c["humanReadableName"]), 
+              style: TextStyle(
+                fontSize: 32, 
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                shadows: [
+                    Shadow(
+                      offset: Offset(1.0, 1.0),
+                      blurRadius: 3.0,
+                      color: Colors.black45,
+                    ),
+                  ],
+              ), 
+              textAlign: TextAlign.center
+            ),
+            SizedBox(height: 10),
+            Text((c["value"]), 
+              style: TextStyle(
+                fontSize: 24,
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                shadows: [
+                    Shadow(
+                      offset: Offset(1.0, 1.0),
+                      blurRadius: 3.0,
+                      color: Colors.black45,
+                    ),
+                  ],
+              ),
+              textAlign: TextAlign.center
+            ),
+            SizedBox(height: 10),
+            TextField(
+              controller: this.controller,
+              decoration: InputDecoration(
+                prefixIcon: Icon(Icons.edit_attributes),
+                fillColor: Colors.white,
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              style: TextStyle(
+                fontSize: 30,
+                color: Colors.black,
+              ),
+              textAlign: TextAlign.center,
+              onSubmitted: (t) {
+                this.verifyInput(t);
+                this.bleData.writeToSS2k(this.widget.device, this.c);
+                setState(() {});
+                return this.widget.c["value"];
+              },
+            ),
+            const SizedBox(height: 15),
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: Colors.white,
+                inactiveTrackColor: Colors.white24,
+                thumbColor: Colors.white,
+                overlayColor: Colors.white.withAlpha(32),
+                valueIndicatorTextStyle: TextStyle(
+                  color: baseColor,
+                ),
+              ),
+              child: Slider(
+                min: c["min"].toDouble(),
+                max: c["max"].toDouble(),
+                label: this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c)),
+                divisions: 100,
+                value: constrainValue(this._currentSliderValue),
+                onChanged: (double v) {
+                  setState(() {
+                    this._currentSliderValue = v;
+                    this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
+                    controller.text = this.widget.c["value"];
+                  });
+                },
+                onChangeEnd: (double v) {
+                  setState(() {
+                    this._currentSliderValue = v;
+                    this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
+                    controller.text = this.widget.c["value"];
+                    this.bleData.writeToSS2k(this.widget.device, this.c);
+                  });
+                },
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                TextButton(
+                    child: const Text('BACK', style: TextStyle(color: Colors.white)),
+                    onPressed: () {
+                      Navigator.pop(context);
+                    }),
+                const SizedBox(width: 8),
+                TextButton(
+                    child: const Text('SAVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      //Find the save command and execute it
+                      this
+                          .bleData
+                          .customCharacteristic
+                          .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                      Navigator.pop(context);
+                    }),
+                const SizedBox(width: 8),
+              ],
+            ),
+          ]),
         ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: <Widget>[
-            TextButton(
-                child: const Text('BACK'),
-                onPressed: () {
-                  Navigator.pop(context);
-                }),
-            const SizedBox(width: 8),
-            TextButton(
-                child: const Text('SAVE'),
-                onPressed: () {
-                  //Find the save command and execute it
-                  this
-                      .bleData
-                      .customCharacteristic
-                      .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
-                  Navigator.pop(context);
-                }),
-            const SizedBox(width: 8),
-          ],
-        ),
-      ]),
+      ),
     );
   }
 }

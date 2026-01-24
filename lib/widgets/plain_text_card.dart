@@ -49,15 +49,21 @@ class _plainTextCardState extends State<plainTextCard> {
     return isValid;
   }
 
+  Color _getTileColor() {
+    if (c["value"] == noFirmSupport) return deactiveBackgroundColor;
+    return (c["settingType"] as SettingType).color;
+  }
+
   Widget passwordTextField() {
     return TextField(
       controller: this.controller,
       obscureText: !passwordVisible,
       decoration: InputDecoration(
-        border: UnderlineInputBorder(),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
         hintText: "Password",
         labelText: "Password",
-        helperStyle: TextStyle(color: Colors.green),
+        helperStyle: TextStyle(color: Colors.white),
+        labelStyle: TextStyle(color: Colors.black54),
         suffixIcon: IconButton(
           icon: Icon(passwordVisible ? Icons.visibility : Icons.visibility_off),
           onPressed: () {
@@ -70,9 +76,11 @@ class _plainTextCardState extends State<plainTextCard> {
         ),
         alignLabelWithHint: false,
         filled: true,
+        fillColor: Colors.white,
       ),
       keyboardType: TextInputType.visiblePassword,
       textInputAction: TextInputAction.done,
+      style: TextStyle(color: Colors.black, fontSize: 24),
       onSubmitted: (t) {
         this.verifyInput(t);
         this.bleData.writeToSS2k(this.widget.device, this.c);
@@ -90,9 +98,12 @@ class _plainTextCardState extends State<plainTextCard> {
         hintStyle: TextStyle(fontWeight: FontWeight.w200),
         prefixIcon: Icon(Icons.edit_attributes),
         fillColor: Colors.white,
+        filled: true,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
       ),
       style: TextStyle(
         fontSize: 30,
+        color: Colors.black
       ),
       textAlign: TextAlign.center,
       textInputAction: TextInputAction.done,
@@ -107,51 +118,92 @@ class _plainTextCardState extends State<plainTextCard> {
 
   @override
   Widget build(BuildContext context) {
+    Color baseColor = _getTileColor();
     return Card(
       elevation: 15,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(15),
       ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-        Text((c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
-        (c["vName"] == passwordVname)
-            ? ((passwordVisible) ? Text(_currentValue + c["value"]) : Text(_currentValue + "**********"))
-            : Text((c["value"]), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
-        (c["vName"] == passwordVname) ? passwordTextField() : regularTextField(),
-        const SizedBox(height: 15),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: <Widget>[
-            TextButton(
-                child: const Text('BACK'),
-                onPressed: () {
-                  Navigator.pop(context);
-                }),
-            const SizedBox(width: 8),
-            TextButton(
-                child: const Text('SAVE'),
-                onPressed: () {
-                  // Use the controller's text for validation
-                  bool inputIsValid = verifyInput(controller.text);
-                  print("**********************************" + controller.text);
-                  if (inputIsValid) {
-                    // Proceed with saving if input is valid
-                    this.bleData.writeToSS2k(this.widget.device, this.widget.c);
-                    this
-                        .bleData
-                        .customCharacteristic
-                        .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
-                    Navigator.pop(context);
-                  } else {
-                    // Handle invalid input, e.g., show an error message
-                    ScaffoldMessenger.of(context)
-                        .showSnackBar(SnackBar(content: Text('Invalid input! Please check your input and try again.')));
-                  }
-                }),
-            const SizedBox(width: 8),
-          ],
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(15),
+          gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                baseColor.withOpacity(0.7),
+                baseColor.withOpacity(0.3),
+              ],
+            ),
         ),
-      ]),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            Text((c["humanReadableName"]), 
+              style: TextStyle(
+                fontSize: 32,
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                shadows: [
+                  Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black45)
+                ]
+              ), 
+              textAlign: TextAlign.center
+            ),
+            SizedBox(height: 10),
+            (c["vName"] == passwordVname)
+                ? ((passwordVisible) 
+                    ? Text(_currentValue + c["value"], style: TextStyle(color: Colors.white, fontSize: 18, shadows: [Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black45)])) 
+                    : Text(_currentValue + "**********", style: TextStyle(color: Colors.white, fontSize: 18, shadows: [Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black45)])))
+                : Text((c["value"]), 
+                    style: TextStyle(
+                      fontSize: 24, 
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      shadows: [
+                        Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black45)
+                      ]
+                    ), 
+                    textAlign: TextAlign.center
+                  ),
+            SizedBox(height: 10),
+            (c["vName"] == passwordVname) ? passwordTextField() : regularTextField(),
+            const SizedBox(height: 15),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                TextButton(
+                    child: const Text('BACK', style: TextStyle(color: Colors.white)),
+                    onPressed: () {
+                      Navigator.pop(context);
+                    }),
+                const SizedBox(width: 8),
+                TextButton(
+                    child: const Text('SAVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      // Use the controller's text for validation
+                      bool inputIsValid = verifyInput(controller.text);
+                      print("**********************************" + controller.text);
+                      if (inputIsValid) {
+                        // Proceed with saving if input is valid
+                        this.bleData.writeToSS2k(this.widget.device, this.widget.c);
+                        this
+                            .bleData
+                            .customCharacteristic
+                            .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                        Navigator.pop(context);
+                      } else {
+                        // Handle invalid input, e.g., show an error message
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text('Invalid input! Please check your input and try again.')));
+                      }
+                    }),
+                const SizedBox(width: 8),
+              ],
+            ),
+          ]),
+        ),
+      ),
     );
   }
 }
