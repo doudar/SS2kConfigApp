@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import './bledata.dart';
 import './snackbar.dart';
+import './extra.dart';
 
 import './preset_sharing.dart';
 
@@ -234,7 +235,7 @@ class PresetManager {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
                   child: Text(
-                    'Settings Presets',
+                    'Settings Manager',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
@@ -277,6 +278,15 @@ class PresetManager {
                   subtitle: 'Share current settings as a file',
                   value: 'export',
                 ),
+
+                _buildSectionHeader(context, "Device"),
+                 _buildMenuOption(
+                  context,
+                  icon: Icons.restart_alt,
+                  title: 'Reset to Defaults',
+                  subtitle: 'Reset device to factory settings',
+                  value: 'reset',
+                ),
               ],
             ),
           ),
@@ -287,6 +297,44 @@ class PresetManager {
     if (action == null || !context.mounted) return;
 
     switch (action) {
+      case 'reset':
+         bool? confirmed = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text('Reset to Defaults'),
+              content: Text('Are you sure you want to reset the device to factory defaults? This cannot be undone.'),
+              actions: <Widget>[
+                TextButton(
+                  child: Text('Cancel'),
+                  onPressed: () => Navigator.of(context).pop(false),
+                ),
+                FilledButton(
+                  child: Text('Reset'),
+                  style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                  onPressed: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            );
+          },
+        );
+        
+        if (confirmed == true && context.mounted) {
+          try {
+            await bleData.resetToDefaults(device);
+            // Reconnect logic from resetToDefaults might clear logs/state, wait for a bit
+             await Future.delayed(Duration(seconds: 1));
+             // Trigger a refresh/connect cycle properly
+             await device.connectAndUpdateStream();
+             // Reset UI state implicitly through connection change orexplicit snackbar
+            Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
+          } catch (e) {
+             if (context.mounted) {
+               Snackbar.show(ABC.c, prettyException("Reset Failed ", e), success: false);
+             }
+          }
+        }
+        break;
       case 'save':
         SharedPreferences prefs = await SharedPreferences.getInstance();
         List<String> existingPresets = prefs.getStringList('backups_list') ?? [];

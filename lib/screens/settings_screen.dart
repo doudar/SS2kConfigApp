@@ -14,6 +14,7 @@ import '../widgets/ss2k_app_bar.dart';
 import '../utils/snackbar.dart';
 
 import '../utils/bledata.dart';
+import '../utils/presets.dart';
 
 class SettingsScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -118,6 +119,18 @@ class _SettingsScreenState extends State<SettingsScreen>{
               height: _size.height * .90,
               width: _size.width * .80,
               child: ListView(clipBehavior: Clip.antiAlias, itemExtent: 100, children: <Widget>[
+                Card(
+                  margin: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                  child: Center(
+                    child: ListTile(
+                      leading: Icon(Icons.settings_system_daydream, size: 30),
+                      title: Text('Settings Manager'),
+                      subtitle: Text('Load, Save, Import & Export Configuration'),
+                      onTap: () => PresetManager.showPresetsMenu(context, bleData, widget.device),
+                      trailing: Icon(Icons.chevron_right),
+                    ),
+                  ),
+                ),
                 ...buildSettings(context),
               ]),
             ),),

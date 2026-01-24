@@ -12,7 +12,6 @@ import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 import '../utils/bledata.dart';
 import '../utils/power_table_management.dart';
-import '../utils/presets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../utils/constants.dart';
 
@@ -191,10 +190,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     await PowerTableManager.showPowerTableMenu(context, bleData, widget.device);
   }
 
-  Future onPresetsPressed() async {
-    await PresetManager.showPresetsMenu(context, bleData, widget.device);
-  }
-
   Future onRebootPressed() async {
     try {
       await this.bleData.reboot(this.widget.device);
@@ -203,16 +198,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       await onConnectPressed();
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Reboot Failed ", e), success: false);
-    }
-  }
-
-  Future onResetPressed() async {
-    try {
-      await this.bleData.resetToDefaults(this.widget.device);
-      await onConnectPressed();
-      Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
-    } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Reset Failed ", e), success: false);
     }
   }
 
@@ -325,24 +310,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
           ),
         ),
         PopupMenuItem<VoidCallback>(
-          value: onResetPressed,
-          child: ListTile(
-            leading: Icon(FontAwesomeIcons.arrowRotateLeft),
-            title: Text('Set Defaults'),
-          ),
-        ),
-        PopupMenuItem<VoidCallback>(
           value: onPowerTablePressed,
           child: ListTile(
             leading: Icon(FontAwesomeIcons.table),
             title: Text('Manage PowerTable'),
-          ),
-        ),
-        PopupMenuItem<VoidCallback>(
-          value: onPresetsPressed,
-          child: ListTile(
-            leading: Icon(FontAwesomeIcons.sliders),
-            title: Text('Presets'),
           ),
         ),
       ],
