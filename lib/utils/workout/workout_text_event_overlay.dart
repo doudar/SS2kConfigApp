@@ -190,7 +190,7 @@ class _WorkoutTextEventOverlayState extends State<WorkoutTextEventOverlay> with 
                 shadows: [
                   Shadow(
                     blurRadius: 3.0,
-                    color: const Color.fromARGB(255, 48, 47, 47).withOpacity(0.75),
+                    color: const Color.fromARGB(255, 48, 47, 47).withValues(alpha: 0.75),
                     offset: const Offset(1.0, 1.0),
                   ),
                 ],

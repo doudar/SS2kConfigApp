@@ -269,7 +269,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Material(
-                      color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
+                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
                       shape: const CircleBorder(),
                       elevation: 4,
                       child: IconButton(
@@ -306,7 +306,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   Widget _buildOpacityControl(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(12),
         boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4))],
       ),

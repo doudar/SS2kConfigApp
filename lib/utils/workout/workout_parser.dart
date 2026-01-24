@@ -208,7 +208,6 @@ class WorkoutParser {
     for (var segment in workoutElement.children) {
       if (segment is! XmlElement) continue;
 
-      final type = segment.name.local;
       final parsedSegments = _parseSegment(segment);
       if (parsedSegments != null) {
         segments.addAll(parsedSegments);
@@ -260,10 +259,10 @@ class WorkoutParser {
     
     // Parse both TextEvent and textevent elements
     for (var eventElement in [...element.findElements('TextEvent'), ...element.findElements('textevent')]) {
-      final timeOffset = _parseDuration(eventElement.getAttribute('timeoffset')) ?? 0;
+      final timeOffset = _parseDuration(eventElement.getAttribute('timeoffset'));
       final message = eventElement.getAttribute('message') ?? '';
       final locIndex = int.tryParse(eventElement.getAttribute('locIndex') ?? '');
-      final duration = _parseDuration(eventElement.getAttribute('duration')) ?? 10;
+      final duration = _parseDuration(eventElement.getAttribute('duration'));
       
       if (message.isNotEmpty) {
         events.add(TextEvent(
@@ -356,7 +355,7 @@ class WorkoutParser {
   }
 
   static List<WorkoutSegment> _parseIntervals(XmlElement element) {
-    final repeat = _parseDuration(element.getAttribute('Repeat')) ?? 1;
+    final repeat = _parseDuration(element.getAttribute('Repeat'));
     final onDuration = _parseDuration(element.getAttribute('OnDuration'));
     final offDuration = _parseDuration(element.getAttribute('OffDuration'));
     

@@ -120,7 +120,7 @@ class PresetSharing {
           
           // Create merged version
           List<dynamic> currentConfig = List.from(bleData.customCharacteristic);
-          List<dynamic> importedConfig = decoded as List<dynamic>;
+          List<dynamic> importedConfig = decoded;
 
           List<dynamic> mergedConfig = currentConfig.map((item) {
              var currentMap = Map<String, dynamic>.from(item);

@@ -85,8 +85,8 @@ class _sliderCardState extends State<sliderCard> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                baseColor.withOpacity(0.7),
-                baseColor.withOpacity(0.3),
+                baseColor.withValues(alpha: 0.7),
+                baseColor.withValues(alpha: 0.3),
               ],
             ),
         ),

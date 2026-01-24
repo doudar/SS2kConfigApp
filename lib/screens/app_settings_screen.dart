@@ -38,35 +38,29 @@ class AppSettingsScreen extends StatelessWidget {
               ),
             ),
           ),
-          RadioListTile<ThemeMode>(
-            title: const Text('System'),
-            value: ThemeMode.system,
+          RadioGroup<ThemeMode>(
             groupValue: themeProvider.themeMode,
             onChanged: (ThemeMode? value) {
               if (value != null) {
                 themeProvider.setThemeMode(value);
               }
             },
-          ),
-          RadioListTile<ThemeMode>(
-            title: const Text('Light'),
-            value: ThemeMode.light,
-            groupValue: themeProvider.themeMode,
-            onChanged: (ThemeMode? value) {
-              if (value != null) {
-                themeProvider.setThemeMode(value);
-              }
-            },
-          ),
-          RadioListTile<ThemeMode>(
-            title: const Text('Dark'),
-            value: ThemeMode.dark,
-            groupValue: themeProvider.themeMode,
-            onChanged: (ThemeMode? value) {
-              if (value != null) {
-                themeProvider.setThemeMode(value);
-              }
-            },
+            child: Column(
+              children: [
+                RadioListTile<ThemeMode>(
+                  title: const Text('System'),
+                  value: ThemeMode.system,
+                ),
+                RadioListTile<ThemeMode>(
+                  title: const Text('Light'),
+                  value: ThemeMode.light,
+                ),
+                RadioListTile<ThemeMode>(
+                  title: const Text('Dark'),
+                  value: ThemeMode.dark,
+                ),
+              ],
+            ),
           ),
         ],
       ),

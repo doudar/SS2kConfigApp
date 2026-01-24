@@ -136,8 +136,8 @@ class _DropdownCardState extends State<DropdownCard> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    baseColor.withOpacity(0.95), // Higher opacity for legibility
-                    baseColor.withOpacity(0.7),
+                    baseColor.withValues(alpha: 0.95), // Higher opacity for legibility
+                    baseColor.withValues(alpha: 0.7),
                   ],
                 ),
             ),
@@ -196,7 +196,7 @@ class _DropdownCardState extends State<DropdownCard> {
                               final isSelected = item == this.widget.c["value"];
 
                               return Material(
-                                color: isSelected ? Colors.white.withOpacity(0.2) : Colors.transparent,
+                                color: isSelected ? Colors.white.withValues(alpha: 0.2) : Colors.transparent,
                                 borderRadius: BorderRadius.circular(8),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(8),

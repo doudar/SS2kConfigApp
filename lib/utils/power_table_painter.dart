@@ -157,14 +157,14 @@ class PowerTablePainter extends CustomPainter {
     barPaint.shader = LinearGradient(
       begin: beginAlignment,
       end: endAlignment,
-      colors: colors.map((c) => c.withOpacity((0.8 + pulse).clamp(0.0, 1.0))).toList(),
+      colors: colors.map((c) => c.withValues(alpha: (0.8 + pulse).clamp(0.0, 1.0))).toList(),
     ).createShader(gradientRect);
 
     canvas.drawRect(rect, barPaint);
     
     // Draw a "Peak" indicator
     Paint peakPaint = Paint()
-      ..color = Colors.white.withOpacity(0.9)
+      ..color = Colors.white.withValues(alpha: 0.9)
       ..style = PaintingStyle.fill
       ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2);
       
@@ -177,7 +177,7 @@ class PowerTablePainter extends CustomPainter {
 
   void _drawAxisLabels(Canvas canvas, Size size) {
     final labelStyle = TextStyle(
-      color: Colors.blueGrey.withOpacity(0.2),
+      color: Colors.blueGrey.withValues(alpha: 0.2),
       fontSize: 28,
       fontWeight: FontWeight.w900,
       letterSpacing: 2.0,
@@ -218,7 +218,7 @@ class PowerTablePainter extends CustomPainter {
   void _drawGrid(Canvas canvas, Size size) {
     final gridPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.grey.withOpacity(WorkoutOpacity.gridLines)
+      ..color = Colors.grey.withValues(alpha: WorkoutOpacity.gridLines)
       ..strokeWidth = WorkoutStroke.border;
 
     final textPainter = TextPainter(
@@ -332,7 +332,7 @@ class PowerTablePainter extends CustomPainter {
       final position = positionHistory[i];
       final opacity = (i + 1) / positionHistory.length;
       final paint = Paint()
-        ..color = _getCadenceColor(currentCadence).withOpacity(opacity * 0.3)
+        ..color = _getCadenceColor(currentCadence).withValues(alpha: opacity * 0.3)
         ..style = PaintingStyle.fill;
 
       double minRes = 0;

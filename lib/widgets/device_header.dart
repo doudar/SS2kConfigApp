@@ -200,8 +200,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     );
   }
 
-  bool _isExpanded = false;
-
   Widget _buildSignalStrengthIcon(int rssi) {
     IconData iconData;
     Color iconColor;
@@ -240,7 +238,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           border: Border.all(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
           ),
           borderRadius: BorderRadius.circular(8),
         ),
@@ -266,7 +264,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
             SizedBox(width: 4),
             Icon(
               Icons.arrow_drop_down,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
             ),
           ],
         ),
@@ -295,14 +293,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildActionButton(String text, IconData icon, VoidCallback onPressed) {
-    return OutlinedButton.icon(
-      icon: Icon(icon),
-      label: Text(text),
-      onPressed: onPressed,
     );
   }
 }

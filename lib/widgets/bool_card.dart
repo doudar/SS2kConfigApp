@@ -56,8 +56,8 @@ late BLEData bleData;
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    baseColor.withOpacity(0.7),
-                    baseColor.withOpacity(0.3),
+                    baseColor.withValues(alpha: 0.7),
+                    baseColor.withValues(alpha: 0.3),
                   ],
                 ),
             ),
@@ -89,7 +89,7 @@ late BLEData bleData;
               ),
               Switch(
                 value: bool.parse(this.widget.c["value"]),
-                activeColor: Colors.white,
+                activeThumbColor: Colors.white,
                 activeTrackColor: Colors.white54,
                 inactiveThumbColor: Colors.white,
                 inactiveTrackColor: Colors.black26,

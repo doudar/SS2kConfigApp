@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:math';
-import 'package:reorderables/reorderables.dart' show ReorderableWrap, ReorderableDragStartListener;
+import 'package:reorderables/reorderables.dart' show ReorderableWrap;
 import 'workout_constants.dart';
 import 'workout_metric_preferences.dart';
 
@@ -76,33 +76,6 @@ class _WorkoutMetricRowState extends State<WorkoutMetricRow> {
       builder: (context, constraints) {
         final screenSize = MediaQuery.of(context).size;
         final isPortrait = screenSize.width < screenSize.height;
-        final metricsPerRow = isPortrait
-            ? (orderedMetrics.length / 2).ceil()
-            : orderedMetrics.length;
-
-        double totalWidth = orderedMetrics.fold(0.0, (sum, metric) {
-          return sum + _calculateMetricWidth(metric.value) + (2 * WorkoutPadding.metricHorizontal);
-        });
-
-        Widget content = ReorderableListView(
-          scrollDirection: Axis.horizontal,
-          onReorder: _handleReorder,
-          buildDefaultDragHandles: false,
-          children: orderedMetrics.asMap().entries.map((entry) {
-            return ReorderableDragStartListener(
-              key: ValueKey(entry.value.label),
-              index: entry.key,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: WorkoutPadding.metricHorizontal),
-                child: MetricBox(metric: entry.value),
-              ),
-            );
-          }).toList(),
-        );
-
-        final maxMetricsPerRow = isPortrait
-            ? max(1, (constraints.maxWidth / (WorkoutSizes.metricBoxMinWidth + 2 * WorkoutPadding.metricHorizontal)).floor())
-            : orderedMetrics.length;
 
         return SizedBox(
           width: constraints.maxWidth,
@@ -149,11 +122,6 @@ class _WorkoutMetricRowState extends State<WorkoutMetricRow> {
     
     final newOrder = orderedMetrics.map((m) => m.label).toList();
     await WorkoutMetricPreferences.saveMetricOrder(newOrder);
-  }
-
-  double _calculateMetricWidth(String value) {
-    double width = value.length * WorkoutSizes.metricCharacterWidth;
-    return width.clamp(WorkoutSizes.metricBoxMinWidth, WorkoutSizes.metricBoxMaxWidth);
   }
 }
 

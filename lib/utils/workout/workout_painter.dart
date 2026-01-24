@@ -75,7 +75,7 @@ class WorkoutPainter extends CustomPainter {
       // Draw segment border
       final borderPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..color = const Color.fromARGB(65, 0, 0, 0).withOpacity(WorkoutOpacity.segmentBorder)
+        ..color = const Color.fromARGB(65, 0, 0, 0).withValues(alpha: WorkoutOpacity.segmentBorder)
         ..strokeWidth = WorkoutStroke.border;
       
       canvas.drawRect(
@@ -157,7 +157,7 @@ class WorkoutPainter extends CustomPainter {
     
     final gridPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.grey.withOpacity(WorkoutOpacity.gridLines)
+      ..color = Colors.grey.withValues(alpha: WorkoutOpacity.gridLines)
       ..strokeWidth = WorkoutStroke.border;
 
     final textPainter = TextPainter(
@@ -192,7 +192,7 @@ class WorkoutPainter extends CustomPainter {
   void _drawTimeGrid(Canvas canvas, Size size, double widthScale) {
     final gridPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.grey.withOpacity(WorkoutOpacity.gridLines)
+      ..color = Colors.grey.withValues(alpha: WorkoutOpacity.gridLines)
       ..strokeWidth = WorkoutStroke.border;
 
     final textPainter = TextPainter(
@@ -266,10 +266,10 @@ class WorkoutPainter extends CustomPainter {
   Color _getSegmentColor(WorkoutSegment segment) {
     // Always use consistent colors for warmup and cooldown
     if (segment.type == SegmentType.warmup) {
-      return Colors.green.withOpacity(WorkoutOpacity.segmentColor);
+      return Colors.green.withValues(alpha: WorkoutOpacity.segmentColor);
     }
     if (segment.type == SegmentType.cooldown) {
-      return Colors.blue.withOpacity(WorkoutOpacity.segmentColor);
+      return Colors.blue.withValues(alpha: WorkoutOpacity.segmentColor);
     }
 
     // For other segments, determine color based on power as % of FTP
@@ -281,19 +281,19 @@ class WorkoutPainter extends CustomPainter {
 
     // Color based on power zones
     if (powerPercentage <= WorkoutZones.recovery) {
-      return Colors.blue.withOpacity(WorkoutOpacity.segmentColor);
+      return Colors.blue.withValues(alpha: WorkoutOpacity.segmentColor);
     } else if (powerPercentage <= WorkoutZones.endurance) {
-      return Colors.green.withOpacity(WorkoutOpacity.segmentColor);
+      return Colors.green.withValues(alpha: WorkoutOpacity.segmentColor);
     } else if (powerPercentage <= WorkoutZones.tempo) {
-      return Colors.yellow.withOpacity(WorkoutOpacity.segmentColor);
+      return Colors.yellow.withValues(alpha: WorkoutOpacity.segmentColor);
     } else if (powerPercentage <= WorkoutZones.threshold) {
-      return Colors.orange.withOpacity(WorkoutOpacity.segmentColor);
+      return Colors.orange.withValues(alpha: WorkoutOpacity.segmentColor);
     } else if (powerPercentage <= WorkoutZones.vo2max) {
-      return Colors.deepOrange.withOpacity(WorkoutOpacity.segmentColor);
+      return Colors.deepOrange.withValues(alpha: WorkoutOpacity.segmentColor);
     } else if (powerPercentage <= WorkoutZones.anaerobic) {
-      return Colors.red.withOpacity(WorkoutOpacity.segmentColor);
+      return Colors.red.withValues(alpha: WorkoutOpacity.segmentColor);
     } else {
-      return Colors.purple.withOpacity(WorkoutOpacity.segmentColor);
+      return Colors.purple.withValues(alpha: WorkoutOpacity.segmentColor);
     }
   }
 
@@ -303,7 +303,7 @@ class WorkoutPainter extends CustomPainter {
       textAlign: TextAlign.center,
     );
 
-    final color = _getSegmentColor(segment).withOpacity(1.0); // Full opacity for text
+    final color = _getSegmentColor(segment).withValues(alpha: 1.0); // Full opacity for text
     final style = TextStyle(
       color: color,
       fontSize: WorkoutFontSizes.small,

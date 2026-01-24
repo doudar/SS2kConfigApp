@@ -454,7 +454,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                                             child: Container(
                                               width: WorkoutSizes.progressIndicatorWidth,
                                               color: const Color.fromARGB(255, 0, 0, 0)
-                                                  .withOpacity(WorkoutOpacity.segmentBorder),
+                                                  .withValues(alpha: WorkoutOpacity.segmentBorder),
                                             ),
                                           ),
                                       ],

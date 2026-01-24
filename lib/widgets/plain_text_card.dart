@@ -134,8 +134,8 @@ class _plainTextCardState extends State<plainTextCard> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                baseColor.withOpacity(0.7),
-                baseColor.withOpacity(0.3),
+                baseColor.withValues(alpha: 0.7),
+                baseColor.withValues(alpha: 0.3),
               ],
             ),
         ),

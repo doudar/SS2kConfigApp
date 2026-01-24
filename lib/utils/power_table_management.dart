@@ -546,7 +546,7 @@ class PowerTableManager {
                                         selected: isSelected,
                                         selectedTileColor: Theme.of(
                                           context,
-                                        ).colorScheme.primaryContainer.withOpacity(0.2),
+                                        ).colorScheme.primaryContainer.withValues(alpha: 0.2),
                                         onTap: () {
                                           nameController.text = name;
                                           setState(() {});

@@ -104,8 +104,8 @@ class _SettingsScreenState extends State<SettingsScreen>{
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                color.withOpacity(0.7),
-                color.withOpacity(0.3),
+                color.withValues(alpha: 0.7),
+                color.withValues(alpha: 0.3),
               ],
             ),
           ),

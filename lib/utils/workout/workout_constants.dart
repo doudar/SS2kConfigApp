@@ -103,7 +103,7 @@ class WorkoutFontWeights {
 class WorkoutShadows {
   /// Shadow for metric boxes
   static final BoxShadow metricBox = BoxShadow(
-    color: Colors.black.withOpacity(0.1),
+    color: Colors.black.withValues(alpha: 0.1),
     blurRadius: WorkoutMetricScale.baseSize * 0.05, // 5% of base size
     offset: Offset(0, WorkoutMetricScale.baseSize * 0.025), // 2.5% of base size
   );

@@ -11,7 +11,6 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../widgets/setting_tile.dart';
 import '../widgets/ss2k_app_bar.dart';
-import '../utils/snackbar.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
 
@@ -74,7 +73,7 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
       _newEntry(Map c) {
         if ((!this.bleData.services.isEmpty) || this.bleData.isSimulated) {
           // Filter by isSetting AND the requested SettingType
-          if (c["isSetting"] == true && c["settingType"] == widget.settingType) {
+          if (c["isSetting"] == true && c["settingType"] == widget.settingType && c["value"] != null) {
               settings.add(SettingTile(device: this.widget.device, c: c));
             }
           }

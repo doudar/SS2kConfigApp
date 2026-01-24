@@ -439,7 +439,7 @@ class PresetManager {
                                         title: Text(name),
                                         dense: true,
                                         selected: isSelected,
-                                        selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.2),
+                                        selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.2),
                                         onTap: () {
                                           nameController.text = name;
                                           setState(() {});
