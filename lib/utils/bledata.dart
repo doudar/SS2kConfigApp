@@ -656,10 +656,10 @@ class BLEData {
   void decode(BluetoothDevice device) {
     if (this.isSimulated) return;
 
+    subscribed = true;
     _ensureCachedMap();
 
     final subscription = this.getMyCharacteristic(device).onValueReceived.listen((value) {
-      subscribed = true;
       try {
         if (value.isEmpty) return;
 

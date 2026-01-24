@@ -131,7 +131,15 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
     if (mounted && widget.device.isConnected) {
       await widget.bleData.requestSetting(widget.device, BLE_hMinVname);
       await widget.bleData.requestSetting(widget.device, BLE_hMaxVname);
-      await widget.bleData.requestSetting(widget.device, pTab4pwrVname);
+
+      // Only request pTab4pwrVname if it hasn't been populated yet to avoid spamming
+      var pTabChar = widget.bleData.customCharacteristic.firstWhere(
+        (c) => c["vName"] == pTab4pwrVname,
+        orElse: () => <String, dynamic>{}, // Provide empty map with correct type
+      );
+      if (pTabChar.isNotEmpty && pTabChar["value"] == null) {
+        await widget.bleData.requestSetting(widget.device, pTab4pwrVname);
+      }
       
       String test = widget.bleData.getVnameValue(BLE_hMinVname, returnNoFirmSupport: true);
       if (test == noFirmSupport) return;
