@@ -153,6 +153,28 @@ class _SettingTileState extends State<SettingTile> {
               ],
             ),
             tileColor: (c["value"] == noFirmSupport) ? deactiveBackgroundColor : Colors.black12,
+            trailing: IconButton(
+              icon: Icon(Icons.info_outline),
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return AlertDialog(
+                      title: Text(c["humanReadableName"]),
+                      content: Text(c["textDescription"] ?? "No description available."),
+                      actions: [
+                        TextButton(
+                          child: Text("Close"),
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
             onTap: () {
               if (c["value"] == noFirmSupport) {
               } else {
