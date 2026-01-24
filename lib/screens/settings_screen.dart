@@ -9,12 +9,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-import '../widgets/setting_tile.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../utils/snackbar.dart';
 
 import '../utils/bledata.dart';
 import '../utils/presets.dart';
+import '../utils/constants.dart';
+import 'settings_category_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -79,27 +80,29 @@ class _SettingsScreenState extends State<SettingsScreen>{
     super.dispose();
   }
 
-//Build the settings dropdowns
-  List<Widget> buildSettings(BuildContext context) {
-    List<Widget> settings = [];
-    if (this.bleData.isReadingOrWriting.value) {
-      Snackbar.show(ABC.c, "Data Loading, please wait ", success: true);
-      setState(() {});
-    } else {
-      if (this.bleData.charReceived.value) {
-        _newEntry(Map c) {
-          if ((!this.bleData.services.isEmpty) || this.bleData.isSimulated) {
-            if (c["isSetting"]) {
-              settings.add(SettingTile(device: this.widget.device, c: c));
-            }
-          }
-        }
-
-        this.bleData.customCharacteristic.forEach((c) => _newEntry(c));
-      }
-    }
-    _refreshBlocker = false;
-    return settings;
+  Widget _buildCategoryCard(BuildContext context, String title, SettingType type, IconData icon) {
+    return Card(
+      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Center(
+        child: ListTile(
+          leading: Icon(icon, size: 30),
+          title: Text(title),
+          trailing: Icon(Icons.chevron_right),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SettingsCategoryScreen(
+                  device: widget.device,
+                  title: title,
+                  settingType: type,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   @override
@@ -115,25 +118,35 @@ class _SettingsScreenState extends State<SettingsScreen>{
         ),
         body: Stack(
           children: <Widget>[
-            Align(alignment:Alignment.topCenter ,child:SizedBox(
-              height: _size.height * .90,
-              width: _size.width * .80,
-              child: ListView(clipBehavior: Clip.antiAlias, itemExtent: 100, children: <Widget>[
-                Card(
-                  margin: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                  child: Center(
-                    child: ListTile(
-                      leading: Icon(Icons.settings_system_daydream, size: 30),
-                      title: Text('Settings Manager'),
-                      subtitle: Text('Load, Save, Import & Export Configuration'),
-                      onTap: () => PresetManager.showPresetsMenu(context, bleData, widget.device),
-                      trailing: Icon(Icons.chevron_right),
+            Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                height: _size.height * .90,
+                width: _size.width * .80,
+                child: ListView(
+                  clipBehavior: Clip.antiAlias,
+                  itemExtent: 100,
+                  children: <Widget>[
+                    Card(
+                      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                      child: Center(
+                        child: ListTile(
+                          leading: Icon(Icons.settings_system_daydream, size: 30),
+                          title: Text('Settings Manager'),
+                          subtitle: Text('Load, Save, Import & Export Configuration'),
+                          onTap: () => PresetManager.showPresetsMenu(context, bleData, widget.device),
+                          trailing: Icon(Icons.chevron_right),
+                        ),
+                      ),
                     ),
-                  ),
+                    _buildCategoryCard(context, "Basic Settings", SettingType.basic, Icons.settings),
+                    _buildCategoryCard(context, "Bluetooth Settings", SettingType.bluetooth, Icons.bluetooth),
+                    _buildCategoryCard(context, "Network Settings", SettingType.network, Icons.wifi),
+                    _buildCategoryCard(context, "Advanced Settings", SettingType.advanced, Icons.build),
+                  ],
                 ),
-                ...buildSettings(context),
-              ]),
-            ),),
+              ),
+            ),
           ],
         ),
       ),
