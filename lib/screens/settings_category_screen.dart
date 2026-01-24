@@ -70,21 +70,18 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
 
   List<Widget> buildSettingsList(BuildContext context) {
     List<Widget> settings = [];
-    if (this.bleData.isReadingOrWriting.value) {
-      // Data loading indicator could go here, but usually handled by parent or snackbar
-    } else {
-      if (this.bleData.charReceived.value) {
-        _newEntry(Map c) {
-          if ((!this.bleData.services.isEmpty) || this.bleData.isSimulated) {
-            // Filter by isSetting AND the requested SettingType
-            if (c["isSetting"] == true && c["settingType"] == widget.settingType) {
+    if (this.bleData.charReceived.value) {
+      _newEntry(Map c) {
+        if ((!this.bleData.services.isEmpty) || this.bleData.isSimulated) {
+          // Filter by isSetting AND the requested SettingType
+          if (c["isSetting"] == true && c["settingType"] == widget.settingType) {
               settings.add(SettingTile(device: this.widget.device, c: c));
             }
           }
         }
         this.bleData.customCharacteristic.forEach((c) => _newEntry(c));
       }
-    }
+    
     _refreshBlocker = false;
     return settings;
   }

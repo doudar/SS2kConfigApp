@@ -96,7 +96,6 @@ class BLEData {
   bool isUserDisconnect = false;
   ValueNotifier<int> rssi = ValueNotifier(0);
   ValueNotifier<bool> charReceived = ValueNotifier(false);
-  ValueNotifier<bool> isReadingOrWriting = ValueNotifier(false);
   StreamSubscription<BluetoothConnectionState>? connectionStateSubscription;
   StreamSubscription<bool>? isConnectingSubscription;
   StreamSubscription<bool>? isDisconnectingSubscription;
@@ -142,6 +141,21 @@ class BLEData {
   );
 
   var customCharacteristic = customCharacteristicFramework;
+  
+  Map<int, Map>? _cachedCharacteristicMap;
+
+  void _ensureCachedMap() {
+    if (_cachedCharacteristicMap == null) {
+      _cachedCharacteristicMap = {};
+      for (var c in this.customCharacteristic) {
+        try {
+          _cachedCharacteristicMap![int.parse(c["reference"])] = c;
+        } catch (e) {
+          print("Error parsing characteristic reference: $e");
+        }
+      }
+    }
+  }
 
 
   /// @brief
@@ -224,33 +238,27 @@ class BLEData {
 
   Future _discoverServices(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    if (!this.isReadingOrWriting.value) {
-      this.isReadingOrWriting.value = true;
-      try {
-        if (services.length < 1) {
-          services = await device.discoverServices();
-        }
-      } catch (e) {
-        print(e);
+    try {
+      if (services.length < 1) {
+        services = await device.discoverServices();
       }
-      this.isReadingOrWriting.value = false;
+    } catch (e) {
+      print(e);
     }
   }
 
   Future _findChar() async {
     if (this.isSimulated) return;
-    if (!this.isReadingOrWriting.value) {
-      this.isReadingOrWriting.value = true;
-      while (!charReceived.value) {
-        try {
-          // custom characteristic
-          BluetoothService cs = services.first;
-          for (BluetoothService s in services) {
-            if (s.uuid == Guid(csUUID)) {
-              cs = s;
-              break;
-            }
+    while (!charReceived.value) {
+      try {
+        // custom characteristic
+        BluetoothService cs = services.first;
+        for (BluetoothService s in services) {
+          if (s.uuid == Guid(csUUID)) {
+            cs = s;
+            break;
           }
+        }
           List<BluetoothCharacteristic> characteristics = cs.characteristics;
           for (BluetoothCharacteristic c in characteristics) {
             if (c.uuid == Guid(ccUUID)) {
@@ -300,12 +308,10 @@ class BLEData {
             }
           }
           charReceived.value = true;
-        } catch (e) {
-          charReceived.value = false;
-        }
+      } catch (e) {
+        charReceived.value = false;
       }
     }
-    isReadingOrWriting.value = false;
   }
 
   ///Data Helpers****************************************************************
@@ -340,7 +346,6 @@ class BLEData {
       _lastRequestStopwatch.reset();
       await requestSettings(device);
     }
-    this.isReadingOrWriting.value = false;
     _inUpdateLoop = false;
   }
 
@@ -361,7 +366,6 @@ class BLEData {
       if (value.length < 2) {
         throw ArgumentError('FTMS Characteristic data list is too short');
       }
-      this.isReadingOrWriting.value = true;
       Uint8List data = Uint8List.fromList(value);
       ByteData byteData = ByteData.sublistView(data);
 
@@ -423,7 +427,6 @@ class BLEData {
         ftmsData.heartRate = byteData.getUint8(index);
         index += 1;
       }
-      this.isReadingOrWriting.value = false;
       
       // Emit a characteristic change event for FTMS data updates
       if (!_characteristicChangeController.isClosed) {
@@ -455,10 +458,8 @@ class BLEData {
 
   Future saveAllSettings(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    this.isReadingOrWriting.value = true;
     await this.customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2k(device, c) : ());
     await this.customCharacteristic.forEach((c) => findNSave(device, c, saveVname));
-    this.isReadingOrWriting.value = false;
   }
 
   Future reboot(BluetoothDevice device) async {
@@ -468,36 +469,36 @@ class BLEData {
 
   Future resetToDefaults(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    this.isReadingOrWriting.value = true;
     await this.customCharacteristic.forEach((c) => findNSave(device, c, resetVname));
-    this.isReadingOrWriting.value = false;
   }
 
   Future resetPowerTable(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    this.isReadingOrWriting.value = true;
     await this.customCharacteristic.forEach((c) => findNSave(device, c, resetPowerTableVname));
-    this.isReadingOrWriting.value = false;
   }
 
 //request all settings
   Future requestSettings(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    this.isReadingOrWriting.value = true;
-    _write(Map c) {
+    
+    for (var c in this.customCharacteristic) {
       // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
       if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
-        return;
+        continue;
       }
+
+      // Do not poll for BLE logging as it floods the connection. We rely on notifications for this.
+      if (c["vName"] == BLE_logStreamVname) {
+        continue;
+      }
+
       try {
-        write(device, [0x01, int.parse(c["reference"])]);
+        await Future.delayed(Duration(milliseconds: 50));
+        await write(device, [0x01, int.parse(c["reference"])]);
       } catch (e) {
         Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
       }
     }
-
-    await this.customCharacteristic.forEach((c) => _write(c));
-    this.isReadingOrWriting.value = false;
   }
 
 //request single setting
@@ -639,32 +640,38 @@ class BLEData {
     }
   }
 
-  void write(BluetoothDevice device, List<int> value) {
+  Future<void> write(BluetoothDevice device, List<int> value) async {
     if (this.isSimulated) return;
-    this.isReadingOrWriting.value = true;
     if (this.getMyCharacteristic(device).device.isConnected) {
       try {
-        this.getMyCharacteristic(device).write(value);
+        await this.getMyCharacteristic(device).write(value);
       } catch (e) {
         Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
       }
     } else {
       Snackbar.show(ABC.c, "Failed to write to SmartSpin2k - Net Connected", success: false);
     }
-    this.isReadingOrWriting.value = false;
   }
 
   void decode(BluetoothDevice device) {
     if (this.isSimulated) return;
+
+    _ensureCachedMap();
+
     final subscription = this.getMyCharacteristic(device).onValueReceived.listen((value) {
-      this.isReadingOrWriting.value = true;
       subscribed = true;
-      if (value[0] == 0x80) {
-        var length = value.length;
-        var t = new Uint8List(length);
-        //
-        for (var c in this.customCharacteristic) {
-          if (int.parse(c["reference"]) == value[1]) {
+      try {
+        if (value.isEmpty) return;
+
+        if (value[0] == 0x80) {
+          if (value.length < 2) return;
+          
+          // Use cached map for O(1) lookup
+          var c = _cachedCharacteristicMap?[value[1]];
+          
+          if (c != null) {
+            var length = value.length;
+            var t = new Uint8List(length);
             for (var i = 0; i < length; i++) {
               t[i] = value[i];
             }
@@ -727,7 +734,8 @@ class BLEData {
                   for (int i = 0; i < length - 2; i++) {
                     subT[i] = t[i + 2];
                   }
-                  c["value"] = utf8.decode(subT);
+                  // Use allowMalformed to prevent crashes on split multibyte characters
+                  c["value"] = utf8.decode(subT, allowMalformed: true);
 
                   // Push to log stream immediately after decoding
                   if (c["vName"] == BLE_logStreamVname) {
@@ -795,20 +803,20 @@ class BLEData {
                   print("No decoder found for $type");
                 }
             }
-
-            break;
+          }
+        } else if (value[0] == 0xff) {
+          if (value.length > 1) {
+            var c = _cachedCharacteristicMap?[value[1]];
+            if (c != null) {
+              c["value"] = noFirmSupport;
+              // Emit characteristic change event
+              _emitCharacteristicChange(c);
+            }
           }
         }
-      } else if (value[0] == 0xff) {
-        for (var c in this.customCharacteristic) {
-          if (int.parse(c["reference"]) == value[1]) {
-            c["value"] = noFirmSupport;
-            // Emit characteristic change event
-            _emitCharacteristicChange(c);
-          }
-        }
+      } catch (e) {
+        print("Error decoding BLE data: $e");
       }
-      this.isReadingOrWriting.value = false;
     }); //VV This is handled by the subscription flag.
     device.cancelWhenDisconnected(subscription);
   }

@@ -120,7 +120,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   }
 
   Future<void> _updateRssi() async {
-    if (this.bleData.isUpdatingFirmware || this.bleData.isReadingOrWriting.value) {
+    if (this.bleData.isUpdatingFirmware) {
       return; // Do not check RSSI if the firmware is being updated
     }
     if (this.widget.device.isConnected) {
@@ -167,21 +167,11 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   }
 
   Future onDiscoverServicesPressed() async {
-    if (mounted) {
-      setState(() {
-        this.bleData.isReadingOrWriting.value = true;
-      });
-    }
     try {
       await _refreshDeviceInfo();
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
-    }
-    if (mounted) {
-      setState(() {
-        this.bleData.isReadingOrWriting.value = false;
-      });
     }
   }
 

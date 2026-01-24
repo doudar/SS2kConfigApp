@@ -38,9 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen>{
 
     // If the data is simulated, wait for a second before calling setState
     if (bleData.isSimulated) {
-      this.bleData.isReadingOrWriting.value = true;
       Timer(Duration(seconds: 2), () {
-        this.bleData.isReadingOrWriting.value = false;
         if (mounted) {
           print("demo delay");
           setState(() {

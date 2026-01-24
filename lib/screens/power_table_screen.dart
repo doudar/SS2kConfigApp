@@ -57,9 +57,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     });
     // If the data is simulated, wait for a second before calling setState
     if (bleData.isSimulated) {
-      this.bleData.isReadingOrWriting.value = true;
       Timer(Duration(seconds: 2), () {
-        this.bleData.isReadingOrWriting.value = false;
         if (mounted) {
           print("demo delay");
           setState(() {
@@ -109,7 +107,6 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
       }
     });
     
-    // Subscribe to characteristic changes instead of isReadingOrWriting
     _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
       if (!_refreshBlocker && mounted) {
         _refreshBlocker = true;

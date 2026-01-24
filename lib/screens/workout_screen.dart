@@ -305,7 +305,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       }
     });
 
-    // Subscribe to characteristic changes instead of isReadingOrWriting
+
     _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
       if (!_refreshBlocker && mounted) {
         _refreshBlocker = true;
