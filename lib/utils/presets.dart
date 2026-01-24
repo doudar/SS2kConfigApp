@@ -21,7 +21,19 @@ class PresetManager {
       List<String> presetsList = prefs.getStringList('backups_list') ?? [];
       
       String presetKey = 'backup_$presetName';
-      await prefs.setString(presetKey, jsonEncode(bleData.customCharacteristic));
+      
+      // Filter out non-encodable objects like SettingType enum and only save vName/value
+      List<Map<String, dynamic>> saveableData = [];
+      for (var item in bleData.customCharacteristic) {
+        if (item is Map && item.containsKey('vName') && item.containsKey('value')) {
+          saveableData.add({
+            'vName': item['vName'],
+            'value': item['value'],
+          });
+        }
+      }
+      
+      await prefs.setString(presetKey, jsonEncode(saveableData));
       
       if (!presetsList.contains(presetName)) {
         presetsList.add(presetName);
@@ -76,7 +88,7 @@ class PresetManager {
                         if (presetData != null) {
                           try {
                             List<dynamic> settings = jsonDecode(presetData);
-                            await _showPresetDetails(context, presetName, settings);
+                            await _showPresetDetails(context, presetName, settings, bleData);
                           } catch (e) {
                             debugPrint("Error viewing preset: $e");
                           }
@@ -130,7 +142,30 @@ class PresetManager {
         return;
       }
 
-      bleData.customCharacteristic = jsonDecode(presetData);
+      // Parse the preset data
+      List<dynamic> loadedSettings = jsonDecode(presetData);
+      
+      // Update existing settings with loaded values only
+      // This preserves structural data like SettingType Enums which are not in the JSON
+      for (var loadedItem in loadedSettings) {
+        if (loadedItem is Map && loadedItem.containsKey("vName") && loadedItem.containsKey("value")) {
+          // Find matching item in current configuration
+          try {
+             var matchingItems = bleData.customCharacteristic.where(
+              (item) => item["vName"] == loadedItem["vName"]
+            );
+            
+            if (matchingItems.isNotEmpty) {
+              var currentItem = matchingItems.first;
+              // Only update the value
+              currentItem["value"] = loadedItem["value"];
+            }
+          } catch (e) {
+            print("Error updating setting ${loadedItem["vName"]}: $e");
+          }
+        }
+      }
+
       await bleData.saveAllSettings(device);
       
       if (context.mounted) {
@@ -146,71 +181,78 @@ class PresetManager {
   static Future<void> deletePreset(BuildContext context) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
-      List<String> presetsList = prefs.getStringList('backups_list') ?? [];
 
-      if (presetsList.isEmpty) {
-        if (context.mounted) {
-          Snackbar.show(ABC.c, "No presets found", success: false);
+      while (context.mounted) {
+        List<String> presetsList = prefs.getStringList('backups_list') ?? [];
+
+        if (presetsList.isEmpty) {
+          if (context.mounted) {
+            Snackbar.show(ABC.c, "No presets found", success: false);
+          }
+          return;
         }
-        return;
-      }
 
-      if (!context.mounted) return;
-      
-      String? selectedPreset = await showDialog<String>(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Select Preset to Delete'),
-            content: Container(
-              width: double.maxFinite,
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: presetsList.length,
-                itemBuilder: (context, index) {
-                  return ListTile(
-                    title: Text(presetsList[index]),
-                    onTap: () => Navigator.of(context).pop(presetsList[index]),
-                  );
-                },
+        String? selectedPreset = await showDialog<String>(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text('Select Preset to Delete'),
+              content: Container(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: presetsList.length,
+                  itemBuilder: (context, index) {
+                    return ListTile(
+                      title: Text(presetsList[index]),
+                      onTap: () => Navigator.of(context).pop(presetsList[index]),
+                    );
+                  },
+                ),
               ),
-            ),
-          );
-        },
-      );
+              actions: [
+                TextButton(
+                  child: Text('Close'),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            );
+          },
+        );
 
-      if (selectedPreset == null || !context.mounted) return;
+        if (selectedPreset == null || !context.mounted) return;
 
-      bool? confirmed = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Confirm Delete'),
-            content: Text('Are you sure you want to delete this preset?'),
-            actions: <Widget>[
-              TextButton(
-                child: Text('No'),
-                onPressed: () => Navigator.of(context).pop(false),
-              ),
-              TextButton(
-                child: Text('Yes'),
-                onPressed: () => Navigator.of(context).pop(true),
-              ),
-            ],
-          );
-        },
-      );
+        bool? confirmed = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text('Confirm Delete'),
+              content: Text('Are you sure you want to delete this preset?'),
+              actions: <Widget>[
+                TextButton(
+                  child: Text('No'),
+                  onPressed: () => Navigator.of(context).pop(false),
+                ),
+                TextButton(
+                  child: Text('Yes'),
+                  onPressed: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            );
+          },
+        );
 
-      if (confirmed != true || !context.mounted) return;
+        if (confirmed != true || !context.mounted) continue;
 
-      String presetKey = 'backup_$selectedPreset';
-      await prefs.remove(presetKey);
-      
-      presetsList.remove(selectedPreset);
-      await prefs.setStringList('backups_list', presetsList);
-      
-      if (context.mounted) {
-        Snackbar.show(ABC.c, "Preset '$selectedPreset' deleted successfully", success: true);
+        String presetKey = 'backup_$selectedPreset';
+        await prefs.remove(presetKey);
+
+        presetsList.remove(selectedPreset);
+        await prefs.setStringList('backups_list', presetsList);
+
+        if (context.mounted) {
+          Snackbar.show(ABC.c, "Preset '$selectedPreset' deleted successfully", success: true);
+        }
       }
     } catch (e) {
       if (context.mounted) {
@@ -244,22 +286,22 @@ class PresetManager {
                 _buildMenuOption(
                   context,
                   icon: Icons.save,
-                  title: 'Save to App',
-                  subtitle: 'Save current settings to "My Files"',
+                  title: 'Save to Phone',
+                  subtitle: 'Save current settings to "App Files"',
                   value: 'save',
                 ),
                 _buildMenuOption(
                   context,
                   icon: Icons.folder_open,
-                  title: 'Load from App',
-                  subtitle: 'Apply settings from "My Files"',
+                  title: 'Load from Phone',
+                  subtitle: 'Apply settings to SmartSpin2k from "App Files"',
                   value: 'load',
                 ),
                 _buildMenuOption(
                   context,
                   icon: Icons.delete_outline,
                   title: 'Manage Files',
-                  subtitle: 'Delete presets from "My Files"',
+                  subtitle: 'Delete presets from "App Files"',
                   value: 'delete',
                 ),
 
@@ -275,7 +317,7 @@ class PresetManager {
                   context,
                   icon: Icons.share_outlined,
                   title: 'Export File',
-                  subtitle: 'Share current settings as a file',
+                  subtitle: 'Share current settings as a .ss2k file',
                   value: 'export',
                 ),
 
@@ -476,9 +518,25 @@ class PresetManager {
     }
   }
 
-  static Future<void> _showPresetDetails(BuildContext context, String name, List<dynamic> settings) async {
-    // Filter only items that are settings
-    final displaySettings = settings.where((s) => s['isSetting'] == true).toList();
+  static Future<void> _showPresetDetails(BuildContext context, String name, List<dynamic> savedSettings, BLEData bleData) async {
+    List<Map<String, dynamic>> displaySettings = [];
+    
+    for (var savedItem in savedSettings) {
+      if (savedItem is Map && savedItem.containsKey('vName')) {
+        // Find matching current config to get readable name
+        var matchingItems = bleData.customCharacteristic.where(
+            (c) => c['vName'] == savedItem['vName']);
+        var currentItem = matchingItems.isNotEmpty ? matchingItems.first : null;
+
+        if (currentItem != null && currentItem['isSetting'] == true) {
+          displaySettings.add({
+            'humanReadableName': currentItem['humanReadableName'],
+            'vName': savedItem['vName'],
+            'value': savedItem['value']
+          });
+        }
+      }
+    }
     
     // Sort logic to match main UI or keep raw? Let's just sort alphabetically by name for easy reading
     displaySettings.sort((a, b) => (a['humanReadableName'] ?? '').compareTo(b['humanReadableName'] ?? ''));
@@ -498,7 +556,7 @@ class PresetManager {
              separatorBuilder: (context, index) => Divider(height: 1),
              itemBuilder: (context, index) {
                final item = displaySettings[index];
-               final displayValue = item['value'] ?? item['defaultData'];
+               final displayValue = item['value'];
                return ListTile(
                  title: Text(item['humanReadableName'] ?? item['vName'] ?? 'Unknown', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                  subtitle: Text(displayValue.toString(), style: TextStyle(fontSize: 13)),

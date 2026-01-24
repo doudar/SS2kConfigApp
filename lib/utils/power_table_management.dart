@@ -98,13 +98,13 @@ class PowerTableManager {
 
       // Get current HMax value from the device
       String hMaxValue = bleData.getVnameValue(BLE_hMaxVname);
-      
+
       // Create a data structure that includes both power table and HMax
       Map<String, dynamic> tableData = {
         'powerTable': bleData.powerTableData,
-        'hMax': hMaxValue != noFirmSupport ? hMaxValue : null
+        'hMax': hMaxValue != noFirmSupport ? hMaxValue : null,
       };
-      
+
       // Save the power table data with HMax
       String tableKey = _powerTablePrefix + tableName;
       await prefs.setString(tableKey, jsonEncode(tableData));
@@ -126,7 +126,12 @@ class PowerTableManager {
   }
 
   // Send power table data to device
-  static Future<bool> sendPowerTableToDevice(BuildContext context, BLEData bleData, BluetoothDevice device, {String? hMaxValue}) async {
+  static Future<bool> sendPowerTableToDevice(
+    BuildContext context,
+    BLEData bleData,
+    BluetoothDevice device, {
+    String? hMaxValue,
+  }) async {
     try {
       // Send each row of the power table separately
       const int intMinValue = -32768; // INT16_MIN for missing values
@@ -159,7 +164,7 @@ class PowerTableManager {
           return false;
         }
       }
-      
+
       // Send HMax to the device if available
       if (hMaxValue != null && hMaxValue != noFirmSupport) {
         try {
@@ -177,7 +182,7 @@ class PowerTableManager {
           // Continue even if HMax setting fails, as the power table itself was sent successfully
         }
       }
-      
+
       return true;
     } catch (e) {
       if (context.mounted) {
@@ -239,12 +244,7 @@ class PowerTableManager {
                 ],
               ),
             ),
-            actions: [
-              TextButton(
-                child: Text('Cancel'),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
+            actions: [TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(context).pop())],
           );
         },
       );
@@ -258,14 +258,8 @@ class PowerTableManager {
             title: Text('Confirm Load'),
             content: Text('This will overwrite your current power table.'),
             actions: <Widget>[
-              TextButton(
-                child: Text('Cancel'),
-                onPressed: () => Navigator.of(context).pop(false),
-              ),
-              TextButton(
-                child: Text('Okay'),
-                onPressed: () => Navigator.of(context).pop(true),
-              ),
+              TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(context).pop(false)),
+              TextButton(child: Text('Okay'), onPressed: () => Navigator.of(context).pop(true)),
             ],
           );
         },
@@ -285,7 +279,7 @@ class PowerTableManager {
       dynamic decodedData = jsonDecode(tableData);
       String? hMaxValue;
       List<dynamic> jsonPowerTableData;
-      
+
       // Handle both old format (just array) and new format (object with powerTable and hMax)
       if (decodedData is Map) {
         jsonPowerTableData = decodedData['powerTable'] as List<dynamic>;
@@ -294,7 +288,7 @@ class PowerTableManager {
         // Legacy format - just an array of power table data
         jsonPowerTableData = decodedData as List<dynamic>;
       }
-      
+
       // Load the power table data
       bleData.powerTableData = List<List<int?>>.from(
         jsonPowerTableData.map((row) => List<int?>.from(row.map((value) => value as int?))),
@@ -341,9 +335,7 @@ class PowerTableManager {
                 children: [
                   Text(
                     'Select a file to delete:',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.error),
                   ),
                   SizedBox(height: 12),
                   Flexible(
@@ -370,12 +362,7 @@ class PowerTableManager {
                 ],
               ),
             ),
-            actions: [
-              TextButton(
-                child: Text('Cancel'),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
+            actions: [TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(context).pop())],
           );
         },
       );
@@ -389,14 +376,8 @@ class PowerTableManager {
             title: Text('Confirm Delete'),
             content: Text('Are you sure you want to delete this power table?'),
             actions: <Widget>[
-              TextButton(
-                child: Text('No'),
-                onPressed: () => Navigator.of(context).pop(false),
-              ),
-              TextButton(
-                child: Text('Yes'),
-                onPressed: () => Navigator.of(context).pop(true),
-              ),
+              TextButton(child: Text('No'), onPressed: () => Navigator.of(context).pop(false)),
+              TextButton(child: Text('Yes'), onPressed: () => Navigator.of(context).pop(true)),
             ],
           );
         },
@@ -435,40 +416,20 @@ class PowerTableManager {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
-                  child: Text(
-                    'Power Table Management',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
+                  child: Text('Power Table Management', style: Theme.of(context).textTheme.titleLarge),
                 ),
-                
-                _buildSectionHeader(context, "Device Actions"),
-                _buildMenuOption(
-                  context,
-                  icon: Icons.science,
-                  title: 'Generate Test Data',
-                  subtitle: 'Create a linear power curve and upload to device',
-                  value: 'test',
-                ),
-                 _buildMenuOption(
-                  context,
-                  icon: Icons.refresh,
-                  title: 'Clear Active Table',
-                  subtitle: 'Reset the power table on the SmartSpin2k',
-                  value: 'clear',
-                ),
-
                 _buildSectionHeader(context, "Local Storage"),
                 _buildMenuOption(
                   context,
                   icon: Icons.save,
-                  title: 'Save to App',
+                  title: 'Save to phone',
                   subtitle: 'Save current table to "My Files"',
                   value: 'save',
                 ),
                 _buildMenuOption(
                   context,
                   icon: Icons.folder_open,
-                  title: 'Load from App',
+                  title: 'Load to SmartSpin2k',
                   subtitle: 'Open a table from "My Files"',
                   value: 'load',
                 ),
@@ -485,15 +446,31 @@ class PowerTableManager {
                   context,
                   icon: Icons.file_download_outlined,
                   title: 'Import File',
-                  subtitle: 'Open a .json file from your phone',
+                  subtitle: 'Open a .ptab file from your phone',
                   value: 'import',
                 ),
                 _buildMenuOption(
                   context,
                   icon: Icons.share_outlined,
                   title: 'Export File',
-                  subtitle: 'Share current table as a .json file',
+                  subtitle: 'Share current table as a .ptab file',
                   value: 'export',
+                ),
+
+                _buildSectionHeader(context, "Device Actions"),
+                _buildMenuOption(
+                  context,
+                  icon: Icons.refresh,
+                  title: 'Clear Active Table',
+                  subtitle: 'Reset the power table and deactivate homing on the SmartSpin2k',
+                  value: 'clear',
+                ),
+                _buildMenuOption(
+                  context,
+                  icon: Icons.science,
+                  title: 'Generate Test Data',
+                  subtitle: 'Create a linear power curve and upload to device',
+                  value: 'test',
                 ),
               ],
             ),
@@ -540,9 +517,9 @@ class PowerTableManager {
                         SizedBox(height: 16),
                         Text(
                           'Existing Files (${existingTables.length})',
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.labelMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
                         ),
                         SizedBox(height: 8),
                         Flexible(
@@ -554,10 +531,7 @@ class PowerTableManager {
                             ),
                             child: existingTables.isEmpty
                                 ? Center(
-                                    child: Text(
-                                      'No saved files',
-                                      style: TextStyle(color: Colors.grey),
-                                    ),
+                                    child: Text('No saved files', style: TextStyle(color: Colors.grey)),
                                   )
                                 : ListView.separated(
                                     shrinkWrap: true,
@@ -570,7 +544,9 @@ class PowerTableManager {
                                         title: Text(name),
                                         dense: true,
                                         selected: isSelected,
-                                        selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.2),
+                                        selectedTileColor: Theme.of(
+                                          context,
+                                        ).colorScheme.primaryContainer.withOpacity(0.2),
                                         onTap: () {
                                           nameController.text = name;
                                           setState(() {});
@@ -584,10 +560,7 @@ class PowerTableManager {
                     ),
                   ),
                   actions: <Widget>[
-                    TextButton(
-                      child: Text('Cancel'),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
+                    TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(context).pop()),
                     FilledButton(
                       child: Text(existingTables.contains(nameController.text) ? 'Overwrite' : 'Save'),
                       onPressed: nameController.text.trim().isEmpty
@@ -626,18 +599,12 @@ class PowerTableManager {
                   hintText: 'Enter file name',
                   labelText: 'File Name',
                   border: OutlineInputBorder(),
-                  suffixText: '.json'
+                  suffixText: '.json',
                 ),
               ),
               actions: <Widget>[
-                TextButton(
-                  child: Text('Cancel'),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                FilledButton(
-                  child: Text('Export'),
-                  onPressed: () => Navigator.of(context).pop(nameController.text),
-                ),
+                TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(context).pop()),
+                FilledButton(child: Text('Export'), onPressed: () => Navigator.of(context).pop(nameController.text)),
               ],
             );
           },
@@ -658,10 +625,10 @@ class PowerTableManager {
       child: Text(
         title.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.0,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.0,
+        ),
       ),
     );
   }

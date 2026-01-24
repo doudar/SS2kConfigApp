@@ -23,11 +23,16 @@ class PresetSharing {
       final directory = await getApplicationDocumentsDirectory();
       final String filePath = '${directory.path}/$fileName.ss2k';
       
-      // Convert settings to JSON, excluding sensitive data
-      List<dynamic> exportList = [];
+      // Convert settings to JSON, excluding sensitive data and complex objects
+      List<Map<String, dynamic>> exportList = [];
       for (var item in bleData.customCharacteristic) {
-        if (item['vName'] != ssidVname && item['vName'] != passwordVname) {
-          exportList.add(item);
+        if (item is Map && item.containsKey('vName') && item.containsKey('value')) {
+          if (item['vName'] != ssidVname && item['vName'] != passwordVname) {
+            exportList.add({
+              'vName': item['vName'],
+              'value': item['value'],
+            });
+          }
         }
       }
       String jsonContent = jsonEncode(exportList);
@@ -124,14 +129,17 @@ class PresetSharing {
                  return currentMap; 
              }
              
-             var importedItem = importedConfig.firstWhere(
-                (element) => element['vName'] == currentMap['vName'], 
-                orElse: () => null
+             var matchingImported = importedConfig.where(
+                (element) => element['vName'] == currentMap['vName']
              );
+             var importedItem = matchingImported.isNotEmpty ? matchingImported.first : null;
 
              if (importedItem != null) {
-                 if (importedItem['defaultData'] != null) {
-                    currentMap['defaultData'] = importedItem['defaultData'];
+                 if (importedItem['value'] != null) {
+                    currentMap['value'] = importedItem['value'];
+                 } else if (importedItem['defaultData'] != null) {
+                    // Fallback for legacy files
+                    currentMap['value'] = importedItem['defaultData'];
                  }
              }
              return currentMap;

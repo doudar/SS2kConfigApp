@@ -200,7 +200,7 @@ class PowerTablePainter extends CustomPainter {
       } else {
         // X-axis (Horizontal): Center horizontally, near top
         double x = leftPadding + (size.width - leftPadding) / 2 - textPainter.width / 2;
-        double y = -12;
+        double y = 0;
         textPainter.paint(canvas, Offset(x, y));
       }
       canvas.restore();

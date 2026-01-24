@@ -202,7 +202,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
+                  color: Theme.of(context).cardColor.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: const [
                     BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 4)),

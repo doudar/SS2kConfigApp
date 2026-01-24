@@ -65,7 +65,10 @@ class _plainTextCardState extends State<plainTextCard> {
         helperStyle: TextStyle(color: Colors.white),
         labelStyle: TextStyle(color: Colors.black54),
         suffixIcon: IconButton(
-          icon: Icon(passwordVisible ? Icons.visibility : Icons.visibility_off),
+          icon: Icon(
+            passwordVisible ? Icons.visibility : Icons.visibility_off,
+            color: Colors.black54,
+          ),
           onPressed: () {
             setState(
               () {
