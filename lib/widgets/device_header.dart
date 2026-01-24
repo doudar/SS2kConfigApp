@@ -11,7 +11,6 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 import '../utils/bledata.dart';
-import '../utils/power_table_management.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../utils/constants.dart';
 
@@ -186,10 +185,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     }
   }
 
-  Future onPowerTablePressed() async {
-    await PowerTableManager.showPowerTableMenu(context, bleData, widget.device);
-  }
-
   Future onRebootPressed() async {
     try {
       await this.bleData.reboot(this.widget.device);
@@ -307,13 +302,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
           child: ListTile(
             leading: Icon(FontAwesomeIcons.arrowRotateRight),
             title: Text('Reboot SS2k'),
-          ),
-        ),
-        PopupMenuItem<VoidCallback>(
-          value: onPowerTablePressed,
-          child: ListTile(
-            leading: Icon(FontAwesomeIcons.table),
-            title: Text('Manage PowerTable'),
           ),
         ),
       ],

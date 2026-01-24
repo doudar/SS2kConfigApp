@@ -14,6 +14,7 @@ import '../utils/extra.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/power_table_chart.dart';
+import '../utils/power_table_management.dart';
 
 class PowerTableScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -132,6 +133,13 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         device: widget.device,
         title: 'Resistance Chart',
         actions: [
+          IconButton(
+            icon: Icon(Icons.table_chart),
+            tooltip: 'Manage Power Table',
+            onPressed: () async {
+              await PowerTableManager.showPowerTableMenu(context, bleData, widget.device);
+            },
+          ),
           IconButton(
             tooltip: _swapAxes
                 ? 'Show Resistance on Y / Watts on X'
