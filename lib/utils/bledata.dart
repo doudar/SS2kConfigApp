@@ -99,6 +99,8 @@ class BLEData {
   StreamSubscription<BluetoothConnectionState>? connectionStateSubscription;
   StreamSubscription<bool>? isConnectingSubscription;
   StreamSubscription<bool>? isDisconnectingSubscription;
+  StreamSubscription<List<int>>? _notifySubscription;
+  StreamSubscription<List<int>>? _ftmsSubscription;
   late BluetoothService firmwareService;
   late BluetoothCharacteristic firmwareDataCharacteristic;
   late BluetoothCharacteristic firmwareControlCharacteristic;
@@ -361,8 +363,9 @@ class BLEData {
     }
 
     // TODO handle cancelling subscription
+    _ftmsSubscription?.cancel();
 
-    final subscription = indoorBikeCharacteristic!.onValueReceived.listen((value) {
+    _ftmsSubscription = indoorBikeCharacteristic!.onValueReceived.listen((value) {
       if (value.length < 2) {
         throw ArgumentError('FTMS Characteristic data list is too short');
       }
@@ -438,7 +441,7 @@ class BLEData {
         ));
       }
     });
-    device.cancelWhenDisconnected(subscription);
+    device.cancelWhenDisconnected(_ftmsSubscription!);
   }
 
   void findNSave(BluetoothDevice device, Map c, String find) {
@@ -659,7 +662,8 @@ class BLEData {
     subscribed = true;
     _ensureCachedMap();
 
-    final subscription = this.getMyCharacteristic(device).onValueReceived.listen((value) {
+    _notifySubscription?.cancel();
+    _notifySubscription = this.getMyCharacteristic(device).onValueReceived.listen((value) {
       try {
         if (value.isEmpty) return;
 
@@ -818,7 +822,7 @@ class BLEData {
         print("Error decoding BLE data: $e");
       }
     }); //VV This is handled by the subscription flag.
-    device.cancelWhenDisconnected(subscription);
+    device.cancelWhenDisconnected(_notifySubscription!);
   }
 
   /// Helper method to emit characteristic change events
