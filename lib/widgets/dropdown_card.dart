@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
+import '../utils/stream_extensions.dart';
 import 'dart:async';
 
 class DropdownCard extends StatefulWidget {
@@ -40,7 +41,11 @@ class _DropdownCardState extends State<DropdownCard> {
     buildDevicesMap();
     selectedValue = ddItems.isNotEmpty ? ddItems[0] : null;
     try {
-      _charSubscription = this.bleData.getMyCharacteristic(this.widget.device).onValueReceived.listen((data) async {
+      // Subscribe to characteristic changes stream instead of direct onValueReceived
+      // Listen for changes to the foundDevices characteristic
+      _charSubscription = bleData.characteristicChanges
+          .where((event) => event.vName == foundDevicesVname)
+          .listen((event) {
         if (mounted) {
           buildDevicesMap();
           setState(() {

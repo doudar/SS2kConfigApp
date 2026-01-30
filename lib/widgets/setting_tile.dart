@@ -17,6 +17,7 @@ import "../widgets/plain_text_card.dart";
 import '../widgets/dropdown_card.dart';
 
 import '../utils/bledata.dart';
+import '../utils/stream_extensions.dart';
 
 class SettingTile extends StatefulWidget {
   final BluetoothDevice device;
@@ -51,12 +52,15 @@ class _SettingTileState extends State<SettingTile> {
   Future startSubscription() async {
     if (this.bleData.charReceived.value) {
       try {
-        _charSubscription = this.bleData.getMyCharacteristic(this.widget.device).onValueReceived.listen((data) async {
+        // Subscribe to characteristic changes stream instead of direct onValueReceived
+        _charSubscription = bleData.characteristicChanges
+            .where((event) => event.vName == c["vName"])
+            .listen((event) {
           if (_value != c["value"]) {
             _value = valueFormatter();
-            setState(() {
-              _value;
-            });
+            if (mounted) {
+              setState(() {});
+            }
           }
         });
       } catch (e) {
