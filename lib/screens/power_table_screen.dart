@@ -15,6 +15,7 @@ import '../widgets/metric_card.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/power_table_chart.dart';
 import '../utils/power_table_management.dart';
+import '../utils/stream_extensions.dart';
 
 class PowerTableScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -30,7 +31,6 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   late BLEData bleData;
   String statusString = '';
   final GlobalKey<PowerTableChartState> _chartKey = GlobalKey<PowerTableChartState>();
-  bool _refreshBlocker = false;
 
   @override
   void initState() {
@@ -107,18 +107,14 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
       }
     });
     
-    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
-      if (!_refreshBlocker && mounted) {
-        _refreshBlocker = true;
-        Future.delayed(Duration(microseconds: 500), () {
-          if (bleData.FTMSmode == 0 || bleData.FTMSmode == 17) {
-            bleData.simulatedTargetWatts = "";
-          }
-          if (mounted) {
-            setState(() {});
-          }
-          _refreshBlocker = false;
-        });
+    _characteristicChangeSubscription = bleData.characteristicChanges
+        .debounce(Duration(milliseconds: 500))
+        .listen((event) {
+      if (bleData.FTMSmode == 0 || bleData.FTMSmode == 17) {
+        bleData.simulatedTargetWatts = "";
+      }
+      if (mounted) {
+        setState(() {});
       }
     });
   }

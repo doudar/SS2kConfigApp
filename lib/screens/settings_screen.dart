@@ -15,6 +15,7 @@ import '../utils/snackbar.dart';
 import '../utils/bledata.dart';
 import '../utils/presets.dart';
 import '../utils/constants.dart';
+import '../utils/stream_extensions.dart';
 import 'settings_category_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -29,7 +30,6 @@ class _SettingsScreenState extends State<SettingsScreen>{
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   late BLEData bleData;
-   bool _refreshBlocker = true;
 
   @override
   void initState() {
@@ -57,16 +57,12 @@ class _SettingsScreenState extends State<SettingsScreen>{
       }
     });
     
-    // Subscribe to characteristic changes instead of isReadingOrWriting
-    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
-      if (!_refreshBlocker && mounted) {
-        _refreshBlocker = true;
-        Future.delayed(Duration(microseconds: 500), () {
-          if (mounted) {
-            setState(() {});
-          }
-          _refreshBlocker = false;
-        });
+    // Subscribe to characteristic changes with debouncing
+    _characteristicChangeSubscription = bleData.characteristicChanges
+        .debounce(Duration(milliseconds: 500))
+        .listen((event) {
+      if (mounted) {
+        setState(() {});
       }
     });
   }
@@ -133,7 +129,6 @@ class _SettingsScreenState extends State<SettingsScreen>{
   @override
   Widget build(BuildContext context) {
     // Size _size = MediaQuery.of(context).size; // Unused
-    _refreshBlocker = true;
     return ScaffoldMessenger(
       key: Snackbar.snackBarKeyC,
       child: Scaffold(

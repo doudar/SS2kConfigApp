@@ -14,6 +14,7 @@ import '../utils/extra.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/power_table_chart.dart';
+import '../utils/stream_extensions.dart';
 
 class ShifterScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -29,7 +30,6 @@ class _ShifterScreenState extends State<ShifterScreen> {
   String t = "Loading";
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
-  bool _refreshBlocker = false;
   double _chartOpacity = 0.15;
   bool _showOpacityControl = false;
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -89,25 +89,21 @@ class _ShifterScreenState extends State<ShifterScreen> {
       }
     });
     
-    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
-      if (!_refreshBlocker && mounted) {
-        _refreshBlocker = true;
-        Future.delayed(Duration(microseconds: 500), () {
-          if (mounted) {
-            // Refresh the shifter characteristic value from BLE so UI updates when it changes remotely
-            c = bleData.customCharacteristic.firstWhere(
-              (i) => i["vName"] == shifterPositionVname,
-              orElse: () => <String, Object>{},
-            );
-            setState(() {
-              t = c["value"]?.toString() ?? "Loading";
-            });
-            if (bleData.FTMSmode == 0 || bleData.simulateTargetWatts == false) {
-              bleData.simulatedTargetWatts = "";
-            }
-          }
-          _refreshBlocker = false;
+    _characteristicChangeSubscription = bleData.characteristicChanges
+        .debounce(Duration(milliseconds: 500))
+        .listen((event) {
+      if (mounted) {
+        // Refresh the shifter characteristic value from BLE so UI updates when it changes remotely
+        c = bleData.customCharacteristic.firstWhere(
+          (i) => i["vName"] == shifterPositionVname,
+          orElse: () => <String, Object>{},
+        );
+        setState(() {
+          t = c["value"]?.toString() ?? "Loading";
         });
+        if (bleData.FTMSmode == 0 || bleData.simulateTargetWatts == false) {
+          bleData.simulatedTargetWatts = "";
+        }
       }
     });
   }

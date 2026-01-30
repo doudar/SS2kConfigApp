@@ -13,6 +13,7 @@ import '../widgets/setting_tile.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
+import '../utils/stream_extensions.dart';
 
 class SettingsCategoryScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -34,7 +35,6 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   late BLEData bleData;
-  bool _refreshBlocker = true;
 
   @override
   void initState() {
@@ -47,15 +47,11 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
       }
     });
 
-    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
-      if (!_refreshBlocker && mounted) {
-        _refreshBlocker = true;
-        Future.delayed(Duration(microseconds: 500), () {
-          if (mounted) {
-            setState(() {});
-          }
-          _refreshBlocker = false;
-        });
+    _characteristicChangeSubscription = bleData.characteristicChanges
+        .debounce(Duration(milliseconds: 500))
+        .listen((event) {
+      if (mounted) {
+        setState(() {});
       }
     });
   }
@@ -81,14 +77,12 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
         this.bleData.customCharacteristic.forEach((c) => _newEntry(c));
       }
     
-    _refreshBlocker = false;
     return settings;
   }
 
   @override
   Widget build(BuildContext context) {
     Size _size = MediaQuery.of(context).size;
-    _refreshBlocker = true; // Block refreshes during build
 
     return Scaffold(
       appBar: SS2KAppBar(
