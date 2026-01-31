@@ -83,6 +83,7 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
   @override
   Widget build(BuildContext context) {
     Size _size = MediaQuery.of(context).size;
+    List<Widget> settingsTiles = buildSettingsList(context);
 
     return Scaffold(
       appBar: SS2KAppBar(
@@ -93,11 +94,25 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
         child: SizedBox(
           height: _size.height * .90,
           width: _size.width * .80,
-          child: ListView(
-            clipBehavior: Clip.antiAlias,
-            // itemExtent: 100, // Removed fixed extent to allow variable height tiles if needed, or keep for consistency
-            children: buildSettingsList(context),
-          ),
+          child: settingsTiles.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 20),
+                      Text(
+                        "Refreshing Data",
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView(
+                  clipBehavior: Clip.antiAlias,
+                  // itemExtent: 100, // Removed fixed extent to allow variable height tiles if needed, or keep for consistency
+                  children: settingsTiles,
+                ),
         ),
       ),
     );
