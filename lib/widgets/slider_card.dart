@@ -47,19 +47,20 @@ class _sliderCardState extends State<sliderCard> {
 
   void verifyInput(String t) {
     c["value"] = t;
-    int? inputNumber = ((double.tryParse(c["value"]))?.round());
-    inputNumber ??= int.tryParse(c["value"]);
+    double? inputNumber = double.tryParse(c["value"]);
 
-    if (inputNumber! < c["min"]) {
-      c["value"] = c["min"].toString();
-      int _min = c["min"];
-      Snackbar.show(ABC.c, prettyException("Entered value is below minimum $_min", e), success: false);
-      controller.text = c["value"];
-    } else if (inputNumber > c["max"]) {
-      c["value"] = c["max"].toString();
-      int _max = c["max"];
-      Snackbar.show(ABC.c, prettyException("Entered value is above maximum $_max", e), success: false);
-      controller.text = c["value"];
+    if (inputNumber != null) {
+      if (inputNumber < c["min"]) {
+        c["value"] = c["min"].toString();
+        var _min = c["min"];
+        Snackbar.show(ABC.c, "Entered value is below minimum $_min", success: false);
+        controller.text = c["value"];
+      } else if (inputNumber > c["max"]) {
+        c["value"] = c["max"].toString();
+        var _max = c["max"];
+        Snackbar.show(ABC.c, "Entered value is above maximum $_max", success: false);
+        controller.text = c["value"];
+      }
     }
 
     setState(() {});

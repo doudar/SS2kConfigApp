@@ -54,6 +54,7 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   DateTime _lastPositionUpdate = DateTime.now();
   Timer? _homingValuesTimer;
   Timer? _targetPositionTimer;
+  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
 
   List<Color> get colors => PowerTableChart.lineColors;
   List<int> get cadences => PowerTableChart.cadenceTicks;
@@ -80,6 +81,13 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
         requestHomingValues();
       }
     });
+
+    // Subscribe to characteristic changes
+    _characteristicChangeSubscription = widget.bleData.characteristicChanges.listen((event) {
+      if (event.vName == BLE_hMinVname || event.vName == BLE_hMaxVname) {
+        _updateHomingFromCache();
+      }
+    });
   }
 
   @override
@@ -87,6 +95,7 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
     _pulseController.dispose();
     _homingValuesTimer?.cancel();
     _targetPositionTimer?.cancel();
+    _characteristicChangeSubscription?.cancel();
     super.dispose();
   }
 
@@ -132,31 +141,22 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
       await widget.bleData.requestSetting(widget.device, BLE_hMinVname);
       await widget.bleData.requestSetting(widget.device, BLE_hMaxVname);
 
-      // Only request pTab4pwrVname if it hasn't been populated yet to avoid spamming
-      var pTabChar = widget.bleData.customCharacteristic.firstWhere(
-        (c) => c["vName"] == pTab4pwrVname,
-        orElse: () => <String, dynamic>{}, // Provide empty map with correct type
-      );
-      if (pTabChar.isNotEmpty && pTabChar["value"] == null) {
-        await widget.bleData.requestSetting(widget.device, pTab4pwrVname);
-      }
-      
-      String test = widget.bleData.getVnameValue(BLE_hMinVname, returnNoFirmSupport: true);
-      if (test == noFirmSupport) return;
-      
-      double? value = double.tryParse(widget.bleData.getVnameValue(BLE_hMinVname));
-      double? value2 = double.tryParse(widget.bleData.getVnameValue(BLE_hMaxVname));
+      _updateHomingFromCache();
+    }
+  }
 
-      widget.bleData.tableDivisor = (widget.bleData.getVnameValue(pTab4pwrVname, returnNoFirmSupport: true) == noFirmSupport)
-          ? widget.bleData.tableOldDivisor
-          : widget.bleData.tableNewDivisor;
+  void _updateHomingFromCache() {
+    String test = widget.bleData.getVnameValue(BLE_hMinVname, returnNoFirmSupport: true);
+    if (test == noFirmSupport) return;
 
-      if (mounted) {
-        setState(() {
-          homingMin = (value == INT32_MIN) ? null : value! / widget.bleData.tableDivisor;
-          homingMax = (value2 == INT32_MIN) ? null : value2! / widget.bleData.tableDivisor;
-        });
-      }
+    double? value = double.tryParse(widget.bleData.getVnameValue(BLE_hMinVname));
+    double? value2 = double.tryParse(widget.bleData.getVnameValue(BLE_hMaxVname));
+
+    if (mounted) {
+      setState(() {
+        homingMin = (value == INT32_MIN) ? null : value! / widget.bleData.tableDivisor;
+        homingMax = (value2 == INT32_MIN) ? null : value2! / widget.bleData.tableDivisor;
+      });
     }
   }
 

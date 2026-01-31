@@ -208,7 +208,7 @@ final dynamic customCharacteristicFramework = [
     "settingType": SettingType.basic,
     "type": "float",
     "humanReadableName": "ERG Sensitivity",
-    "min": 0.1,
+    "min": 0,
     "max": 20,
     "textDescription":
         "This setting will impact the sensitivity of Erg Mode. Too low will cause the Erg to be slow at reaching target wattage. Too high will cause it to overshoot and oscillate before settling. Start with the default value of 5 and adjust if necessary.",

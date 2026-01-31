@@ -125,9 +125,7 @@ class BLEData {
   String simulatedFTMSmode = "";
   int FTMSmode = 0;
   bool simulateTargetWatts = false;
-  final double tableOldDivisor = 100.0;
-  final double tableNewDivisor = 10.0;
-  double tableDivisor = 100.0; // Default divisor for power table data
+  double tableDivisor = 10.0; // Default divisor for power table data
 
   // Stream controller for characteristic changes
   final StreamController<CharacteristicChangeEvent> _characteristicChangeController =
