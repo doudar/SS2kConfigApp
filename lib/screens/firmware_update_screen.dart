@@ -208,6 +208,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   }
 
   Future<void> _progressStreamSubscription() async {
+    await progressSubscription?.cancel();
     if (this.bleData.charReceived.value) {
       progressSubscription = otaPackage!.percentageStream.listen((event) {
         _progress = event / 100.0;
@@ -457,6 +458,13 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
         // Fall back to BLE update
         this.bleData.isUpdatingFirmware = true;
+
+        // Re-initialize OTA package to ensure we have a fresh stream controller
+        otaPackage = Esp32OtaPackage(
+          this.bleData.firmwareDataCharacteristic,
+          this.bleData.firmwareControlCharacteristic,
+        );
+        await _progressStreamSubscription();
 
         // Correctly identify firmware type for BLE update
         // If it's an asset path, we must use BINARY type regardless of the original call type
