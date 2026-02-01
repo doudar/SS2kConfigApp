@@ -110,13 +110,21 @@ class _SettingsScreenState extends State<SettingsScreen>{
             children: [
               Icon(icon, size: 50, color: Colors.white),
               SizedBox(height: 10),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -171,13 +179,13 @@ class _SettingsScreenState extends State<SettingsScreen>{
                   mainAxisSpacing: 16,
                   children: [
                     _buildCategoryTile(
-                        context, "Basic Settings", SettingType.basic, Icons.settings),
+                        context, "Basic", SettingType.basic, Icons.settings),
                     _buildCategoryTile(
-                        context, "Bluetooth Settings", SettingType.bluetooth, Icons.bluetooth),
+                        context, "Bluetooth", SettingType.bluetooth, Icons.bluetooth),
                     _buildCategoryTile(
-                        context, "Network Settings", SettingType.network, Icons.wifi),
+                        context, "Network", SettingType.network, Icons.wifi),
                     _buildCategoryTile(
-                        context, "Advanced Settings", SettingType.advanced, Icons.build),
+                        context, "Advanced", SettingType.advanced, Icons.build),
                   ],
                 ),
               ),
