@@ -11,6 +11,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import './bledata.dart';
 import './snackbar.dart';
 import './extra.dart';
+import './constants.dart';
 
 import './preset_sharing.dart';
 
@@ -556,7 +557,9 @@ class PresetManager {
              separatorBuilder: (context, index) => Divider(height: 1),
              itemBuilder: (context, index) {
                final item = displaySettings[index];
-               final displayValue = item['value'];
+               final displayValue = (item['vName'] == passwordVname) 
+                   ? "**********" 
+                   : item['value'];
                return ListTile(
                  title: Text(item['humanReadableName'] ?? item['vName'] ?? 'Unknown', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                  subtitle: Text(displayValue.toString(), style: TextStyle(fontSize: 13)),
