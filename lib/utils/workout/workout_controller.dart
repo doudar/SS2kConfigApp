@@ -94,7 +94,7 @@ class WorkoutController extends ChangeNotifier {
   double get speedMph {
     if (!isPlaying) return 0.0;
     final currentPower = bleData.ftmsData.watts.toDouble();
-    return currentPower > 0 ? 2.418 * math.pow(currentPower, 0.394) : 0.0;
+    return currentPower > 0 ? 1.5 * math.sqrt(currentPower) : 0.0;
   }
 
   Future<void> _initializeController() async {
