@@ -54,6 +54,7 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   DateTime _lastPositionUpdate = DateTime.now();
   Timer? _homingValuesTimer;
   Timer? _targetPositionTimer;
+  Timer? _cadenceLinesTimer;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
 
   List<Color> get colors => PowerTableChart.lineColors;
@@ -82,6 +83,11 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
       }
     });
 
+    // Set up timer to periodically request all cadence lines
+    _cadenceLinesTimer = Timer.periodic(const Duration(seconds: 120), (timer) {
+      requestAllCadenceLines();
+    });
+
     // Subscribe to characteristic changes
     _characteristicChangeSubscription = widget.bleData.characteristicChanges.listen((event) {
       if (event.vName == BLE_hMinVname || event.vName == BLE_hMaxVname) {
@@ -95,6 +101,7 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
     _pulseController.dispose();
     _homingValuesTimer?.cancel();
     _targetPositionTimer?.cancel();
+    _cadenceLinesTimer?.cancel();
     _characteristicChangeSubscription?.cancel();
     super.dispose();
   }
@@ -163,7 +170,9 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   Future<void> requestAllCadenceLines() async {
     if (!mounted || !widget.device.isConnected) return;
     for (int i = 0; i < 10; i++) {
+      if (!mounted) return;
       await widget.bleData.requestSetting(widget.device, powerTableDataVname, extraByte: i);
+      await Future.delayed(const Duration(milliseconds: 1000));
     }
   }
 

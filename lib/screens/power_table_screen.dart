@@ -130,6 +130,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
             icon: Icon(Icons.table_chart),
             tooltip: 'Manage Power Table',
             onPressed: () async {
+              _chartKey.currentState?.requestAllCadenceLines();
               await PowerTableManager.showPowerTableMenu(context, bleData, widget.device);
             },
           ),
