@@ -23,7 +23,7 @@ class WifiOTA {
     // First verify device is reachable
     try {
       print('WiFi OTA: Checking device availability...');
-      final response = await http.get(Uri.parse('$baseUrl/OTAIndex')).timeout(const Duration(seconds: 10));
+      final response = await http.get(Uri.parse('$baseUrl/OTAIndex')).timeout(const Duration(seconds: 60));
       if (response.statusCode != 200) {
         print('WiFi OTA: Device returned non-200 status code: ${response.statusCode}');
         return false;
@@ -34,8 +34,9 @@ class WifiOTA {
       // Try alternate URL without .local suffix as fallback
       try {
         print('WiFi OTA: Trying alternate URL: http://$cleanDeviceName');
-        final altResponse =
-            await http.get(Uri.parse('http://$cleanDeviceName/OTAIndex')).timeout(const Duration(seconds: 5));
+        final altResponse = await http
+            .get(Uri.parse('http://$cleanDeviceName/OTAIndex'))
+            .timeout(const Duration(seconds: 30));
         if (altResponse.statusCode != 200) {
           print('WiFi OTA: Alternate URL failed with status code: ${altResponse.statusCode}');
           return false;
@@ -66,31 +67,35 @@ class WifiOTA {
       return false;
     }
 
-    // Create multipart request
-    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/update'));
+    try {
+      // Create multipart request
+      final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/update'));
 
-    // Use a simple stream for all cases
-    final multipartFile = http.MultipartFile.fromBytes(
-      'update',
-      firmwareBytes,
-      filename: 'firmware.bin',
-      contentType: MediaType('application', 'octet-stream'),
-    );
-    request.files.add(multipartFile);
+      // Use a simple stream for all cases
+      final multipartFile = http.MultipartFile.fromBytes(
+        'update',
+        firmwareBytes,
+        filename: 'firmware.bin',
+        contentType: MediaType('application', 'octet-stream'),
+      );
+      request.files.add(multipartFile);
 
-    // Send request and wait only for headers
-    print('WiFi OTA: Sending firmware...');
-    var prog = 0.1;
-    // Update progress before send
-    request.send();
+      // Send request and wait only for headers
+      print('WiFi OTA: Sending firmware...');
+      var prog = 0.1;
+      // Update progress before send
+      request.send();
 
-    while(prog < 1) {
-      
-      onProgress(prog);
-      prog = prog +.01;
-      await Future.delayed(Duration(milliseconds: 400));
+      while (prog < 1) {
+        onProgress(prog);
+        prog = prog + .01;
+        await Future.delayed(Duration(milliseconds: 400));
+      }
+      print('WiFi OTA: Upload successful, device will reboot');
+      return true;
+    } catch (e) {
+      print('WiFi OTA: Upload failed: $e');
+      return false;
     }
-  print('WiFi OTA: Upload successful, device will reboot');
-    return true;
   }
 }

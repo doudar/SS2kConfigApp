@@ -49,7 +49,7 @@ class IntervalsWorkoutConverter {
     if (steps is! List) return;
     for (final raw in steps) {
       if (raw is! Map) continue;
-      final step = Map<String, dynamic>.from(raw as Map);
+      final step = Map<String, dynamic>.from(raw);
 
       // Nested group with its own steps (optionally with repeat count). Intervals may use
       // keys: reps, repeat, repeats, count. The screenshot shows 'reps'.
@@ -82,7 +82,7 @@ class IntervalsWorkoutConverter {
 
     final power = step['power'];
     if (power is Map) {
-      final pMap = power as Map;
+      final pMap = power;
       start = _toNum(pMap['start'] ?? pMap['low']);
       end = _toNum(pMap['end'] ?? pMap['high']);
       value = _toNum(pMap['value'] ?? pMap['target']);
@@ -166,8 +166,8 @@ class IntervalsWorkoutConverter {
 class _CollectedTextEvent {
   final int timeOffset; // seconds from workout start
   final String message;
-  final int duration;
-  _CollectedTextEvent(this.timeOffset, this.message, {this.duration = 10});
+  final int duration = 10;
+  _CollectedTextEvent(this.timeOffset, this.message);
 }
 
 class _TextEventCollector {

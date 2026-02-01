@@ -99,7 +99,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     if (uri.scheme == 'smartspin2k' && (uri.host == 'redirect' || uri.host == 'localhost')) {
       final code = uri.queryParameters['code'];
       final error = uri.queryParameters['error'];
-      final state = uri.queryParameters['state']; // Handle state parameter if present
+      // final state = uri.queryParameters['state']; // Unused
 
       if (error != null) {
         debugPrint('Strava auth error: $error');

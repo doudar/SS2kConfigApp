@@ -14,6 +14,8 @@ import '../utils/extra.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/power_table_chart.dart';
+import '../utils/power_table_management.dart';
+import '../utils/stream_extensions.dart';
 
 class PowerTableScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -25,10 +27,10 @@ class PowerTableScreen extends StatefulWidget {
 
 class _PowerTableScreenState extends State<PowerTableScreen> {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   late BLEData bleData;
   String statusString = '';
   final GlobalKey<PowerTableChartState> _chartKey = GlobalKey<PowerTableChartState>();
-  bool _refreshBlocker = false;
 
   @override
   void initState() {
@@ -55,9 +57,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     });
     // If the data is simulated, wait for a second before calling setState
     if (bleData.isSimulated) {
-      this.bleData.isReadingOrWriting.value = true;
       Timer(Duration(seconds: 2), () {
-        this.bleData.isReadingOrWriting.value = false;
         if (mounted) {
           print("demo delay");
           setState(() {
@@ -73,7 +73,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   @override
   void dispose() {
     _connectionStateSubscription?.cancel();
-    this.bleData.isReadingOrWriting.removeListener(_rwListner);
+    _characteristicChangeSubscription?.cancel();
     super.dispose();
   }
 
@@ -82,6 +82,17 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   void _toggleAxisOrientation() {
     _chartKey.currentState?.toggleAxisOrientation();
     setState(() {}); // refresh the icon state
+  }
+
+  String _getGearValue() {
+    var c = bleData.customCharacteristic.firstWhere(
+      (i) => i["vName"] == shifterPositionVname,
+      orElse: () => <String, Object>{},
+    );
+    // In simulation, default to "0" if not set, otherwise check value or return "-"
+    if (bleData.isSimulated && (c.isEmpty || c["value"] == null)) return "0";
+
+    return c.isNotEmpty ? (c["value"]?.toString() ?? "-") : "-";
   }
 
   Future rwSubscription() async {
@@ -95,25 +106,17 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         setState(() {});
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      bleData.isReadingOrWriting.addListener(_rwListner);
+    
+    _characteristicChangeSubscription = bleData.characteristicChanges
+        .debounce(Duration(milliseconds: 500))
+        .listen((event) {
+      if (bleData.FTMSmode == 0 || bleData.FTMSmode == 17) {
+        bleData.simulatedTargetWatts = "";
+      }
+      if (mounted) {
+        setState(() {});
+      }
     });
-  }
-
-  void _rwListner() async {
-    if (_refreshBlocker) {
-      return;
-    }
-    _refreshBlocker = true;
-    await Future.delayed(Duration(microseconds: 500));
-
-    if (bleData.FTMSmode == 0 || bleData.FTMSmode == 17) {
-      bleData.simulatedTargetWatts = "";
-    }
-    if (mounted) {
-      setState(() {});
-    }
-    _refreshBlocker = false;
   }
 
   @override
@@ -123,6 +126,14 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         device: widget.device,
         title: 'Resistance Chart',
         actions: [
+          IconButton(
+            icon: Icon(Icons.table_chart),
+            tooltip: 'Manage Power Table',
+            onPressed: () async {
+              _chartKey.currentState?.requestAllCadenceLines();
+              await PowerTableManager.showPowerTableMenu(context, bleData, widget.device);
+            },
+          ),
           IconButton(
             tooltip: _swapAxes
                 ? 'Show Resistance on Y / Watts on X'
@@ -170,7 +181,14 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
                         value: bleData.ftmsData.heartRate.toString(),
                         label: 'BPM',
                       ),
-                    )
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: MetricBox(
+                      value: _getGearValue(),
+                      label: 'Gear',
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -178,7 +196,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
+                  color: Theme.of(context).cardColor.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: const [
                     BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 4)),

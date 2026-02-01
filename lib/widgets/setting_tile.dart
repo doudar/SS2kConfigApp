@@ -17,6 +17,7 @@ import "../widgets/plain_text_card.dart";
 import '../widgets/dropdown_card.dart';
 
 import '../utils/bledata.dart';
+import '../utils/stream_extensions.dart';
 
 class SettingTile extends StatefulWidget {
   final BluetoothDevice device;
@@ -51,12 +52,15 @@ class _SettingTileState extends State<SettingTile> {
   Future startSubscription() async {
     if (this.bleData.charReceived.value) {
       try {
-        _charSubscription = this.bleData.getMyCharacteristic(this.widget.device).onValueReceived.listen((data) async {
+        // Subscribe to characteristic changes stream instead of direct onValueReceived
+        _charSubscription = bleData.characteristicChanges
+            .where((event) => event.vName == c["vName"])
+            .listen((event) {
           if (_value != c["value"]) {
             _value = valueFormatter();
-            setState(() {
-              _value;
-            });
+            if (mounted) {
+              setState(() {});
+            }
           }
         });
       } catch (e) {
@@ -127,9 +131,16 @@ class _SettingTileState extends State<SettingTile> {
     return _ret;
   }
 
+  Color _getTileColor() {
+    if (c["value"] == noFirmSupport) return deactiveBackgroundColor;
+    return (c["settingType"] as SettingType).color;
+  }
+
   @override
   Widget build(BuildContext context) {
     SizedBox(height: 10);
+    Color baseColor = _getTileColor();
+    
     return Hero(
       tag: c["vName"],
       child: Material(
@@ -137,36 +148,118 @@ class _SettingTileState extends State<SettingTile> {
         child: Card(
           margin: EdgeInsets.fromLTRB(10, 5, 10, 5),
           elevation: 4,
-          child: ListTile(
-            shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-             ),
-            title: Column(
-              children: <Widget>[
-                Text((c["humanReadableName"]),
-                    textAlign: TextAlign.left, style: Theme.of(context).textTheme.labelLarge),
-                Text(
-                  _value,
-                  textAlign: TextAlign.right,
-                ),
-                Icon(Icons.edit_note_sharp),
-              ],
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  baseColor.withValues(alpha: 0.7),
+                  baseColor.withValues(alpha: 0.3),
+                ],
+              ),
             ),
-            tileColor: (c["value"] == noFirmSupport) ? deactiveBackgroundColor : Colors.black12,
-            onTap: () {
-              if (c["value"] == noFirmSupport) {
-              } else {
-                Navigator.push(
-                  context,
-                  fadeRoute(
-                    Scaffold(
-                      appBar: AppBar(title: const Text('Edit Setting')),
-                      body: Center(child: widgetPicker()),
+            child: ListTile(
+              contentPadding: EdgeInsets.symmetric(vertical: 25.0, horizontal: 16.0),
+              shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+               ),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      (c["humanReadableName"]),
+                      textAlign: TextAlign.left, 
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(1.0, 1.0),
+                            blurRadius: 15.0,
+                            color: Colors.black45,
+                          ),
+                        ],
+                      )
                     ),
                   ),
-                );
-              }
-            },
+                  SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            _value,
+                            style: TextStyle(
+                              color: Colors.white70, 
+                              fontSize: 18,
+                              shadows: [
+                                Shadow(
+                                  offset: Offset(1.0, 1.0),
+                                  blurRadius: 15.0,
+                                  color: Colors.black45,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Icon(Icons.edit, color: Colors.white54, size: 20),
+                    ],
+                  ),
+                ],
+              ),
+              // tileColor property removed as we use Container decoration
+              trailing: IconButton(
+                icon: Icon(Icons.info_outline, color: Colors.white),
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return AlertDialog(
+                        title: Text(c["humanReadableName"]),
+                        content: Text(c["textDescription"] ?? "No description available."),
+                        actions: [
+                          TextButton(
+                            child: Text("Close"),
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                            },
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+              onTap: () {
+                if (c["value"] == noFirmSupport) {
+                } else {
+                  Navigator.push(
+                    context,
+                    fadeRoute(
+                      Scaffold(
+                        appBar: AppBar(title: const Text('Edit Setting')),
+                        body: Center(
+                          child: SingleChildScrollView(
+                            child: widgetPicker(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+              },
+            ),
           ),
         ),
       ),

@@ -80,42 +80,6 @@ class IntervalsService {
     return true;
   }
 
-  // Refresh token
-  static Future<bool> _refreshToken(String refreshToken) async {
-    try {
-      final response = await http.post(
-        Uri.parse(_tokenUrl),
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json',
-        },
-        body: {
-          'client_id': Environment.intervalsClientId,
-          'client_secret': Environment.intervalsClientSecret,
-          'refresh_token': refreshToken,
-          'grant_type': 'refresh_token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        await _storeTokens(
-          accessToken: data['access_token'],
-          refreshToken: data['refresh_token'],
-          expiresAt: data['expires_at']?.toString(),
-          athleteId: (data['athlete']?['id'] ?? data['athlete_id'])?.toString(),
-          tokenType: data['token_type']?.toString(),
-          scope: data['scope']?.toString(),
-        );
-        return true;
-      }
-      return false;
-    } catch (e) {
-      debugPrint('Error refreshing Intervals.icu token: $e');
-      return false;
-    }
-  }
-
   // Start OAuth flow
   static Future<void> authenticate(BuildContext context) async {
     // Show instructions dialog
@@ -238,7 +202,7 @@ class IntervalsService {
             // Consider both 'WORKOUT' and presence of workout fields
             final hasWorkout = event is Map<String, dynamic> && (event['workout_doc'] != null || event['workout_file'] != null);
             if ((event['category'] == 'WORKOUT' || hasWorkout) && hasWorkout) {
-              return event as Map<String, dynamic>;
+              return event;
             }
           }
         } else if (decoded is Map<String, dynamic>) {
@@ -248,7 +212,7 @@ class IntervalsService {
             for (final event in events) {
               final hasWorkout = event is Map<String, dynamic> && (event['workout_doc'] != null || event['workout_file'] != null);
               if ((event['category'] == 'WORKOUT' || hasWorkout) && hasWorkout) {
-                return event as Map<String, dynamic>;
+                return event;
               }
             }
           }
@@ -276,7 +240,7 @@ class IntervalsService {
             for (final event in decoded) {
               final hasWorkout = event is Map<String, dynamic> && (event['workout_doc'] != null || event['workout_file'] != null);
               if ((event['category'] == 'WORKOUT' || hasWorkout) && hasWorkout) {
-                return event as Map<String, dynamic>;
+                return event;
               }
             }
           }
@@ -400,7 +364,7 @@ class IntervalsService {
       if (decoded is List) {
         return decoded
             .whereType<Map>()
-            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map))
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .toList();
       }
       return [];

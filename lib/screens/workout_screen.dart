@@ -21,6 +21,7 @@ import '../utils/workout/workout_controls.dart';
 import '../utils/workout/workout_summary.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/workout_menu.dart';
+import '../utils/stream_extensions.dart';
 
 class WorkoutScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -38,13 +39,13 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
   late BLEData bleData;
   late WorkoutController _workoutController;
   late WorkoutTTSSettings _ttsSettings;
-  bool _refreshBlocker = false;
   bool _ttsInitialized = false;
   // Track whether we've applied the initial (resume) animation state to avoid a stuck fade.
   bool _didApplyInitialAnimation = false;
   // Guard to prevent animation calls during teardown.
   bool _isDisposing = false;
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   final ScrollController _scrollController = ScrollController();
   double _lastScrollPosition = 0;
   final GlobalKey _workoutGraphKey = GlobalKey();
@@ -304,20 +305,14 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       }
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      bleData.isReadingOrWriting.addListener(_rwListener);
+
+    _characteristicChangeSubscription = bleData.characteristicChanges
+        .debounce(const Duration(milliseconds: 500))
+        .listen((event) {
+      if (mounted) {
+        setState(() {});
+      }
     });
-  }
-
-  void _rwListener() async {
-    if (_refreshBlocker) return;
-    _refreshBlocker = true;
-    await Future.delayed(const Duration(microseconds: 500));
-
-    if (mounted) {
-      setState(() {});
-    }
-    _refreshBlocker = false;
   }
 
   @override
@@ -325,7 +320,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     _isDisposing = true;
     // Remove external listeners FIRST to avoid callbacks firing while controllers are being disposed.
     _workoutController.removeListener(_workoutControllerListener);
-    bleData.isReadingOrWriting.removeListener(_rwListener);
+    _characteristicChangeSubscription?.cancel();
     _connectionStateSubscription?.cancel();
 
     // Now safely dispose animation + other resources.
@@ -455,7 +450,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                                             child: Container(
                                               width: WorkoutSizes.progressIndicatorWidth,
                                               color: const Color.fromARGB(255, 0, 0, 0)
-                                                  .withOpacity(WorkoutOpacity.segmentBorder),
+                                                  .withValues(alpha: WorkoutOpacity.segmentBorder),
                                             ),
                                           ),
                                       ],

@@ -11,8 +11,6 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 import '../utils/bledata.dart';
-import '../utils/power_table_management.dart';
-import '../utils/presets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../utils/constants.dart';
 
@@ -122,7 +120,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   }
 
   Future<void> _updateRssi() async {
-    if (this.bleData.isUpdatingFirmware || this.bleData.isReadingOrWriting.value) {
+    if (this.bleData.isUpdatingFirmware) {
       return; // Do not check RSSI if the firmware is being updated
     }
     if (this.widget.device.isConnected) {
@@ -169,30 +167,12 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   }
 
   Future onDiscoverServicesPressed() async {
-    if (mounted) {
-      setState(() {
-        this.bleData.isReadingOrWriting.value = true;
-      });
-    }
     try {
       await _refreshDeviceInfo();
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
     }
-    if (mounted) {
-      setState(() {
-        this.bleData.isReadingOrWriting.value = false;
-      });
-    }
-  }
-
-  Future onPowerTablePressed() async {
-    await PowerTableManager.showPowerTableMenu(context, bleData, widget.device);
-  }
-
-  Future onPresetsPressed() async {
-    await PresetManager.showPresetsMenu(context, bleData, widget.device);
   }
 
   Future onRebootPressed() async {
@@ -203,16 +183,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       await onConnectPressed();
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Reboot Failed ", e), success: false);
-    }
-  }
-
-  Future onResetPressed() async {
-    try {
-      await this.bleData.resetToDefaults(this.widget.device);
-      await onConnectPressed();
-      Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
-    } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Reset Failed ", e), success: false);
     }
   }
 
@@ -229,8 +199,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       child: Text('${this.widget.device.remoteId}'),
     );
   }
-
-  bool _isExpanded = false;
 
   Widget _buildSignalStrengthIcon(int rssi) {
     IconData iconData;
@@ -270,7 +238,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           border: Border.all(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
           ),
           borderRadius: BorderRadius.circular(8),
         ),
@@ -296,7 +264,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
             SizedBox(width: 4),
             Icon(
               Icons.arrow_drop_down,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
             ),
           ],
         ),
@@ -324,36 +292,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
             title: Text('Reboot SS2k'),
           ),
         ),
-        PopupMenuItem<VoidCallback>(
-          value: onResetPressed,
-          child: ListTile(
-            leading: Icon(FontAwesomeIcons.arrowRotateLeft),
-            title: Text('Set Defaults'),
-          ),
-        ),
-        PopupMenuItem<VoidCallback>(
-          value: onPowerTablePressed,
-          child: ListTile(
-            leading: Icon(FontAwesomeIcons.table),
-            title: Text('Manage PowerTable'),
-          ),
-        ),
-        PopupMenuItem<VoidCallback>(
-          value: onPresetsPressed,
-          child: ListTile(
-            leading: Icon(FontAwesomeIcons.sliders),
-            title: Text('Presets'),
-          ),
-        ),
       ],
-    );
-  }
-
-  Widget _buildActionButton(String text, IconData icon, VoidCallback onPressed) {
-    return OutlinedButton.icon(
-      icon: Icon(icon),
-      label: Text(text),
-      onPressed: onPressed,
     );
   }
 }

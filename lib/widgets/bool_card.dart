@@ -34,39 +34,84 @@ late BLEData bleData;
     super.dispose();
   }
 
+  Color _getTileColor() {
+    if (widget.c["value"] == noFirmSupport) return deactiveBackgroundColor;
+    return (widget.c["settingType"] as SettingType).color;
+  }
+
   @override
   Widget build(BuildContext context) {
-
+    Color baseColor = _getTileColor();
     return Column(
-      children: <Widget>[Card(
-        elevation: 15,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-        Text((this.widget.c["humanReadableName"]), style: TextStyle(fontSize: 40), textAlign: TextAlign.left),
-        Text((bool.parse(this.widget.c["value"]) ? "On" : "Off"), style: TextStyle(fontSize: 30), textAlign: TextAlign.left),
-        Switch(
-          value: bool.parse(this.widget.c["value"]),
-          onChanged: (b) {
-            this.widget.c["value"] = b.toString();
-            this.bleData.writeToSS2k(this.widget.device, this.widget.c);
-            setState(() {});
-            return this.widget.c["value"];
-          },
-        ),
-        const SizedBox(height: 15),
+      children: <Widget>[
+        Card(
+          elevation: 15,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    baseColor.withValues(alpha: 0.7),
+                    baseColor.withValues(alpha: 0.3),
+                  ],
+                ),
+            ),
+            padding: const EdgeInsets.all(16.0),
+            child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+              Text((this.widget.c["humanReadableName"]), 
+                style: TextStyle(
+                  fontSize: 32, 
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  shadows: [
+                    Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black45)
+                  ]
+                ), 
+                textAlign: TextAlign.center
+              ),
+              SizedBox(height: 10),
+              Text(
+                (bool.parse(this.widget.c["value"]) ? "On" : "Off"), 
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  shadows: [
+                    Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black45)
+                  ]
+                ), 
+                textAlign: TextAlign.center
+              ),
+              Switch(
+                value: bool.parse(this.widget.c["value"]),
+                activeThumbColor: Colors.white,
+                activeTrackColor: Colors.white54,
+                inactiveThumbColor: Colors.white,
+                inactiveTrackColor: Colors.black26,
+                onChanged: (b) {
+                  this.widget.c["value"] = b.toString();
+                  this.bleData.writeToSS2k(this.widget.device, this.widget.c);
+                  setState(() {});
+                  return this.widget.c["value"];
+                },
+              ),
+              const SizedBox(height: 15),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: <Widget>[
                   TextButton(
-                      child: const Text('BACK'),
+                      child: const Text('BACK', style: TextStyle(color: Colors.white)),
                       onPressed: () {
                         Navigator.pop(context);
                       }),
                   const SizedBox(width: 8),
                   TextButton(
-                      child: const Text('SAVE'),
+                      child: const Text('SAVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                       onPressed: () {
                         //Find the save command and execute it
                         this
@@ -78,7 +123,9 @@ late BLEData bleData;
                   const SizedBox(width: 8),
                 ],
               ),
-      ]),
-    ),]);
+            ]),
+          ),
+        ),
+      ]);
   }
 }

@@ -128,34 +128,6 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     );
   }
 
-  Widget _buildCardWithIcon(IconData iconData, String title, VoidCallback onPressed) {
-    return Card(
-      elevation: 4,
-      margin: EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        children: [
-          ListTile(
-            onTap: onPressed,
-            leading: SizedBox(
-              width: 56,
-              height: 56,
-              child: Icon(
-                iconData,
-                size: 40,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-            title: Text(title),
-            trailing: IconButton(
-              icon: Icon(Icons.arrow_forward),
-              onPressed: onPressed,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildExpandableMaintenanceCard() {
     return Card(
       elevation: 4,

@@ -13,7 +13,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:http/http.dart' as http;
+
 
 // Abstract class defining the structure of an OTA package
 abstract class OtaPackage {
@@ -212,24 +212,5 @@ class Esp32OtaPackage implements OtaPackage {
   Future<List<Uint8List>> _openFileAndGetFirmwareData(PlatformFile file, int chunkSize) async {
     final bytes = await File(file.path!).readAsBytes();
     return _splitIntoChunks(bytes, chunkSize);
-  }
-
-  // Fetch firmware chunks from a URL
-  Future<List<Uint8List>> _getFirmwareFromUrl(String url, int chunkSize) async {
-    try {
-      final response = await http.get(Uri.parse(url)).timeout(Duration(seconds: 10));
-
-      // Check if the HTTP request was successful (status code 200)
-      if (response.statusCode == 200) {
-        final List<int> bytes = response.bodyBytes;
-        return _splitIntoChunks(bytes, chunkSize);
-      } else {
-        // Handle HTTP error (e.g., status code is not 200)
-        throw 'HTTP Error: ${response.statusCode} - ${response.reasonPhrase}';
-      }
-    } catch (e) {
-      // Handle other errors (e.g., timeout, network connectivity issues)
-      throw 'Error fetching firmware from URL: $e';
-    }
   }
 }

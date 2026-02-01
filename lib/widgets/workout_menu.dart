@@ -275,7 +275,7 @@ class WorkoutMenu extends StatelessWidget {
             ? List<Map<String, dynamic>>.from(
                 (folder['children'] as List)
                     .whereType<Map>()
-                    .map((e) => Map<String, dynamic>.from(e as Map)),
+                    .map((e) => Map<String, dynamic>.from(e)),
               )
             : <Map<String, dynamic>>[];
         final workouts = children.where((c) => c['workout_doc'] != null || c['workout_file'] != null).toList();
