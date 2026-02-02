@@ -135,7 +135,6 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version-file: pubspec.yaml
 
       - name: Accept Android SDK licenses
         shell: bash
@@ -215,7 +214,6 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version-file: pubspec.yaml
 
       # Debug environment variables
       - name: Debug Environment Variables
@@ -303,7 +301,6 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version-file: pubspec.yaml
 
       # Manual install for arm64 (action currently fails to resolve version on ubuntu-24.04-arm)
       - name: Setup Flutter (arm64 manual)
@@ -312,15 +309,7 @@ jobs:
           set -e
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git curl unzip xz-utils zip
-          # Clone flutter stable at desired version (tag 3.38.1)
-          git clone https://github.com/flutter/flutter.git -b stable $HOME/flutter
-          cd $HOME/flutter
-          # Ensure we are at or past desired version; attempt to checkout tag if exists
-          if git rev-parse -q --verify refs/tags/3.38.1 >/dev/null; then
-            git fetch --tags
-            git checkout 3.38.1 || true
-          fi
-          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          git clone https://github.com/flutter/flutter.git -b stable $HOME/flutterho "$HOME/flutter/bin" >> $GITHUB_PATH
           $HOME/flutter/bin/flutter config --no-analytics
           $HOME/flutter/bin/flutter doctor -v || true
 
