@@ -40,7 +40,7 @@ flutter precache --ios
 flutter pub get
 
 # Build the Flutter app with the extra arguments from environment variable
-flutter build ios --release --no-codesign $FLUTTER_EXTRA_ARGS
+flutter build ios --release --no-codesign
 
 # Install CocoaPods using Homebrew.
 HOMEBREW_NO_AUTO_UPDATE=1 # disable homebrew's automatic updates.

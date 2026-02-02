@@ -309,7 +309,8 @@ jobs:
           set -e
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git curl unzip xz-utils zip
-          git clone https://github.com/flutter/flutter.git -b stable $HOME/flutterho "$HOME/flutter/bin" >> $GITHUB_PATH
+          git clone https://github.com/flutter/flutter.git -b stable $HOME/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
           $HOME/flutter/bin/flutter config --no-analytics
           $HOME/flutter/bin/flutter doctor -v || true
 
