@@ -33,18 +33,16 @@ android {
     compileSdkVersion 36  // Updated to support audioplayers_android requirements
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = '1.8'
+        jvmTarget = '17'
     }
 
-    // Gradle Java Toolchain: build with JDK 21 while emitting Java 8 bytecode.
-    // Flutter (3.24.x) & current AGP prefer JDK 17+, JDK 21 works for build if installed.
-    // Keeping source/target at 1.8 preserves max device compatibility (desugaring covers newer APIs).
-    // To start using newer language features later, raise source/target & kotlin jvmTarget after verifying.
+    // Gradle Java Toolchain: build with JDK 21.
+    // Updated source/target to 17 to match modern Android/Flutter standards and avoid "obsolete" warnings.
     java {
         toolchain {
             languageVersion = JavaLanguageVersion.of(21)
