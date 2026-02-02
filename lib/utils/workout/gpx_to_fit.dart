@@ -51,14 +51,27 @@ class GpxToFitConverter {
         record.power = int.tryParse(powerStr) ?? 0;
         
         // Extract heart rate and cadence from TrackPointExtension
-        final tpExtStr = ext['gpxtpx:TrackPointExtension']?.toString() ?? '';
-        if (tpExtStr.isNotEmpty) {
-          // The TrackPointExtension string contains both HR and cadence values
-          // Split the string and extract the values
-          final values = tpExtStr.trim().split('\n').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
-          if (values.length >= 2) {
-            record.heartRate = int.tryParse(values[0]) ?? 0;
-            record.cadence = int.tryParse(values[1]) ?? 0;
+        final tpExt = ext['gpxtpx:TrackPointExtension'];
+        if (tpExt is Map) {
+          final hr = tpExt['gpxtpx:hr'];
+          final cad = tpExt['gpxtpx:cad'];
+          if (hr != null) {
+            record.heartRate = int.tryParse(hr.toString()) ?? 0;
+          }
+          if (cad != null) {
+            record.cadence = int.tryParse(cad.toString()) ?? 0;
+          }
+        } else {
+          // Legacy/Fallback parsing logic
+          final tpExtStr = tpExt?.toString() ?? '';
+          if (tpExtStr.isNotEmpty) {
+            // The TrackPointExtension string contains both HR and cadence values
+            // Split the string and extract the values
+            final values = tpExtStr.trim().split('\n').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+            if (values.length >= 2) {
+              record.heartRate = int.tryParse(values[0]) ?? 0;
+              record.cadence = int.tryParse(values[1]) ?? 0;
+            }
           }
         }
       
