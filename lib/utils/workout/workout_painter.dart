@@ -91,7 +91,14 @@ class WorkoutPainter extends CustomPainter {
           colors: [topColor, bottomColor],
         ).createShader(rect);
 
-        canvas.drawRect(rect, paint);
+        canvas.drawRRect(
+          RRect.fromRectAndCorners(
+            rect,
+            topLeft: const Radius.circular(8.0),
+            topRight: const Radius.circular(8.0),
+          ),
+          paint,
+        );
       }
 
       // Draw segment border
