@@ -12,6 +12,7 @@ class WorkoutPainter extends CustomPainter {
   final Map<int, double> actualPowerPoints;
   final double? currentPower;
   final List<double>? powerPointsList;  // New parameter for interpolated points
+  final bool showLabels; // New parameter to control label visibility
 
   WorkoutPainter({
     required this.segments,
@@ -22,6 +23,7 @@ class WorkoutPainter extends CustomPainter {
     required this.actualPowerPoints,
     this.currentPower,
     this.powerPointsList,  // Add this parameter
+    this.showLabels = true, // Default to showing labels
   });
 
   @override
@@ -84,12 +86,12 @@ class WorkoutPainter extends CustomPainter {
       );
 
       // Draw power labels during active workout (when currentPower is provided)
-      if (currentPower != null) {
+      if (currentPower != null && showLabels) {
         _drawPowerLabels(canvas, currentX, segmentWidth, size.height, segment, heightScale);
       }
 
       // Draw cadence indicator if present
-      if (segment.cadence != null || segment.cadenceLow != null) {
+      if ((segment.cadence != null || segment.cadenceLow != null) && showLabels) {
         _drawCadenceIndicator(canvas, currentX, segmentWidth, size.height, segment);
       }
 
@@ -171,21 +173,26 @@ class WorkoutPainter extends CustomPainter {
       
       // Draw grid line starting after the label space
       canvas.drawLine(
-        Offset(leftPadding, y),
+        Offset(showLabels ? leftPadding : 0, y),
         Offset(size.width, y),
         gridPaint,
       );
 
       // Draw power labels in the reserved space
-      textPainter.text = TextSpan(
-        text: '${power.round()}w',
-        style: TextStyle(
-          color: Colors.grey[600],
-          fontSize: WorkoutFontSizes.small,
-        ),
-      );
-      textPainter.layout();
-      textPainter.paint(canvas, Offset(leftPadding - textPainter.width - 4, y - textPainter.height / 2));
+      if (showLabels) {
+        textPainter.text = TextSpan(
+          text: '${power.round()}w',
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: WorkoutFontSizes.small,
+          ),
+        );
+        textPainter.layout();
+        textPainter.paint(
+            canvas,
+            Offset(leftPadding - textPainter.width - 4,
+                y - textPainter.height / 2));
+      }
     }
   }
 
@@ -211,15 +218,18 @@ class WorkoutPainter extends CustomPainter {
       );
 
       // Draw time labels
-      textPainter.text = TextSpan(
-        text: '${(time / 60).round()}min',
-        style: TextStyle(
-          color: Colors.grey[600],
-          fontSize: WorkoutFontSizes.small,
-        ),
-      );
-      textPainter.layout();
-      textPainter.paint(canvas, Offset(x - textPainter.width / 2, size.height + 5));
+      if (showLabels) {
+        textPainter.text = TextSpan(
+          text: '${(time / 60).round()}min',
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: WorkoutFontSizes.small,
+          ),
+        );
+        textPainter.layout();
+        textPainter.paint(
+            canvas, Offset(x - textPainter.width / 2, size.height + 5));
+      }
     }
   }
 

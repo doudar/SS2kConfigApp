@@ -21,7 +21,10 @@ import '../utils/workout/workout_controls.dart';
 import '../utils/workout/workout_summary.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/workout_menu.dart';
+import '../widgets/power_table_chart.dart';
 import '../utils/stream_extensions.dart';
+
+enum OverlayMode { none, overview, powerTable }
 
 class WorkoutScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -54,6 +57,23 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
   late Animation<double> _zoomAnimation;
   // Keep a reference to the workout controller listener so we can detach it on dispose.
   late VoidCallback _workoutControllerListener;
+  OverlayMode _overlayMode = OverlayMode.none;
+
+  void _toggleOverlay() {
+    setState(() {
+      switch (_overlayMode) {
+        case OverlayMode.none:
+          _overlayMode = OverlayMode.overview;
+          break;
+        case OverlayMode.overview:
+          _overlayMode = OverlayMode.powerTable;
+          break;
+        case OverlayMode.powerTable:
+          _overlayMode = OverlayMode.none;
+          break;
+      }
+    });
+  }
 
   void _initializeAnimationControllers() {
     _metricsAndSummaryFadeController = AnimationController(
@@ -341,6 +361,60 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
 
   // Workout library dialog removed; logic migrated to WorkoutMenu.
 
+  Widget _buildOverlay() {
+    if (MediaQuery.of(context).orientation == Orientation.portrait ||
+        _overlayMode == OverlayMode.none) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: 300,
+      height: 180,
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.9),
+        border: Border.all(color: Colors.grey),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRect(
+        child: _overlayMode == OverlayMode.overview
+            ? Stack(
+                children: [
+                  CustomPaint(
+                    size: Size.infinite,
+                    painter: WorkoutPainter(
+                      segments: _workoutController.segments,
+                      maxPower: _workoutController.maxPower,
+                      totalDuration: _workoutController.totalDuration,
+                      ftpValue: _workoutController.ftpValue,
+                      currentProgress: _workoutController.progressPosition,
+                      actualPowerPoints: _workoutController.actualPowerPoints,
+                      currentPower: _workoutController.isPlaying
+                          ? bleData.ftmsData.watts.toDouble()
+                          : null,
+                      powerPointsList:
+                          _workoutController.getPowerPointsUpToNow(),
+                      showLabels: false,
+                    ),
+                  ),
+                  Positioned(
+                    left: _workoutController.progressPosition * 300,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 2,
+                      color: Colors.red,
+                    ),
+                  ),
+                ],
+              )
+            : PowerTableChart(
+                device: widget.device,
+                bleData: bleData,
+              ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_ttsInitialized) {
@@ -356,6 +430,16 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
         device: widget.device,
         title: _workoutName ?? '',
         actions: [
+          if (MediaQuery.of(context).orientation == Orientation.landscape)
+            IconButton(
+              icon: Icon(_overlayMode == OverlayMode.none
+                  ? Icons.layers_clear
+                  : _overlayMode == OverlayMode.overview
+                      ? Icons.map
+                      : Icons.grid_on),
+              onPressed: _toggleOverlay,
+              tooltip: 'Toggle Overlay',
+            ),
           WorkoutMenu(
             workoutController: _workoutController,
             bleData: bleData,
@@ -478,6 +562,11 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                     workoutController: _workoutController,
                   )
                 : const SizedBox.shrink(),
+          ),
+          Positioned(
+            top: 10,
+            right: 10,
+            child: _buildOverlay(),
           ),
         ],
       ),
