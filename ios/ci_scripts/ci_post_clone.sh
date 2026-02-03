@@ -42,11 +42,4 @@ flutter pub get
 # Build the Flutter app with the extra arguments from environment variable
 flutter build ios --release --no-codesign
 
-# Install CocoaPods using Homebrew.
-HOMEBREW_NO_AUTO_UPDATE=1 # disable homebrew's automatic updates.
-brew install cocoapods
-
-# Install CocoaPods dependencies.
-cd ios && pod install # run `pod install` in the `ios` directory.
-
 exit 0
