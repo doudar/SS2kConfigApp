@@ -30,8 +30,7 @@ class WorkoutPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (segments.isEmpty) return;
 
-    final paint = Paint()
-      ..style = PaintingStyle.fill;
+    final paint = Paint()..style = PaintingStyle.fill;
 
     double currentX = 0;
     // Scale height based on max power in watts
@@ -40,27 +39,40 @@ class WorkoutPainter extends CustomPainter {
 
     // Draw segments
     for (var segment in segments) {
-      paint.color = _getSegmentColor(segment);
+      final baseColor = _getSegmentColor(segment);
       final segmentWidth = segment.duration * widthScale;
-      
+
+      // Create gradient colors for 3D effect
+      final topColor = _lighten(baseColor, 0.2);
+      final bottomColor = _darken(baseColor, 0.1);
+
       if (segment.isRamp) {
         // Draw ramp segment
         final path = Path();
-        
+
         // For cooldowns, start at powerHigh and end at powerLow
         // For all other ramps, start at powerLow and end at powerHigh
-        final startPower = segment.type == SegmentType.cooldown ? segment.powerHigh : segment.powerLow;
-        final endPower = segment.type == SegmentType.cooldown ? segment.powerLow : segment.powerHigh;
-        
+        final startPower =
+            segment.type == SegmentType.cooldown ? segment.powerHigh : segment.powerLow;
+        final endPower =
+            segment.type == SegmentType.cooldown ? segment.powerLow : segment.powerHigh;
+
         final startHeight = size.height - (startPower * ftpValue * heightScale);
         final endHeight = size.height - (endPower * ftpValue * heightScale);
-        
+
         path.moveTo(currentX, size.height);
         path.lineTo(currentX, startHeight);
         path.lineTo(currentX + segmentWidth, endHeight);
         path.lineTo(currentX + segmentWidth, size.height);
         path.close();
-        
+
+        // Apply gradient shader
+        paint.shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [topColor, bottomColor],
+        ).createShader(path.getBounds());
+
         canvas.drawPath(path, paint);
       } else {
         // Draw steady state segment
@@ -71,15 +83,24 @@ class WorkoutPainter extends CustomPainter {
           segmentWidth,
           segmentHeight,
         );
+
+        // Apply gradient shader
+        paint.shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [topColor, bottomColor],
+        ).createShader(rect);
+
         canvas.drawRect(rect, paint);
       }
 
       // Draw segment border
       final borderPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..color = const Color.fromARGB(65, 0, 0, 0).withValues(alpha: WorkoutOpacity.segmentBorder)
+        ..color = const Color.fromARGB(65, 0, 0, 0)
+            .withValues(alpha: WorkoutOpacity.segmentBorder)
         ..strokeWidth = WorkoutStroke.border;
-      
+
       canvas.drawRect(
         Rect.fromLTWH(currentX, 0, segmentWidth, size.height),
         borderPaint,
@@ -87,12 +108,14 @@ class WorkoutPainter extends CustomPainter {
 
       // Draw power labels during active workout (when currentPower is provided)
       if (currentPower != null && showLabels) {
-        _drawPowerLabels(canvas, currentX, segmentWidth, size.height, segment, heightScale);
+        _drawPowerLabels(
+            canvas, currentX, segmentWidth, size.height, segment, heightScale);
       }
 
       // Draw cadence indicator if present
       if ((segment.cadence != null || segment.cadenceLow != null) && showLabels) {
-        _drawCadenceIndicator(canvas, currentX, segmentWidth, size.height, segment);
+        _drawCadenceIndicator(
+            canvas, currentX, segmentWidth, size.height, segment);
       }
 
       currentX += segmentWidth;
@@ -371,6 +394,20 @@ class WorkoutPainter extends CustomPainter {
         Offset(x + (width - textPainter.width) / 2, yPos),
       );
     }
+  }
+
+  Color _lighten(Color color, [double amount = .1]) {
+    assert(amount >= 0 && amount <= 1);
+    final hsl = HSLColor.fromColor(color);
+    final hslLight = hsl.withLightness((hsl.lightness + amount).clamp(0.0, 1.0));
+    return hslLight.toColor();
+  }
+
+  Color _darken(Color color, [double amount = .1]) {
+    assert(amount >= 0 && amount <= 1);
+    final hsl = HSLColor.fromColor(color);
+    final hslDark = hsl.withLightness((hsl.lightness - amount).clamp(0.0, 1.0));
+    return hslDark.toColor();
   }
 
   @override
