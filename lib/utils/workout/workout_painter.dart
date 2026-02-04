@@ -11,8 +11,13 @@ class WorkoutPainter extends CustomPainter {
   final double currentProgress;
   final Map<int, double> actualPowerPoints;
   final double? currentPower;
+  final int? currentHr;
+  final int? currentCadence;
   final List<double>? powerPointsList;  // New parameter for interpolated points
+  final List<double>? hrPointsList;
+  final List<double>? cadencePointsList;
   final bool showLabels; // New parameter to control label visibility
+  final double pulseValue; // 0.0 to 1.0 for pulse animation
 
   WorkoutPainter({
     required this.segments,
@@ -22,8 +27,13 @@ class WorkoutPainter extends CustomPainter {
     required this.currentProgress,
     required this.actualPowerPoints,
     this.currentPower,
+    this.currentHr,
+    this.currentCadence,
     this.powerPointsList,  // Add this parameter
+    this.hrPointsList,
+    this.cadencePointsList,
     this.showLabels = true, // Default to showing labels
+    this.pulseValue = 0.0,
   });
 
   @override
@@ -42,9 +52,26 @@ class WorkoutPainter extends CustomPainter {
       final baseColor = _getSegmentColor(segment);
       final segmentWidth = segment.duration * widthScale;
 
+      // Determine if this segment is active
+      // currentProgress (0-1) * totalDuration = currentTime
+      // currentX = segmentStartTime * widthScale
+      // segmentStartTime = currentX / widthScale
+      // or we can just compare pixels:
+      final currentPixel = currentProgress * totalDuration * widthScale;
+      final bool isActive =
+          currentPixel >= currentX && currentPixel < currentX + segmentWidth;
+
       // Create gradient colors for 3D effect
-      final topColor = _lighten(baseColor, 0.2);
-      final bottomColor = _darken(baseColor, 0.1);
+      Color topColor = _lighten(baseColor, 0.2);
+      Color bottomColor = _darken(baseColor, 0.1);
+
+      if (isActive && currentPower != null) {
+        // Apply pulse effect to active segment
+        // Pulse brightness up slightly on 'beat'
+        final brightnessBoost = pulseValue * 0.15; // +0% to +15% lightness
+        topColor = _lighten(topColor, brightnessBoost);
+        bottomColor = _lighten(bottomColor, brightnessBoost);
+      }
 
       if (segment.isRamp) {
         // Draw ramp segment
@@ -134,54 +161,179 @@ class WorkoutPainter extends CustomPainter {
     // Draw time grid lines and labels
     _drawTimeGrid(canvas, size, widthScale);
 
-    // Draw actual power trail
-    _drawActualPowerTrail(canvas, size, heightScale, widthScale);
+    // Draw tracer lines (Power, HR, Cadence)
+    _drawTracerLines(canvas, size, heightScale, widthScale);
   }
 
-  void _drawActualPowerTrail(Canvas canvas, Size size, double heightScale, double widthScale) {
-    if (powerPointsList == null || powerPointsList!.isEmpty) return;
+  void _drawTracerLines(Canvas canvas, Size size, double heightScale, double widthScale) {
+    // 1. Draw Power (Bright Blue)
+    if (powerPointsList != null && powerPointsList!.isNotEmpty) {
+      final powerPaint = Paint()
+        ..color = Colors.lightBlueAccent // Bright Blue
+        ..strokeWidth = WorkoutStroke.actualPowerLine
+        ..style = PaintingStyle.stroke;
 
-    final powerPaint = Paint()
-      ..color = Colors.red
-      ..strokeWidth = WorkoutStroke.actualPowerLine
-      ..style = PaintingStyle.stroke;
+      final path = Path();
+      bool isFirstPoint = true;
 
-    final path = Path();
-    bool isFirstPoint = true;
+      for (int i = 0; i < powerPointsList!.length; i++) {
+        final watts = powerPointsList![i];
+        final x = i * widthScale;
+        final y = size.height - (watts * heightScale);
 
-    // Draw interpolated power points
-    for (int i = 0; i < powerPointsList!.length; i++) {
-      final watts = powerPointsList![i];
-      final x = i * widthScale;
-      final y = size.height - (watts * heightScale);
+        if (isFirstPoint) {
+          path.moveTo(x, y);
+          isFirstPoint = false;
+        } else {
+          path.lineTo(x, y);
+        }
+      }
+      canvas.drawPath(path, powerPaint);
 
-      if (isFirstPoint) {
-        path.moveTo(x, y);
-        isFirstPoint = false;
-      } else {
-        path.lineTo(x, y);
+      // Dot
+      if (currentPower != null) {
+        final dotPaint = Paint()
+          ..color = Colors.lightBlueAccent
+          ..style = PaintingStyle.fill;
+        final x = currentProgress * size.width;
+        final y = size.height - (currentPower! * heightScale);
+        canvas.drawCircle(Offset(x, y), WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
       }
     }
 
-    // Draw the power trail
-    canvas.drawPath(path, powerPaint);
+    // 2. Draw Cadence (Green, Scale 20-130)
+    if (cadencePointsList != null && cadencePointsList!.isNotEmpty) {
+      final cadencePaint = Paint()
+        ..color = Colors.green
+        ..strokeWidth = WorkoutStroke.actualPowerLine
+        ..style = PaintingStyle.stroke;
 
-    // Draw current power dot if available
-    if (currentPower != null) {
-      final dotPaint = Paint()
-        ..color = Colors.red
-        ..style = PaintingStyle.fill;
-
-      final x = currentProgress * size.width;
-      final y = size.height - (currentPower! * heightScale);
+      final path = Path();
+      bool isFirstPoint = true;
       
-      canvas.drawCircle(
-        Offset(x, y),
-        WorkoutSizes.actualPowerDotRadius * 1.5,
-        dotPaint,
-      );
+      // Map 20-130 to full height? Or just map it relative to chart?
+      // Usually tracers are overlaid on the full chart area.
+      // 20 -> Bottom (size.height), 130 -> Top (0)
+      double mapCadenceToY(double val) {
+         // Scale 20-130
+         double minVal = 20;
+         double maxVal = 130;
+         double normalized = (val - minVal) / (maxVal - minVal);
+         // Clamp? Usually good idea, but user said Scale is 20-130.
+         // Let's not clamp tightly but allow going off chart? 
+         // Better clamp visual to chart bounds so it doesn't draw over widgets.
+         // But for now, simple linear map.
+         return size.height - (normalized * size.height);
+      }
+
+      for (int i = 0; i < cadencePointsList!.length; i++) {
+        final val = cadencePointsList![i];
+        if (val == 0) continue; // Skip 0 points? User said HR if 0 don't display. Assuming consistent behavior.
+
+        final x = i * widthScale;
+        final y = mapCadenceToY(val);
+
+        if (isFirstPoint) {
+          path.moveTo(x, y);
+          isFirstPoint = false; 
+        } else {
+             // Handle gaps if we skip 0s? 
+             // If previous point was valid and this one is valid, lineTo.
+             // If we just skipped a bunch of 0s, moveTo?
+             // Simple approach: if val > 0 add point.
+             // If path is empty, moveTo. If not, lineTo.
+             // But if there's a gap in data (0s), should we connect? 
+             // Tracers usually connect.
+             // Let's assume continuous line for now.
+             path.lineTo(x, y);
+        }
+      }
+      // Re-doing loop to handle gaps better if needed.
+      // Actually simpler: just iterate and draw.
+      path.reset();
+      isFirstPoint = true;
+      for(int i=0; i<cadencePointsList!.length; i++) {
+          final val = cadencePointsList![i];
+          // If we want to hide 0s, we should probably start a new path section.
+          // Or just continue if it's a valid point. 
+          // Current requirement "If HR is 0 or null, it shouldn't be displayed" applies to HR.
+          // Cadence usually 0 is stop. 
+          // Let's allow 0 for cadence? "Scale is 20-130". 20 is bottom. 0 is below bottom.
+          
+          final x = i * widthScale;
+          final y = mapCadenceToY(val);
+          
+          if (isFirstPoint) {
+             path.moveTo(x, y);
+             isFirstPoint = false;
+          } else {
+             path.lineTo(x, y);
+          }
+      }
+      
+      canvas.drawPath(path, cadencePaint);
+
+      // Dot
+      if (currentCadence != null && currentCadence! > 0) {
+         final dotPaint = Paint()
+          ..color = Colors.green
+          ..style = PaintingStyle.fill;
+         final x = currentProgress * size.width;
+         final y = mapCadenceToY(currentCadence!.toDouble());
+         canvas.drawCircle(Offset(x, y), WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
+      }
+    }
+
+    // 3. Draw HR (Red, Scale 30-230)
+    if (hrPointsList != null && hrPointsList!.isNotEmpty) {
+      final hrPaint = Paint()
+        ..color = Colors.red
+        ..strokeWidth = WorkoutStroke.actualPowerLine
+        ..style = PaintingStyle.stroke;
+
+      final path = Path();
+      bool hasPoints = false;
+      
+      double mapHrToY(double val) {
+         double minVal = 30;
+         double maxVal = 230;
+         double normalized = (val - minVal) / (maxVal - minVal);
+         return size.height - (normalized * size.height);
+      }
+      
+      for (int i = 0; i < hrPointsList!.length; i++) {
+        final val = hrPointsList![i];
+        if (val <= 0) {
+            hasPoints = false; // Break continuity
+            continue; 
+        }
+
+        final x = i * widthScale;
+        final y = mapHrToY(val);
+
+        if (!hasPoints) {
+          path.moveTo(x, y);
+          hasPoints = true;
+        } else {
+          path.lineTo(x, y);
+        }
+      }
+      canvas.drawPath(path, hrPaint);
+
+      // Dot
+      if (currentHr != null && currentHr! > 0) {
+         final dotPaint = Paint()
+          ..color = Colors.red
+          ..style = PaintingStyle.fill;
+         final x = currentProgress * size.width;
+         final y = mapHrToY(currentHr!.toDouble());
+         canvas.drawCircle(Offset(x, y), WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
+      }
     }
   }
+
+  // Renamed/Removed old method signature
+  // void _drawActualPowerTrail(...)
 
   void _drawPowerGrid(Canvas canvas, Size size, double heightScale) {
     // Add left padding for power labels

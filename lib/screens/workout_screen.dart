@@ -36,7 +36,6 @@ class WorkoutScreen extends StatefulWidget {
 
 class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateMixin {
   String? _workoutName;
-  String? _currentWorkoutContent;
   late AnimationController _metricsAndSummaryFadeController;
   late Animation<double> _metricsAndSummaryFadeAnimation;
   late BLEData bleData;
@@ -55,6 +54,8 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
 
   late AnimationController _zoomController;
   late Animation<double> _zoomAnimation;
+  late AnimationController _pulseController;
+  
   // Keep a reference to the workout controller listener so we can detach it on dispose.
   late VoidCallback _workoutControllerListener;
   OverlayMode _overlayMode = OverlayMode.none;
@@ -98,6 +99,11 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       parent: _zoomController,
       curve: Curves.easeInOut,
     ));
+
+    _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat(reverse: true);
   }
 
   @override
@@ -161,7 +167,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
             _workoutController.progressPosition = 0;
             Future.delayed(const Duration(milliseconds: 500), () {
               if (mounted) {
-                GpxFileExporter.showExportDialog(context, _workoutController, _currentWorkoutContent);
+                GpxFileExporter.showExportDialog(context, _workoutController);
               }
             });
           }
@@ -245,7 +251,6 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     try {
       final content = await rootBundle.loadString('assets/Anthonys_Mix.zwo');
       _workoutController.loadWorkout(content, isResume: false);
-      _currentWorkoutContent = content;
       _updatePreviewDuration();
       // Wait for the graph to be rendered
       await Future.delayed(const Duration(milliseconds: 100));
@@ -292,7 +297,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
 
     if (shouldStop == true) {
       await _workoutController.stopWorkout();
-      GpxFileExporter.showExportDialog(context, _workoutController, _currentWorkoutContent);
+      GpxFileExporter.showExportDialog(context, _workoutController);
     }
   }
 
@@ -350,6 +355,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     // Now safely dispose animation + other resources.
     _metricsAndSummaryFadeController.dispose();
     _zoomController.dispose();
+    _pulseController.dispose();
     _scrollController.dispose();
     workoutSoundGenerator.dispose();
     _ttsSettings.dispose();
@@ -395,8 +401,18 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                       currentPower: _workoutController.isPlaying
                           ? bleData.ftmsData.watts.toDouble()
                           : null,
+                      currentHr: _workoutController.isPlaying
+                          ? bleData.ftmsData.heartRate
+                          : null,
+                      currentCadence: _workoutController.isPlaying
+                          ? bleData.ftmsData.cadence
+                          : null,
                       powerPointsList:
                           _workoutController.getPowerPointsUpToNow(),
+                      hrPointsList:
+                          _workoutController.getHrPointsUpToNow(),
+                      cadencePointsList:
+                          _workoutController.getCadencePointsUpToNow(),
                       showLabels: false,
                     ),
                   ),
@@ -450,7 +466,6 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
             ttsSettings: _ttsSettings,
             workoutGraphKey: _workoutGraphKey,
             onWorkoutLoaded: (content, {String? name}) {
-              _currentWorkoutContent = content;
               _updatePreviewDuration();
               if (name != null && mounted) {
                 setState(() {
@@ -491,7 +506,8 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                           return Stack(
                             children: [
                               AnimatedBuilder(
-                                animation: _zoomAnimation,
+                                animation: Listenable.merge(
+                                    [_zoomAnimation, _pulseController]),
                                 builder: (context, child) {
                                   return LayoutBuilder(
                                     builder: (context, graphConstraints) {
@@ -547,9 +563,30 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                                                                     .watts
                                                                     .toDouble()
                                                                 : null,
+                                                            currentHr: _workoutController
+                                                                    .isPlaying
+                                                                ? bleData
+                                                                    .ftmsData
+                                                                    .heartRate
+                                                                : null,
+                                                            currentCadence: _workoutController
+                                                                    .isPlaying
+                                                                ? bleData
+                                                                    .ftmsData
+                                                                    .cadence
+                                                                : null,
                                                             powerPointsList:
                                                                 _workoutController
                                                                     .getPowerPointsUpToNow(),
+                                                            hrPointsList:
+                                                                _workoutController
+                                                                    .getHrPointsUpToNow(),
+                                                            cadencePointsList:
+                                                                _workoutController
+                                                                    .getCadencePointsUpToNow(),
+                                                            pulseValue:
+                                                                _pulseController
+                                                                    .value,
                                                           ),
                                                           child: Container(),
                                                         ),

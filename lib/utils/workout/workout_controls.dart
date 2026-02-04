@@ -112,9 +112,14 @@ class _WorkoutControlsState extends State<WorkoutControls> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text('FTP: '),
-                SizedBox(
+                Container(
                   width: 80,
                   height: 220,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white24),
+                  ),
                   child: ListWheelScrollView.useDelegate(
                     controller: _ftpScrollController,
                     useMagnifier: true,
