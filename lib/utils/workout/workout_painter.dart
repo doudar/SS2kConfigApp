@@ -4,6 +4,7 @@ import 'workout_parser.dart';
 import 'workout_constants.dart';
 
 class WorkoutPainter extends CustomPainter {
+  static final Random _random = Random();
   final List<WorkoutSegment> segments;
   final double maxPower;
   final double totalDuration;
@@ -165,6 +166,48 @@ class WorkoutPainter extends CustomPainter {
     _drawTracerLines(canvas, size, heightScale, widthScale);
   }
 
+  void _drawValueLabel(Canvas canvas, Offset center, String text, Color color) {
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    );
+
+    textPainter.text = TextSpan(
+      text: text,
+      style: const TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+        fontSize: 10.0,
+      ),
+    );
+    
+    // Calculate layout
+    textPainter.layout();
+    
+    // Draw background rounded rect (pill shape)
+    final bgPaint = Paint()
+      ..color = color.withValues(alpha: 0.7)
+      ..style = PaintingStyle.fill;
+      
+    final padding = 4.0;
+    final rect = Rect.fromCenter(
+      center: center, 
+      width: textPainter.width + (padding * 2), 
+      height: textPainter.height + (padding * 1), // slightly less vertical padding
+    );
+    
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(10.0)), 
+      bgPaint
+    );
+    
+    // Center the text on the point
+    textPainter.paint(
+        canvas, 
+        Offset(center.dx - textPainter.width / 2, center.dy - textPainter.height / 2)
+    );
+  }
+
   void _drawTracerLines(Canvas canvas, Size size, double heightScale, double widthScale) {
     // 1. Draw Power (Bright Blue)
     if (powerPointsList != null && powerPointsList!.isNotEmpty) {
@@ -190,14 +233,20 @@ class WorkoutPainter extends CustomPainter {
       }
       canvas.drawPath(path, powerPaint);
 
-      // Dot
+      // Dot or Text
       if (currentPower != null) {
-        final dotPaint = Paint()
-          ..color = Colors.lightBlueAccent
-          ..style = PaintingStyle.fill;
         final x = currentProgress * size.width;
         final y = size.height - (currentPower! * heightScale);
-        canvas.drawCircle(Offset(x, y), WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
+        final center = Offset(x, y);
+
+        if (showLabels) {
+          _drawValueLabel(canvas, center, '${currentPower!.round()}', Colors.lightBlueAccent);
+        } else {
+          final dotPaint = Paint()
+            ..color = Colors.lightBlueAccent
+            ..style = PaintingStyle.fill;
+          canvas.drawCircle(center, WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
+        }
       }
     }
 
@@ -237,14 +286,6 @@ class WorkoutPainter extends CustomPainter {
           path.moveTo(x, y);
           isFirstPoint = false; 
         } else {
-             // Handle gaps if we skip 0s? 
-             // If previous point was valid and this one is valid, lineTo.
-             // If we just skipped a bunch of 0s, moveTo?
-             // Simple approach: if val > 0 add point.
-             // If path is empty, moveTo. If not, lineTo.
-             // But if there's a gap in data (0s), should we connect? 
-             // Tracers usually connect.
-             // Let's assume continuous line for now.
              path.lineTo(x, y);
         }
       }
@@ -254,11 +295,6 @@ class WorkoutPainter extends CustomPainter {
       isFirstPoint = true;
       for(int i=0; i<cadencePointsList!.length; i++) {
           final val = cadencePointsList![i];
-          // If we want to hide 0s, we should probably start a new path section.
-          // Or just continue if it's a valid point. 
-          // Current requirement "If HR is 0 or null, it shouldn't be displayed" applies to HR.
-          // Cadence usually 0 is stop. 
-          // Let's allow 0 for cadence? "Scale is 20-130". 20 is bottom. 0 is below bottom.
           
           final x = i * widthScale;
           final y = mapCadenceToY(val);
@@ -273,14 +309,20 @@ class WorkoutPainter extends CustomPainter {
       
       canvas.drawPath(path, cadencePaint);
 
-      // Dot
+      // Dot or Text
       if (currentCadence != null && currentCadence! > 0) {
-         final dotPaint = Paint()
-          ..color = Colors.green
-          ..style = PaintingStyle.fill;
          final x = currentProgress * size.width;
          final y = mapCadenceToY(currentCadence!.toDouble());
-         canvas.drawCircle(Offset(x, y), WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
+         final center = Offset(x, y);
+
+         if (showLabels) {
+           _drawValueLabel(canvas, center, '$currentCadence', Colors.green);
+         } else {
+           final dotPaint = Paint()
+            ..color = Colors.green
+            ..style = PaintingStyle.fill;
+           canvas.drawCircle(center, WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
+         }
       }
     }
 
@@ -320,14 +362,20 @@ class WorkoutPainter extends CustomPainter {
       }
       canvas.drawPath(path, hrPaint);
 
-      // Dot
+      // Dot or Text
       if (currentHr != null && currentHr! > 0) {
-         final dotPaint = Paint()
-          ..color = Colors.red
-          ..style = PaintingStyle.fill;
          final x = currentProgress * size.width;
          final y = mapHrToY(currentHr!.toDouble());
-         canvas.drawCircle(Offset(x, y), WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
+         final center = Offset(x, y);
+
+         if (showLabels) {
+           _drawValueLabel(canvas, center, '$currentHr', Colors.red);
+         } else {
+           final dotPaint = Paint()
+            ..color = Colors.red
+            ..style = PaintingStyle.fill;
+           canvas.drawCircle(center, WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
+         }
       }
     }
   }
