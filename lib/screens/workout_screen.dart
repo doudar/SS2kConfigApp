@@ -347,7 +347,6 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
   @override
   void dispose() {
     _isDisposing = true;
-    // Remove external listeners FIRST to avoid callbacks firing while controllers are being disposed.
     _workoutController.removeListener(_workoutControllerListener);
     _characteristicChangeSubscription?.cancel();
     _connectionStateSubscription?.cancel();

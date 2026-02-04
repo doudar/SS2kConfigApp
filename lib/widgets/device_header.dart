@@ -116,6 +116,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       if (testValue == "null" && this.widget.device.isConnected) {
         await this.bleData.setupConnection(this.widget.device);
       }
+      // Check FTMS health on every tick
+      if (mounted && this.widget.device.isConnected) {
+        bleData.checkFtmsHealth(this.widget.device);
+      }
     });
   }
 

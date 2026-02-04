@@ -96,6 +96,7 @@ class BLEData {
   bool isUserDisconnect = false;
   ValueNotifier<int> rssi = ValueNotifier(0);
   ValueNotifier<bool> charReceived = ValueNotifier(false);
+  DateTime? lastFtmsUpdate;
   StreamSubscription<BluetoothConnectionState>? connectionStateSubscription;
   StreamSubscription<bool>? isConnectingSubscription;
   StreamSubscription<bool>? isDisconnectingSubscription;
@@ -364,6 +365,7 @@ class BLEData {
     _ftmsSubscription?.cancel();
 
     _ftmsSubscription = indoorBikeCharacteristic!.onValueReceived.listen((value) {
+      lastFtmsUpdate = DateTime.now();
       if (value.length < 2) {
         throw ArgumentError('FTMS Characteristic data list is too short');
       }
@@ -438,8 +440,47 @@ class BLEData {
           type: "ftms",
         ));
       }
+    }, onError: (Object e) {
+      print('Error in FTMS subscription: $e');
     });
     device.cancelWhenDisconnected(_ftmsSubscription!);
+  }
+
+  /// Checks the health of the FTMS data stream and attempts to recover if stalled
+  Future<void> checkFtmsHealth(BluetoothDevice device) async {
+    if (isSimulated || !device.isConnected) return;
+
+    final now = DateTime.now();
+    const watchdogTimeout = Duration(seconds: 3);
+
+    // If we have received data before, and it's been more than watchdogTimeout
+    if (lastFtmsUpdate != null && now.difference(lastFtmsUpdate!) > watchdogTimeout) {
+      print('FTMS connection appears stalled (last update: $lastFtmsUpdate). Attempting recovery...');
+      
+      try {
+        if (indoorBikeCharacteristic != null) {
+          // Toggle notifications to reset the stream
+          await indoorBikeCharacteristic!.setNotifyValue(false);
+          await Future.delayed(const Duration(milliseconds: 200));
+          await indoorBikeCharacteristic!.setNotifyValue(true);
+          
+          // Force internal tracking update
+          lastFtmsUpdate = DateTime.now(); // Reset to avoid loop
+        }
+      } catch (e) {
+        print('Error attempting FTMS recovery: $e');
+      }
+    } else if (lastFtmsUpdate == null && indoorBikeCharacteristic != null) {
+         // If we have a characteristic but never received a packet, try enabling notify
+         try {
+             if (!indoorBikeCharacteristic!.isNotifying) {
+                 print('FTMS never received data and not notifying. enabling...');
+                 await indoorBikeCharacteristic!.setNotifyValue(true);
+             }
+         } catch(e) {
+             print('Error checking FTMS notify status: $e');
+         }
+    }
   }
 
   void findNSave(BluetoothDevice device, Map c, String find) {
