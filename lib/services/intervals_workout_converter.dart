@@ -14,7 +14,16 @@ class IntervalsWorkoutConverter {
     // If it's structured data, convert to ZWO format
     final description = workoutDoc['description'] ?? '';
     final name = workoutDoc['name'] ?? 'Intervals.icu Workout';
-  final steps = workoutDoc['steps'] ?? [];
+    final steps = workoutDoc['steps'] ?? [];
+    
+    // Attempt to find FTP in multiple locations
+    num? ftp = _toNum(workoutDoc['ftp']);
+    if (ftp == null && workoutDoc['sportSettings'] is Map) {
+      ftp = _toNum(workoutDoc['sportSettings']['ftp']);
+    }
+    
+    // Debug print
+    print('IntervalsConverter: Converting "$name". Found FTP: $ftp');
     
     final buffer = StringBuffer();
     buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
@@ -28,7 +37,7 @@ class IntervalsWorkoutConverter {
     
     // Track cumulative time for global textevents (if needed)
     final _TextEventCollector textCollector = _TextEventCollector();
-    _emitSteps(buffer, steps, textCollector: textCollector);
+    _emitSteps(buffer, steps, textCollector: textCollector, ftp: ftp);
     
     buffer.writeln('  </workout>');
     // Optionally emit a global textevents block if any collected
@@ -45,7 +54,7 @@ class IntervalsWorkoutConverter {
     return buffer.toString();
   }
   
-  static void _emitSteps(StringBuffer buffer, dynamic steps, {required _TextEventCollector textCollector}) {
+  static void _emitSteps(StringBuffer buffer, dynamic steps, {required _TextEventCollector textCollector, num? ftp}) {
     if (steps is! List) return;
     for (final raw in steps) {
       if (raw is! Map) continue;
@@ -57,11 +66,11 @@ class IntervalsWorkoutConverter {
         final repeat = _toNum(step['reps'] ?? step['repeat'] ?? step['repeats'] ?? step['count']);
         final reps = repeat != null && repeat > 0 ? repeat.toInt() : 1;
         for (var i = 0; i < reps; i++) {
-          _emitSteps(buffer, step['steps'], textCollector: textCollector);
+          _emitSteps(buffer, step['steps'], textCollector: textCollector, ftp: ftp);
         }
         continue;
       }
-      _convertSingleStep(buffer, step, textCollector: textCollector);
+      _convertSingleStep(buffer, step, textCollector: textCollector, ftp: ftp);
     }
   }
 
@@ -71,7 +80,7 @@ class IntervalsWorkoutConverter {
     return null;
   }
 
-  static void _convertSingleStep(StringBuffer buffer, Map<String, dynamic> step, {required _TextEventCollector textCollector}) {
+  static void _convertSingleStep(StringBuffer buffer, Map<String, dynamic> step, {required _TextEventCollector textCollector, num? ftp}) {
     final duration = _toNum(step['duration'] ?? step['length']) ?? 0; // seconds
 
     // Intervals.icu step may have a nested 'power' map or explicit values.
@@ -96,11 +105,48 @@ class IntervalsWorkoutConverter {
     end ??= _toNum(step['power_high']);
     value ??= _toNum(step['power']);
 
+    bool convertedToAbsolute = false;
+
+    // Handle "power_zone" units by using the calculated absolute watts from "_power"
+    // and converting to %FTP for ZWO.
+    // Check case-insensitive and handle variations
+    final isPowerZone = units != null && (
+      units!.toLowerCase() == 'power_zone' || 
+      units!.toLowerCase().replaceAll('_', '') == 'powerzone'
+    );
+
+    if (isPowerZone) {
+      // If we have FTP, try to use high-precision absolute watts from _power
+      if (ftp != null && ftp > 0) {
+        final calculatedPower = step['_power'];
+        if (calculatedPower is Map) {
+          final wStart = _toNum(calculatedPower['start'] ?? calculatedPower['low']);
+          final wEnd = _toNum(calculatedPower['end'] ?? calculatedPower['high']);
+          final wValue = _toNum(calculatedPower['value'] ?? calculatedPower['target']);
+
+          // Only override if we have valid watts
+          if (wStart != null) start = wStart / ftp;
+          if (wEnd != null) end = wEnd / ftp;
+          if (wValue != null) value = wValue / ftp;
+          
+          if (wStart != null || wEnd != null || wValue != null) {
+            convertedToAbsolute = true;
+          }
+        } else {
+           print('IntervalsConverter: "power_zone" used but "_power" field missing or invalid.');
+        }
+      } else {
+         print('IntervalsConverter: "power_zone" used but FTP not found ($ftp). Cannot convert absolute watts.');
+      }
+    }
+
     if (value == null && start != null && end == null) value = start; // treat single value as steady
 
     double scale(num v) {
-      if (units == null || units == '%ftp' || units.toLowerCase().contains('%ftp')) {
-        return v / 100.0; // convert %ftp to fraction
+      // If we already converted to absolute fraction, don't scale again OR if units is %ftp
+      if (convertedToAbsolute || units == null || units == '%ftp' || units.toLowerCase().contains('%ftp')) {
+        if (!convertedToAbsolute) return v / 100.0; // convert %ftp to fraction
+        return v.toDouble();
       }
       return v.toDouble();
     }
@@ -137,7 +183,15 @@ class IntervalsWorkoutConverter {
       avg = (start + end) / 2.0;
     }
     final steadyVal = avg ?? value ?? start ?? end ?? 0;
-    buffer.writeln('    <SteadyState Duration="$duration" Power="${scale(steadyVal)}"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}/>' );
+    
+    // Check if we should use Zone attribute instead of Power
+    if (isPowerZone && !convertedToAbsolute) {
+      // Fallback to Zone attribute since we couldn't calculate absolute power
+      buffer.writeln('    <SteadyState Duration="$duration" Zone="${steadyVal.toInt()}"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}/>' );
+    } else {
+      buffer.writeln('    <SteadyState Duration="$duration" Power="${scale(steadyVal)}"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}/>' );
+    }
+    
     textCollector.advance(duration.toInt());
   }
 

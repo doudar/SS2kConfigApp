@@ -74,5 +74,22 @@ void main() {
       expect(xml.contains('<textevent timeoffset="420"'), isTrue); // 120+300
       expect(xml.contains('message="Steady sweet spot"'), isTrue);
     });
+
+    test('converts power_zone units using _power values', () {
+      final doc = {
+        'name': 'PowerZoneTest',
+        'ftp': 300,
+        'steps': [
+          {
+            'duration': 60,
+            'power': {'value': 1, 'units': 'power_zone'},
+            '_power': {'value': 150.0, 'start': 150.0, 'end': 150.0}
+          }
+        ]
+      };
+      final xml = IntervalsWorkoutConverter.convertToZwo(doc);
+      // 150 / 300 = 0.5
+      expect(xml.contains('Power="0.5"'), isTrue);
+    });
   });
 }

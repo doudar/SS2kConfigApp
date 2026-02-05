@@ -61,6 +61,7 @@ class WorkoutController extends ChangeNotifier {
   // Store track points during workout
   final List<TrackPoint> trackPoints = [];
   DateTime? _workoutStartTime; // Base timestamp for calculating absolute times
+  DateTime? _lastTickTime; // Track last timer tick for accurate drift compensation
   double _lastTrackPointTime = 0; // Last track point time in workout progress seconds
 
   // Factory constructor to get device-specific instance
@@ -385,6 +386,7 @@ class WorkoutController extends ChangeNotifier {
 
   void startProgress() {
     progressTimer?.cancel();
+    _lastTickTime = DateTime.now();
 
     // Initialize workout start time if not set
     if (_workoutStartTime == null) {
@@ -406,8 +408,15 @@ class WorkoutController extends ChangeNotifier {
         return;
       }
 
-      // Update workout progress time
-      _workoutProgressTime += 0.1; // Increment by 100ms
+      // Calculate actual time elapsed since last tick to prevent drift
+      final now = DateTime.now();
+      final double delta = _lastTickTime != null 
+          ? now.difference(_lastTickTime!).inMicroseconds / 1000000.0 
+          : 0.1;
+      _lastTickTime = now;
+
+      // Update workout progress time based on actual elapsed time
+      _workoutProgressTime += delta;
       progressPosition = _workoutProgressTime / totalDuration;
 
       // Store power value at current time index
@@ -421,8 +430,8 @@ class WorkoutController extends ChangeNotifier {
       // Calculate speed (m/s) from power
       double speedMps = speedMph * 0.44704; // Convert mph to m/s
 
-      // Update total distance (in meters)
-      _totalDistance += speedMps * 0.1; // 0.1 seconds worth of distance
+      // Update total distance (in meters) using actual time delta
+      _totalDistance += speedMps * delta;
 
       // Simulate altitude changes based on power output
       double newAltitude = 100.0 + (currentPower / 400.0) * math.sin(_workoutProgressTime / 10.0);
@@ -434,7 +443,8 @@ class WorkoutController extends ChangeNotifier {
       // Store track point every second based on workout progress time
       if (_workoutProgressTime - _lastTrackPointTime >= 1.0) {
         // Calculate absolute timestamp based on workout progress time
-        final timestamp = _workoutStartTime!.add(Duration(milliseconds: (_workoutProgressTime * 1000).round()));
+        // Use current wall-clock time to ensure pauses are reflected in the file timestamps
+        final timestamp = now;
         
         trackPoints.add(TrackPoint(
           timestamp: timestamp,
