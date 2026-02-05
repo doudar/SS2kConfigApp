@@ -79,7 +79,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
 </gpx>''';
   }
 
-  static Future<void> showExportDialog(BuildContext context, WorkoutController workoutController, String? currentWorkoutContent) async {
+  static Future<void> showExportDialog(BuildContext context, WorkoutController workoutController) async {
     final isStravaConnected = await StravaService.isAuthenticated();
     final isIntervalsConnected = await IntervalsService.isAuthenticated();
 
@@ -123,9 +123,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
     }
 
     // Reset workout position to beginning
-    if (currentWorkoutContent != null) {
-      workoutController.loadWorkout(currentWorkoutContent);
-    }
+    workoutController.resetWorkout();
   }
 
   static Future<void> exportWorkoutFile(

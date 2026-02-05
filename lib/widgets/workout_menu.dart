@@ -199,7 +199,12 @@ class WorkoutMenu extends StatelessWidget {
         return;
       }
 
-      final workoutContent = IntervalsWorkoutConverter.convertToZwo(workoutDoc);
+      final Map<String, dynamic> docToConvert = (workoutDoc is Map)
+          ? Map<String, dynamic>.from(workoutDoc)
+          : <String, dynamic>{};
+      docToConvert['name'] ??= todaysWorkout['name'];
+
+      final workoutContent = IntervalsWorkoutConverter.convertToZwo(docToConvert);
       workoutController.loadWorkout(workoutContent);
       onWorkoutLoaded(workoutContent, name: todaysWorkout['name'] ?? 'Today\'s Workout');
 
@@ -351,16 +356,21 @@ class WorkoutMenu extends StatelessWidget {
         return;
       }
 
-      final zwo = IntervalsWorkoutConverter.convertToZwo(
-        workoutDoc is Map<String, dynamic>
-            ? workoutDoc
-            : {
-                'workout_file': workoutFile,
-                'name': selectedWorkout['name'],
-                'description': selectedWorkout['description'],
-                'steps': (workoutDoc is Map<String, dynamic>) ? workoutDoc['steps'] : null,
-              },
-      );
+      Map<String, dynamic> docToConvert;
+      if (workoutDoc is Map) {
+        docToConvert = Map<String, dynamic>.from(workoutDoc);
+        docToConvert['name'] ??= selectedWorkout['name'];
+      } else {
+        docToConvert = {
+          'workout_file': workoutFile,
+          'name': selectedWorkout['name'],
+          'description': selectedWorkout['description'],
+          'steps':
+              (workoutDoc is Map) ? workoutDoc['steps'] : null,
+        };
+      }
+
+      final zwo = IntervalsWorkoutConverter.convertToZwo(docToConvert);
       workoutController.loadWorkout(zwo);
       onWorkoutLoaded(zwo, name: (selectedWorkout['name'] ?? 'Intervals.icu Workout').toString());
       ScaffoldMessenger.of(context).showSnackBar(

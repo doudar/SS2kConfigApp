@@ -39,10 +39,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
-    c = this
-        .bleData
-        .customCharacteristic
-        .firstWhere(
+    c = this.bleData.customCharacteristic.firstWhere(
           (i) => i["vName"] == shifterPositionVname,
           orElse: () => <String, Object>{},
         );
@@ -88,10 +85,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
         setState(() {});
       }
     });
-    
-    _characteristicChangeSubscription = bleData.characteristicChanges
-        .debounce(Duration(milliseconds: 500))
-        .listen((event) {
+
+    _characteristicChangeSubscription =
+        bleData.characteristicChanges.debounce(Duration(milliseconds: 500)).listen((event) {
       if (mounted) {
         // Refresh the shifter characteristic value from BLE so UI updates when it changes remotely
         c = bleData.customCharacteristic.firstWhere(
@@ -118,11 +114,11 @@ class _ShifterScreenState extends State<ShifterScreen> {
       c = Map<String, Object>.from(c)..["value"] = _t;
       this.bleData.writeToSS2k(this.widget.device, c);
     }
-    if (bleData.isSimulated) {
-      setState(() {
-        t = c["value"]?.toString() ?? t;
-      });
-    }
+
+    setState(() {
+      t = c["value"]?.toString() ?? t;
+    });
+
     WakelockPlus.enable();
   }
 
@@ -190,72 +186,70 @@ class _ShifterScreenState extends State<ShifterScreen> {
               ),
               // Foreground Content
               Positioned.fill(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final double availH = constraints.maxHeight;
-                    // Calculate dynamic sizes based on available height
-                    double buttonHeight = (availH * 0.22).clamp(60.0, 160.0);
-                    double gearFontSize = (buttonHeight * 0.4).clamp(24.0, 48.0);
-                    
-                    return Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.max,
-                      children: [
-                        SizedBox(height: 8),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: <Widget>[
-                              if (bleData.simulatedTargetWatts != "")
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                  child: MetricBox(
-                                    value: bleData.simulatedTargetWatts.toString(),
-                                    label: 'Target Watts',
-                                  ),
-                                ),
+                child: LayoutBuilder(builder: (context, constraints) {
+                  final double availH = constraints.maxHeight;
+                  // Calculate dynamic sizes based on available height
+                  double buttonHeight = (availH * 0.22).clamp(60.0, 160.0);
+                  double gearFontSize = (buttonHeight * 0.4).clamp(24.0, 48.0);
+
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      SizedBox(height: 8),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            if (bleData.simulatedTargetWatts != "")
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                                 child: MetricBox(
-                                  value: bleData.ftmsData.watts.toString(),
-                                  label: 'Watts',
+                                  value: bleData.simulatedTargetWatts.toString(),
+                                  label: 'Target Watts',
                                 ),
                               ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                              child: MetricBox(
+                                value: bleData.ftmsData.watts.toString(),
+                                label: 'Watts',
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                              child: MetricBox(
+                                value: bleData.ftmsData.cadence.toString(),
+                                label: 'RPM',
+                              ),
+                            ),
+                            if (bleData.ftmsData.heartRate != 0)
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                                 child: MetricBox(
-                                  value: bleData.ftmsData.cadence.toString(),
-                                  label: 'RPM',
+                                  value: bleData.ftmsData.heartRate.toString(),
+                                  label: 'BPM',
                                 ),
-                              ),
-                              if (bleData.ftmsData.heartRate != 0)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                  child: MetricBox(
-                                    value: bleData.ftmsData.heartRate.toString(),
-                                    label: 'BPM',
-                                  ),
-                                )
-                            ],
-                          ),
+                              )
+                          ],
                         ),
-                        SizedBox(height: 12),
-                        _buildShiftButton(Icons.arrow_upward, () {
-                          shift(1);
-                        }, height: buttonHeight),
-                        Spacer(flex: 1),
-                        _buildGearDisplay(t, fontSize: gearFontSize),
-                        Spacer(flex: 1),
-                        _buildShiftButton(Icons.arrow_downward, () {
-                          shift(-1);
-                        }, height: buttonHeight),
-                        Spacer(flex: 1),
-                      ],
-                    );
-                  }
-                ),
+                      ),
+                      SizedBox(height: 12),
+                      _buildShiftButton(Icons.arrow_upward, () {
+                        shift(1);
+                      }, height: buttonHeight),
+                      Spacer(flex: 1),
+                      _buildGearDisplay(t, fontSize: gearFontSize),
+                      Spacer(flex: 1),
+                      _buildShiftButton(Icons.arrow_downward, () {
+                        shift(-1);
+                      }, height: buttonHeight),
+                      Spacer(flex: 1),
+                    ],
+                  );
+                }),
               ),
               Positioned(
                 right: 16,

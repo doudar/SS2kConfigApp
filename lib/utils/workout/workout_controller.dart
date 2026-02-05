@@ -45,6 +45,8 @@ class WorkoutController extends ChangeNotifier {
   double progressPosition = 0;
   Timer? progressTimer;
   Map<int, double> actualPowerPoints = {}; // Map time index to power value
+  Map<int, int> actualHrPoints = {}; // Map time index to HR value
+  Map<int, int> actualCadencePoints = {}; // Map time index to Cadence value
   double _workoutProgressTime = 0; // Track workout's progress position (authoritative source for duration/elapsed time)
   double _skippedTime = 0; // Time skipped by user actions; excluded from elapsed
   int currentSegmentTimeRemaining = 0;
@@ -59,6 +61,7 @@ class WorkoutController extends ChangeNotifier {
   // Store track points during workout
   final List<TrackPoint> trackPoints = [];
   DateTime? _workoutStartTime; // Base timestamp for calculating absolute times
+  DateTime? _lastTickTime; // Track last timer tick for accurate drift compensation
   double _lastTrackPointTime = 0; // Last track point time in workout progress seconds
 
   // Factory constructor to get device-specific instance
@@ -315,6 +318,8 @@ class WorkoutController extends ChangeNotifier {
       if (!isResume) {
         progressPosition = 0;
         actualPowerPoints = {};
+        actualHrPoints = {};
+        actualCadencePoints = {};
         _totalDistance = 0;
         _lastAltitude = 100.0;
         _totalAscent = 0;
@@ -335,6 +340,12 @@ class WorkoutController extends ChangeNotifier {
       }
     } catch (e) {
       rethrow;
+    }
+  }
+
+  void resetWorkout() {
+    if (_currentWorkoutContent != null) {
+      loadWorkout(_currentWorkoutContent!, isResume: false);
     }
   }
 
@@ -375,6 +386,7 @@ class WorkoutController extends ChangeNotifier {
 
   void startProgress() {
     progressTimer?.cancel();
+    _lastTickTime = DateTime.now();
 
     // Initialize workout start time if not set
     if (_workoutStartTime == null) {
@@ -396,19 +408,30 @@ class WorkoutController extends ChangeNotifier {
         return;
       }
 
-      // Update workout progress time
-      _workoutProgressTime += 0.1; // Increment by 100ms
+      // Calculate actual time elapsed since last tick to prevent drift
+      final now = DateTime.now();
+      final double delta = _lastTickTime != null 
+          ? now.difference(_lastTickTime!).inMicroseconds / 1000000.0 
+          : 0.1;
+      _lastTickTime = now;
+
+      // Update workout progress time based on actual elapsed time
+      _workoutProgressTime += delta;
       progressPosition = _workoutProgressTime / totalDuration;
 
       // Store power value at current time index
       final currentPower = bleData.ftmsData.watts.toDouble();
       actualPowerPoints[_workoutProgressTime.round()] = currentPower;
+      
+      // Store HR and Cadence
+      actualHrPoints[_workoutProgressTime.round()] = bleData.ftmsData.heartRate;
+      actualCadencePoints[_workoutProgressTime.round()] = bleData.ftmsData.cadence;
 
       // Calculate speed (m/s) from power
       double speedMps = speedMph * 0.44704; // Convert mph to m/s
 
-      // Update total distance (in meters)
-      _totalDistance += speedMps * 0.1; // 0.1 seconds worth of distance
+      // Update total distance (in meters) using actual time delta
+      _totalDistance += speedMps * delta;
 
       // Simulate altitude changes based on power output
       double newAltitude = 100.0 + (currentPower / 400.0) * math.sin(_workoutProgressTime / 10.0);
@@ -420,7 +443,8 @@ class WorkoutController extends ChangeNotifier {
       // Store track point every second based on workout progress time
       if (_workoutProgressTime - _lastTrackPointTime >= 1.0) {
         // Calculate absolute timestamp based on workout progress time
-        final timestamp = _workoutStartTime!.add(Duration(milliseconds: (_workoutProgressTime * 1000).round()));
+        // Use current wall-clock time to ensure pauses are reflected in the file timestamps
+        final timestamp = now;
         
         trackPoints.add(TrackPoint(
           timestamp: timestamp,
@@ -520,6 +544,80 @@ class WorkoutController extends ChangeNotifier {
     }
 
     return points;
+  }
+
+  // Get HR points as a list up to current time
+  List<double> getHrPointsUpToNow() {
+    final maxSeconds = _workoutProgressTime.round();
+    List<double> points = List.filled(maxSeconds + 1, 0);
+
+    for (int i = 0; i <= maxSeconds; i++) {
+        if (actualHrPoints.containsKey(i)) {
+          points[i] = actualHrPoints[i]!.toDouble();
+        } else {
+             // Fill with 0 or previous known? 
+             // Logic says "If HR is 0 or null, it shouldn't be displayed". 
+             // Here we return list of values. 0 is fine if we handle 0 as "don't draw".
+             // Simple fill with last known or 0? 
+             // The power logic interpolates.
+             // For HR/Cadence interpolation is probably fine too, but 0 handling is key.
+             
+             // Simplistic approach: mimic Power interpolation but with int sources
+             int? beforeTime = actualHrPoints.keys
+                .where((time) => time < i)
+                .fold<int?>(null, (max, time) => max == null || time > max ? time : max);
+             int? afterTime = actualHrPoints.keys
+                .where((time) => time > i)
+                .fold<int?>(null, (min, time) => min == null || time < min ? time : min);
+
+             if (beforeTime != null && afterTime != null) {
+               double beforeValue = actualHrPoints[beforeTime]!.toDouble();
+               double afterValue = actualHrPoints[afterTime]!.toDouble();
+               double ratio = (i - beforeTime) / (afterTime - beforeTime);
+               points[i] = beforeValue + (afterValue - beforeValue) * ratio;
+             } else if (beforeTime != null) {
+               points[i] = actualHrPoints[beforeTime]!.toDouble();
+             } else if (afterTime != null) {
+               points[i] = actualHrPoints[afterTime]!.toDouble();
+             } else {
+               points[i] = bleData.ftmsData.heartRate.toDouble();
+             }
+        }
+    }
+    return points;
+  }
+
+  // Get Cadence points as a list up to current time
+  List<double> getCadencePointsUpToNow() {
+      final maxSeconds = _workoutProgressTime.round();
+      List<double> points = List.filled(maxSeconds + 1, 0);
+
+      for (int i = 0; i <= maxSeconds; i++) {
+          if (actualCadencePoints.containsKey(i)) {
+            points[i] = actualCadencePoints[i]!.toDouble();
+          } else {
+             int? beforeTime = actualCadencePoints.keys
+                .where((time) => time < i)
+                .fold<int?>(null, (max, time) => max == null || time > max ? time : max);
+             int? afterTime = actualCadencePoints.keys
+                .where((time) => time > i)
+                .fold<int?>(null, (min, time) => min == null || time < min ? time : min);
+
+             if (beforeTime != null && afterTime != null) {
+               double beforeValue = actualCadencePoints[beforeTime]!.toDouble();
+               double afterValue = actualCadencePoints[afterTime]!.toDouble();
+               double ratio = (i - beforeTime) / (afterTime - beforeTime);
+               points[i] = beforeValue + (afterValue - beforeValue) * ratio;
+             } else if (beforeTime != null) {
+               points[i] = actualCadencePoints[beforeTime]!.toDouble();
+             } else if (afterTime != null) {
+               points[i] = actualCadencePoints[afterTime]!.toDouble();
+             } else {
+               points[i] = bleData.ftmsData.cadence.toDouble();
+             }
+          }
+      }
+      return points;
   }
 
   Future<void> updateFTP(double? newValue) async {

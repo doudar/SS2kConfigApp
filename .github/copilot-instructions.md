@@ -3,32 +3,6 @@ A Flutter cross-platform mobile application for controlling and configuring Smar
 
 Always reference these instructions first and fallback to search or bash commands only when you encounter unexpected information that does not match the info here.
 
-## Working Effectively
-- Bootstrap, build, and test the repository:
-  - Install Flutter stable (3.24.3): 
-    - `git clone https://github.com/flutter/flutter.git --depth 1 -b stable $HOME/flutter`
-    - `export PATH="$HOME/flutter/bin:$PATH"`
-    - `flutter doctor` -- verifies installation and reports missing dependencies. NEVER CANCEL. Set timeout to 5+ minutes.
-  - Install Linux desktop dependencies for building: 
-    - `sudo apt-get update`
-    - `sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev`
-    - `sudo apt-get install -y liblzma-dev libsecret-1-dev libjsoncpp-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libunwind-dev`
-  - `flutter config --enable-linux-desktop`
-  - `flutter pub get` -- installs ~40 dependencies, takes 1-2 minutes. NEVER CANCEL. Set timeout to 5+ minutes.
-  - `flutter build linux --release` -- builds ~11k lines of Dart code, takes 5-8 minutes. NEVER CANCEL. Set timeout to 15+ minutes.
-  - `flutter build apk` -- builds Android APK, takes 3-6 minutes. NEVER CANCEL. Set timeout to 12+ minutes.
-- Run tests:
-  - `flutter test` -- runs all tests including workout generation, takes 1-2 minutes. NEVER CANCEL. Set timeout to 5+ minutes.
-  - `flutter test test/erg_workout_test.dart` -- runs specific workout test that simulates 2-hour workout, takes 20-30 seconds
-  - `flutter test test/widget_test.dart` -- basic widget test, takes 5-10 seconds
-- Run the application:
-  - ALWAYS run the bootstrapping steps first.
-  - Linux desktop: `flutter run -d linux` -- starts development server and opens app window
-  - Android emulator: `flutter run -d android` (requires Android SDK and emulator setup)
-  - Web: `flutter run -d web-server --web-port=8080` -- limited Bluetooth functionality
-- Analyze code quality:
-  - `flutter analyze` -- static analysis, takes 10-30 seconds. NEVER CANCEL. Set timeout to 2+ minutes.
-
 ## Validation
 - Always manually validate any new code by running the application after making changes.
 - ALWAYS run through at least one complete end-to-end scenario after making changes:
@@ -42,21 +16,6 @@ Always reference these instructions first and fallback to search or bash command
 - You can build and run the Linux version of the application and interact with its UI in the development environment.
 - Always run `flutter analyze` and fix any warnings before you are done or the CI (.github/workflows/build.yml) will fail.
 - Test on multiple platforms when possible: Linux desktop is easiest for development and testing.
-
-## Environment Configuration
-- The app requires Strava API credentials for workout upload functionality:
-  - Create `lib/config/env.local.dart` with your Strava credentials:
-    ```dart
-    class Environment {
-      static const String stravaClientId = 'your_client_id';
-      static const String stravaClientSecret = 'your_client_secret';
-      
-      static bool get hasStravaConfig =>
-        stravaClientId.isNotEmpty && stravaClientSecret.isNotEmpty;
-    }
-    ```
-  - If missing, the app will use fallback configuration from `lib/config/env.fallback.dart`
-  - The CI workflow automatically creates this file from environment variables
 
 ### Key Dependencies and Their Purpose
 - `flutter_blue_plus`: Bluetooth Low Energy communication with SmartSpin2K device

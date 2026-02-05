@@ -42,38 +42,69 @@ class _WorkoutControlsState extends State<WorkoutControls> {
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: 220,
       padding: EdgeInsets.symmetric(vertical: WorkoutPadding.small),
       child: Stack(
-        alignment: Alignment.center,
+        alignment: Alignment.bottomCenter,
+        clipBehavior: Clip.none,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (widget.workoutController.isPlaying)
-                IconButton(
-                  icon: const Icon(Icons.stop_circle),
-                  iconSize: 48,
-                  onPressed: widget.onStopWorkout,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(36),
+              border: Border.all(color: Colors.white24, width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  offset: const Offset(0, 6),
+                  blurRadius: 8,
                 ),
-              IconButton(
-                icon: Icon(widget.workoutController.isPlaying 
-                  ? Icons.pause_circle_filled 
-                  : Icons.play_circle_filled),
-                iconSize: 48,
-                onPressed: () {
-                  if (!widget.workoutController.isPlaying) {
-                    workoutSoundGenerator.playButtonSound();
-                  }
-                  widget.workoutController.togglePlayPause();
-                },
+              ],
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.grey[800]!,
+                  Colors.black,
+                ],
               ),
-              if (widget.workoutController.isPlaying)
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (widget.workoutController.isPlaying)
+                  IconButton(
+                    icon: const Icon(Icons.stop_circle),
+                    iconSize: 42,
+                    color: Colors.redAccent,
+                    tooltip: 'Stop Workout',
+                    onPressed: widget.onStopWorkout,
+                  ),
                 IconButton(
-                  icon: const Icon(Icons.skip_next),
-                  iconSize: 48,
-                  onPressed: widget.workoutController.skipToNextSegment,
+                  icon: Icon(widget.workoutController.isPlaying
+                      ? Icons.pause_circle_filled
+                      : Icons.play_circle_filled),
+                  iconSize: 56,
+                  color: Colors.greenAccent,
+                  tooltip: widget.workoutController.isPlaying ? 'Pause' : 'Play',
+                  onPressed: () {
+                    if (!widget.workoutController.isPlaying) {
+                      workoutSoundGenerator.playButtonSound();
+                    }
+                    widget.workoutController.togglePlayPause();
+                  },
                 ),
-            ],
+                if (widget.workoutController.isPlaying)
+                  IconButton(
+                    icon: const Icon(Icons.skip_next),
+                    iconSize: 42,
+                    color: Colors.white,
+                    tooltip: 'Skip Segment',
+                    onPressed: widget.workoutController.skipToNextSegment,
+                  ),
+              ],
+            ),
           ),
           Positioned(
             right: WorkoutPadding.standard,
@@ -81,9 +112,14 @@ class _WorkoutControlsState extends State<WorkoutControls> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text('FTP: '),
-                SizedBox(
+                Container(
                   width: 80,
                   height: 220,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white24),
+                  ),
                   child: ListWheelScrollView.useDelegate(
                     controller: _ftpScrollController,
                     useMagnifier: true,

@@ -135,13 +135,13 @@ class WorkoutSegment {
 class WorkoutParser {
   // Zone to power mapping (as percentage of FTP)
   static const Map<String, Map<String, double>> zonePowerMapping = {
-    '1': {'low': 0.0, 'high': 0.55},   // Recovery
+    '1': {'low': 0.44, 'high': 0.55},   // Recovery
     '2': {'low': 0.56, 'high': 0.75},  // Endurance
     '3': {'low': 0.76, 'high': 0.90},  // Tempo
     '4': {'low': 0.91, 'high': 1.05},  // Threshold
     '5': {'low': 1.06, 'high': 1.20},  // VO2 Max
     '6': {'low': 1.21, 'high': 1.50},  // Anaerobic
-    '7': {'low': 1.51, 'high': 2.00},  // Neuromuscular
+    '7': {'low': 1.51, 'high': 10.00},  // Neuromuscular
   };
 
   // Helper method to parse duration strings that might be floating point
@@ -291,11 +291,32 @@ class WorkoutParser {
     final zone = element.getAttribute('Zone');
     double power;
     if (zone != null) {
-      power = _getZonePower(zone);
+      // Use average of zone range (e.g. Zone 2 is 0.56-0.75, avg 0.655)
+      // Otherwise we get the bottom of the zone which is too easy
+      final zLow = _getZonePower(zone, high: false);
+      final zHigh = _getZonePower(zone, high: true);
+      power = (zLow + zHigh) / 2.0;
     } else {
-      // If no Zone, try PowerLow/Power attributes
-      power = double.tryParse(element.getAttribute('PowerLow') ?? '') ?? 
-              double.tryParse(element.getAttribute('Power') ?? '0') ?? 0.0;
+      // If no Zone, try Power/PowerLow/PowerHigh attributes
+      final powerAttr = element.getAttribute('Power');
+      final powerLowAttr = element.getAttribute('PowerLow');
+      final powerHighAttr = element.getAttribute('PowerHigh');
+
+      // Check if Power attribute is present and valid
+      if (powerAttr != null && powerAttr.isNotEmpty && double.tryParse(powerAttr) != null) {
+        power = double.parse(powerAttr);
+      } else {
+        // If no valid Power attribute, check for range (PowerLow + PowerHigh)
+        if (powerLowAttr != null && powerHighAttr != null) {
+          // If range provided for steady state, use average
+          final pLow = double.tryParse(powerLowAttr) ?? 0.0;
+          final pHigh = double.tryParse(powerHighAttr) ?? 0.0;
+          power = (pLow + pHigh) / 2.0;
+        } else {
+          // Fallback to PowerLow if available, or 0.0
+          power = double.tryParse(powerLowAttr ?? '0') ?? 0.0;
+        }
+      }
     }
     
     return WorkoutSegment(
