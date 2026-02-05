@@ -1,0 +1,50 @@
+# Steps for Copilot to automate the development environment setup
+name: SS2kConfigApp Setup Workflow
+description: Automated setup steps for initializing the Flutter development environment.
+
+steps:
+  - name: Check Flutter Version
+    description: Verify that Flutter is installed and accessible in the PATH.
+    command: flutter --version
+    required: true
+
+  - name: Install Linux Dependencies (Linux Only)
+    description: Install required libraries for Linux desktop development (GTK3, CMake, Ninja, etc).
+    command: |
+      sudo apt-get update
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libgtk-3-dev libx11-dev pkg-config cmake ninja-build libblkid-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libunwind-dev clang libstdc++-12-dev libglu1-mesa fontconfig libpulse0
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libasound2 || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libasound2t64 || true
+    platform: linux
+    required: false
+
+  - name: Enable Linux Desktop (Linux Only)
+    description: Configure Flutter to enable Linux desktop support.
+    command: flutter config --enable-linux-desktop
+    platform: linux
+    required: false
+
+  - name: Analyze Environment (Flutter Doctor)
+    description: Check for common issues in the Flutter installation.
+    command: flutter doctor
+    required: true
+    action_on_failure: "Analyze the output and suggest fixes for missing components (Android SDK, Chrome, etc)."
+
+  - name: Install Project Dependencies
+    description: Fetch all Dart and Flutter packages defined in pubspec.yaml.
+    command: flutter pub get
+    required: true
+
+  - name: Verify Platform Setup (Android)
+    description: Ensure Android build components are ready (optional if only developing for other platforms).
+    command: flutter build apk --debug --config-only
+    continue_on_error: true
+
+  - name: Run Analysis
+    description: Check for code quality issues to ensure the codebase is clean.
+    command: flutter analyze
+    required: false
+
+  - name: Run Unit Tests
+    description: Verify that the basic logic tests pass.
+    command: flutter test
+    required: false
