@@ -69,7 +69,7 @@ class WorkoutPainter extends CustomPainter {
       if (isActive && currentPower != null) {
         // Apply pulse effect to active segment
         // Pulse brightness up slightly on 'beat'
-        final brightnessBoost = pulseValue * 0.15; // +0% to +15% lightness
+        final brightnessBoost = pulseValue * 0.20; // +0% to +20% lightness
         topColor = _lighten(topColor, brightnessBoost);
         bottomColor = _lighten(bottomColor, brightnessBoost);
       }
