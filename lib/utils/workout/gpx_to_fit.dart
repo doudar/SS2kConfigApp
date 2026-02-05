@@ -13,17 +13,26 @@ class GpxToFitConverter {
     // Create FIT file builder
     final builder = FitFileBuilder(autoDefine: true, minStringSize: 50);
 
+    // Use GPX timestamps when available
+    final firstTrackPointTime = xmlGpx.trks.isNotEmpty &&
+            xmlGpx.trks[0].trksegs.isNotEmpty &&
+            xmlGpx.trks[0].trksegs[0].trkpts.isNotEmpty
+        ? xmlGpx.trks[0].trksegs[0].trkpts.first.time
+        : null;
+
+    final baseTimestamp = (firstTrackPointTime ?? DateTime.now()).millisecondsSinceEpoch;
+
     // Add File ID message
     final fileIdMessage = FileIdMessage()
       ..type = FileType.activity
       ..manufacturer = Manufacturer.development.value
       ..product = 0
-      ..timeCreated = DateTime.now().millisecondsSinceEpoch
+      ..timeCreated = baseTimestamp
       ..serialNumber = 0x12345678;
     builder.add(fileIdMessage);
 
     // Add start event
-    final startTimestamp = DateTime.now().millisecondsSinceEpoch;
+    final startTimestamp = baseTimestamp;
     final eventMessage = EventMessage()
       ..event = Event.timer
       ..eventType = EventType.start
@@ -32,11 +41,12 @@ class GpxToFitConverter {
 
     // Process track points
     final records = <RecordMessage>[];
-    var timestamp = startTimestamp;
+    int? previousTimestamp;
 
     if (xmlGpx.trks.isNotEmpty && xmlGpx.trks[0].trksegs.isNotEmpty) {
       for (var trackPoint in xmlGpx.trks[0].trksegs[0].trkpts) {
-        timestamp += 1000; // 1 second intervals
+        final tpTime = trackPoint.time?.millisecondsSinceEpoch;
+        final timestamp = tpTime ?? (previousTimestamp != null ? previousTimestamp + 1000 : startTimestamp);
         final record = RecordMessage()
           ..timestamp = timestamp
           ..positionLong = trackPoint.lon
@@ -76,12 +86,14 @@ class GpxToFitConverter {
         }
       
         records.add(record);
+        previousTimestamp = timestamp;
       }
       builder.addAll(records);
       // Add Lap message
-      final elapsedTime = (timestamp - startTimestamp).toDouble();
+      final endTimestamp = previousTimestamp ?? startTimestamp;
+      final elapsedTime = (endTimestamp - startTimestamp).toDouble();
       final lapMessage = LapMessage()
-        ..timestamp = timestamp
+        ..timestamp = endTimestamp
         ..startTime = startTimestamp
         ..totalElapsedTime = elapsedTime
         ..totalTimerTime = elapsedTime;
@@ -89,7 +101,7 @@ class GpxToFitConverter {
 
       // Add Session message
       final sessionMessage = SessionMessage()
-        ..timestamp = timestamp
+        ..timestamp = endTimestamp
         ..startTime = startTimestamp
         ..totalElapsedTime = elapsedTime
         ..totalTimerTime = elapsedTime

@@ -7,6 +7,8 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:math';
+import 'package:fit_tool/fit_tool.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -107,6 +109,89 @@ void main() {
     print('FIT file: ${fitFile.path}');
     
     // Cleanup
+    workoutController.cleanup();
+  });
+
+  test('Workout timing resists drift with delayed ticks', () async {
+    final workoutContent = '''
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+    <author>Test</author>
+    <name>Drift Check</name>
+    <description>Short workout for drift testing</description>
+    <sportType>bike</sportType>
+    <workout>
+        <SteadyState Duration="300" Power="1.0" />
+    </workout>
+</workout_file>
+''';
+
+    final mockDevice = BluetoothDevice.fromId('00:00:00:00:00:00');
+    final bleData = BLEDataManager.forDevice(mockDevice);
+    bleData.ftmsData = FtmsData();
+
+    final workoutController = WorkoutController(bleData, mockDevice);
+    await workoutController.updateFTP(250.0);
+    workoutController.loadWorkout(workoutContent);
+
+    // Start workout
+    await workoutController.togglePlayPause();
+
+    final startWall = DateTime.now();
+    final random = Random(42);
+
+    // Let the timer run with intentionally jittery delays to simulate slow hardware
+    for (int i = 0; i < 25; i++) {
+      bleData.ftmsData
+        ..watts = 250
+        ..cadence = 85
+        ..heartRate = 150;
+
+      // Mix short and longer delays (up to 1.2s) to force missed timer ticks
+      final delayMs = 50 + random.nextInt(1150);
+      await Future.delayed(Duration(milliseconds: delayMs));
+    }
+
+    // Allow final timer tick
+    await Future.delayed(const Duration(milliseconds: 200));
+    await workoutController.stopWorkout();
+
+    final wallElapsed = DateTime.now().difference(startWall).inSeconds;
+    final controllerElapsed = workoutController.elapsedSeconds;
+
+    // Controller elapsed time should closely follow wall time even with delayed ticks
+    expect((controllerElapsed - wallElapsed).abs() <= 1, true);
+
+    // Track points should exist for essentially every elapsed second
+    expect(workoutController.trackPoints.length >= controllerElapsed - 1, true);
+
+    // Export and validate FIT elapsed time matches controller time
+    final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+    final gpxFileName = 'drift_${timestamp}.gpx';
+    final workoutsDir = Directory(path.join(Directory.current.path, 'test'));
+    if (!await workoutsDir.exists()) {
+      await workoutsDir.create(recursive: true);
+    }
+
+    final gpxFile = File(path.join(workoutsDir.path, gpxFileName));
+    final gpxContent = await GpxFileExporter.generateGpxContent(
+      'Drift Check',
+      workoutController.trackPoints,
+    );
+    await gpxFile.writeAsString(gpxContent);
+
+    final fitPath = await GpxToFitConverter.convertAndCleanup(gpxFile.path);
+    final fitBytes = await File(fitPath).readAsBytes();
+    final fitFile = FitFile.fromBytes(fitBytes);
+    final session = fitFile.records
+        .map((r) => r.message)
+        .whereType<SessionMessage>()
+        .first;
+
+    final fitElapsedSeconds = (session.totalElapsedTime ?? 0) / 1000;
+
+    expect((fitElapsedSeconds - controllerElapsed).abs() <= 1, true);
+
     workoutController.cleanup();
   });
 }

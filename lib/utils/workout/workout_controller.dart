@@ -63,6 +63,7 @@ class WorkoutController extends ChangeNotifier {
   DateTime? _workoutStartTime; // Base timestamp for calculating absolute times
   DateTime? _lastTickTime; // Track last timer tick for accurate drift compensation
   double _lastTrackPointTime = 0; // Last track point time in workout progress seconds
+  int _lastRecordedSecond = -1; // Track last whole-second data point recorded
 
   // Factory constructor to get device-specific instance
   factory WorkoutController(BLEData bleData, BluetoothDevice device) {
@@ -401,6 +402,7 @@ class WorkoutController extends ChangeNotifier {
       _lastTrackPointTime = 0;
       trackPoints.clear();
     }
+    _lastRecordedSecond = _workoutProgressTime.floor() - 1;
 
     progressTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (_isDisposed || !isPlaying) {
@@ -421,11 +423,18 @@ class WorkoutController extends ChangeNotifier {
 
       // Store power value at current time index
       final currentPower = bleData.ftmsData.watts.toDouble();
-      actualPowerPoints[_workoutProgressTime.round()] = currentPower;
-      
-      // Store HR and Cadence
-      actualHrPoints[_workoutProgressTime.round()] = bleData.ftmsData.heartRate;
-      actualCadencePoints[_workoutProgressTime.round()] = bleData.ftmsData.cadence;
+      final currentHeartRate = bleData.ftmsData.heartRate;
+      final currentCadence = bleData.ftmsData.cadence;
+
+      final int currentSecond = _workoutProgressTime.floor();
+      int startSecond = _lastRecordedSecond + 1;
+      if (startSecond < 0) startSecond = 0;
+      for (int second = startSecond; second <= currentSecond; second++) {
+        actualPowerPoints[second] = currentPower;
+        actualHrPoints[second] = currentHeartRate;
+        actualCadencePoints[second] = currentCadence;
+      }
+      _lastRecordedSecond = currentSecond;
 
       // Calculate speed (m/s) from power
       double speedMps = speedMph * 0.44704; // Convert mph to m/s
@@ -441,22 +450,23 @@ class WorkoutController extends ChangeNotifier {
       _lastAltitude = newAltitude;
 
       // Store track point every second based on workout progress time
-      if (_workoutProgressTime - _lastTrackPointTime >= 1.0) {
-        // Calculate absolute timestamp based on workout progress time
-        // Use current wall-clock time to ensure pauses are reflected in the file timestamps
-        final timestamp = now;
-        
+      while (_workoutProgressTime - _lastTrackPointTime >= 1.0) {
+        final double nextPointTime = _lastTrackPointTime + 1.0;
+        final timestamp = (_workoutStartTime ?? now).add(
+          Duration(milliseconds: (nextPointTime * 1000).round()),
+        );
+
         trackPoints.add(TrackPoint(
           timestamp: timestamp,
           lat: 44.8113, // Eau Claire center - this will be updated by GPX exporter to create bike shape
           lon: -91.4985,
           elevation: _lastAltitude,
-          heartRate: bleData.ftmsData.heartRate,
-          cadence: bleData.ftmsData.cadence,
-          power: bleData.ftmsData.watts,
+          heartRate: currentHeartRate,
+          cadence: currentCadence,
+          power: currentPower.round(),
           speed: speedMps,
         ));
-        _lastTrackPointTime = _workoutProgressTime;
+        _lastTrackPointTime = nextPointTime;
       }
 
       if (progressPosition >= 1.0) {
