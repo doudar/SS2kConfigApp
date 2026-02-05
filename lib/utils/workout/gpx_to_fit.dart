@@ -3,7 +3,7 @@ import 'package:fit_tool/fit_tool.dart';
 import 'package:gpx/gpx.dart';
 
 class GpxToFitConverter {
-  static const int _garminEpochMs = 599529600000; // 1989-12-31 00:00:00 UTC in ms
+  static const int _garminEpochMs = 631065600000; // 1989-12-31 00:00:00 UTC in ms
 
   static int _toFitTimestamp(DateTime dt) {
     return ((dt.toUtc().millisecondsSinceEpoch - _garminEpochMs) / 1000).round();
