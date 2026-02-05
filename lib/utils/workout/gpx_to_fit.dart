@@ -3,6 +3,12 @@ import 'package:fit_tool/fit_tool.dart';
 import 'package:gpx/gpx.dart';
 
 class GpxToFitConverter {
+  static const int _garminEpochMs = 599529600000; // 1989-12-31 00:00:00 UTC in ms
+
+  static int _toFitTimestamp(DateTime dt) {
+    return ((dt.toUtc().millisecondsSinceEpoch - _garminEpochMs) / 1000).round();
+  }
+
   /// Converts a GPX file to FIT format and returns the path to the new FIT file
   static Future<String> convertGpxToFit(String gpxFilePath) async {
     // Read GPX file
@@ -20,19 +26,19 @@ class GpxToFitConverter {
         ? xmlGpx.trks[0].trksegs[0].trkpts.first.time
         : null;
 
-    final baseTimestamp = (firstTrackPointTime ?? DateTime.now()).millisecondsSinceEpoch;
+    final DateTime baseDateTime = firstTrackPointTime ?? DateTime.now().toUtc();
+    final int startTimestamp = _toFitTimestamp(baseDateTime);
 
     // Add File ID message
     final fileIdMessage = FileIdMessage()
       ..type = FileType.activity
       ..manufacturer = Manufacturer.development.value
       ..product = 0
-      ..timeCreated = baseTimestamp
+      ..timeCreated = startTimestamp
       ..serialNumber = 0x12345678;
     builder.add(fileIdMessage);
 
     // Add start event
-    final startTimestamp = baseTimestamp;
     final eventMessage = EventMessage()
       ..event = Event.timer
       ..eventType = EventType.start
@@ -42,14 +48,14 @@ class GpxToFitConverter {
     // Process track points
     final records = <RecordMessage>[];
     // Seed one second before the start so that when GPX timestamps are missing, the first
-    // fallback calculation (previousTimestamp + 1000) lands exactly on startTimestamp,
+    // fallback calculation (previousTimestamp + 1) lands exactly on startTimestamp,
     // ensuring the first record starts at the correct time
-    int previousTimestamp = startTimestamp - 1000;
+    int previousTimestamp = startTimestamp - 1;
 
     if (xmlGpx.trks.isNotEmpty && xmlGpx.trks[0].trksegs.isNotEmpty) {
       for (var trackPoint in xmlGpx.trks[0].trksegs[0].trkpts) {
-        final tpTime = trackPoint.time?.millisecondsSinceEpoch;
-        final timestamp = tpTime ?? (previousTimestamp + 1000);
+        final tpTime = trackPoint.time;
+        final timestamp = tpTime != null ? _toFitTimestamp(tpTime) : (previousTimestamp + 1);
         final record = RecordMessage()
           ..timestamp = timestamp
           ..positionLong = trackPoint.lon
@@ -113,6 +119,16 @@ class GpxToFitConverter {
         ..firstLapIndex = 0
         ..numLaps = 1;
       builder.add(sessionMessage);
+
+      // Add Activity message for summary timing
+      final activityMessage = ActivityMessage()
+        ..timestamp = lastRecordTimestamp
+        ..totalTimerTime = elapsedTime
+        ..numSessions = 1
+        ..type = Activity.manual
+        ..event = Event.activity
+        ..eventType = EventType.stop;
+      builder.add(activityMessage);
 
       // Build and save FIT file
       final fitFile = builder.build();

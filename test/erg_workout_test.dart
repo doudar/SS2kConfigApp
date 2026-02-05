@@ -186,10 +186,16 @@ void main() {
         .map((r) => r.message)
         .whereType<SessionMessage>()
         .first;
+    final activity = fitFile.records
+        .map((r) => r.message)
+        .whereType<ActivityMessage>()
+        .first;
 
-    final fitElapsedSeconds = (session.totalElapsedTime ?? 0) / 1000;
+    final fitElapsedSeconds = (session.totalElapsedTime ?? 0);
+    final activityElapsedSeconds = (activity.totalTimerTime ?? 0);
 
     expect((fitElapsedSeconds - controllerElapsed).abs() <= 1, isTrue);
+    expect((activityElapsedSeconds - controllerElapsed).abs() <= 1, isTrue);
 
     await fitFileHandle.delete();
     await workoutsDir.delete(recursive: true);
