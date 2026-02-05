@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:math' as math;
+import 'dart:math' as math show sqrt, max;
 import 'dart:io' show Platform;
 import '../bledata.dart';
 import '../ftmsControlPoint.dart';
@@ -402,6 +402,7 @@ class WorkoutController extends ChangeNotifier {
       _lastTrackPointTime = 0;
       trackPoints.clear();
     }
+    // When starting/resuming, set to one second before current progress so the first timer tick records the current second and avoids a gap
     _lastRecordedSecond = _workoutProgressTime.floor() - 1;
 
     progressTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
@@ -427,8 +428,7 @@ class WorkoutController extends ChangeNotifier {
       final currentCadence = bleData.ftmsData.cadence;
 
       final int currentSecond = _workoutProgressTime.floor();
-      int startSecond = _lastRecordedSecond + 1;
-      if (startSecond < 0) startSecond = 0;
+      final int startSecond = math.max(0, _lastRecordedSecond + 1);
       for (int second = startSecond; second <= currentSecond; second++) {
         actualPowerPoints[second] = currentPower;
         actualHrPoints[second] = currentHeartRate;

@@ -147,7 +147,7 @@ void main() {
         ..cadence = 85
         ..heartRate = 150;
 
-      // Mix short and longer delays (up to 1.2s) to force missed timer ticks
+      // Mix short and longer delays (50ms-1200ms) to force missed timer ticks
       final delayMs = 50 + random.nextInt(1150);
       await Future.delayed(Duration(milliseconds: delayMs));
     }
@@ -160,18 +160,16 @@ void main() {
     final controllerElapsed = workoutController.elapsedSeconds;
 
     // Controller elapsed time should closely follow wall time even with delayed ticks
-    expect((controllerElapsed - wallElapsed).abs() <= 1, true);
+    final elapsedWithinTolerance = controllerElapsed >= wallElapsed - 1 && controllerElapsed <= wallElapsed + 1;
+    expect(elapsedWithinTolerance, isTrue);
 
     // Track points should exist for essentially every elapsed second
-    expect(workoutController.trackPoints.length >= controllerElapsed - 1, true);
+    expect(workoutController.trackPoints.length >= controllerElapsed, isTrue);
 
     // Export and validate FIT elapsed time matches controller time
-    final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-    final gpxFileName = 'drift_${timestamp}.gpx';
-    final workoutsDir = Directory(path.join(Directory.current.path, 'test'));
-    if (!await workoutsDir.exists()) {
-      await workoutsDir.create(recursive: true);
-    }
+    final fileTimestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+    final gpxFileName = 'drift_${fileTimestamp}.gpx';
+    final workoutsDir = await Directory.systemTemp.createTemp('ss2k_drift_test');
 
     final gpxFile = File(path.join(workoutsDir.path, gpxFileName));
     final gpxContent = await GpxFileExporter.generateGpxContent(
@@ -181,7 +179,8 @@ void main() {
     await gpxFile.writeAsString(gpxContent);
 
     final fitPath = await GpxToFitConverter.convertAndCleanup(gpxFile.path);
-    final fitBytes = await File(fitPath).readAsBytes();
+    final fitFileHandle = File(fitPath);
+    final fitBytes = await fitFileHandle.readAsBytes();
     final fitFile = FitFile.fromBytes(fitBytes);
     final session = fitFile.records
         .map((r) => r.message)
@@ -190,7 +189,10 @@ void main() {
 
     final fitElapsedSeconds = (session.totalElapsedTime ?? 0) / 1000;
 
-    expect((fitElapsedSeconds - controllerElapsed).abs() <= 1, true);
+    expect((fitElapsedSeconds - controllerElapsed).abs() <= 1, isTrue);
+
+    await fitFileHandle.delete();
+    await workoutsDir.delete(recursive: true);
 
     workoutController.cleanup();
   });

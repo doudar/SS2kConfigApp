@@ -41,12 +41,15 @@ class GpxToFitConverter {
 
     // Process track points
     final records = <RecordMessage>[];
-    int? previousTimestamp;
+    // Seed one second before the start so that when GPX timestamps are missing, the first
+    // fallback calculation (previousTimestamp + 1000) lands exactly on startTimestamp,
+    // ensuring the first record starts at the correct time
+    int previousTimestamp = startTimestamp - 1000;
 
     if (xmlGpx.trks.isNotEmpty && xmlGpx.trks[0].trksegs.isNotEmpty) {
       for (var trackPoint in xmlGpx.trks[0].trksegs[0].trkpts) {
         final tpTime = trackPoint.time?.millisecondsSinceEpoch;
-        final timestamp = tpTime ?? (previousTimestamp != null ? previousTimestamp + 1000 : startTimestamp);
+        final timestamp = tpTime ?? (previousTimestamp + 1000);
         final record = RecordMessage()
           ..timestamp = timestamp
           ..positionLong = trackPoint.lon
@@ -90,10 +93,10 @@ class GpxToFitConverter {
       }
       builder.addAll(records);
       // Add Lap message
-      final endTimestamp = previousTimestamp ?? startTimestamp;
-      final elapsedTime = (endTimestamp - startTimestamp).toDouble();
+      final lastRecordTimestamp = previousTimestamp;
+      final elapsedTime = (lastRecordTimestamp - startTimestamp).toDouble();
       final lapMessage = LapMessage()
-        ..timestamp = endTimestamp
+        ..timestamp = lastRecordTimestamp
         ..startTime = startTimestamp
         ..totalElapsedTime = elapsedTime
         ..totalTimerTime = elapsedTime;
@@ -101,7 +104,7 @@ class GpxToFitConverter {
 
       // Add Session message
       final sessionMessage = SessionMessage()
-        ..timestamp = endTimestamp
+        ..timestamp = lastRecordTimestamp
         ..startTime = startTimestamp
         ..totalElapsedTime = elapsedTime
         ..totalTimerTime = elapsedTime
