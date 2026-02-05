@@ -3,6 +3,10 @@ import 'package:fit_tool/fit_tool.dart';
 import 'package:gpx/gpx.dart';
 
 class GpxToFitConverter {
+  static int _toFitTimestamp(DateTime dt) {
+    return (dt.toUtc().millisecondsSinceEpoch);
+  }
+
   /// Converts a GPX file to FIT format and returns the path to the new FIT file
   static Future<String> convertGpxToFit(String gpxFilePath) async {
     // Read GPX file
@@ -13,17 +17,26 @@ class GpxToFitConverter {
     // Create FIT file builder
     final builder = FitFileBuilder(autoDefine: true, minStringSize: 50);
 
+    // Use GPX timestamps when available
+    final firstTrackPointTime = xmlGpx.trks.isNotEmpty &&
+            xmlGpx.trks[0].trksegs.isNotEmpty &&
+            xmlGpx.trks[0].trksegs[0].trkpts.isNotEmpty
+        ? xmlGpx.trks[0].trksegs[0].trkpts.first.time
+        : null;
+
+    final DateTime baseDateTime = firstTrackPointTime ?? DateTime.now().toUtc();
+    final int startTimestamp = _toFitTimestamp(baseDateTime);
+
     // Add File ID message
     final fileIdMessage = FileIdMessage()
       ..type = FileType.activity
       ..manufacturer = Manufacturer.development.value
       ..product = 0
-      ..timeCreated = DateTime.now().millisecondsSinceEpoch
+      ..timeCreated = startTimestamp
       ..serialNumber = 0x12345678;
     builder.add(fileIdMessage);
 
     // Add start event
-    final startTimestamp = DateTime.now().millisecondsSinceEpoch;
     final eventMessage = EventMessage()
       ..event = Event.timer
       ..eventType = EventType.start
@@ -32,11 +45,15 @@ class GpxToFitConverter {
 
     // Process track points
     final records = <RecordMessage>[];
-    var timestamp = startTimestamp;
+    // Seed one second before the start so that when GPX timestamps are missing, the first
+    // fallback calculation (previousTimestamp + 1) lands exactly on startTimestamp,
+    // ensuring the first record starts at the correct time
+    int previousTimestamp = startTimestamp - 1;
 
     if (xmlGpx.trks.isNotEmpty && xmlGpx.trks[0].trksegs.isNotEmpty) {
       for (var trackPoint in xmlGpx.trks[0].trksegs[0].trkpts) {
-        timestamp += 1000; // 1 second intervals
+        final tpTime = trackPoint.time;
+        final timestamp = tpTime != null ? _toFitTimestamp(tpTime) : (previousTimestamp + 1);
         final record = RecordMessage()
           ..timestamp = timestamp
           ..positionLong = trackPoint.lon
@@ -76,28 +93,40 @@ class GpxToFitConverter {
         }
       
         records.add(record);
+        previousTimestamp = timestamp;
       }
       builder.addAll(records);
       // Add Lap message
-      final elapsedTime = (timestamp - startTimestamp).toDouble();
+      final lastRecordTimestamp = previousTimestamp;
+      final elapsedTime = (lastRecordTimestamp - startTimestamp).toDouble();
       final lapMessage = LapMessage()
-        ..timestamp = timestamp
-        ..startTime = startTimestamp
-        ..totalElapsedTime = elapsedTime
-        ..totalTimerTime = elapsedTime;
+        ..timestamp = lastRecordTimestamp
+        ..startTime = startTimestamp;
+       // ..totalElapsedTime = elapsedTime
+       // ..totalTimerTime = elapsedTime;
       builder.add(lapMessage);
 
       // Add Session message
       final sessionMessage = SessionMessage()
-        ..timestamp = timestamp
+        ..timestamp = lastRecordTimestamp
         ..startTime = startTimestamp
-        ..totalElapsedTime = elapsedTime
-        ..totalTimerTime = elapsedTime
+       // ..totalElapsedTime = elapsedTime
+       // ..totalTimerTime = elapsedTime
         ..sport = Sport.cycling
-        ..subSport = SubSport.exercise
+        ..subSport = SubSport.virtualActivity
         ..firstLapIndex = 0
         ..numLaps = 1;
       builder.add(sessionMessage);
+
+      // Add Activity message for summary timing
+      final activityMessage = ActivityMessage()
+        ..timestamp = lastRecordTimestamp
+        //..totalTimerTime = elapsedTime
+        ..numSessions = 1
+        ..type = Activity.manual
+        ..event = Event.activity
+        ..eventType = EventType.stop;
+      builder.add(activityMessage);
 
       // Build and save FIT file
       final fitFile = builder.build();
