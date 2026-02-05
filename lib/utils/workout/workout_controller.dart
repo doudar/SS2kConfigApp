@@ -279,6 +279,11 @@ class WorkoutController extends ChangeNotifier {
 
         // Set workout progress to the start of next segment
         _workoutProgressTime = nextSegmentStart;
+        
+        // Advance tracking variables to prevent backfilling of skipped time
+        _lastTrackPointTime = _workoutProgressTime;
+        _lastRecordedSecond = _workoutProgressTime.floor();
+
         progressPosition = _workoutProgressTime / totalDuration;
 
         _saveWorkoutState();
@@ -443,7 +448,7 @@ class WorkoutController extends ChangeNotifier {
       _totalDistance += speedMps * delta;
 
       // Simulate altitude changes based on power output
-      double newAltitude = 100.0 + (currentPower / 400.0) * math.sin(_workoutProgressTime / 10.0);
+      double newAltitude = 100.0 + (currentPower / 400.0) * .1;
       if (newAltitude > _lastAltitude) {
         _totalAscent += newAltitude - _lastAltitude;
       }

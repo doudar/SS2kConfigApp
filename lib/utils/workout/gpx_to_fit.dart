@@ -3,10 +3,8 @@ import 'package:fit_tool/fit_tool.dart';
 import 'package:gpx/gpx.dart';
 
 class GpxToFitConverter {
-  static const int _garminEpochMs = 631065600000; // 1989-12-31 00:00:00 UTC in ms
-
   static int _toFitTimestamp(DateTime dt) {
-    return ((dt.toUtc().millisecondsSinceEpoch - _garminEpochMs) / 1000).round();
+    return (dt.toUtc().millisecondsSinceEpoch);
   }
 
   /// Converts a GPX file to FIT format and returns the path to the new FIT file
@@ -103,19 +101,19 @@ class GpxToFitConverter {
       final elapsedTime = (lastRecordTimestamp - startTimestamp).toDouble();
       final lapMessage = LapMessage()
         ..timestamp = lastRecordTimestamp
-        ..startTime = startTimestamp
-        ..totalElapsedTime = elapsedTime
-        ..totalTimerTime = elapsedTime;
+        ..startTime = startTimestamp;
+       // ..totalElapsedTime = elapsedTime
+       // ..totalTimerTime = elapsedTime;
       builder.add(lapMessage);
 
       // Add Session message
       final sessionMessage = SessionMessage()
         ..timestamp = lastRecordTimestamp
         ..startTime = startTimestamp
-        ..totalElapsedTime = elapsedTime
-        ..totalTimerTime = elapsedTime
+       // ..totalElapsedTime = elapsedTime
+       // ..totalTimerTime = elapsedTime
         ..sport = Sport.cycling
-        ..subSport = SubSport.exercise
+        ..subSport = SubSport.virtualActivity
         ..firstLapIndex = 0
         ..numLaps = 1;
       builder.add(sessionMessage);
@@ -123,7 +121,7 @@ class GpxToFitConverter {
       // Add Activity message for summary timing
       final activityMessage = ActivityMessage()
         ..timestamp = lastRecordTimestamp
-        ..totalTimerTime = elapsedTime
+        //..totalTimerTime = elapsedTime
         ..numSessions = 1
         ..type = Activity.manual
         ..event = Event.activity
