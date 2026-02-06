@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/services/intervals_workout_converter.dart';
 
@@ -38,7 +41,7 @@ void main() {
       expect(xml.contains('<SteadyState'), isFalse);
     });
 
-    test('converts text events and FreeRide segments', () {
+    test('embeds text events inside generated segment elements', () {
       final doc = {
         'name': 'TextFreeRide',
         'steps': [
@@ -66,13 +69,11 @@ void main() {
       expect(xml.contains('<Ramp'), isTrue);
       expect(xml.contains('<FreeRide'), isTrue);
       expect(xml.contains('<SteadyState'), isTrue);
-      // Text events block with correct cumulative offsets: 0, 120, 420
-      expect(xml.contains('<textevent timeoffset="0"'), isTrue);
-      expect(xml.contains('message="Warmup ramp"'), isTrue);
-      expect(xml.contains('<textevent timeoffset="120"'), isTrue);
-      expect(xml.contains('message="Go free"'), isTrue);
-      expect(xml.contains('<textevent timeoffset="420"'), isTrue); // 120+300
-      expect(xml.contains('message="Steady sweet spot"'), isTrue);
+      // Text events should be embedded inside each segment instead of a global block
+      expect(xml.contains('<textevents>'), isFalse);
+      expect(xml.contains('message="Warmup ramp 2m ramp 40-60% ftp."'), isTrue);
+      expect(xml.contains('message="Go free 5m free ride."'), isTrue);
+      expect(xml.contains('message="Steady sweet spot 3m 88% ftp."'), isTrue);
     });
 
     test('converts power_zone units using _power values', () {
@@ -90,6 +91,37 @@ void main() {
       final xml = IntervalsWorkoutConverter.convertToZwo(doc);
       // 150 / 300 = 0.5
       expect(xml.contains('Power="0.5"'), isTrue);
+    });
+
+    test('falls back to description prefix when name missing', () {
+      final doc = {
+        'description': 'Intermittent: High/low efforts',
+        'steps': []
+      };
+
+      final xml = IntervalsWorkoutConverter.convertToZwo(doc);
+      expect(xml.contains('<name>Intermittent</name>'), isTrue);
+    });
+
+    test('writes fixture conversion to test/test.zwo', () async {
+      final jsonFile = File('test/test.json');
+      expect(await jsonFile.exists(), isTrue, reason: 'Fixture test/test.json missing');
+
+      final Map<String, dynamic> doc = jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
+      final xml = IntervalsWorkoutConverter.convertToZwo(doc);
+
+      final outputFile = File('test/test.zwo');
+      await outputFile.writeAsString(xml);
+
+      expect(await outputFile.exists(), isTrue);
+      expect(xml.contains('<textevent'), isTrue, reason: 'Converted workout should embed interval text');
+      expect(xml.contains('<workout_file>'), isTrue);
+      expect(xml.contains('<name>Intermittent</name>'), isTrue, reason: 'Should derive title from description prefix.');
+      expect(
+        xml.contains('For this first interval let&apos;s aim for 10m ramp 39.9-73% ftp 90rpm.'),
+        isTrue,
+        reason: 'Should include enriched first-step summary.',
+      );
     });
   });
 }

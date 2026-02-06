@@ -13,7 +13,7 @@ class IntervalsWorkoutConverter {
     
     // If it's structured data, convert to ZWO format
     final description = workoutDoc['description'] ?? '';
-    final name = workoutDoc['name'] ?? 'Intervals.icu Workout';
+    final name = _deriveWorkoutName(workoutDoc, description);
     final steps = workoutDoc['steps'] ?? [];
     
     // Attempt to find FTP in multiple locations
@@ -35,26 +35,15 @@ class IntervalsWorkoutConverter {
     buffer.writeln('  <tags/>');
     buffer.writeln('  <workout>');
     
-    // Track cumulative time for global textevents (if needed)
-    final _TextEventCollector textCollector = _TextEventCollector();
-    _emitSteps(buffer, steps, textCollector: textCollector, ftp: ftp);
-    
+    _emitSteps(buffer, steps, ftp: ftp);
+
     buffer.writeln('  </workout>');
-    // Optionally emit a global textevents block if any collected
-    if (textCollector.events.isNotEmpty) {
-      buffer.writeln('  <textevents>');
-      for (final e in textCollector.events) {
-        // timeoffset is absolute from workout start
-        buffer.writeln('    <textevent timeoffset="${e.timeOffset}" message="${_escapeXml(e.message)}" duration="${e.duration}"/>');
-      }
-      buffer.writeln('  </textevents>');
-    }
     buffer.writeln('</workout_file>');
     
     return buffer.toString();
   }
   
-  static void _emitSteps(StringBuffer buffer, dynamic steps, {required _TextEventCollector textCollector, num? ftp}) {
+  static void _emitSteps(StringBuffer buffer, dynamic steps, {num? ftp}) {
     if (steps is! List) return;
     for (final raw in steps) {
       if (raw is! Map) continue;
@@ -66,11 +55,11 @@ class IntervalsWorkoutConverter {
         final repeat = _toNum(step['reps'] ?? step['repeat'] ?? step['repeats'] ?? step['count']);
         final reps = repeat != null && repeat > 0 ? repeat.toInt() : 1;
         for (var i = 0; i < reps; i++) {
-          _emitSteps(buffer, step['steps'], textCollector: textCollector, ftp: ftp);
+          _emitSteps(buffer, step['steps'], ftp: ftp);
         }
         continue;
       }
-      _convertSingleStep(buffer, step, textCollector: textCollector, ftp: ftp);
+      _convertSingleStep(buffer, step, ftp: ftp);
     }
   }
 
@@ -80,8 +69,8 @@ class IntervalsWorkoutConverter {
     return null;
   }
 
-  static void _convertSingleStep(StringBuffer buffer, Map<String, dynamic> step, {required _TextEventCollector textCollector, num? ftp}) {
-    final duration = _toNum(step['duration'] ?? step['length']) ?? 0; // seconds
+  static void _convertSingleStep(StringBuffer buffer, Map<String, dynamic> step, {num? ftp}) {
+    final int duration = (_toNum(step['duration'] ?? step['length']) ?? 0).toInt(); // seconds
 
     // Intervals.icu step may have a nested 'power' map or explicit values.
     num? start;
@@ -151,29 +140,49 @@ class IntervalsWorkoutConverter {
       return v.toDouble();
     }
 
-    final cadence = _toNum(step['cadence']);
+    final cadence = _extractCadence(step['cadence']);
 
     final isRamp = (step['ramp'] == true) && start != null && end != null;
     final isFreeRide = step['freeride'] == true || (value != null && value == 0 && (step['freeride'] ?? false));
 
-    // Collect text if present. Intervals.icu provides 'text' field.
     final text = step['text']?.toString();
-    if (text != null && text.trim().isNotEmpty) {
-      textCollector.add(text, textCollector.cumulativeTime);
-    }
+    final textOffset = _toNum(step['text_offset'])?.toInt() ?? 0;
+    final textDuration = _toNum(step['text_duration'])?.toInt() ?? 10;
 
     if (isRamp) {
       // Emit a Ramp block with fractional FTP targets
-  final low = scale(start);
-  final high = scale(end);
-      buffer.writeln('    <Ramp Duration="$duration" PowerLow="$low" PowerHigh="$high"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}/>' );
-      textCollector.advance(duration.toInt());
+      final low = scale(start);
+      final high = scale(end);
+      final rampText = _buildTextEventMessage(
+        baseText: text,
+        durationSeconds: duration,
+        isRamp: true,
+        rampLowFraction: low,
+        rampHighFraction: high,
+        cadenceRpm: cadence,
+      );
+      _writeSegmentElement(
+        buffer,
+        'Ramp',
+        ' Duration="$duration" PowerLow="$low" PowerHigh="$high"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}',
+        _buildTextEventXml(rampText, textOffset, textDuration),
+      );
       return;
     }
 
     if (isFreeRide) {
-      buffer.writeln('    <FreeRide Duration="$duration"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}/>' );
-      textCollector.advance(duration.toInt());
+      final freeRideText = _buildTextEventMessage(
+        baseText: text,
+        durationSeconds: duration,
+        isFreeRide: true,
+        cadenceRpm: cadence,
+      );
+      _writeSegmentElement(
+        buffer,
+        'FreeRide',
+        ' Duration="$duration"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}',
+        _buildTextEventXml(freeRideText, textOffset, textDuration),
+      );
       return;
     }
 
@@ -185,14 +194,43 @@ class IntervalsWorkoutConverter {
     final steadyVal = avg ?? value ?? start ?? end ?? 0;
     
     // Check if we should use Zone attribute instead of Power
-    if (isPowerZone && !convertedToAbsolute) {
+    final usesZoneAttribute = isPowerZone && !convertedToAbsolute;
+    final steadyFraction = !usesZoneAttribute ? scale(steadyVal) : null;
+    final zoneTarget = usesZoneAttribute ? steadyVal.toInt() : null;
+    final steadyText = _buildTextEventMessage(
+      baseText: text,
+      durationSeconds: duration,
+      steadyFraction: steadyFraction,
+      zoneTarget: zoneTarget,
+      cadenceRpm: cadence,
+    );
+
+    if (usesZoneAttribute) {
       // Fallback to Zone attribute since we couldn't calculate absolute power
-      buffer.writeln('    <SteadyState Duration="$duration" Zone="${steadyVal.toInt()}"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}/>' );
+      _writeSegmentElement(
+        buffer,
+        'SteadyState',
+        ' Duration="$duration" Zone="${steadyVal.toInt()}"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}',
+        _buildTextEventXml(steadyText, textOffset, textDuration),
+      );
     } else {
-      buffer.writeln('    <SteadyState Duration="$duration" Power="${scale(steadyVal)}"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}/>' );
+      _writeSegmentElement(
+        buffer,
+        'SteadyState',
+        ' Duration="$duration" Power="${steadyFraction ?? 0}"${cadence != null ? ' Cadence="${cadence.toInt()}"' : ''}',
+        _buildTextEventXml(steadyText, textOffset, textDuration),
+      );
     }
-    
-    textCollector.advance(duration.toInt());
+  }
+
+  static void _writeSegmentElement(StringBuffer buffer, String tagName, String attributes, String? textEventXml) {
+    if (textEventXml != null) {
+      buffer.writeln('    <$tagName$attributes>');
+      buffer.writeln(textEventXml);
+      buffer.writeln('    </$tagName>');
+    } else {
+      buffer.writeln('    <$tagName$attributes/>' );
+    }
   }
 
   static String _escapeXml(String input) {
@@ -204,6 +242,34 @@ class IntervalsWorkoutConverter {
         .replaceAll("'", '&apos;');
   }
   
+  static String _deriveWorkoutName(Map<String, dynamic> doc, String? description) {
+    final preferredKeys = ['name', 'title', 'workoutName'];
+    for (final key in preferredKeys) {
+      final value = doc[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+
+    if (description != null && description.trim().isNotEmpty) {
+      final trimmed = description.trim();
+      final delimiterIndex = trimmed.indexOf(':');
+      if (delimiterIndex > 0) {
+        final candidate = trimmed.substring(0, delimiterIndex).trim();
+        if (candidate.isNotEmpty) {
+          return candidate;
+        }
+      }
+
+      final firstLine = trimmed.split(RegExp(r'[\r\n]')).first.trim();
+      if (firstLine.isNotEmpty) {
+        return firstLine.length > 80 ? firstLine.substring(0, 80).trim() : firstLine;
+      }
+    }
+
+    return 'Intervals.icu Workout';
+  }
+
 
   /// Extracts basic workout info from Intervals.icu event
   static Map<String, dynamic> extractWorkoutInfo(Map<String, dynamic> event) {
@@ -215,24 +281,109 @@ class IntervalsWorkoutConverter {
       'if': event['planned_if'] ?? 0,
     };
   }
-}
 
-class _CollectedTextEvent {
-  final int timeOffset; // seconds from workout start
-  final String message;
-  final int duration = 10;
-  _CollectedTextEvent(this.timeOffset, this.message);
-}
-
-class _TextEventCollector {
-  final List<_CollectedTextEvent> events = [];
-  int cumulativeTime = 0;
-
-  void add(String message, int timeOffset) {
-    events.add(_CollectedTextEvent(timeOffset, message));
+  static double? _extractCadence(dynamic cadenceField) {
+    if (cadenceField == null) return null;
+    if (cadenceField is num) return cadenceField.toDouble();
+    if (cadenceField is String) return double.tryParse(cadenceField);
+    if (cadenceField is Map) {
+      final value = cadenceField['value'];
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value);
+    }
+    return null;
   }
 
-  void advance(int seconds) {
-    cumulativeTime += seconds;
+  static String? _buildTextEventMessage({
+    String? baseText,
+    required int durationSeconds,
+    bool isRamp = false,
+    bool isFreeRide = false,
+    double? rampLowFraction,
+    double? rampHighFraction,
+    double? steadyFraction,
+    int? zoneTarget,
+    double? cadenceRpm,
+  }) {
+    final List<String> summaryParts = [];
+    final durationLabel = _formatDurationLabel(durationSeconds);
+    if (durationLabel != null) {
+      summaryParts.add(durationLabel);
+    }
+
+    if (isRamp && rampLowFraction != null && rampHighFraction != null) {
+      summaryParts.add('ramp ${_formatPercent(rampLowFraction)}-${_formatPercent(rampHighFraction)}% ftp');
+    } else if (isFreeRide) {
+      summaryParts.add('free ride');
+    } else if (zoneTarget != null) {
+      summaryParts.add('Zone $zoneTarget');
+    } else if (steadyFraction != null) {
+      summaryParts.add('${_formatPercent(steadyFraction)}% ftp');
+    }
+
+    if (cadenceRpm != null) {
+      summaryParts.add('${cadenceRpm.round()}rpm');
+    }
+
+    final trimmedBase = baseText?.trim() ?? '';
+
+    if (summaryParts.isEmpty) {
+      return trimmedBase.isEmpty ? null : trimmedBase;
+    }
+
+    final summaryText = summaryParts.join(' ');
+    final summaryNeedsPeriod = summaryText.isNotEmpty && !_endsWithTerminal(summaryText);
+    final summaryWithPunctuation = summaryText.isEmpty
+        ? ''
+        : summaryNeedsPeriod
+            ? '$summaryText.'
+            : summaryText;
+
+    if (trimmedBase.isEmpty) {
+      return summaryWithPunctuation.isEmpty ? null : summaryWithPunctuation;
+    }
+
+    final separator = trimmedBase.endsWith(' ') ? '' : ' ';
+    final baseNeedsSpace = summaryWithPunctuation.isNotEmpty;
+    final combined = baseNeedsSpace
+        ? trimmedBase + separator + summaryWithPunctuation
+        : trimmedBase;
+
+    if (_endsWithTerminal(combined)) {
+      return combined;
+    }
+
+    return '$combined.';
+  }
+
+  static String? _formatDurationLabel(int seconds) {
+    if (seconds <= 0) return null;
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    final secs = seconds % 60;
+
+    final buffer = StringBuffer();
+    if (hours > 0) buffer.write('${hours}h');
+    if (minutes > 0) buffer.write('${minutes}m');
+    if (secs > 0 || buffer.isEmpty) buffer.write('${secs}s');
+    return buffer.toString();
+  }
+
+  static String _formatPercent(double fraction) {
+    final percent = (fraction * 100).clamp(-1000.0, 10000.0);
+    final hasFractional = percent % 1 != 0;
+    final decimals = hasFractional ? 1 : 0;
+    return percent.toStringAsFixed(decimals);
+  }
+
+  static bool _endsWithTerminal(String value) {
+    if (value.isEmpty) return false;
+    const terminals = ['.', '!', '?'];
+    return terminals.any((terminal) => value.trim().endsWith(terminal));
+  }
+
+  static String? _buildTextEventXml(String? message, int offset, int duration) {
+    if (message == null || message.trim().isEmpty) return null;
+    return '      <textevent timeoffset="$offset" message="${_escapeXml(message.trim())}" duration="$duration"/>';
   }
 }

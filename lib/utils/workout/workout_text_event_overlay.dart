@@ -8,6 +8,7 @@ import 'workout_constants.dart';
 // Keys for SharedPreferences
 const String _textSizeKey = 'workout_text_size';
 const String _scrollSpeedKey = 'workout_scroll_speed';
+const double _scrollOvershootScreens = 1.25; // extra screen widths to travel past the left edge
 
 class WorkoutTextEventOverlay extends StatefulWidget {
   static Future<void> saveTextSettings(double textSize, double scrollSpeed) async {
@@ -94,9 +95,10 @@ class _WorkoutTextEventOverlayState extends State<WorkoutTextEventOverlay> with 
   }
 
   void _startScrollAnimation(double screenWidth) {
-    // Calculate duration based on screen width and desired speed
+    // Travel distance: from just off-screen right (1 screen width) across the screen (1) plus overshoot
+    final travelDistance = screenWidth * (2 + _scrollOvershootScreens);
     final duration = Duration(
-      milliseconds: ((screenWidth * 2) / WorkoutTextStyle.scrollSpeed * 1000).round()
+      milliseconds: (travelDistance / WorkoutTextStyle.scrollSpeed * 1000).round(),
     );
     
     _scrollController.duration = duration;
@@ -165,7 +167,7 @@ class _WorkoutTextEventOverlayState extends State<WorkoutTextEventOverlay> with 
     
     final screenWidth = MediaQuery.of(context).size.width;
     final textWidth = textPainter.width;
-    final endOffset = -(textWidth / screenWidth + 1.0);
+    final endOffset = -((textWidth / screenWidth) + 1.0 + _scrollOvershootScreens);
     
     // Update animation with new end position
     _scrollAnimation = Tween<Offset>(
