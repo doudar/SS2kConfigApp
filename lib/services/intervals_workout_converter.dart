@@ -363,17 +363,16 @@ class IntervalsWorkoutConverter {
     final secs = seconds % 60;
 
     final buffer = StringBuffer();
-    if (hours > 0) buffer.write('${hours}h');
-    if (minutes > 0) buffer.write('${minutes}m');
-    if (secs > 0 || buffer.isEmpty) buffer.write('${secs}s');
+    if (hours > 0) buffer.write('${hours}hr');
+    if (minutes > 0) buffer.write('${minutes}min');
+    if (secs > 0 || buffer.isEmpty) buffer.write('${secs}sec');
     return buffer.toString();
   }
 
   static String _formatPercent(double fraction) {
     final percent = (fraction * 100).clamp(-1000.0, 10000.0);
-    final hasFractional = percent % 1 != 0;
-    final decimals = hasFractional ? 1 : 0;
-    return percent.toStringAsFixed(decimals);
+    final rounded = percent.round();
+    return rounded.toString();
   }
 
   static bool _endsWithTerminal(String value) {
