@@ -15,7 +15,6 @@ import '../widgets/metric_card.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/power_table_chart.dart';
 import '../utils/power_table_management.dart';
-import '../utils/stream_extensions.dart';
 
 class PowerTableScreen extends StatefulWidget {
   final BluetoothDevice device;

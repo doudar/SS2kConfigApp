@@ -4,8 +4,6 @@
  *
  * SPDX-License-Identifier: GPL-2.0-only
  */
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 

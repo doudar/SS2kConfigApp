@@ -10,7 +10,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
-import '../utils/stream_extensions.dart';
 import 'dart:async';
 
 class DropdownCard extends StatefulWidget {

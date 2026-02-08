@@ -98,7 +98,6 @@ class GpxToFitConverter {
       builder.addAll(records);
       // Add Lap message
       final lastRecordTimestamp = previousTimestamp;
-      final elapsedTime = (lastRecordTimestamp - startTimestamp).toDouble();
       final lapMessage = LapMessage()
         ..timestamp = lastRecordTimestamp
         ..startTime = startTimestamp;

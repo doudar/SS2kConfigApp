@@ -100,8 +100,8 @@ class IntervalsWorkoutConverter {
     // and converting to %FTP for ZWO.
     // Check case-insensitive and handle variations
     final isPowerZone = units != null && (
-      units!.toLowerCase() == 'power_zone' || 
-      units!.toLowerCase().replaceAll('_', '') == 'powerzone'
+      units.toLowerCase() == 'power_zone' || 
+      units.toLowerCase().replaceAll('_', '') == 'powerzone'
     );
 
     if (isPowerZone) {

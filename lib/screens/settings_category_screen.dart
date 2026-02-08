@@ -13,7 +13,6 @@ import '../widgets/setting_tile.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
-import '../utils/stream_extensions.dart';
 
 class SettingsCategoryScreen extends StatefulWidget {
   final BluetoothDevice device;

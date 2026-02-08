@@ -4,7 +4,6 @@ import 'workout_parser.dart';
 import 'workout_constants.dart';
 
 class WorkoutPainter extends CustomPainter {
-  static final Random _random = Random();
   final List<WorkoutSegment> segments;
   final double maxPower;
   final double totalDuration;
