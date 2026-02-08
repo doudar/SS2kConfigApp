@@ -7,7 +7,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import './bledata.dart';
 import './snackbar.dart';
 import './extra.dart';
@@ -16,6 +16,23 @@ import './constants.dart';
 import './preset_sharing.dart';
 
 class PresetManager {
+  static Future<bool> _ensureDeviceConnected(BuildContext context, BLEData bleData) async {
+    if (bleData.isSimulated) {
+      return true;
+    }
+    try {
+      final state = await UniversalBle.getConnectionState(bleData.deviceId);
+      if (state == BleConnectionState.connected) {
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Failed to determine connection state: $e');
+    }
+    if (context.mounted) {
+      Snackbar.show(ABC.c, "Device not connected", success: false);
+    }
+    return false;
+  }
   static Future<void> savePreset(BuildContext context, BLEData bleData, String presetName) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -51,7 +68,7 @@ class PresetManager {
     }
   }
 
-  static Future<void> loadPreset(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static Future<void> loadPreset(BuildContext context, BLEData bleData) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       List<String> presetsList = prefs.getStringList('backups_list') ?? [];
@@ -167,7 +184,12 @@ class PresetManager {
         }
       }
 
-      await bleData.saveAllSettings(device);
+      final connected = await _ensureDeviceConnected(context, bleData);
+      if (!connected) {
+        return;
+      }
+
+      await bleData.saveAllSettings();
       
       if (context.mounted) {
         Snackbar.show(ABC.c, "Preset loaded and saved to device", success: true);
@@ -262,7 +284,7 @@ class PresetManager {
     }
   }
 
-  static Future<void> showPresetsMenu(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static Future<void> showPresetsMenu(BuildContext context, BLEData bleData) async {
     if (!context.mounted) return;
 
     String? action = await showDialog<String>(
@@ -364,17 +386,16 @@ class PresetManager {
         
         if (confirmed == true && context.mounted) {
           try {
-            await bleData.resetToDefaults(device);
-            // Reconnect logic from resetToDefaults might clear logs/state, wait for a bit
-             await Future.delayed(Duration(seconds: 1));
-             // Trigger a refresh/connect cycle properly
-             await device.connectAndUpdateStream();
-             // Reset UI state implicitly through connection change orexplicit snackbar
+            final connected = await _ensureDeviceConnected(context, bleData);
+            if (!connected) {
+              break;
+            }
+            await bleData.resetToDefaults();
             Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
           } catch (e) {
-             if (context.mounted) {
-               Snackbar.show(ABC.c, prettyException("Reset Failed ", e), success: false);
-             }
+            if (context.mounted) {
+              Snackbar.show(ABC.c, prettyException("Reset Failed ", e), success: false);
+            }
           }
         }
         break;
@@ -475,7 +496,7 @@ class PresetManager {
         }
         break;
       case 'load':
-        await loadPreset(context, bleData, device);
+        await loadPreset(context, bleData);
         break;
       case 'delete':
         await deletePreset(context);
@@ -514,7 +535,7 @@ class PresetManager {
         }
         break;
       case 'import':
-        await PresetSharing.importPreset(context, bleData, device);
+        await PresetSharing.importPreset(context, bleData);
         break;
     }
   }

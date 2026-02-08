@@ -10,7 +10,6 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import './bledata.dart';
 import './snackbar.dart';
 import './power_table_management.dart';
@@ -147,7 +146,7 @@ class PowerTableSharing {
   }
 
   // Import power table from .ptab file
-  static Future<void> importPowerTable(BuildContext context, BLEData bleData, [BluetoothDevice? device]) async {
+  static Future<void> importPowerTable(BuildContext context, BLEData bleData) async {
     try {
       // Pick file
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -199,15 +198,11 @@ class PowerTableSharing {
       bleData.powerTableData = importedPowerTable;
       
       // If device is provided, send the power table to the device
-      bool sentToDevice = false;
-      if (device != null) {
-        sentToDevice = await PowerTableManager.sendPowerTableToDevice(
-          context,
-          bleData,
-          device,
-          hMaxValue: importedHMax
-        );
-      }
+      bool sentToDevice = await PowerTableManager.sendPowerTableToDevice(
+        context,
+        bleData,
+        hMaxValue: importedHMax,
+      );
       
       // Save imported table
       if (context.mounted) {
@@ -216,7 +211,7 @@ class PowerTableSharing {
         // Show appropriate message based on whether the table was sent to device
         if (sentToDevice) {
           Snackbar.show(ABC.c, "Power table imported, saved, and sent to device", success: true);
-        } else if (device != null) {
+        } else if (!bleData.isSimulated) {
           Snackbar.show(ABC.c, "Power table imported and saved, but failed to send to device", success: false);
         } else {
           Snackbar.show(ABC.c, "Power table imported and saved", success: true);

@@ -458,20 +458,25 @@ class WorkoutMenu extends StatelessWidget {
                   onPressed: () async {
                     setState(() => isCalibrating = true);
                     try {
-                      final ftmsControlPointChar = bleData.ftmsControlPointCharacteristic;
-                      if (ftmsControlPointChar != null) {
-                        await FTMSControlPoint.spinDownControl(ftmsControlPointChar, true);
-                        await Future.delayed(const Duration(seconds: 30));
-                        Navigator.of(ctx).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Calibration completed'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      } else {
+                      final serviceUuid = bleData.ftmsServiceUuid;
+                      final characteristicUuid = bleData.ftmsCharacteristicUuid;
+                      if (serviceUuid == null || characteristicUuid == null) {
                         throw Exception('FTMS Control Point characteristic not found');
                       }
+                      await FTMSControlPoint.spinDownControl(
+                        deviceId: bleData.deviceId,
+                        serviceUuid: serviceUuid,
+                        characteristicUuid: characteristicUuid,
+                        start: true,
+                      );
+                      await Future.delayed(const Duration(seconds: 30));
+                      Navigator.of(ctx).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Calibration completed'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
                     } catch (e) {
                       Navigator.of(ctx).pop();
                       ScaffoldMessenger.of(context).showSnackBar(

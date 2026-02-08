@@ -7,12 +7,12 @@
 
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import '../utils/bledata.dart';
 
 class plainTextCard extends StatefulWidget {
   const plainTextCard({super.key, required this.device, required this.c});
-  final BluetoothDevice device;
+  final BleDevice device;
   final Map c;
   @override
   State<plainTextCard> createState() => _plainTextCardState();
@@ -28,7 +28,7 @@ class _plainTextCardState extends State<plainTextCard> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
     controller.text = c["value"];
   }
 
@@ -86,7 +86,7 @@ class _plainTextCardState extends State<plainTextCard> {
       style: TextStyle(color: Colors.black, fontSize: 24),
       onSubmitted: (t) {
         this.verifyInput(t);
-        this.bleData.writeToSS2k(this.widget.device, this.c);
+        this.bleData.writeToSS2k(this.c);
         setState(() {});
         return this.widget.c["value"];
       },
@@ -112,7 +112,7 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        this.bleData.writeToSS2k(this.widget.device, this.c);
+        this.bleData.writeToSS2k(this.c);
         setState(() {});
         return this.widget.c["value"];
       },
@@ -189,11 +189,11 @@ class _plainTextCardState extends State<plainTextCard> {
                       print("**********************************" + controller.text);
                       if (inputIsValid) {
                         // Proceed with saving if input is valid
-                        this.bleData.writeToSS2k(this.widget.device, this.widget.c);
+                        this.bleData.writeToSS2k(this.widget.c);
                         this
-                            .bleData
-                            .customCharacteristic
-                            .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                          .bleData
+                          .customCharacteristic
+                          .forEach((c) => this.bleData.findNSave(c, saveVname));
                         Navigator.pop(context);
                       } else {
                         // Handle invalid input, e.g., show an error message

@@ -7,7 +7,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 import '../utils/bledata.dart';
@@ -15,7 +15,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../utils/constants.dart';
 
 class DeviceHeader extends StatefulWidget {
-  final BluetoothDevice device;
+  final BleDevice device;
   final bool connectOnly;
   const DeviceHeader({Key? key, required this.device, this.connectOnly = false}) : super(key: key);
 
@@ -24,7 +24,8 @@ class DeviceHeader extends StatefulWidget {
 }
 
 class _DeviceHeaderState extends State<DeviceHeader> {
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<bool>? _connectionStateSubscription;
+  bool _isConnected = false;
   Timer rssiTimer = Timer(Duration(seconds: 0), () {});
   Timer setupTimer = Timer(Duration(seconds: 0), () {});
   late BLEData bleData;
@@ -35,7 +36,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
 
     // Listen for firmware version changes to automatically update the UI
     _firmwareVersionListener = () {
@@ -50,26 +51,53 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     // Initialize firmware version
     _fwVersion = bleData.firmwareVersion.value;
 
-    // Only create subscription if it doesn't exist
-    _connectionStateSubscription ??= this.widget.device.connectionState.listen((state) async {
-      if (state == BluetoothConnectionState.connected) {
-        // When device connects/reconnects, update RSSI and refresh services
-        this.bleData.rssi.value = await this.widget.device.readRssi();
-        await this.bleData.setupConnection(this.widget.device);
-        if (!_isRefreshing) {
-          await _refreshDeviceInfo();
-        }
-      } else {
-        print("*********Detected Disconnect**************");
-        this.bleData.rssi.value = 0;
-        await this.widget.device.connectAndUpdateStream();
-        await this.bleData.setupConnection(this.widget.device);
-      }
-      if (mounted) {
-        setState(() {});
-      }
-    });
+    _initializeConnectionMonitoring();
     startTimer();
+  }
+
+  void _initializeConnectionMonitoring() {
+    _loadInitialConnectionState();
+    _connectionStateSubscription ??=
+        UniversalBle.connectionStream(widget.device.deviceId).listen((connected) {
+      unawaited(_handleConnectionChange(connected));
+    });
+  }
+
+  Future<void> _loadInitialConnectionState() async {
+    try {
+      final state = await UniversalBle.getConnectionState(widget.device.deviceId);
+      await _handleConnectionChange(state == BleConnectionState.connected);
+    } catch (e) {
+      debugPrint('Error loading initial connection state: $e');
+    }
+  }
+
+  Future<void> _handleConnectionChange(bool connected) async {
+    _isConnected = connected;
+    if (connected) {
+      try {
+        bleData.rssi.value = await widget.device.readRssi();
+      } catch (e) {
+        debugPrint('Failed to read RSSI: $e');
+      }
+      await bleData.setupConnection();
+      if (!_isRefreshing) {
+        await _refreshDeviceInfo();
+      }
+    } else {
+      debugPrint("*********Detected Disconnect**************");
+      bleData.rssi.value = 0;
+      if (!bleData.isUserDisconnect) {
+        try {
+          await widget.device.connectAndUpdateStream();
+        } catch (e) {
+          debugPrint('Auto-reconnect failed: $e');
+        }
+      }
+    }
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _refreshDeviceInfo() async {
@@ -81,9 +109,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       // Wait a bit for the device to stabilize after connection
       await Future.delayed(Duration(seconds: 1));
 
-      // Discover services to get new firmware version
-      this.bleData.services = await this.widget.device.discoverServices();
-      bleData.requestSetting(this.widget.device, fwVname);
+      await bleData.setupConnection(forceRediscover: true);
+      await bleData.requestSetting(fwVname);
 
       // No need for manual setState here anymore - the listener will handle it
     } catch (e) {
@@ -113,12 +140,12 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     //This timer checks to see if data has been read from the device
     setupTimer = Timer.periodic(Duration(seconds: 5), (timer) async {
       String testValue = bleData.getVnameValue(connectedPWRVname);
-      if (testValue == "null" && this.widget.device.isConnected) {
-        await this.bleData.setupConnection(this.widget.device);
+      if (testValue == "null" && _isConnected) {
+        await this.bleData.setupConnection();
       }
       // Check FTMS health on every tick
-      if (mounted && this.widget.device.isConnected) {
-        bleData.checkFtmsHealth(this.widget.device);
+      if (mounted && _isConnected) {
+        bleData.checkFtmsHealth();
       }
     });
   }
@@ -127,10 +154,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     if (this.bleData.isUpdatingFirmware) {
       return; // Do not check RSSI if the firmware is being updated
     }
-    if (this.widget.device.isConnected) {
+    if (_isConnected) {
       try {
         this.bleData.rssi.value = await this.widget.device.readRssi();
-        bleData.requestSetting(this.widget.device, fwVname);
+        bleData.requestSetting(fwVname);
         // No need for manual setState here anymore - the listener will handle firmware version updates
       } catch (e) {
         this.bleData.rssi.value = 0;
@@ -141,7 +168,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   }
 
   bool get isConnected {
-    return this.bleData.connectionState == BluetoothConnectionState.connected;
+    return _isConnected;
   }
 
   Future onConnectPressed() async {
@@ -153,16 +180,13 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       Snackbar.show(ABC.c, "Connect: Success", success: true);
       await onDiscoverServicesPressed();
     } catch (e) {
-      if (e is FlutterBluePlusException && e.code == FbpErrorCode.connectionCanceled.index) {
-        // ignore connections canceled by the user
-      } else {
-        Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
-      }
+      Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
     }
   }
 
   Future onDisconnectPressed() async {
     try {
+      this.bleData.isUserDisconnect = true;
       await this.widget.device.disconnectAndUpdateStream();
       Snackbar.show(ABC.c, "Disconnect: Success", success: true);
     } catch (e) {
@@ -181,7 +205,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
   Future onRebootPressed() async {
     try {
-      await this.bleData.reboot(this.widget.device);
+      await this.bleData.reboot();
       Snackbar.show(ABC.a, "SmartSpin2k is rebooting", success: true);
       await onDisconnectPressed();
       await onConnectPressed();
@@ -200,7 +224,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Widget buildRemoteId(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
-      child: Text('${this.widget.device.remoteId}'),
+      child: Text(widget.device.deviceId),
     );
   }
 
@@ -208,7 +232,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     IconData iconData;
     Color iconColor;
 
-    if (this.widget.device.isConnected) {
+    if (_isConnected) {
       if (rssi >= -60) {
         iconData = Icons.signal_cellular_4_bar_sharp;
         iconColor = Colors.green;
@@ -236,6 +260,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   @override
   Widget build(BuildContext context) {
     var rssiIcon = _buildSignalStrengthIcon(this.bleData.rssi.value);
+    final deviceName =
+        widget.device.name?.isNotEmpty == true ? widget.device.name! : widget.device.deviceId;
 
     return PopupMenuButton<VoidCallback>(
       child: Container(
@@ -256,7 +282,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  this.widget.device.platformName,
+                  deviceName,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 Text(

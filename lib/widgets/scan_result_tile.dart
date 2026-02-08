@@ -5,16 +5,18 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../utils/bledata.dart';
+import 'package:universal_ble/universal_ble.dart';
+
 import '../utils/extra.dart';
+import '../utils/snackbar.dart';
 
 class ScanResultTile extends StatefulWidget {
-  const ScanResultTile({Key? key, required this.result, this.onTap}) : super(key: key);
+  const ScanResultTile({Key? key, required this.device, this.onTap}) : super(key: key);
 
-  final ScanResult result;
+  final BleDevice device;
   final VoidCallback? onTap;
 
   @override
@@ -22,69 +24,83 @@ class ScanResultTile extends StatefulWidget {
 }
 
 class _ScanResultTileState extends State<ScanResultTile> {
-  BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
-
-  late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
+  bool _isConnected = false;
+  bool _isConnecting = false;
+  bool _isDisconnecting = false;
+  StreamSubscription<bool>? _connectionStateSubscription;
+  StreamSubscription<bool>? _connectingSubscription;
+  StreamSubscription<bool>? _disconnectingSubscription;
 
   @override
   void initState() {
     super.initState();
-    _connectionStateSubscription = this.widget.result.device.connectionState.listen((state) {
-      _connectionState = state;
-      if (mounted) {
-        setState(() {});
-      }
+    _loadInitialConnectionState();
+    _connectionStateSubscription = UniversalBle.connectionStream(widget.device.deviceId).listen((connected) {
+      if (!mounted) return;
+      setState(() => _isConnected = connected);
     });
+    _connectingSubscription = widget.device.isConnecting.listen((value) {
+      if (!mounted) return;
+      setState(() => _isConnecting = value);
+    });
+    _disconnectingSubscription = widget.device.isDisconnecting.listen((value) {
+      if (!mounted) return;
+      setState(() => _isDisconnecting = value);
+    });
+  }
+
+  Future<void> _loadInitialConnectionState() async {
+    try {
+      final state = await UniversalBle.getConnectionState(widget.device.deviceId);
+      if (!mounted) return;
+      setState(() => _isConnected = state == BleConnectionState.connected);
+    } catch (_) {
+      // Ignore failures when determining initial state
+    }
   }
 
   @override
   void dispose() {
-    _connectionStateSubscription.cancel();
+    _connectionStateSubscription?.cancel();
+    _connectingSubscription?.cancel();
+    _disconnectingSubscription?.cancel();
     super.dispose();
   }
 
-  String getNiceHexArray(List<int> bytes) {
-    return '[${bytes.map((i) => i.toRadixString(16).padLeft(2, '0')).join(', ')}]';
+  String _niceHexArray(Uint8List bytes) {
+    if (bytes.isEmpty) return '[]';
+    final parts = bytes.map((i) => i.toRadixString(16).padLeft(2, '0')).join(', ');
+    return '[$parts]';
   }
 
-  String getNiceManufacturerData(Map<int, List<int>> data) {
-    return data.entries
-        .map((entry) => '${entry.key.toRadixString(16)}: ${getNiceHexArray(entry.value)}')
+  String? _manufacturerSummary() {
+    if (widget.device.manufacturerDataList.isEmpty) return null;
+    return widget.device.manufacturerDataList
+        .map((entry) => '${entry.companyIdRadix16}: ${_niceHexArray(entry.payload)}')
         .join(', ')
         .toUpperCase();
   }
 
-  String getNiceServiceData(Map<Guid, List<int>> data) {
-    return data.entries.map((v) => '${v.key}: ${getNiceHexArray(v.value)}').join(', ').toUpperCase();
-  }
-
-  String getNiceServiceUuids(List<Guid> serviceUuids) {
-    return serviceUuids.join(', ').toUpperCase();
-  }
-
-  bool get isConnected {
-    return _connectionState == BluetoothConnectionState.connected;
+  String? _serviceUuidSummary() {
+    if (widget.device.services.isEmpty) return null;
+    return widget.device.services.join(', ').toUpperCase();
   }
 
   Widget _buildTitle(BuildContext context) {
-    if (this.widget.result.device.platformName.isNotEmpty) {
-      return Column(
-        mainAxisSize: MainAxisSize.max,
-        //mainAxisAlignment: MainAxisAlignment.start,
-        //crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(this.widget.result.device.advName,
-              overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge),
-          _rssiRow(context),
-        ],
-      );
-    } else {
-      return Text(this.widget.result.device.remoteId.toString());
-    }
+    final displayName = widget.device.name?.isNotEmpty == true ? widget.device.name! : widget.device.deviceId;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(displayName, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge),
+        _rssiRow(context),
+      ],
+    );
   }
 
   Widget _buildConnectButton(BuildContext context) {
-    if (isConnected) {
+    final theme = Theme.of(context);
+    if (_isConnected) {
       return Container(
         alignment: Alignment.centerRight,
         child: Row(
@@ -92,23 +108,26 @@ class _ScanResultTileState extends State<ScanResultTile> {
           children: [
             ElevatedButton(
               child: const Text('OPEN'),
-              onPressed: (this.widget.result.advertisementData.connectable) ? this.widget.onTap : null,
+              onPressed: _isDisconnecting ? null : widget.onTap,
               style: ElevatedButton.styleFrom(
-                backgroundColor: ThemeData().colorScheme.secondary,
-                foregroundColor: ThemeData().colorScheme.onSecondary,
+                backgroundColor: theme.colorScheme.secondary,
+                foregroundColor: theme.colorScheme.onSecondary,
               ),
             ),
             const SizedBox(width: 6),
             IconButton(
               icon: const Icon(Icons.link_off),
               onPressed: () async {
-                // Set user-initiated disconnect flag
-                BLEDataManager.forDevice(this.widget.result.device).isUserDisconnect = true;
-                await this.widget.result.device.disconnectAndUpdateStream();
+                if (_isDisconnecting) return;
+                try {
+                  await UniversalBle.disconnect(widget.device.deviceId);
+                } catch (e) {
+                  Snackbar.show(ABC.b, prettyException('Disconnect Error:', e), success: false);
+                }
               },
               style: IconButton.styleFrom(
-                backgroundColor: ThemeData().colorScheme.onError,
-                foregroundColor: ThemeData().colorScheme.error,
+                backgroundColor: theme.colorScheme.onError,
+                foregroundColor: theme.colorScheme.error,
                 padding: const EdgeInsets.all(8),
               ),
             ),
@@ -117,11 +136,13 @@ class _ScanResultTileState extends State<ScanResultTile> {
       );
     } else {
       return ElevatedButton(
-        child: const Text('CONNECT'),
-        onPressed: (this.widget.result.advertisementData.connectable) ? this.widget.onTap : null,
+        child: _isConnecting
+            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Text('CONNECT'),
+        onPressed: _isConnecting ? null : widget.onTap,
         style: ElevatedButton.styleFrom(
-          backgroundColor: ThemeData().colorScheme.secondary,
-          foregroundColor: ThemeData().colorScheme.onSecondary,
+          backgroundColor: theme.colorScheme.secondary,
+          foregroundColor: theme.colorScheme.onSecondary,
         ),
       );
     }
@@ -134,9 +155,7 @@ class _ScanResultTileState extends State<ScanResultTile> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(title, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(
-            width: 12.0,
-          ),
+          const SizedBox(width: 12.0),
           Expanded(
             child: Text(
               value,
@@ -150,43 +169,39 @@ class _ScanResultTileState extends State<ScanResultTile> {
   }
 
   Color _getColor(int index) {
-    // Define the thresholds for signal strength
-    final int worstRSSI = -100; // Adjust this based on your requirement
-    final int bestRSSI = -60; // Adjust this based on your requirement
+    const int worstRSSI = -100;
+    const int bestRSSI = -60;
     final int signalStrength = (index + 1) * 2;
-
-    // Interpolate the color based on RSSI value
     final double ratio = 2 * (signalStrength - worstRSSI) / (bestRSSI - worstRSSI);
-    final int red = (255 * (1 - ratio)).toInt();
-    final int green = (255 * ratio).toInt();
-
-    // Return the color based on interpolation
+    final int red = (255 * (1 - ratio)).clamp(0, 255).toInt();
+    final int green = (255 * ratio).clamp(0, 255).toInt();
     return Color.fromRGBO(red, green, 0, 1.0);
   }
 
   Widget _rssiRow(BuildContext context) {
-    int numBoxesToShow = ((this.widget.result.rssi + 100) / 2.5).ceil();
+    final rssi = widget.device.rssi ?? -100;
+    final int numBoxesToShow = ((rssi + 100) / 2.5).ceil().clamp(0, 10).toInt();
     return Row(
       children: [
         Text(
           'Signal strength:',
           style: TextStyle(fontSize: 12, color: ThemeData().colorScheme.onSurface),
         ),
-        SizedBox(width: 8),
+        const SizedBox(width: 8),
         Row(
           children: List.generate(10, (index) {
             if (index < numBoxesToShow) {
               return Container(
                 width: 5,
                 height: 10,
-                margin: EdgeInsets.symmetric(horizontal: 1),
+                margin: const EdgeInsets.symmetric(horizontal: 1),
                 color: _getColor(index),
               );
             } else {
               return Container(
                 width: 5,
                 height: 10,
-                margin: EdgeInsets.symmetric(horizontal: 1),
+                margin: const EdgeInsets.symmetric(horizontal: 1),
                 color: Colors.transparent,
               );
             }
@@ -198,19 +213,19 @@ class _ScanResultTileState extends State<ScanResultTile> {
 
   @override
   Widget build(BuildContext context) {
-    var adv = this.widget.result.advertisementData;
     return ExpansionTile(
       title: _buildTitle(context),
-      leading: Image.asset(
-        'assets/ss2kv3.png',
-      ),
+      leading: Image.asset('assets/ss2kv3.png'),
       trailing: SizedBox(
-        width: 120, // Increased width to accommodate both buttons
+        width: 120,
         child: _buildConnectButton(context),
       ),
       children: <Widget>[
-        if (adv.advName.isNotEmpty) _buildAdvRow(context, 'Name', adv.advName),
-        _buildAdvRow(context, 'RSSI', '${this.widget.result.rssi.toString()}'),
+        if (widget.device.name?.isNotEmpty == true) _buildAdvRow(context, 'Name', widget.device.name!),
+        if (widget.device.rssi != null) _buildAdvRow(context, 'RSSI', '${widget.device.rssi}'),
+        if (_serviceUuidSummary() != null) _buildAdvRow(context, 'Services', _serviceUuidSummary()!),
+        if (_manufacturerSummary() != null) _buildAdvRow(context, 'Manufacturer', _manufacturerSummary()!),
+        _buildAdvRow(context, 'Device ID', widget.device.deviceId),
       ],
     );
   }

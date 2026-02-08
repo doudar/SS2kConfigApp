@@ -7,7 +7,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 
 import '../widgets/setting_tile.dart';
 import '../widgets/ss2k_app_bar.dart';
@@ -16,7 +16,7 @@ import '../utils/constants.dart';
 import '../utils/stream_extensions.dart';
 
 class SettingsCategoryScreen extends StatefulWidget {
-  final BluetoothDevice device;
+  final BleDevice device;
   final String title;
   final SettingType settingType;
 
@@ -32,16 +32,17 @@ class SettingsCategoryScreen extends StatefulWidget {
 }
 
 class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<bool>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   late BLEData bleData;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
 
-    _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
+    _connectionStateSubscription =
+        UniversalBle.connectionStream(widget.device.deviceId).listen((connected) {
       if (mounted) {
         setState(() {});
       }

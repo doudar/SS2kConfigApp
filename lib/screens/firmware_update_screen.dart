@@ -10,7 +10,7 @@ import 'dart:io' as io;
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart' show rootBundle;
@@ -23,7 +23,7 @@ import '../utils/bledata.dart';
 import '../widgets/ss2k_app_bar.dart';
 
 class FirmwareUpdateScreen extends StatefulWidget {
-  final BluetoothDevice device;
+  final BleDevice device;
 
   const FirmwareUpdateScreen({Key? key, required this.device}) : super(key: key);
 
@@ -54,7 +54,6 @@ class FirmwareRelease {
 
 class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   late BLEData bleData;
-  final BleRepository bleRepo = BleRepository();
   String _builtinFirmwareVersion = '';
 
   Timer _loadingTimer = Timer.periodic(Duration(seconds: 30), (_loadingTimer) {});
@@ -65,7 +64,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   OtaPackage? otaPackage;
 
   StreamSubscription<int>? progressSubscription;
-  StreamSubscription<BluetoothConnectionState>? charSubscription;
+  StreamSubscription<bool>? _connectionStateSubscription;
   double _progress = 0;
   bool _loaded = false;
   DateTime? startTime;
@@ -83,7 +82,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
     if (this.bleData.charReceived.value == true) {
       _initialize();
     } else {
@@ -104,9 +103,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     });
 
     // Monitor device disconnection during firmware update
-    charSubscription = this.widget.device.connectionState.listen((state) {
-      // If progress is high (>95%), assume disconnect is due to reboot/completion
-      if (!_usingWifi && state != BluetoothConnectionState.connected && updatingFirmware && _progress < 0.95) {
+    _connectionStateSubscription = UniversalBle.connectionStream(widget.device.deviceId).listen((connected) {
+      if (!_usingWifi && !connected && updatingFirmware && _progress < 0.95) {
         _showUploadCompleteDialog(false);
       }
     });
@@ -116,6 +114,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   void dispose() {
     progressSubscription?.cancel();
     _loadingTimer.cancel();
+    _connectionStateSubscription?.cancel();
     WakelockPlus.disable();
     super.dispose();
   }
@@ -189,7 +188,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   Future<void> _initialize() async {
     //check for demo mode
     if (!bleData.isSimulated) {
-      otaPackage = Esp32OtaPackage(this.bleData.firmwareDataCharacteristic, this.bleData.firmwareControlCharacteristic);
+      otaPackage = Esp32OtaPackage();
       await _progressStreamSubscription();
     }
     await _fetchBuiltinFirmwareVersion();
@@ -209,7 +208,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   Future<void> _progressStreamSubscription() async {
     await progressSubscription?.cancel();
-    if (this.bleData.charReceived.value) {
+    if (bleData.charReceived.value && otaPackage != null) {
       progressSubscription = otaPackage!.percentageStream.listen((event) {
         _progress = event / 100.0;
         // Do not show dialog here when event == 100, let the main control flow handle it
@@ -362,7 +361,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   }
 
   Future<void> startFirmwareUpdate(type, {FirmwareRelease? release}) async {
-    if (this.bleData.isSimulated) return;
+    if (bleData.isSimulated) return;
 
     setState(() {
       updatingFirmware = true;
@@ -372,13 +371,12 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       timeRemaining = 'Calculating...';
     });
 
-    // Determine original version
-    String originalVersion = bleData.firmwareVersion.value;
-
-    // Determine target version for verification
+    final deviceLabel = (widget.device.name?.isNotEmpty ?? false)
+        ? widget.device.name!
+        : widget.device.deviceId;
+    final String originalVersion = bleData.firmwareVersion.value;
     String? targetVersion;
 
-    // Resolve release object - use passed argument or fallback to currently selected
     FirmwareRelease? effectiveRelease = release;
     if (type == RELEASE && effectiveRelease == null) {
       effectiveRelease = _selectedRelease;
@@ -387,42 +385,29 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     if (type == RELEASE && effectiveRelease != null) {
       targetVersion = effectiveRelease.version;
     } else if (type == BINARY) {
-      // Binary type (1) is always builtin firmware
       targetVersion = _builtinFirmwareVersion;
     }
-    // Note: For PICKER (2), targetVersion remains null as we can't easily know the version
-
-    print('Target firmware version for verification: $targetVersion (Type: $type)');
 
     try {
       String binFilePath;
 
       if (type == PICKER) {
-        // Get firmware file path from picker
         final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['bin']);
-
         if (result == null || result.files.isEmpty) {
-          setState(() {
-            updatingFirmware = false;
-          });
+          setState(() => updatingFirmware = false);
           return;
         }
-
         binFilePath = result.files.first.path!;
-      } else if (type == RELEASE && release != null) {
-        // Download and extract firmware from selected release
-        if (release.isBuiltin) {
-          binFilePath = 'assets/firmware.bin';
-        } else {
-          binFilePath = await _downloadAndExtractFirmware(release.downloadUrl);
-        }
+      } else if (type == RELEASE && effectiveRelease != null) {
+        binFilePath = effectiveRelease.isBuiltin
+            ? 'assets/firmware.bin'
+            : await _downloadAndExtractFirmware(effectiveRelease.downloadUrl);
       } else {
         binFilePath = 'assets/firmware.bin';
       }
 
-      // Try WiFi update first
       final bool wifiSuccess = await WifiOTA.updateFirmware(
-        deviceName: widget.device.advName,
+        deviceName: deviceLabel,
         firmwarePath: binFilePath,
         onProgress: (progress) {
           setState(() {
@@ -435,7 +420,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       bool updateSuccess = wifiSuccess;
 
       if (!wifiSuccess) {
-        // Show message about falling back to BLE
         setState(() {
           _usingWifi = false;
           _progress = 0;
@@ -450,80 +434,65 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           ),
         );
 
-        // Stop notifications before BLE update
-        if (bleData.indoorBikeCharacteristic != null) {
-          await bleData.indoorBikeCharacteristic!.setNotifyValue(false);
-        }
+        await bleData.pauseFtmsNotifications();
         bleData.subscribed = false;
+        bleData.isUpdatingFirmware = true;
 
-        // Fall back to BLE update
-        this.bleData.isUpdatingFirmware = true;
-
-        // Re-initialize OTA package to ensure we have a fresh stream controller
-        otaPackage = Esp32OtaPackage(
-          this.bleData.firmwareDataCharacteristic,
-          this.bleData.firmwareControlCharacteristic,
-        );
+        otaPackage = Esp32OtaPackage();
         await _progressStreamSubscription();
 
-        // Correctly identify firmware type for BLE update
-        // If it's an asset path, we must use BINARY type regardless of the original call type
         int bleUpdateType = type;
         if (binFilePath.startsWith('assets/')) {
           bleUpdateType = BINARY;
         }
 
+        final serviceUuid = bleData.firmwareServiceUuid;
+        final dataUuid = bleData.firmwareDataCharacteristicUuid;
+        final controlUuid = bleData.firmwareControlCharacteristicUuid;
+
+        if (serviceUuid == null || dataUuid == null || controlUuid == null) {
+          throw Exception('Firmware characteristics unavailable. Reconnect to the device and try again.');
+        }
+
         await otaPackage!.updateFirmware(
-          this.widget.device,
-          bleUpdateType,
-          this.bleData.firmwareService,
-          this.bleData.firmwareDataCharacteristic,
-          this.bleData.firmwareControlCharacteristic,
+          deviceId: widget.device.deviceId,
+          serviceUuid: serviceUuid,
+          dataCharacteristicUuid: dataUuid,
+          controlCharacteristicUuid: controlUuid,
+          firmwareType: bleUpdateType,
           binFilePath: binFilePath,
         );
-        this.bleData.isUpdatingFirmware = false;
 
+        bleData.isUpdatingFirmware = false;
         updateSuccess = otaPackage!.firmwareupdate;
 
-        // Resume notifications after BLE update (critical for verification)
-        if (bleData.indoorBikeCharacteristic != null) {
-          await bleData.indoorBikeCharacteristic!.setNotifyValue(true);
-        }
-        bleData.decode(this.widget.device);
+        await bleData.resumeFtmsNotifications();
+        await bleData.decode();
       }
 
-      // Determine whether to attempt verification
-      // We attempt verification if update reported success, OR if we are on BLE and progress was high
-      // (as BLE connection often drops right at the end causing "failure" report)
       bool shouldVerify = updateSuccess;
       if (!updateSuccess && !_usingWifi && _progress > 0.95) {
-        print('Update reported failure but progress is high ($_progress). Attempting verification.');
         shouldVerify = true;
       }
 
       if (shouldVerify) {
-        String? verifiedVersion = await _verifyFirmwareUpdate(targetVersion, originalVersion);
-
+        final verifiedVersion = await _verifyFirmwareUpdate(targetVersion, originalVersion);
         if (verifiedVersion != null) {
           _showUploadCompleteDialog(true, from: originalVersion, to: verifiedVersion);
         } else {
-          // Verification failed - reboot and show error
           _showUploadCompleteDialog(false);
-          bleData.reboot(widget.device);
+          await bleData.reboot();
         }
       } else {
         _showUploadCompleteDialog(false);
       }
 
-      setState(() {
-        updatingFirmware = false;
-      });
+      setState(() => updatingFirmware = false);
     } catch (e) {
+      bleData.isUpdatingFirmware = false;
       bool recovered = false;
-      // If error occurred but progress was high, try to verify anyway
       if (!_usingWifi && _progress > 0.95) {
-        print('Exception caught but progress is high. Attempting verification. Error: $e');
-        String? verifiedVersion = await _verifyFirmwareUpdate(targetVersion, originalVersion);
+        final verifiedVersion = await _verifyFirmwareUpdate(targetVersion, originalVersion);
         if (verifiedVersion != null) {
           _showUploadCompleteDialog(true, from: originalVersion, to: verifiedVersion);
           recovered = true;
@@ -531,20 +500,15 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       }
 
       if (!recovered) {
-        // Make sure to re-enable notifications even if update fails
         if (!_usingWifi) {
-          if (bleData.indoorBikeCharacteristic != null) {
-            await bleData.indoorBikeCharacteristic!.setNotifyValue(true);
-          }
-          bleData.decode(this.widget.device);
+          await bleData.resumeFtmsNotifications();
+          await bleData.decode();
         }
         _showUploadCompleteDialog(false);
         print('Firmware update failed with error: $e');
       }
 
-      setState(() {
-        updatingFirmware = false;
-      });
+      setState(() => updatingFirmware = false);
     }
   }
 

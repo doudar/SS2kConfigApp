@@ -7,7 +7,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../utils/bledata.dart';
@@ -15,7 +15,7 @@ import '../utils/constants.dart';
 import '../widgets/ss2k_app_bar.dart';
 
 class BleLogScreen extends StatefulWidget {
-  final BluetoothDevice device;
+  final BleDevice device;
   const BleLogScreen({Key? key, required this.device}) : super(key: key);
 
   @override
@@ -27,14 +27,16 @@ class _BleLogScreenState extends State<BleLogScreen> {
   late Map logCharacteristic;
   final List<String> _logMessages = [];
   final ScrollController _scrollController = ScrollController();
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<bool>? _connectionStateSubscription;
   StreamSubscription<String>? _logSubscription; // New subscription
   Timer? _demoTimer;
+  bool _isConnected = false;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
+    _initializeConnectionTracking();
     
     // Find the log characteristic
     logCharacteristic = bleData.customCharacteristic.firstWhere(
@@ -53,6 +55,25 @@ class _BleLogScreenState extends State<BleLogScreen> {
     }
   }
 
+  void _initializeConnectionTracking() {
+    _loadInitialConnectionState();
+    _connectionStateSubscription = UniversalBle.connectionStream(widget.device.deviceId).listen((connected) {
+      if (!mounted) return;
+      setState(() => _isConnected = connected);
+    });
+  }
+
+  Future<void> _loadInitialConnectionState() async {
+    try {
+      final state = await UniversalBle.getConnectionState(widget.device.deviceId);
+      if (!mounted) return;
+      _isConnected = state == BleConnectionState.connected;
+      setState(() {});
+    } catch (_) {
+      // Ignore failures when fetching initial state
+    }
+  }
+
   void _enableLogStreaming() {
     if (bleData.isSimulated) {
       // Demo mode - no need to write to device
@@ -61,7 +82,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
 
     // Write "1" to enable log streaming
     logCharacteristic["value"] = "1";
-    bleData.writeToSS2k(widget.device, logCharacteristic, s: "1");
+    bleData.writeToSS2k(logCharacteristic, s: "1");
   }
 
   void _disableLogStreaming() {
@@ -72,7 +93,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
 
     // Write "0" to disable log streaming
     logCharacteristic["value"] = "0";
-    bleData.writeToSS2k(widget.device, logCharacteristic, s: "0");
+    bleData.writeToSS2k(logCharacteristic, s: "0");
   }
 
   void _setupDemoMode() {
@@ -90,12 +111,6 @@ class _BleLogScreenState extends State<BleLogScreen> {
   }
 
   void _setupSubscriptions() {
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
-      if (mounted) {
-        setState(() {});
-      }
-    });
-
     // Subscribe directly to the log stream to catch every message
     _logSubscription = bleData.logStream.listen((message) {
       if (!mounted) return;
@@ -270,7 +285,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
                       ),
                     ],
                   ),
-                  if (!widget.device.isConnected && !bleData.isSimulated)
+                  if (!_isConnected && !bleData.isSimulated)
                     Padding(
                       padding: EdgeInsets.only(top: 8),
                       child: Text(

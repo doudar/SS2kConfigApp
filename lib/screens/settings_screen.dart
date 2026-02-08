@@ -7,7 +7,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 
 import '../widgets/ss2k_app_bar.dart';
 import '../utils/snackbar.dart';
@@ -19,7 +19,7 @@ import '../utils/stream_extensions.dart';
 import 'settings_category_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
-  final BluetoothDevice device;
+  final BleDevice device;
   const SettingsScreen({Key? key, required this.device}) : super(key: key);
 
   @override
@@ -27,14 +27,14 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen>{
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<bool>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   late BLEData bleData;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
 
     // If the data is simulated, wait for a second before calling setState
     if (bleData.isSimulated) {
@@ -51,7 +51,8 @@ class _SettingsScreenState extends State<SettingsScreen>{
   
     }
 
-    _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
+    _connectionStateSubscription =
+        UniversalBle.connectionStream(widget.device.deviceId).listen((connected) {
       if (mounted) {
         setState(() {});
       }
@@ -167,7 +168,7 @@ class _SettingsScreenState extends State<SettingsScreen>{
                     'Load, Save, Import & Export Configuration',
                     style: TextStyle(color: Colors.white70),
                   ),
-                  onTap: () => PresetManager.showPresetsMenu(context, bleData, widget.device),
+                  onTap: () => PresetManager.showPresetsMenu(context, bleData),
                   trailing: Icon(Icons.chevron_right, color: Colors.white),
                 ),
               ),

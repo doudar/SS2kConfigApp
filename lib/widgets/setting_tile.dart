@@ -9,7 +9,7 @@ import 'dart:async';
 import 'package:ss2kconfigapp/utils/constants.dart';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 
 import "../widgets/slider_card.dart";
 import "../widgets/bool_card.dart";
@@ -20,7 +20,7 @@ import '../utils/bledata.dart';
 import '../utils/stream_extensions.dart';
 
 class SettingTile extends StatefulWidget {
-  final BluetoothDevice device;
+  final BleDevice device;
   final Map c;
   const SettingTile({Key? key, required this.device, required this.c}) : super(key: key);
 
@@ -38,7 +38,7 @@ class _SettingTileState extends State<SettingTile> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
     _value = valueFormatter();
     startSubscription();
   }

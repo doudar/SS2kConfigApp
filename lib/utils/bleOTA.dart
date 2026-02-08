@@ -10,17 +10,24 @@
 // Import necessary libraries
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/services.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
+import 'package:universal_ble/universal_ble.dart';
 
 
 // Abstract class defining the structure of an OTA package
 abstract class OtaPackage {
-  // Method to update firmware
-  Future<void> updateFirmware(BluetoothDevice device, int firmwareType, BluetoothService service,
-      BluetoothCharacteristic dataUUID, BluetoothCharacteristic controlUUID,
-      {String? binFilePath, String? url});
+  Future<void> updateFirmware({
+    required String deviceId,
+    required String serviceUuid,
+    required String dataCharacteristicUuid,
+    required String controlCharacteristicUuid,
+    required int firmwareType,
+    String? binFilePath,
+    String? url,
+  });
 
   // Property to track firmware update status
   bool firmwareupdate = false;
@@ -31,50 +38,60 @@ abstract class OtaPackage {
 
 // Class responsible for handling BLE repository operations
 class BleRepository {
-  // Write data to a Bluetooth characteristic
-  Future<void> writeDataCharacteristic(BluetoothCharacteristic characteristic, Uint8List data) async {
-    await characteristic.write(data);
+  Future<void> writeCharacteristic(
+    String deviceId,
+    String serviceUuid,
+    String characteristicUuid,
+    Uint8List data,
+  ) async {
+    await UniversalBle.write(deviceId, serviceUuid, characteristicUuid, data);
   }
 
-  // Read data from a Bluetooth characteristic
-  Future<List<int>> readCharacteristic(BluetoothCharacteristic characteristic) async {
-    return await characteristic.read();
+  Future<Uint8List> readCharacteristic(
+    String deviceId,
+    String serviceUuid,
+    String characteristicUuid,
+  ) async {
+    return UniversalBle.read(deviceId, serviceUuid, characteristicUuid);
   }
 
-  // Request a specific MTU size from a Bluetooth device
-  Future<void> requestMtu(BluetoothDevice device, int mtuSize) async {
-    await device.requestMtu(mtuSize);
+  Future<int> requestMtu(String deviceId, int mtuSize) async {
+    return UniversalBle.requestMtu(deviceId, mtuSize);
   }
 }
 
 // Implementation of OTA package for ESP32
 class Esp32OtaPackage implements OtaPackage {
-  final BluetoothCharacteristic dataCharacteristic;
-  final BluetoothCharacteristic controlCharacteristic;
+  Esp32OtaPackage({BleRepository? repository}) : _bleRepo = repository ?? BleRepository();
+
+  final BleRepository _bleRepo;
+  @override
   bool firmwareupdate = false;
   final StreamController<int> _percentageController = StreamController<int>.broadcast();
   @override
   Stream<int> get percentageStream => _percentageController.stream;
 
-  Esp32OtaPackage(this.dataCharacteristic, this.controlCharacteristic);
-
   @override
-  Future<void> updateFirmware(BluetoothDevice device, int firmwareType, BluetoothService service,
-      BluetoothCharacteristic dataUUID, BluetoothCharacteristic controlUUID,
-      {String? binFilePath, String? url}) async {
-    final bleRepo = BleRepository();
-
+  Future<void> updateFirmware({
+    required String deviceId,
+    required String serviceUuid,
+    required String dataCharacteristicUuid,
+    required String controlCharacteristicUuid,
+    required int firmwareType,
+    String? binFilePath,
+    String? url,
+  }) async {
     // Get MTU size from the device
     const int mtuOffsetForChunkSize = 3;
-    int mtuSize = await device.mtu.first;
-    int chunkSize = mtuSize - mtuOffsetForChunkSize;
+    int mtuSize;
+    try {
+      mtuSize = await _bleRepo.requestMtu(deviceId, 515);
+    } catch (_) {
+      mtuSize = 247;
+    }
+    int chunkSize = (mtuSize - mtuOffsetForChunkSize).clamp(20, 512);
 
     print("MTU size for current device $mtuSize");
-
-    // Prepare a byte list to write MTU size to controlCharacteristic
-    Uint8List byteList = Uint8List(2);
-    byteList[0] = chunkSize & 0xFF;
-    byteList[1] = (chunkSize >> 8) & 0xFF;
 
     List<Uint8List> binaryChunks;
 
@@ -99,17 +116,26 @@ class Esp32OtaPackage implements OtaPackage {
     }
 
     // Write x01 to the controlCharacteristic and check if it returns value of 0x02
-    await bleRepo.writeDataCharacteristic(controlCharacteristic, Uint8List.fromList([1]));
+    await _bleRepo.writeCharacteristic(
+      deviceId,
+      serviceUuid,
+      controlCharacteristicUuid,
+      Uint8List.fromList([1]),
+    );
 
     // Read value from controlCharacteristic
-    List<int> value = await bleRepo.readCharacteristic(controlCharacteristic).timeout(Duration(seconds: 10));
-    print('value returned is this ------- ${value[0]}');
+    Uint8List value = await _bleRepo
+      .readCharacteristic(deviceId, serviceUuid, controlCharacteristicUuid)
+      .timeout(Duration(seconds: 10));
+    print('value returned is this ------- ${value.isNotEmpty ? value[0] : 'empty'}');
 
     int packageNumber = 0;
     for (Uint8List chunk in binaryChunks) {
-      await bleRepo.writeDataCharacteristic(dataCharacteristic, chunk).timeout(Duration(seconds: 10), onTimeout: () {
+      await _bleRepo
+          .writeCharacteristic(deviceId, serviceUuid, dataCharacteristicUuid, chunk)
+          .timeout(Duration(seconds: 10), onTimeout: () {
         // If a timeout occurs, throw a custom exception to be caught by the catch block
-         firmwareupdate = false;
+        firmwareupdate = false;
         _percentageController.close();
         throw TimeoutException('Failed to write data chunk #$packageNumber');
       });
@@ -123,10 +149,12 @@ class Esp32OtaPackage implements OtaPackage {
     }
 
     // Check if controlCharacteristic reads 0x05, indicating OTA update finished
-    value = await bleRepo.readCharacteristic(controlCharacteristic).timeout(Duration(seconds: 600));
-    print('value returned is this ------- ${value[0]}');
+    value = await _bleRepo
+        .readCharacteristic(deviceId, serviceUuid, controlCharacteristicUuid)
+        .timeout(Duration(seconds: 600));
+    print('value returned is this ------- ${value.isNotEmpty ? value[0] : 'empty'}');
 
-    if (value[0] == 5) {
+    if (value.isNotEmpty && value[0] == 5) {
       print('BLE OTA update finished');
       firmwareupdate = true; // Firmware update was successful
     } else {
@@ -134,11 +162,6 @@ class Esp32OtaPackage implements OtaPackage {
       firmwareupdate = false; // Firmware update failed
     }
     _percentageController.close();
-  }
-
-  // Convert Uint8List to List<int>
-  List<int> uint8ListToIntList(Uint8List uint8List) {
-    return uint8List.toList();
   }
 
   // Read binary file from assets and split it into chunks

@@ -7,7 +7,7 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
 import '../utils/stream_extensions.dart';
@@ -20,7 +20,7 @@ class DropdownCard extends StatefulWidget {
     required this.c,
   }) : super(key: key);
 
-  final BluetoothDevice device;
+  final BleDevice device;
   final Map c;
 
   @override
@@ -37,7 +37,7 @@ class _DropdownCardState extends State<DropdownCard> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
     buildDevicesMap();
     selectedValue = ddItems.isNotEmpty ? ddItems[0] : null;
     try {
@@ -108,11 +108,11 @@ class _DropdownCardState extends State<DropdownCard> {
       // Assuming writeToSS2k is your method to handle selection
     });
     //reconnect devices
-    this.bleData.writeToSS2k(this.widget.device, this.widget.c);
+    this.bleData.writeToSS2k(this.widget.c);
     this
-        .bleData
-        .customCharacteristic
-        .forEach((d) => d["vName"] == restartBLEVname ? this.bleData.writeToSS2k(this.widget.device, d, s: "1") : ());
+      .bleData
+      .customCharacteristic
+      .forEach((d) => d["vName"] == restartBLEVname ? this.bleData.writeToSS2k(d, s: "1") : ());
   }
 
   Color _getTileColor() {
@@ -248,9 +248,9 @@ class _DropdownCardState extends State<DropdownCard> {
                           onPressed: () {
                             //Find the save command and execute it
                             this
-                                .bleData
-                                .customCharacteristic
-                                .forEach((c) => this.bleData.findNSave(this.widget.device, c, scanBLEVname));
+                              .bleData
+                              .customCharacteristic
+                              .forEach((c) => this.bleData.findNSave(c, scanBLEVname));
                           }),
                       Spacer(),
                       TextButton(
@@ -265,9 +265,9 @@ class _DropdownCardState extends State<DropdownCard> {
                           onPressed: () {
                             //Find the save command and execute it
                             this
-                                .bleData
-                                .customCharacteristic
-                                .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                              .bleData
+                              .customCharacteristic
+                              .forEach((c) => this.bleData.findNSave(c, saveVname));
                             Navigator.pop(context);
                           }),
                     ],

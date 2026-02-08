@@ -8,7 +8,7 @@ import 'dart:async';
 
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import '../utils/bledata.dart';
 import '../utils/extra.dart';
 import '../widgets/metric_card.dart';
@@ -18,7 +18,7 @@ import '../utils/power_table_management.dart';
 import '../utils/stream_extensions.dart';
 
 class PowerTableScreen extends StatefulWidget {
-  final BluetoothDevice device;
+  final BleDevice device;
   const PowerTableScreen({Key? key, required this.device}) : super(key: key);
 
   @override
@@ -26,25 +26,26 @@ class PowerTableScreen extends StatefulWidget {
 }
 
 class _PowerTableScreenState extends State<PowerTableScreen> {
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<bool>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   late BLEData bleData;
   String statusString = '';
   final GlobalKey<PowerTableChartState> _chartKey = GlobalKey<PowerTableChartState>();
+  bool _isConnected = false;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
     // refresh the screen completely every VV seconds.
-    Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
+    Timer.periodic(const Duration(seconds: 15), (refreshTimer) async {
       if (bleData.isUserDisconnect) {
         refreshTimer.cancel();
         return;
       }
-      if (!this.widget.device.isConnected && mounted) {
+      if (!_isConnected && mounted) {
         try {
-          this.widget.device.connectAndUpdateStream();
+          await widget.device.connectAndUpdateStream();
         } catch (e) {
           print("failed to reconnect.");
         }
@@ -55,6 +56,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         }
       }
     });
+    _initializeConnectionTracking();
     // If the data is simulated, wait for a second before calling setState
     if (bleData.isSimulated) {
       Timer(Duration(seconds: 2), () {
@@ -67,7 +69,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         }
       });
     }
-    rwSubscription();
+    _listenForCharacteristicChanges();
   }
 
   @override
@@ -95,18 +97,32 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     return c.isNotEmpty ? (c["value"]?.toString() ?? "-") : "-";
   }
 
-  Future rwSubscription() async {
-    _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
-      if (state == BluetoothConnectionState.connected) {
-        // Request power table data when connection is restored
-        _chartKey.currentState?.requestAllCadenceLines();
-        _chartKey.currentState?.requestHomingValues();
-      }
-      if (mounted) {
-        setState(() {});
-      }
+  void _initializeConnectionTracking() {
+    _loadInitialConnectionState();
+    _connectionStateSubscription = UniversalBle.connectionStream(widget.device.deviceId).listen((connected) {
+      _handleConnectionChange(connected);
     });
-    
+  }
+
+  Future<void> _loadInitialConnectionState() async {
+    try {
+      final state = await UniversalBle.getConnectionState(widget.device.deviceId);
+      await _handleConnectionChange(state == BleConnectionState.connected);
+    } catch (_) {}
+  }
+
+  Future<void> _handleConnectionChange(bool connected) async {
+    _isConnected = connected;
+    if (connected) {
+      _chartKey.currentState?.requestAllCadenceLines();
+      _chartKey.currentState?.requestHomingValues();
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _listenForCharacteristicChanges() async {
     _characteristicChangeSubscription = bleData.characteristicChanges
         .debounce(Duration(milliseconds: 500))
         .listen((event) {
@@ -131,7 +147,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
             tooltip: 'Manage Power Table',
             onPressed: () async {
               _chartKey.currentState?.requestAllCadenceLines();
-              await PowerTableManager.showPowerTableMenu(context, bleData, widget.device);
+              await PowerTableManager.showPowerTableMenu(context, bleData);
             },
           ),
           IconButton(

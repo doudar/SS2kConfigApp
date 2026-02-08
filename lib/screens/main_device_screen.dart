@@ -5,10 +5,12 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+import 'dart:async';
+
 import 'package:ss2kconfigapp/screens/power_table_screen.dart';
 import 'package:ss2kconfigapp/widgets/ss2k_app_bar.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 
 import '../screens/settings_screen.dart';
 import '../screens/shifter_screen.dart';
@@ -21,7 +23,7 @@ import '../utils/extra.dart';
 import '../utils/bledata.dart';
 
 class MainDeviceScreen extends StatefulWidget {
-  final BluetoothDevice device;
+  final BleDevice device;
   const MainDeviceScreen({Key? key, required this.device}) : super(key: key);
 
   @override
@@ -31,57 +33,80 @@ class MainDeviceScreen extends StatefulWidget {
 class _MainDeviceScreenState extends State<MainDeviceScreen> {
   late BLEData bleData;
   bool _maintenanceExpanded = false;
+  StreamSubscription<bool>? _connectionStateSubscription;
+  StreamSubscription<bool>? _connectingSubscription;
+  StreamSubscription<bool>? _disconnectingSubscription;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
     //Are we running a demo?
-    if (this.widget.device.remoteId.toString() == "SmartSpin2k Demo") {
+    if (widget.device.name == "SmartSpin2k Demo") {
       _demoDeviceSetup(context);
       return;
     }
-    this.bleData.connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
-      this.bleData.connectionState = state;
-      if (state == BluetoothConnectionState.connected) {
-        this.bleData.services = []; // must rediscover services
-        this.bleData.rssi.value = await this.widget.device.readRssi();
-      }
-      bleData.setupConnection(this.widget.device);
-    });
+    _initializeConnectionMonitoring();
 
     if (bleData.charReceived.value) {
-      bleData.updateCustomCharacter(this.widget.device);
+      bleData.updateCustomCharacter();
     } else {
       bleData.charReceived.addListener(_crListener);
     }
-    bleData.isConnectingSubscription = this.widget.device.isConnecting.listen((value) {
-      this.bleData.isConnecting = value;
+    _connectingSubscription = widget.device.isConnecting.listen((value) {
+      bleData.isConnecting = value;
       if (mounted) {
         setState(() {});
       }
     });
 
-    this.bleData.isDisconnectingSubscription = this.widget.device.isDisconnecting.listen((value) {
-      this.bleData.isDisconnecting = value;
+    _disconnectingSubscription = widget.device.isDisconnecting.listen((value) {
+      bleData.isDisconnecting = value;
       if (mounted) {
         setState(() {});
       }
     });
   }
 
+  void _initializeConnectionMonitoring() {
+    _loadInitialConnectionState();
+    _connectionStateSubscription = UniversalBle.connectionStream(widget.device.deviceId).listen((connected) {
+      _handleConnectionChange(connected);
+    });
+  }
+
+  Future<void> _loadInitialConnectionState() async {
+    try {
+      final state = await UniversalBle.getConnectionState(widget.device.deviceId);
+      await _handleConnectionChange(state == BleConnectionState.connected);
+    } catch (_) {}
+  }
+
+  Future<void> _handleConnectionChange(bool connected) async {
+    if (connected) {
+      try {
+        bleData.rssi.value = await widget.device.readRssi();
+      } catch (_) {}
+      bleData.services = [];
+      await bleData.setupConnection(forceRediscover: true);
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   void _crListener() {
     if (bleData.charReceived.value) {
-      bleData.updateCustomCharacter(this.widget.device);
+      bleData.updateCustomCharacter();
     }
   }
 
   @override
   void dispose() {
-    this.bleData.connectionStateSubscription?.cancel();
-    this.bleData.isConnectingSubscription?.cancel();
-    this.bleData.isDisconnectingSubscription?.cancel();
-    this.bleData.charReceived.removeListener(_crListener);
+    _connectionStateSubscription?.cancel();
+    _connectingSubscription?.cancel();
+    _disconnectingSubscription?.cancel();
+    bleData.charReceived.removeListener(_crListener);
     super.dispose();
   }
 
@@ -90,12 +115,12 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     // Assuming bleData.services expects a similar structure
     this.bleData.isSimulated = true;
 
-    this.bleData.customCharacteristic.forEach((key) {
+    bleData.customCharacteristic.forEach((key) {
       key["value"] = key["defaultData"] ?? "Default Value";
     });
-    this.bleData.charReceived.value = true;
-    this.bleData.firmwareVersion.value = "24.1.3";
-    this.bleData.configAppCompatibleFirmware = true;
+    bleData.charReceived.value = true;
+    bleData.firmwareVersion.value = "24.1.3";
+    bleData.configAppCompatibleFirmware = true;
   }
 
   Widget _buildCard(String assetPath, String title, VoidCallback onPressed) {

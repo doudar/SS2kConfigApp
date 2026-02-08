@@ -4,63 +4,76 @@
  *
  * SPDX-License-Identifier: GPL-2.0-only
  */
-import 'dart:io';
 import 'dart:async';
+
+import 'package:universal_ble/universal_ble.dart';
 
 import 'utils.dart';
 
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+final Map<String, StreamControllerReemit<bool>> _connectingControllers = {};
+final Map<String, StreamControllerReemit<bool>> _disconnectingControllers = {};
 
-final Map<DeviceIdentifier, StreamControllerReemit<bool>> _cglobal = {};
-final Map<DeviceIdentifier, StreamControllerReemit<bool>> _dglobal = {};
+StreamControllerReemit<bool> _connectingControllerFor(String deviceId) {
+  return _connectingControllers.putIfAbsent(
+    deviceId,
+    () => StreamControllerReemit(initialValue: false),
+  );
+}
 
-/// connect & disconnect + update stream
-extension Extra on BluetoothDevice {
-  // convenience
-  StreamControllerReemit<bool> get _cstream {
-    _cglobal[remoteId] ??= StreamControllerReemit(initialValue: false);
-    return _cglobal[remoteId]!;
-  }
+StreamControllerReemit<bool> _disconnectingControllerFor(String deviceId) {
+  return _disconnectingControllers.putIfAbsent(
+    deviceId,
+    () => StreamControllerReemit(initialValue: false),
+  );
+}
 
-  // convenience
-  StreamControllerReemit<bool> get _dstream {
-    _dglobal[remoteId] ??= StreamControllerReemit(initialValue: false);
-    return _dglobal[remoteId]!;
-  }
+/// Convenience helpers for connect/disconnect state tracking.
+extension Extra on BleDevice {
+  Stream<bool> get isConnecting => _connectingControllerFor(deviceId).stream;
 
-  // get stream
-  Stream<bool> get isConnecting {
-    return _cstream.stream;
-  }
+  Stream<bool> get isDisconnecting => _disconnectingControllerFor(deviceId).stream;
 
-  // get stream
-  Stream<bool> get isDisconnecting {
-    return _dstream.stream;
-  }
-
-  // connect & update stream
-  Future connectAndUpdateStream() async {
-    _cstream.add(true);
-   // bool _connected = false;
-   // while (!_connected) {
-      try {
-        await connect();
-     //   _connected = true;
-      } catch (e) {
-        sleep(Duration(milliseconds: 50));
-      } finally {
-        _cstream.add(false);
-      }
-   // }
-  }
-
-  // disconnect & update stream
-  Future<void> disconnectAndUpdateStream({bool queue = true}) async {
-    _dstream.add(true);
+  Future<void> connectAndUpdateStream({Duration? timeout}) async {
+    final controller = _connectingControllerFor(deviceId);
+    controller.add(true);
     try {
-      await disconnect(queue: queue);
+      await UniversalBle.connect(deviceId, timeout: timeout);
     } finally {
-      _dstream.add(false);
+      controller.add(false);
     }
+  }
+
+  Future<void> disconnectAndUpdateStream({Duration? timeout}) async {
+    final controller = _disconnectingControllerFor(deviceId);
+    controller.add(true);
+    try {
+      await UniversalBle.disconnect(deviceId, timeout: timeout);
+    } finally {
+      controller.add(false);
+    }
+  }
+}
+
+Stream<bool> connectingStreamFor(String deviceId) => _connectingControllerFor(deviceId).stream;
+
+Stream<bool> disconnectingStreamFor(String deviceId) => _disconnectingControllerFor(deviceId).stream;
+
+Future<void> connectDeviceId(String deviceId, {Duration? timeout}) async {
+  final controller = _connectingControllerFor(deviceId);
+  controller.add(true);
+  try {
+    await UniversalBle.connect(deviceId, timeout: timeout);
+  } finally {
+    controller.add(false);
+  }
+}
+
+Future<void> disconnectDeviceId(String deviceId, {Duration? timeout}) async {
+  final controller = _disconnectingControllerFor(deviceId);
+  controller.add(true);
+  try {
+    await UniversalBle.disconnect(deviceId, timeout: timeout);
+  } finally {
+    controller.add(false);
   }
 }

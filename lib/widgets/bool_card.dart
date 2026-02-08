@@ -6,14 +6,14 @@
  */
 
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
 
 
 class boolCard extends StatefulWidget {
-  const boolCard({super.key, required this.device,required this.c});
-  final BluetoothDevice device;
+  const boolCard({super.key, required this.device, required this.c});
+  final BleDevice device;
   final Map c;
   @override
   State<boolCard> createState() => _boolCardState();
@@ -25,7 +25,7 @@ late BLEData bleData;
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
   }
 
 
@@ -95,7 +95,7 @@ late BLEData bleData;
                 inactiveTrackColor: Colors.black26,
                 onChanged: (b) {
                   this.widget.c["value"] = b.toString();
-                  this.bleData.writeToSS2k(this.widget.device, this.widget.c);
+                  this.bleData.writeToSS2k(this.widget.c);
                   setState(() {});
                   return this.widget.c["value"];
                 },
@@ -115,9 +115,9 @@ late BLEData bleData;
                       onPressed: () {
                         //Find the save command and execute it
                         this
-                            .bleData
-                            .customCharacteristic
-                            .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                          .bleData
+                          .customCharacteristic
+                          .forEach((c) => this.bleData.findNSave(c, saveVname));
                         Navigator.pop(context);
                       }),
                   const SizedBox(width: 8),

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../utils/workout/workout_painter.dart';
 import '../utils/workout/workout_metrics.dart';
@@ -23,11 +23,12 @@ import '../widgets/ss2k_app_bar.dart';
 import '../widgets/workout_menu.dart';
 import '../widgets/power_table_chart.dart';
 import '../utils/stream_extensions.dart';
+import '../utils/extra.dart';
 
 enum OverlayMode { none, overview, powerTable }
 
 class WorkoutScreen extends StatefulWidget {
-  final BluetoothDevice device;
+  final BleDevice device;
   const WorkoutScreen({Key? key, required this.device}) : super(key: key);
 
   @override
@@ -46,11 +47,12 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
   bool _didApplyInitialAnimation = false;
   // Guard to prevent animation calls during teardown.
   bool _isDisposing = false;
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<bool>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   final ScrollController _scrollController = ScrollController();
   double _lastScrollPosition = 0;
   final GlobalKey _workoutGraphKey = GlobalKey();
+  bool _isConnected = false;
 
   late AnimationController _zoomController;
   late Animation<double> _zoomAnimation;
@@ -110,13 +112,14 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
   void initState() {
     super.initState();
     WakelockPlus.enable();
-    bleData = BLEDataManager.forDevice(widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
     _workoutController = WorkoutController(bleData, widget.device);
     _initTTSSettings();
     _initializeAnimationControllers();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      rwSubscription();
+      _initializeConnectionTracking();
+      _listenForCharacteristicChanges();
       if (_workoutController.segments.isEmpty) {
         _loadDefaultWorkout();
       } else if (_workoutController.isPlaying && mounted) {
@@ -180,14 +183,14 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     };
     _workoutController.addListener(_workoutControllerListener);
 
-    Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
+    Timer.periodic(const Duration(seconds: 15), (refreshTimer) async {
       if (bleData.isUserDisconnect) {
         refreshTimer.cancel();
         return;
       }
-      if (!widget.device.isConnected) {
+      if (!_isConnected) {
         try {
-          widget.device.connect();
+          await widget.device.connectAndUpdateStream();
         } catch (e) {
           print("failed to reconnect.");
         }
@@ -327,14 +330,28 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     });
   }
 
-  Future<void> rwSubscription() async {
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
-      if (mounted) {
-        setState(() {});
-      }
+  void _initializeConnectionTracking() {
+    _loadInitialConnectionState();
+    _connectionStateSubscription = UniversalBle.connectionStream(widget.device.deviceId).listen((connected) {
+      _handleConnectionChange(connected);
     });
+  }
 
+  Future<void> _loadInitialConnectionState() async {
+    try {
+      final state = await UniversalBle.getConnectionState(widget.device.deviceId);
+      await _handleConnectionChange(state == BleConnectionState.connected);
+    } catch (_) {}
+  }
 
+  Future<void> _handleConnectionChange(bool connected) async {
+    _isConnected = connected;
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _listenForCharacteristicChanges() async {
     _characteristicChangeSubscription = bleData.characteristicChanges
         .debounce(const Duration(milliseconds: 500))
         .listen((event) {

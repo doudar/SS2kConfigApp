@@ -14,7 +14,7 @@ import 'constants.dart';
 import 'ftmsControlPoint.dart';
 import 'bleConstants.dart';
 
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import '../utils/snackbar.dart';
 
 /// Event model for characteristic changes
@@ -35,19 +35,23 @@ class CharacteristicChangeEvent {
 class BLEDataManager {
   static final Map<String, BLEData> _dataMap = {};
 
-  static BLEData forDevice(BluetoothDevice device) {
-    if (!_dataMap.containsKey(device.remoteId.str)) {
-      _dataMap[device.remoteId.str] = BLEData();
-    }
-    return _dataMap[device.remoteId.str]!;
+  static BLEData forDeviceId(String deviceId, {bool isSimulated = false}) {
+    return _dataMap.putIfAbsent(
+      deviceId,
+      () => BLEData(deviceId: deviceId, isSimulated: isSimulated),
+    );
   }
 
-  static void updateDataForDevice(BluetoothDevice device, BLEData data) {
-    _dataMap[device.remoteId.str] = data;
+  static BLEData forBleDevice(BleDevice device, {bool isSimulated = false}) {
+    return forDeviceId(device.deviceId, isSimulated: isSimulated);
   }
 
-  static void clearDataForDevice(BluetoothDevice device) {
-    _dataMap.remove(device.remoteId.str);
+  static void updateDataForDevice(String deviceId, BLEData data) {
+    _dataMap[deviceId] = data;
+  }
+
+  static void clearDataForDevice(String deviceId) {
+    _dataMap.remove(deviceId);
   }
 }
 
@@ -93,23 +97,18 @@ class FtmsData {
 }
 
 class BLEData {
+  BLEData({required this.deviceId, this.isSimulated = false});
+
+  final String deviceId;
+
   bool isUserDisconnect = false;
   ValueNotifier<int> rssi = ValueNotifier(0);
   ValueNotifier<bool> charReceived = ValueNotifier(false);
   DateTime? lastFtmsUpdate;
-  StreamSubscription<BluetoothConnectionState>? connectionStateSubscription;
-  StreamSubscription<bool>? isConnectingSubscription;
-  StreamSubscription<bool>? isDisconnectingSubscription;
-  StreamSubscription<List<int>>? _notifySubscription;
-  StreamSubscription<List<int>>? _ftmsSubscription;
-  late BluetoothService firmwareService;
-  late BluetoothCharacteristic firmwareDataCharacteristic;
-  late BluetoothCharacteristic firmwareControlCharacteristic;
-  BluetoothCharacteristic? _myCharacteristic;
-  BluetoothCharacteristic? ftmsControlPointCharacteristic;
-  BluetoothCharacteristic? indoorBikeCharacteristic;
-  BluetoothConnectionState connectionState = BluetoothConnectionState.disconnected;
-  List<BluetoothService> services = [];
+  StreamSubscription<bool>? _connectionStateSubscription;
+  StreamSubscription<Uint8List>? _notifySubscription;
+  StreamSubscription<Uint8List>? _ftmsSubscription;
+  List<BleService> services = [];
   FtmsData ftmsData = FtmsData();
   bool isSimulated = false; //Is this a demo device?
   bool isConnecting = false;
@@ -117,8 +116,6 @@ class BLEData {
   bool configAppCompatibleFirmware = false;
   bool isUpdatingFirmware = false;
   ValueNotifier<String> firmwareVersion = ValueNotifier("");
-  
-  // Create a broadcast stream controller for logs
   final StreamController<String> _logStreamController = StreamController<String>.broadcast();
   Stream<String> get logStream => _logStreamController.stream;
 
@@ -128,13 +125,10 @@ class BLEData {
   bool simulateTargetWatts = false;
   double tableDivisor = 10.0; // Default divisor for power table data
 
-  // Stream controller for characteristic changes
   final StreamController<CharacteristicChangeEvent> _characteristicChangeController =
       StreamController<CharacteristicChangeEvent>.broadcast();
 
-  /// Stream of characteristic changes
   Stream<CharacteristicChangeEvent> get characteristicChanges => _characteristicChangeController.stream;
-
 
   List<List<int?>> powerTableData = List.generate(
     10,
@@ -142,17 +136,39 @@ class BLEData {
   );
 
   var customCharacteristic = customCharacteristicFramework;
-  
+
   Map<int, Map>? _cachedCharacteristicMap;
+
+  _CharacteristicHandle? _customCharacteristicHandle;
+  _CharacteristicHandle? _firmwareDataHandle;
+  _CharacteristicHandle? _firmwareControlHandle;
+  _CharacteristicHandle? _ftmsControlPointHandle;
+  _CharacteristicHandle? _indoorBikeHandle;
+
+  String? get ftmsServiceUuid => _ftmsControlPointHandle?.serviceUuid;
+  String? get ftmsCharacteristicUuid => _ftmsControlPointHandle?.characteristicUuid;
+  String? get firmwareServiceUuid =>
+      _firmwareDataHandle?.serviceUuid ?? _firmwareControlHandle?.serviceUuid;
+  String? get firmwareDataCharacteristicUuid => _firmwareDataHandle?.characteristicUuid;
+  String? get firmwareControlCharacteristicUuid => _firmwareControlHandle?.characteristicUuid;
+  String? get indoorBikeServiceUuid => _indoorBikeHandle?.serviceUuid;
+  String? get indoorBikeCharacteristicUuid => _indoorBikeHandle?.characteristicUuid;
+
+  bool subscribed = false;
+  final _lastRequestStopwatch = Stopwatch();
+  bool _inUpdateLoop = false;
+
+  bool _customNotificationsActive = false;
+  bool _ftmsNotificationsActive = false;
 
   void _ensureCachedMap() {
     if (_cachedCharacteristicMap == null) {
       _cachedCharacteristicMap = {};
-      for (var c in this.customCharacteristic) {
+      for (var c in customCharacteristic) {
         try {
           _cachedCharacteristicMap![int.parse(c["reference"])] = c;
         } catch (e) {
-          print("Error parsing characteristic reference: $e");
+          debugPrint("Error parsing characteristic reference: $e");
         }
       }
     }
@@ -174,382 +190,394 @@ class BLEData {
     return value;
   }
 
-  setupConnection(BluetoothDevice device) async {
-  if (device.isConnected) {
-    await _discoverServices(device);
-    this.subscribed = false;
-    if (services.length > 1) {
-      await _findChar();
-      await updateCustomCharacter(device);
-      
-      // Set up target power change listener
-      ftmsData.onTargetPowerChanged = (int newPower) async {
-        if (ftmsControlPointCharacteristic != null) {
-          try {
-            await FTMSControlPoint.writeTargetPower(
-              ftmsControlPointCharacteristic!,
-              newPower,
-            );
-          } catch (e) {
-            print('Error writing target power to FTMS: $e');
-          }
-        }
-      };
+  Future<void> setupConnection({bool forceRediscover = false}) async {
+    if (isSimulated) return;
 
-      // Set up mode change listener
-      ftmsData.onModeChanged = (bool toSimulation) async {
-        if (ftmsControlPointCharacteristic != null) {
-          try {
-            if (toSimulation) {
-              // Switch to simulation mode with 0 incline
-              await FTMSControlPoint.writeIndoorBikeSimulation(
-                ftmsControlPointCharacteristic!,
-                windSpeed: 0,
-                grade: 0,
-                crr: 0,
-                cw: 0,
-              );
-            }
-          } catch (e) {
-            print('Error switching FTMS mode: $e');
-          }
-        }
-      };
-    }
-  }
-}
+    _listenToConnectionState();
 
-  BluetoothCharacteristic getMyCharacteristic(BluetoothDevice device) {
-    late BluetoothCharacteristic _char;
-
-    if (device.isConnected) {
-      _discoverServices(device);
-      if (services.length > 1) {
-        _findChar();
-      }
-    }
-    if (_myCharacteristic != null) {
-      charReceived.value = true;
-      _char = _myCharacteristic!;
-    } else {
+    final state = await UniversalBle.getConnectionState(deviceId);
+    if (state == BleConnectionState.disconnected) {
       charReceived.value = false;
+      return;
     }
-    return _char;
+
+    await _discoverServices(force: forceRediscover);
+    if (services.isEmpty) return;
+
+    _cacheCharacteristicHandles();
+    subscribed = false;
+
+    if (_customCharacteristicHandle != null) {
+      await updateCustomCharacter();
+    }
+
+    _configureFtmsCallbacks();
   }
 
-  Future _discoverServices(BluetoothDevice device) async {
-    if (this.isSimulated) return;
-    try {
-      if (services.length < 1) {
-        services = await device.discoverServices();
-      }
-    } catch (e) {
-      print(e);
-    }
-  }
-
-  Future _findChar() async {
-    if (this.isSimulated) return;
-    while (!charReceived.value) {
-      try {
-        // custom characteristic
-        BluetoothService cs = services.first;
-        for (BluetoothService s in services) {
-          if (s.uuid == Guid(csUUID)) {
-            cs = s;
-            break;
-          }
-        }
-          List<BluetoothCharacteristic> characteristics = cs.characteristics;
-          for (BluetoothCharacteristic c in characteristics) {
-            if (c.uuid == Guid(ccUUID)) {
-              _myCharacteristic = c;
-              _myCharacteristic!.setNotifyValue(true);
-            }
-          }
-          // firmware
-          for (BluetoothService s in services) {
-            if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {
-              firmwareService = s;
-              configAppCompatibleFirmware = true;
-              break;
-            }
-          }
-          if (configAppCompatibleFirmware) {
-            characteristics = firmwareService.characteristics;
-            for (BluetoothCharacteristic c in characteristics) {
-              print(c.uuid.toString());
-              if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130005")) {
-                firmwareDataCharacteristic = c;
-              }
-              if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130003")) {
-                firmwareControlCharacteristic = c;
-              }
-            }
-          }
-          //ftms
-          BluetoothService ftmsService = services.first;
-          for (BluetoothService s in services) {
-            if (s.uuid == Guid(ftmsServiceUUID)) {
-              ftmsService = s;
-              characteristics = ftmsService.characteristics;
-              break;
-            }
-          }
-          for (BluetoothCharacteristic c in characteristics) {
-            if (c.uuid == Guid(ftmsIndoorBikeDataUUID)) {
-              indoorBikeCharacteristic = c;
-              indoorBikeCharacteristic!.setNotifyValue(true);
-              print("subscribed to indoor bike characteristic");
-            }
-            if (c.uuid == Guid(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID)) {
-              ftmsControlPointCharacteristic = c;
-              ftmsControlPointCharacteristic!.setNotifyValue(true);
-              print("subscribed to ftms control point characteristic");
-            }
-          }
-          charReceived.value = true;
-      } catch (e) {
+  void _listenToConnectionState() {
+    _connectionStateSubscription ??= UniversalBle.connectionStream(deviceId).listen((connected) {
+      if (!connected) {
+        _teardownStreams();
         charReceived.value = false;
       }
+    });
+  }
+
+  void _teardownStreams() {
+    _notifySubscription?.cancel();
+    _notifySubscription = null;
+    _ftmsSubscription?.cancel();
+    _ftmsSubscription = null;
+    if (_customNotificationsActive && _customCharacteristicHandle != null) {
+      unawaited(UniversalBle.unsubscribe(
+        deviceId,
+        _customCharacteristicHandle!.serviceUuid,
+        _customCharacteristicHandle!.characteristicUuid,
+      ));
     }
+    if (_ftmsNotificationsActive && _indoorBikeHandle != null) {
+      unawaited(UniversalBle.unsubscribe(
+        deviceId,
+        _indoorBikeHandle!.serviceUuid,
+        _indoorBikeHandle!.characteristicUuid,
+      ));
+    }
+    _customNotificationsActive = false;
+    _ftmsNotificationsActive = false;
+    subscribed = false;
+  }
+
+  Future<void> _discoverServices({bool force = false}) async {
+    if (isSimulated) return;
+    if (services.isNotEmpty && !force) return;
+    try {
+      services = await UniversalBle.discoverServices(deviceId, withDescriptors: true);
+    } catch (e) {
+      debugPrint('discoverServices failed: $e');
+      services = [];
+    }
+  }
+
+  static final String _customServiceUuid = BleUuidParser.string(csUUID);
+  static final String _customCharacteristicUuid = BleUuidParser.string(ccUUID);
+  static final String _firmwareServiceUuid = BleUuidParser.string("4FAFC201-1FB5-459E-8FCC-C5C9C331914B");
+  static final String _firmwareDataUuid = BleUuidParser.string("62ec0272-3ec5-11eb-b378-0242ac130005");
+  static final String _firmwareControlUuid = BleUuidParser.string("62ec0272-3ec5-11eb-b378-0242ac130003");
+  static final String _ftmsServiceUuid = BleUuidParser.string(ftmsServiceUUID);
+  static final String _ftmsIndoorBikeUuid = BleUuidParser.string(ftmsIndoorBikeDataUUID);
+  static final String _ftmsControlPointUuid = BleUuidParser.string(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID);
+
+  void _cacheCharacteristicHandles() {
+    if (isSimulated) return;
+
+    for (final service in services) {
+      final serviceUuid = BleUuidParser.string(service.uuid);
+
+      if (serviceUuid == _customServiceUuid) {
+        for (final characteristic in service.characteristics) {
+          final charUuid = BleUuidParser.string(characteristic.uuid);
+          if (charUuid == _customCharacteristicUuid) {
+            _customCharacteristicHandle = _CharacteristicHandle(serviceUuid, charUuid);
+            charReceived.value = true;
+          }
+        }
+      } else if (serviceUuid == _firmwareServiceUuid) {
+        configAppCompatibleFirmware = true;
+        for (final characteristic in service.characteristics) {
+          final charUuid = BleUuidParser.string(characteristic.uuid);
+          if (charUuid == _firmwareDataUuid) {
+            _firmwareDataHandle = _CharacteristicHandle(serviceUuid, charUuid);
+          } else if (charUuid == _firmwareControlUuid) {
+            _firmwareControlHandle = _CharacteristicHandle(serviceUuid, charUuid);
+          }
+        }
+      } else if (serviceUuid == _ftmsServiceUuid) {
+        for (final characteristic in service.characteristics) {
+          final charUuid = BleUuidParser.string(characteristic.uuid);
+          if (charUuid == _ftmsIndoorBikeUuid) {
+            _indoorBikeHandle = _CharacteristicHandle(serviceUuid, charUuid);
+          } else if (charUuid == _ftmsControlPointUuid) {
+            _ftmsControlPointHandle = _CharacteristicHandle(serviceUuid, charUuid);
+          }
+        }
+      }
+    }
+  }
+
+  void _configureFtmsCallbacks() {
+    ftmsData.onTargetPowerChanged = (int newPower) async {
+      final handle = _ftmsControlPointHandle;
+      if (handle == null) return;
+      try {
+        await FTMSControlPoint.writeTargetPower(
+          deviceId: deviceId,
+          serviceUuid: handle.serviceUuid,
+          characteristicUuid: handle.characteristicUuid,
+          targetPower: newPower,
+        );
+      } catch (e) {
+        debugPrint('Error writing target power to FTMS: $e');
+      }
+    };
+
+    ftmsData.onModeChanged = (bool toSimulation) async {
+      final handle = _ftmsControlPointHandle;
+      if (!toSimulation || handle == null) return;
+      try {
+        await FTMSControlPoint.writeIndoorBikeSimulation(
+          deviceId: deviceId,
+          serviceUuid: handle.serviceUuid,
+          characteristicUuid: handle.characteristicUuid,
+          windSpeed: 0,
+          grade: 0,
+          crr: 0,
+          cw: 0,
+        );
+      } catch (e) {
+        debugPrint('Error switching FTMS mode: $e');
+      }
+    };
   }
 
   ///Data Helpers****************************************************************
 
-  bool subscribed = false;
-  final _lastRequestStopwatch = Stopwatch();
-// only used as a flag to prevent multiple concurrent instances of updateCustomCharacter
-  bool _inUpdateLoop = false;
+  Future<void> updateCustomCharacter() async {
+    if (isSimulated || _customCharacteristicHandle == null) return;
+    if (_inUpdateLoop) return;
 
-  Future updateCustomCharacter(BluetoothDevice device) async {
-    if (this.isSimulated) return;
-    if (_inUpdateLoop) {
-      return;
-    }
-    if (Platform.isAndroid) {
-      try {
-        device.requestMtu(515);
-      } catch (e) {}
-    }
     _inUpdateLoop = true;
-    if (!subscribed) {
-      decode(device);
-      updateIndoorBikeData(device);
+    try {
+      if (Platform.isAndroid) {
+        try {
+          await UniversalBle.requestMtu(deviceId, 515);
+        } catch (_) {}
+      }
+
+      if (!subscribed || !_customNotificationsActive) {
+        await decode();
+        await updateIndoorBikeData();
+        subscribed = true;
+      }
+
+      if (!_lastRequestStopwatch.isRunning) {
+        await requestSettings();
+        _lastRequestStopwatch.start();
+      } else if (_lastRequestStopwatch.elapsed > const Duration(seconds: 5)) {
+        _lastRequestStopwatch
+          ..reset();
+        await requestSettings();
+      }
+    } finally {
+      _inUpdateLoop = false;
     }
-    if(!_myCharacteristic!.isNotifying){
-      _myCharacteristic!.setNotifyValue(true);
-    }
-    if (!_lastRequestStopwatch.isRunning) {
-      await requestSettings(device);
-      _lastRequestStopwatch.start();
-    } else if (_lastRequestStopwatch.elapsed > Duration(seconds: 5)) {
-      _lastRequestStopwatch.reset();
-      await requestSettings(device);
-    }
-    _inUpdateLoop = false;
   }
 
-  void updateIndoorBikeData(device) {
-    try {
-      if (!indoorBikeCharacteristic!.isNotifying) {
-        indoorBikeCharacteristic!.setNotifyValue(true);
-      }
-      ;
-    } catch (e) {
-      print("no FTMS characteristic");
+  Future<void> _ensureCustomNotifications() async {
+    if (_customNotificationsActive) return;
+    final handle = _customCharacteristicHandle;
+    if (handle == null) return;
+    await UniversalBle.subscribeNotifications(deviceId, handle.serviceUuid, handle.characteristicUuid);
+    _customNotificationsActive = true;
+  }
+
+  Future<void> updateIndoorBikeData() async {
+    if (isSimulated || _indoorBikeHandle == null) return;
+
+    final handle = _indoorBikeHandle!;
+    await UniversalBle.subscribeNotifications(deviceId, handle.serviceUuid, handle.characteristicUuid);
+
+    _ftmsSubscription?.cancel();
+    _ftmsSubscription = UniversalBle.characteristicValueStream(deviceId, handle.characteristicUuid).listen(
+      _handleFtmsValue,
+      onError: (Object e) => debugPrint('Error in FTMS subscription: $e'),
+    );
+    _ftmsNotificationsActive = true;
+  }
+
+  Future<void> pauseFtmsNotifications() async {
+    if (_indoorBikeHandle == null || !_ftmsNotificationsActive) {
       return;
     }
-
-    // TODO handle cancelling subscription
-    _ftmsSubscription?.cancel();
-
-    _ftmsSubscription = indoorBikeCharacteristic!.onValueReceived.listen((value) {
-      lastFtmsUpdate = DateTime.now();
-      if (value.length < 2) {
-        throw ArgumentError('FTMS Characteristic data list is too short');
-      }
-      Uint8List data = Uint8List.fromList(value);
-      ByteData byteData = ByteData.sublistView(data);
-
-      int flags = byteData.getUint16(0, Endian.little);
-      int index = 2;
-
-      // Print flags in binary format for debugging
-      String binaryFlags = flags.toRadixString(2).padLeft(16, '0');
-      print('Flags (binary): $binaryFlags');
-
-      // Reset fields
-      ftmsData.cadence = 0;
-      ftmsData.watts = 0;
-      ftmsData.heartRate = 0;
-      ftmsData.speed = 0;
-
-      ftmsData.speed = byteData.getUint16(index, Endian.little) ~/ 100; // resolution 0.01
-      index += 2;
-
-      if ((flags & (1 << 1)) != 0) {
-        //not used
-        index += 2;
-      }
-
-      if ((flags & (1 << 2)) != 0) {
-        ftmsData.cadence = byteData.getUint16(index, Endian.little) ~/ 2; // resolution 0.5
-        index += 2;
-      }
-
-      if ((flags & (1 << 3)) != 0) {
-        // not used
-        index += 2;
-      }
-      if ((flags & (1 << 4)) != 0) {
-        //not used
-        index += 3;
-      }
-
-      if ((flags & (1 << 5)) != 0) {
-        ftmsData.resistance = byteData.getInt16(index, Endian.little);
-        index += 2;
-      }
-
-      if ((flags & (1 << 6)) != 0) {
-        ftmsData.watts = byteData.getInt16(index, Endian.little);
-        index += 2;
-      }
-
-      if ((flags & (1 << 7)) != 0) {
-        //not used
-        index += 2;
-      }
-      if ((flags & (1 << 8)) != 0) {
-        //not used
-        index += 1;
-      }
-
-      if ((flags & (1 << 9)) != 0) {
-        ftmsData.heartRate = byteData.getUint8(index);
-        index += 1;
-      }
-      
-      // Emit a characteristic change event for FTMS data updates
-      if (!_characteristicChangeController.isClosed) {
-        _characteristicChangeController.add(CharacteristicChangeEvent(
-          vName: "FTMS_DATA",
-          reference: "FTMS",
-          value: "updated",
-          type: "ftms",
-        ));
-      }
-    }, onError: (Object e) {
-      print('Error in FTMS subscription: $e');
-    });
-    device.cancelWhenDisconnected(_ftmsSubscription!);
+    try {
+      await UniversalBle.unsubscribe(
+        deviceId,
+        _indoorBikeHandle!.serviceUuid,
+        _indoorBikeHandle!.characteristicUuid,
+      );
+    } catch (e) {
+      debugPrint('Error pausing FTMS notifications: $e');
+    } finally {
+      _ftmsSubscription?.cancel();
+      _ftmsSubscription = null;
+      _ftmsNotificationsActive = false;
+    }
   }
 
-  /// Checks the health of the FTMS data stream and attempts to recover if stalled
-  Future<void> checkFtmsHealth(BluetoothDevice device) async {
-    if (isSimulated || !device.isConnected) return;
+  Future<void> resumeFtmsNotifications() async {
+    await updateIndoorBikeData();
+  }
+
+  void _handleFtmsValue(Uint8List value) {
+    lastFtmsUpdate = DateTime.now();
+    if (value.length < 2) {
+      throw ArgumentError('FTMS Characteristic data list is too short');
+    }
+    ByteData byteData = ByteData.sublistView(value);
+
+    int flags = byteData.getUint16(0, Endian.little);
+    int index = 2;
+
+    String binaryFlags = flags.toRadixString(2).padLeft(16, '0');
+    debugPrint('FTMS flags: $binaryFlags');
+
+    ftmsData.cadence = 0;
+    ftmsData.watts = 0;
+    ftmsData.heartRate = 0;
+    ftmsData.speed = 0;
+
+    ftmsData.speed = byteData.getUint16(index, Endian.little) ~/ 100;
+    index += 2;
+
+    if ((flags & (1 << 1)) != 0) {
+      index += 2;
+    }
+
+    if ((flags & (1 << 2)) != 0) {
+      ftmsData.cadence = byteData.getUint16(index, Endian.little) ~/ 2;
+      index += 2;
+    }
+
+    if ((flags & (1 << 3)) != 0) {
+      index += 2;
+    }
+    if ((flags & (1 << 4)) != 0) {
+      index += 3;
+    }
+
+    if ((flags & (1 << 5)) != 0) {
+      ftmsData.resistance = byteData.getInt16(index, Endian.little);
+      index += 2;
+    }
+
+    if ((flags & (1 << 6)) != 0) {
+      ftmsData.watts = byteData.getInt16(index, Endian.little);
+      index += 2;
+    }
+
+    if ((flags & (1 << 7)) != 0) {
+      index += 2;
+    }
+    if ((flags & (1 << 8)) != 0) {
+      index += 1;
+    }
+
+    if ((flags & (1 << 9)) != 0) {
+      ftmsData.heartRate = byteData.getUint8(index);
+    }
+
+    if (!_characteristicChangeController.isClosed) {
+      _characteristicChangeController.add(CharacteristicChangeEvent(
+        vName: "FTMS_DATA",
+        reference: "FTMS",
+        value: "updated",
+        type: "ftms",
+      ));
+    }
+  }
+
+  Future<void> checkFtmsHealth() async {
+    if (isSimulated || _indoorBikeHandle == null) return;
 
     final now = DateTime.now();
     const watchdogTimeout = Duration(seconds: 3);
 
-    // If we have received data before, and it's been more than watchdogTimeout
     if (lastFtmsUpdate != null && now.difference(lastFtmsUpdate!) > watchdogTimeout) {
-      print('FTMS connection appears stalled (last update: $lastFtmsUpdate). Attempting recovery...');
-      
+      debugPrint('FTMS connection appears stalled (last update: $lastFtmsUpdate). Attempting recovery...');
       try {
-        if (indoorBikeCharacteristic != null) {
-          // Toggle notifications to reset the stream
-          await indoorBikeCharacteristic!.setNotifyValue(false);
-          await Future.delayed(const Duration(milliseconds: 200));
-          await indoorBikeCharacteristic!.setNotifyValue(true);
-          
-          // Force internal tracking update
-          lastFtmsUpdate = DateTime.now(); // Reset to avoid loop
-        }
+        final handle = _indoorBikeHandle!;
+        await UniversalBle.unsubscribe(deviceId, handle.serviceUuid, handle.characteristicUuid);
+        await Future.delayed(const Duration(milliseconds: 200));
+        _ftmsNotificationsActive = false;
+        await updateIndoorBikeData();
+        lastFtmsUpdate = DateTime.now();
       } catch (e) {
-        print('Error attempting FTMS recovery: $e');
+        debugPrint('Error attempting FTMS recovery: $e');
       }
-    } else if (lastFtmsUpdate == null && indoorBikeCharacteristic != null) {
-         // If we have a characteristic but never received a packet, try enabling notify
-         try {
-             if (!indoorBikeCharacteristic!.isNotifying) {
-                 print('FTMS never received data and not notifying. enabling...');
-                 await indoorBikeCharacteristic!.setNotifyValue(true);
-             }
-         } catch(e) {
-             print('Error checking FTMS notify status: $e');
-         }
+    } else if (lastFtmsUpdate == null && !_ftmsNotificationsActive) {
+      await updateIndoorBikeData();
     }
   }
 
-  void findNSave(BluetoothDevice device, Map c, String find) {
-    if (this.isSimulated) return;
-    // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
-    if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
+  Future<void> findNSave(Map c, String find) async {
+    if (isSimulated) return;
+    if (!configAppCompatibleFirmware && c["vName"] == saveVname) {
       return;
     }
     if (c["vName"] == find) {
-      try {
-        write(device, [0x02, int.parse(c["reference"]), 0x01]);
-      } catch (e) {
-        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
-      }
+      await write([0x02, int.parse(c["reference"]), 0x01]);
     }
   }
 
-  Future saveAllSettings(BluetoothDevice device) async {
-    if (this.isSimulated) return;
-    await this.customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2k(device, c) : ());
-    await this.customCharacteristic.forEach((c) => findNSave(device, c, saveVname));
+  Future<void> saveAllSettings() async {
+    if (isSimulated) return;
+    for (var c in customCharacteristic) {
+      if (c["isSetting"] == true) {
+        await writeToSS2k(c);
+      }
+    }
+    for (var c in customCharacteristic) {
+      await findNSave(c, saveVname);
+    }
   }
 
-  Future reboot(BluetoothDevice device) async {
-    if (this.isSimulated) return;
-    await this.customCharacteristic.forEach((c) => findNSave(device, c, rebootVname));
+  Future<void> reboot() async {
+    if (isSimulated) return;
+    for (var c in customCharacteristic) {
+      await findNSave(c, rebootVname);
+    }
   }
 
-  Future resetToDefaults(BluetoothDevice device) async {
-    if (this.isSimulated) return;
-    await this.customCharacteristic.forEach((c) => findNSave(device, c, resetVname));
+  Future<void> resetToDefaults() async {
+    if (isSimulated) return;
+    for (var c in customCharacteristic) {
+      await findNSave(c, resetVname);
+    }
   }
 
-  Future resetPowerTable(BluetoothDevice device) async {
-    if (this.isSimulated) return;
-    await this.customCharacteristic.forEach((c) => findNSave(device, c, resetPowerTableVname));
+  Future<void> resetPowerTable() async {
+    if (isSimulated) return;
+    for (var c in customCharacteristic) {
+      await findNSave(c, resetPowerTableVname);
+    }
   }
 
-//request all settings
-  Future requestSettings(BluetoothDevice device) async {
-    if (this.isSimulated) return;
-    
-    for (var c in this.customCharacteristic) {
-      // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
-      if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
+  Future<void> requestSettings() async {
+    if (isSimulated) return;
+
+    for (var c in customCharacteristic) {
+      if (!configAppCompatibleFirmware && c["vName"] == saveVname) {
         continue;
       }
 
-      // Do not poll for BLE logging as it floods the connection. We rely on notifications for this.
       if (c["vName"] == BLE_logStreamVname) {
         continue;
       }
 
       try {
-        await Future.delayed(Duration(milliseconds: 50));
-        await write(device, [0x01, int.parse(c["reference"])]);
+        await Future.delayed(const Duration(milliseconds: 50));
+        await write([0x01, int.parse(c["reference"])], withResponse: true);
       } catch (e) {
         Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
       }
     }
   }
 
-//request single setting
-  Future requestSetting(BluetoothDevice device, String name, {int? extraByte}) async {
-    if (this.isSimulated) return;
-    _request(Map c) {
-      // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
-      if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
-        return;
+  Future<void> requestSetting(String name, {int? extraByte}) async {
+    if (isSimulated) return;
+
+    for (var c in customCharacteristic) {
+      if (!configAppCompatibleFirmware && c["vName"] == saveVname) {
+        continue;
       }
       if (c["vName"] == name) {
         try {
@@ -557,16 +585,12 @@ class BLEData {
           if (extraByte != null) {
             value.add(extraByte);
           }
-          write(device, value);
+          await write(value, withResponse: true);
         } catch (e) {
           Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
         }
-      } else {
-        // skipped
       }
     }
-
-    await this.customCharacteristic.forEach((c) => _request(c));
   }
 
   int getPrecision(Map c) {
@@ -583,8 +607,8 @@ class BLEData {
     return precision;
   }
 
-  void writeToSS2k(BluetoothDevice device, Map c, {String s = ""}) {
-    if (this.isSimulated) return;
+  Future<void> writeToSS2k(Map c, {String s = ""}) async {
+    if (isSimulated) return;
     //If a specific value wasn't passed, use the previously saved value
     if (s == "") {
       s = c["value"];
@@ -662,9 +686,8 @@ class BLEData {
           // Combine the request, reference, and row data
           List<int> rowToSend = [0x02, int.parse(c["reference"]), rowIndex + 1] + rowValue;
 
-          // Write the data to the device
           try {
-            write(device, rowToSend);
+            await write(rowToSend);
           } catch (e) {
             Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
             return;
@@ -676,33 +699,41 @@ class BLEData {
       //value = [0xff];
     }
     try {
-      write(device, value);
+      await write(value);
     } catch (e) {
       Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
   }
 
-  Future<void> write(BluetoothDevice device, List<int> value) async {
-    if (this.isSimulated) return;
-    if (this.getMyCharacteristic(device).device.isConnected) {
-      try {
-        await this.getMyCharacteristic(device).write(value);
-      } catch (e) {
-        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
-      }
-    } else {
-      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k - Net Connected", success: false);
+  Future<void> write(List<int> value, {bool withResponse = true}) async {
+    if (isSimulated) return;
+    final handle = _customCharacteristicHandle;
+    if (handle == null) {
+      Snackbar.show(ABC.c, "No SmartSpin2K characteristic", success: false);
+      return;
+    }
+    try {
+      await UniversalBle.write(
+        deviceId,
+        handle.serviceUuid,
+        handle.characteristicUuid,
+        Uint8List.fromList(value),
+        withoutResponse: !withResponse,
+      );
+    } catch (e) {
+      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
   }
 
-  void decode(BluetoothDevice device) {
-    if (this.isSimulated) return;
+  Future<void> decode() async {
+    if (isSimulated || _customCharacteristicHandle == null) return;
 
     subscribed = true;
     _ensureCachedMap();
+    await _ensureCustomNotifications();
 
     _notifySubscription?.cancel();
-    _notifySubscription = this.getMyCharacteristic(device).onValueReceived.listen((value) {
+    _notifySubscription = UniversalBle.characteristicValueStream(deviceId, _customCharacteristicHandle!.characteristicUuid).listen((value) {
       try {
         if (value.isEmpty) return;
 
@@ -860,8 +891,7 @@ class BLEData {
       } catch (e) {
         print("Error decoding BLE data: $e");
       }
-    }); //VV This is handled by the subscription flag.
-    device.cancelWhenDisconnected(_notifySubscription!);
+    });
   }
 
   /// Helper method to emit characteristic change events
@@ -880,4 +910,11 @@ class BLEData {
   void dispose() {
     _characteristicChangeController.close();
   }
+}
+
+class _CharacteristicHandle {
+  _CharacteristicHandle(this.serviceUuid, this.characteristicUuid);
+
+  final String serviceUuid;
+  final String characteristicUuid;
 }

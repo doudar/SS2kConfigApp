@@ -8,7 +8,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import './bledata.dart';
 import './snackbar.dart';
 import './power_table_sharing.dart';
@@ -18,6 +18,25 @@ class PowerTableManager {
   static const String _powerTablesListKey = 'power_tables_list';
   static const String _powerTablePrefix = 'power_table_';
 
+  static Future<bool> _ensureDeviceConnected(BuildContext context, BLEData bleData) async {
+    if (bleData.isSimulated) {
+      return true;
+    }
+    try {
+      final state = await UniversalBle.getConnectionState(bleData.deviceId);
+      if (state == BleConnectionState.connected) {
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Failed to determine connection state: $e');
+    }
+
+    if (context.mounted) {
+      Snackbar.show(ABC.c, "Device not connected", success: false);
+    }
+    return false;
+  }
+
   // Check if a table name already exists
   static Future<bool> isTableNameExists(String tableName) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -26,8 +45,12 @@ class PowerTableManager {
   }
 
   // Generate test data for the power table
-  static void loadTestData(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static Future<void> loadTestData(BuildContext context, BLEData bleData) async {
     try {
+      final isConnected = await _ensureDeviceConnected(context, bleData);
+      if (!isConnected) {
+        return;
+      }
       // Clear existing data
       for (int i = 0; i < bleData.powerTableData.length; i++) {
         for (int j = 0; j < bleData.powerTableData[i].length; j++) {
@@ -67,10 +90,7 @@ class PowerTableManager {
         List<int> command = [0x02, 0x27, rowIndex, ...rowValue];
 
         try {
-          if (!device.isConnected) {
-            throw Exception("Device not connected");
-          }
-          bleData.write(device, command);
+          await bleData.write(command);
           // Add a small delay between rows
           await Future.delayed(Duration(milliseconds: 500));
         } catch (e) {
@@ -128,11 +148,14 @@ class PowerTableManager {
   // Send power table data to device
   static Future<bool> sendPowerTableToDevice(
     BuildContext context,
-    BLEData bleData,
-    BluetoothDevice device, {
+    BLEData bleData, {
     String? hMaxValue,
   }) async {
     try {
+      final isConnected = await _ensureDeviceConnected(context, bleData);
+      if (!isConnected) {
+        return false;
+      }
       // Send each row of the power table separately
       const int intMinValue = -32768; // INT16_MIN for missing values
 
@@ -151,10 +174,7 @@ class PowerTableManager {
         List<int> command = [0x02, 0x27, rowIndex, ...rowValue];
 
         try {
-          if (!device.isConnected) {
-            throw Exception("Device not connected");
-          }
-          bleData.write(device, command);
+          await bleData.write(command);
           // Add a small delay between rows to prevent overwhelming the device
           await Future.delayed(Duration(milliseconds: 100));
         } catch (e) {
@@ -171,7 +191,7 @@ class PowerTableManager {
           // Find HMax in custom characteristic framework and write to device
           for (var c in bleData.customCharacteristic) {
             if (c["vName"] == BLE_hMaxVname) {
-              bleData.writeToSS2k(device, c, s: hMaxValue);
+              await bleData.writeToSS2k(c, s: hMaxValue);
               break;
             }
           }
@@ -192,7 +212,7 @@ class PowerTableManager {
     }
   }
 
-  static Future<void> loadPowerTable(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static Future<void> loadPowerTable(BuildContext context, BLEData bleData) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       List<String> tablesList = prefs.getStringList(_powerTablesListKey) ?? [];
@@ -295,7 +315,7 @@ class PowerTableManager {
       );
 
       // Send power table data to device
-      bool success = await sendPowerTableToDevice(context, bleData, device, hMaxValue: hMaxValue);
+      bool success = await sendPowerTableToDevice(context, bleData, hMaxValue: hMaxValue);
 
       if (success && context.mounted) {
         Snackbar.show(ABC.c, "Power table loaded and sent to device", success: true);
@@ -401,7 +421,7 @@ class PowerTableManager {
     }
   }
 
-  static Future<void> showPowerTableMenu(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static Future<void> showPowerTableMenu(BuildContext context, BLEData bleData) async {
     if (!context.mounted) return;
 
     String? action = await showDialog<String>(
@@ -483,7 +503,7 @@ class PowerTableManager {
 
     switch (action) {
       case 'clear':
-        await bleData.resetPowerTable(device);
+        await bleData.resetPowerTable();
         break;
       case 'save':
         SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -578,13 +598,13 @@ class PowerTableManager {
         }
         break;
       case 'load':
-        await loadPowerTable(context, bleData, device);
+        await loadPowerTable(context, bleData);
         break;
       case 'delete':
         await deletePowerTable(context);
         break;
       case 'test':
-        loadTestData(context, bleData, device);
+        await loadTestData(context, bleData);
         break;
       case 'export':
         final nameController = TextEditingController();
@@ -614,7 +634,7 @@ class PowerTableManager {
         }
         break;
       case 'import':
-        await PowerTableSharing.importPowerTable(context, bleData, device);
+        await PowerTableSharing.importPowerTable(context, bleData);
         break;
     }
   }

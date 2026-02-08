@@ -10,13 +10,31 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import './bledata.dart';
 import './snackbar.dart';
 import './presets.dart';
 import './constants.dart';
 
 class PresetSharing {
+  static Future<bool> _ensureDeviceConnected(BuildContext context, BLEData bleData) async {
+    if (bleData.isSimulated) {
+      return true;
+    }
+    try {
+      final state = await UniversalBle.getConnectionState(bleData.deviceId);
+      if (state == BleConnectionState.connected) {
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Failed to determine connection state: $e');
+    }
+    if (context.mounted) {
+      Snackbar.show(ABC.c, "Device not connected", success: false);
+    }
+    return false;
+  }
+
   // Export preset as .ss2k file
   static Future<void> exportPreset(BuildContext context, BLEData bleData, String fileName) async {
     try {
@@ -80,7 +98,7 @@ class PresetSharing {
   }
 
   // Import preset from .ss2k or .json file
-  static Future<void> importPreset(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static Future<void> importPreset(BuildContext context, BLEData bleData) async {
     try {
       // Pick file
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -104,90 +122,81 @@ class PresetSharing {
       // Check for duplicate name
       // Note: We need to access shared prefs to check for duplicates, which is done in PresetManager
       // Since isPresetNameExists isn't public, we'll try to save and let the user decide if they want to overwrite
-      // via the UI logic we'll add here
-      
+      // Parse JSON content to validate it
+      try {
+        final dynamic decoded = jsonDecode(jsonContent);
+        if (decoded is! List) throw FormatException("Invalid preset format");
 
-      bool shouldSave = true;
-      // We'll skip the duplicate check here for simplicity and rely on the fact that saving overwrites 
-      // or we could implement a check here if needed.
-      
-      if (shouldSave) {
-        // Parse JSON content to validate it
-        try {
-          // Validate structure by decoding
-          final dynamic decoded = jsonDecode(jsonContent);
-          if (decoded is! List) throw FormatException("Invalid preset format");
-          
-          // Create merged version
-          List<dynamic> currentConfig = List.from(bleData.customCharacteristic);
-          List<dynamic> importedConfig = decoded;
+        List<dynamic> currentConfig = List.from(bleData.customCharacteristic);
+        List<dynamic> importedConfig = decoded;
 
-          List<dynamic> mergedConfig = currentConfig.map((item) {
-             var currentMap = Map<String, dynamic>.from(item);
-             
-             if (currentMap['vName'] == ssidVname || currentMap['vName'] == passwordVname) {
-                 return currentMap; 
-             }
-             
-             var matchingImported = importedConfig.where(
-                (element) => element['vName'] == currentMap['vName']
-             );
-             var importedItem = matchingImported.isNotEmpty ? matchingImported.first : null;
+        List<dynamic> mergedConfig = currentConfig.map((item) {
+          var currentMap = Map<String, dynamic>.from(item);
 
-             if (importedItem != null) {
-                 if (importedItem['value'] != null) {
-                    currentMap['value'] = importedItem['value'];
-                 } else if (importedItem['defaultData'] != null) {
-                    // Fallback for legacy files
-                    currentMap['value'] = importedItem['defaultData'];
-                 }
-             }
-             return currentMap;
-          }).toList();
-          
-          // Apply to BLEData temporarily to save
-          var oldSettings = bleData.customCharacteristic;
-          bleData.customCharacteristic = mergedConfig;
-          
-          await PresetManager.savePreset(context, bleData, saveName);
-          
-          // Restore old settings until user explicitly loads it
-          bleData.customCharacteristic = oldSettings;
-          
-          if (context.mounted) {
-             // Ask if user wants to apply it now
-            bool? applyNow = await showDialog<bool>(
-              context: context,
-              builder: (BuildContext context) {
-                return AlertDialog(
-                  title: Text('Import Successful'),
-                  content: Text('Preset "$saveName" imported. Do you want to apply these settings to your device now?'),
-                  actions: <Widget>[
-                    TextButton(
-                      child: Text('No, save only'),
-                      onPressed: () => Navigator.of(context).pop(false),
-                    ),
-                    FilledButton(
-                      child: Text('Yes, apply now'),
-                      onPressed: () => Navigator.of(context).pop(true),
-                    ),
-                  ],
-                );
-              },
-            );
-            
-            if (applyNow == true) {
-              bleData.customCharacteristic = mergedConfig;
-              await bleData.saveAllSettings(device);
-              Snackbar.show(ABC.c, "Settings applied to device", success: true);
-            } else {
-              Snackbar.show(ABC.c, "Preset saved to My Files", success: true);
+          if (currentMap['vName'] == ssidVname || currentMap['vName'] == passwordVname) {
+            return currentMap;
+          }
+
+          var matchingImported = importedConfig.where((element) => element['vName'] == currentMap['vName']);
+          var importedItem = matchingImported.isNotEmpty ? matchingImported.first : null;
+
+          if (importedItem != null) {
+            if (importedItem['value'] != null) {
+              currentMap['value'] = importedItem['value'];
+            } else if (importedItem['defaultData'] != null) {
+              currentMap['value'] = importedItem['defaultData'];
             }
           }
-        } catch (e) {
-           if (context.mounted) {
-            Snackbar.show(ABC.c, "Invalid preset file: $e", success: false);
+          return currentMap;
+        }).toList();
+
+        final previousSettings = bleData.customCharacteristic;
+        try {
+          bleData.customCharacteristic = mergedConfig;
+          await PresetManager.savePreset(context, bleData, saveName);
+        } finally {
+          bleData.customCharacteristic = previousSettings;
+        }
+
+        if (context.mounted) {
+          bool? applyNow = await showDialog<bool>(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: Text('Import Successful'),
+                content: Text('Preset "${saveName}" imported. Do you want to apply these settings to your device now?'),
+                actions: <Widget>[
+                  TextButton(
+                    child: Text('No, save only'),
+                    onPressed: () => Navigator.of(context).pop(false),
+                  ),
+                  FilledButton(
+                    child: Text('Yes, apply now'),
+                    onPressed: () => Navigator.of(context).pop(true),
+                  ),
+                ],
+              );
+            },
+          );
+
+          if (applyNow == true) {
+            final connected = await _ensureDeviceConnected(context, bleData);
+            if (connected) {
+              try {
+                bleData.customCharacteristic = mergedConfig;
+                await bleData.saveAllSettings();
+                Snackbar.show(ABC.c, "Settings applied to device", success: true);
+              } finally {
+                bleData.customCharacteristic = previousSettings;
+              }
+            }
+          } else {
+            Snackbar.show(ABC.c, "Preset saved to My Files", success: true);
           }
+        }
+      } catch (e) {
+        if (context.mounted) {
+          Snackbar.show(ABC.c, "Invalid preset file: $e", success: false);
         }
       }
     } catch (e) {

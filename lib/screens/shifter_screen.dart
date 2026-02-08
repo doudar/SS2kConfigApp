@@ -7,7 +7,7 @@
 import 'dart:async';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../utils/bledata.dart';
 import '../utils/extra.dart';
@@ -17,7 +17,7 @@ import '../widgets/power_table_chart.dart';
 import '../utils/stream_extensions.dart';
 
 class ShifterScreen extends StatefulWidget {
-  final BluetoothDevice device;
+  final BleDevice device;
   const ShifterScreen({Key? key, required this.device}) : super(key: key);
 
   @override
@@ -28,17 +28,18 @@ class _ShifterScreenState extends State<ShifterScreen> {
   late BLEData bleData;
   Map<String, Object> c = const {};
   String t = "Loading";
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  StreamSubscription<bool>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   double _chartOpacity = 0.15;
   bool _showOpacityControl = false;
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   final GlobalKey<PowerTableChartState> _chartKey = GlobalKey<PowerTableChartState>();
+  bool _isConnected = false;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
     c = this.bleData.customCharacteristic.firstWhere(
           (i) => i["vName"] == shifterPositionVname,
           orElse: () => <String, Object>{},
@@ -50,13 +51,13 @@ class _ShifterScreenState extends State<ShifterScreen> {
       t = "0";
       return;
     }
-    Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
+    Timer.periodic(const Duration(seconds: 15), (refreshTimer) async {
       if (!mounted) {
         refreshTimer.cancel();
       }
-      if (!this.widget.device.isConnected) {
+      if (!_isConnected) {
         try {
-          this.widget.device.connectAndUpdateStream();
+          await widget.device.connectAndUpdateStream();
         } catch (e) {
           print("failed to reconnect.");
         }
@@ -64,7 +65,8 @@ class _ShifterScreenState extends State<ShifterScreen> {
     });
 
     //Start Subscription
-    rwSubscription();
+    _initializeConnectionTracking();
+    _listenForCharacteristicChanges();
   }
 
   @override
@@ -75,21 +77,35 @@ class _ShifterScreenState extends State<ShifterScreen> {
     super.dispose();
   }
 
-  Future rwSubscription() async {
-    _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
-      if (state == BluetoothConnectionState.connected) {
-        _chartKey.currentState?.requestAllCadenceLines();
-        _chartKey.currentState?.requestHomingValues();
-      }
-      if (mounted) {
-        setState(() {});
-      }
+  void _initializeConnectionTracking() {
+    _loadInitialConnectionState();
+    _connectionStateSubscription = UniversalBle.connectionStream(widget.device.deviceId).listen((connected) {
+      _handleConnectionChange(connected);
     });
+  }
 
+  Future<void> _loadInitialConnectionState() async {
+    try {
+      final state = await UniversalBle.getConnectionState(widget.device.deviceId);
+      await _handleConnectionChange(state == BleConnectionState.connected);
+    } catch (_) {}
+  }
+
+  Future<void> _handleConnectionChange(bool connected) async {
+    _isConnected = connected;
+    if (connected) {
+      _chartKey.currentState?.requestAllCadenceLines();
+      _chartKey.currentState?.requestHomingValues();
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _listenForCharacteristicChanges() async {
     _characteristicChangeSubscription =
         bleData.characteristicChanges.debounce(Duration(milliseconds: 500)).listen((event) {
       if (mounted) {
-        // Refresh the shifter characteristic value from BLE so UI updates when it changes remotely
         c = bleData.customCharacteristic.firstWhere(
           (i) => i["vName"] == shifterPositionVname,
           orElse: () => <String, Object>{},
@@ -112,7 +128,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
       }
       String _t = (current + amount).toString();
       c = Map<String, Object>.from(c)..["value"] = _t;
-      this.bleData.writeToSS2k(this.widget.device, c);
+      bleData.writeToSS2k(c);
     }
 
     setState(() {

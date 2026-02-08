@@ -7,7 +7,7 @@ import '../ftmsControlPoint.dart';
 import 'workout_parser.dart';
 import 'workout_storage.dart';
 import 'sounds.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 
 class TrackPoint {
   final DateTime timestamp;
@@ -51,7 +51,7 @@ class WorkoutController extends ChangeNotifier {
   double _skippedTime = 0; // Time skipped by user actions; excluded from elapsed
   int currentSegmentTimeRemaining = 0;
   final BLEData bleData;
-  final BluetoothDevice device;
+  final BleDevice device;
   bool _isCountingDown = false;
   String? _currentWorkoutContent;
   double _totalDistance = 0; // Track total distance in meters
@@ -66,8 +66,8 @@ class WorkoutController extends ChangeNotifier {
   int _lastRecordedSecond = -1; // Track last whole-second data point recorded
 
   // Factory constructor to get device-specific instance
-  factory WorkoutController(BLEData bleData, BluetoothDevice device) {
-    final deviceId = device.remoteId.str;
+  factory WorkoutController(BLEData bleData, BleDevice device) {
+    final deviceId = device.deviceId;
     if (!_instances.containsKey(deviceId)) {
       _instances[deviceId] = WorkoutController._internal(bleData, device);
     }
@@ -89,7 +89,7 @@ class WorkoutController extends ChangeNotifier {
   // Method to cleanup when completely done with a device
   void cleanup() {
     progressTimer?.cancel();
-    final deviceId = device.remoteId.str;
+    final deviceId = device.deviceId;
     _instances.remove(deviceId);
     super.dispose();
   }
@@ -161,10 +161,14 @@ class WorkoutController extends ChangeNotifier {
 
   // Helper method to reset simulation parameters
   Future<void> _resetSimulationParameters() async {
-    if (bleData.ftmsControlPointCharacteristic != null) {
+    final serviceUuid = bleData.ftmsServiceUuid;
+    final characteristicUuid = bleData.ftmsCharacteristicUuid;
+    if (serviceUuid != null && characteristicUuid != null) {
       try {
         await FTMSControlPoint.writeIndoorBikeSimulation(
-          bleData.ftmsControlPointCharacteristic!,
+          deviceId: bleData.deviceId,
+          serviceUuid: serviceUuid,
+          characteristicUuid: characteristicUuid,
           windSpeed: 0,
           grade: 0,
           crr: 0,

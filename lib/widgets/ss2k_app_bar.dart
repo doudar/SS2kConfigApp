@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import 'device_header.dart';
 
 class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final BluetoothDevice device;
+  final BleDevice device;
   final String title;
   final List<Widget>? actions;
   final bool showDeviceHeader;

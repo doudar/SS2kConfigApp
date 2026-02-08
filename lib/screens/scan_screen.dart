@@ -5,18 +5,16 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io' as io show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../utils/constants.dart';
 import 'main_device_screen.dart';
 import '../utils/snackbar.dart';
-import '../utils/bledata.dart';
-import '../utils/extra.dart';
 import '../widgets/scan_result_tile.dart';
 import '../utils/demo.dart';
 import 'app_settings_screen.dart';
@@ -29,10 +27,11 @@ class ScanScreen extends StatefulWidget {
 }
 
 class _ScanScreenState extends State<ScanScreen> {
-  List<ScanResult> _scanResults = [];
+  final Map<String, BleDevice> _discoveredDevices = {};
   bool _isScanning = false;
-  StreamSubscription<List<ScanResult>>? _scanResultsSubscription;
-  StreamSubscription<bool>? _isScanningSubscription;
+  AvailabilityState _availabilityState = AvailabilityState.unknown;
+  StreamSubscription<BleDevice>? _scanSubscription;
+  StreamSubscription<AvailabilityState>? _availabilitySubscription;
   int _tapCount = 0; // Tap counter
   bool _showDemoButton = false; // Initially, the demo button is not shown
 
@@ -40,52 +39,100 @@ class _ScanScreenState extends State<ScanScreen> {
   void initState() {
     super.initState();
 
-    _scanResultsSubscription = FlutterBluePlus.scanResults.listen((results) {
-      _scanResults = results;
-      if (mounted) {
-        setState(() {});
-      }
-    }, onError: (e) {
+    _scanSubscription = UniversalBle.scanStream.listen(_handleScanDevice, onError: (e) {
       Snackbar.show(ABC.b, prettyException("Scan Error:", e), success: false);
     });
 
-    _isScanningSubscription = FlutterBluePlus.isScanning.listen((state) {
-      _isScanning = state;
+    _availabilitySubscription = UniversalBle.availabilityStream.listen((state) {
+      _availabilityState = state;
       if (mounted) {
         setState(() {});
       }
     });
+
+    _initializeBluetoothState();
   }
 
   @override
   void dispose() {
-    _scanResultsSubscription?.cancel();
-    _isScanningSubscription?.cancel();
+    _scanSubscription?.cancel();
+    _availabilitySubscription?.cancel();
     super.dispose();
+  }
+
+  List<BleDevice> get _scanResults {
+    final devices = _discoveredDevices.values.toList();
+    devices.sort((a, b) => (b.rssi ?? -999).compareTo(a.rssi ?? -999));
+    return devices;
+  }
+
+  bool get _bluetoothReady => _availabilityState == AvailabilityState.poweredOn || kIsWeb;
+
+  void _handleScanDevice(BleDevice device) {
+    if (device.deviceId.isEmpty) {
+      return;
+    }
+    final existing = _discoveredDevices[device.deviceId];
+    if (existing != null && existing == device) {
+      return;
+    }
+    _discoveredDevices[device.deviceId] = device;
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _initializeBluetoothState() async {
+    try {
+      final results = await Future.wait([
+        UniversalBle.getBluetoothAvailabilityState(),
+        UniversalBle.isScanning(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _availabilityState = results[0] as AvailabilityState;
+        _isScanning = results[1] as bool;
+      });
+    } catch (_) {
+      // Ignore failures to determine initial adapter state
+    }
+  }
+
+  Future<void> _refreshScanState() async {
+    try {
+      final scanning = await UniversalBle.isScanning();
+      if (mounted) {
+        setState(() => _isScanning = scanning);
+      }
+    } catch (_) {}
   }
 
   Future onScanPressed() async {
     //don't allow scan in demo mode - it ruins the setup
     if (_showDemoButton) return;
     try {
-      if (kIsWeb) {
-        // Web platform uses different scanning approach
-        await FlutterBluePlus.startScan(
-          withServices: [Guid(csUUID)],
-          timeout: const Duration(seconds: 15),
-        );
-      } else {
-        // Native platforms (Android/iOS)
-        int divisor = !kIsWeb && io.Platform.isAndroid ? 8 : 1;
-        await FlutterBluePlus.startScan(
-          withServices: [Guid(csUUID)],
-          timeout: const Duration(seconds: 15),
-          continuousUpdates: true,
-          continuousDivisor: divisor,
-        );
-      }
+      await UniversalBle.requestPermissions(
+        withAndroidFineLocation: !kIsWeb && io.Platform.isAndroid,
+      );
+
+      setState(() {
+        _discoveredDevices.clear();
+      });
+
+      final scanFilter = ScanFilter(withServices: [csUUID]);
+      final platformConfig = kIsWeb
+          ? PlatformConfig(
+              web: WebOptions(optionalServices: [csUUID]),
+            )
+          : null;
+
+      await UniversalBle.startScan(
+        scanFilter: scanFilter,
+        platformConfig: platformConfig,
+      );
+      await _refreshScanState();
     } catch (e) {
-      String errorMessage = kIsWeb
+      final errorMessage = kIsWeb
           ? "Web Bluetooth Error: Make sure your browser supports Web Bluetooth and you're using HTTPS"
           : prettyException("Start Scan Error:", e);
       Snackbar.show(ABC.b, errorMessage, success: false);
@@ -97,35 +144,31 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Future onStopPressed() async {
     try {
-      FlutterBluePlus.stopScan();
+      await UniversalBle.stopScan();
+      await _refreshScanState();
     } catch (e) {
       Snackbar.show(ABC.b, prettyException("Stop Scan Error:", e), success: false);
     }
   }
 
-  void onConnectPressed(BluetoothDevice device) {
+  Future<void> onConnectPressed(BleDevice device) async {
     try {
-      // Reset the user disconnect flag if triggered
-      if (BLEDataManager.forDevice(device).isUserDisconnect) {
-        BLEDataManager.forDevice(device).isUserDisconnect = false;
-      }
+      await UniversalBle.stopScan();
+      await UniversalBle.connect(device.deviceId);
     } catch (e) {
-      print("Device BLEData was not initialized: $e");
-    }
-    if (FlutterBluePlus.isScanningNow) {
-      FlutterBluePlus.stopScan();
-    }
-    device.connectAndUpdateStream().catchError((e) {
       Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
-    });
+    }
     MaterialPageRoute route = MaterialPageRoute(
-        builder: (context) => MainDeviceScreen(device: device), settings: RouteSettings(name: '/MainDeviceScreen'));
+        builder: (context) => MainDeviceScreen(
+              device: device as dynamic, // TODO: remove dynamic cast once migration completes
+            ),
+        settings: const RouteSettings(name: '/MainDeviceScreen'));
     Navigator.of(context).push(route);
   }
 
   Future onRefresh() {
     if (_isScanning == false) {
-      FlutterBluePlus.startScan(withServices: [Guid(csUUID)], timeout: const Duration(seconds: 15));
+      onScanPressed();
     }
     if (mounted) {
       setState(() {});
@@ -134,7 +177,8 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Widget buildScanButton(BuildContext context) {
-    if (FlutterBluePlus.isScanningNow) {
+    final canScan = _bluetoothReady;
+    if (_isScanning) {
       return ElevatedButton(
         child: const Icon(Icons.stop),
         onPressed: onStopPressed,
@@ -146,7 +190,7 @@ class _ScanScreenState extends State<ScanScreen> {
     } else {
       return ElevatedButton(
         child: const Text("SCAN"),
-        onPressed: onScanPressed,
+        onPressed: canScan ? onScanPressed : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary,
           //maximumSize: Size.fromWidth(50),
@@ -159,8 +203,8 @@ class _ScanScreenState extends State<ScanScreen> {
     return _scanResults
         .map(
           (r) => ScanResultTile(
-            result: r,
-            onTap: () => onConnectPressed(r.device),
+            device: r,
+            onTap: () => onConnectPressed(r),
           ),
         )
         .toList();
@@ -179,11 +223,13 @@ class _ScanScreenState extends State<ScanScreen> {
   void onDemoModePressed(context) {
     // Use the DemoDevice to simulate finding a SmartSpin2k device
     final demoDevice = DemoDevice();
-    ScanResult simulatedScanResult = demoDevice.simulateSmartSpin2kScan();
+    BleDevice simulatedScanResult = demoDevice.simulateSmartSpin2kScan();
 
     // Update the UI to display the simulated scan result
     setState(() {
-      _scanResults = [simulatedScanResult]; // Replace existing scan results with the simulated one
+      _discoveredDevices
+        ..clear()
+        ..[simulatedScanResult.deviceId] = simulatedScanResult;
       // If you want to keep existing scan results and add the simulated one, use `_scanResults.add(simulatedScanResult);` instead
     });
   }

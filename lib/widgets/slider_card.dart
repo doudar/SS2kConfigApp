@@ -7,7 +7,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 
 import "../utils/snackbar.dart";
 import '../utils/bledata.dart';
@@ -15,7 +15,7 @@ import '../utils/constants.dart';
 
 class sliderCard extends StatefulWidget {
   const sliderCard({super.key, required this.device, required this.c});
-  final BluetoothDevice device;
+  final BleDevice device;
   final Map c;
   @override
   State<sliderCard> createState() => _sliderCardState();
@@ -30,7 +30,7 @@ class _sliderCardState extends State<sliderCard> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    bleData = BLEDataManager.forBleDevice(widget.device);
   }
 
   @override
@@ -141,7 +141,7 @@ class _sliderCardState extends State<sliderCard> {
               textAlign: TextAlign.center,
               onSubmitted: (t) {
                 this.verifyInput(t);
-                this.bleData.writeToSS2k(this.widget.device, this.c);
+                this.bleData.writeToSS2k(this.c);
                 setState(() {});
                 return this.widget.c["value"];
               },
@@ -175,7 +175,7 @@ class _sliderCardState extends State<sliderCard> {
                     this._currentSliderValue = v;
                     this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
                     controller.text = this.widget.c["value"];
-                    this.bleData.writeToSS2k(this.widget.device, this.c);
+                    this.bleData.writeToSS2k(this.c);
                   });
                 },
               ),
@@ -193,10 +193,10 @@ class _sliderCardState extends State<sliderCard> {
                     child: const Text('SAVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                     onPressed: () {
                       //Find the save command and execute it
-                      this
+                        this
                           .bleData
                           .customCharacteristic
-                          .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                          .forEach((c) => this.bleData.findNSave(c, saveVname));
                       Navigator.pop(context);
                     }),
                 const SizedBox(width: 8),

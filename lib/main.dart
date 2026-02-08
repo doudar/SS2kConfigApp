@@ -9,7 +9,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import 'package:app_links/app_links.dart';
 import 'package:provider/provider.dart';
 
@@ -19,9 +19,9 @@ import 'screens/bluetooth_off_screen.dart';
 import 'screens/scan_screen.dart';
 import 'utils/theme_provider.dart';
 
-void main() async {
-  FlutterBluePlus.setLogLevel(LogLevel.verbose, color: true);
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await UniversalBle.setLogLevel(BleLogLevel.verbose);
 
   runApp(
     ChangeNotifierProvider(
@@ -43,35 +43,45 @@ class SmartSpin2kApp extends StatefulWidget {
 }
 
 class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
-  BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
+  AvailabilityState _availabilityState = AvailabilityState.unknown;
   late AppLinks _appLinks;
   StreamSubscription? _linkSubscription;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   final GlobalKey<ScaffoldMessengerState> _scaffoldKey = GlobalKey<ScaffoldMessengerState>();
 
-  late StreamSubscription<BluetoothAdapterState> _adapterStateStateSubscription;
+  StreamSubscription<AvailabilityState>? _availabilitySubscription;
 
   @override
   void initState() {
     super.initState();
-    if (!kIsWeb) {
-      try {
-        _adapterStateStateSubscription = FlutterBluePlus.adapterState.listen((state) {
-          _adapterState = state;
-          if (mounted) {
-            setState(() {});
-          }
-        });
-      } catch (e) {
-        debugPrint('Error listening to adapter state: $e');
-        // Set a default state for web
-        _adapterState = BluetoothAdapterState.on;
-      }
-    } else {
-      // For web platform, assume adapter is on
-      _adapterState = BluetoothAdapterState.on;
-    }
+    _listenToAvailabilityChanges();
     _initDeepLinkHandling();
+  }
+
+  void _listenToAvailabilityChanges() {
+    if (kIsWeb) {
+      _availabilityState = AvailabilityState.poweredOn;
+      return;
+    }
+
+    _availabilitySubscription = UniversalBle.availabilityStream.listen(
+      (state) {
+        _availabilityState = state;
+        if (mounted) {
+          setState(() {});
+        }
+      },
+      onError: (e) {
+        debugPrint('Error listening to availability state: $e');
+      },
+    );
+
+    UniversalBle.getBluetoothAvailabilityState().then((state) {
+      if (!mounted) return;
+      setState(() => _availabilityState = state);
+    }).catchError((e) {
+      debugPrint('Error fetching availability state: $e');
+    });
   }
 
   Future<void> _initDeepLinkHandling() async {
@@ -247,16 +257,16 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 
   @override
   void dispose() {
-    _adapterStateStateSubscription.cancel();
+    _availabilitySubscription?.cancel();
     _linkSubscription?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget screen = kIsWeb || _adapterState == BluetoothAdapterState.on
-        ? const ScanScreen()
-        : BluetoothOffScreen(adapterState: _adapterState);
+    Widget screen = kIsWeb || _availabilityState == AvailabilityState.poweredOn
+      ? const ScanScreen()
+      : BluetoothOffScreen(availabilityState: _availabilityState);
 
     final themeProvider = Provider.of<ThemeProvider>(context);
     return ScaffoldMessenger(
@@ -267,7 +277,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
         theme: themeProvider.lightTheme,
         darkTheme: themeProvider.darkTheme,
         home: screen,
-        navigatorObservers: [BluetoothAdapterStateObserver()],
+        navigatorObservers: [BluetoothAvailabilityObserver()],
       ),
     );
   }
@@ -276,8 +286,8 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 //
 // This observer listens for Bluetooth Off and dismisses the DeviceScreen
 //
-class BluetoothAdapterStateObserver extends NavigatorObserver {
-  StreamSubscription<BluetoothAdapterState>? _adapterStateSubscription;
+class BluetoothAvailabilityObserver extends NavigatorObserver {
+  StreamSubscription<AvailabilityState>? _availabilitySubscription;
 
   @override
   void didPush(Route route, Route? previousRoute) {
@@ -286,9 +296,8 @@ class BluetoothAdapterStateObserver extends NavigatorObserver {
       // Start listening to Bluetooth state changes when a new route is pushed
       if (!kIsWeb) {
         try {
-          _adapterStateSubscription ??= FlutterBluePlus.adapterState.listen((state) {
-            if (state != BluetoothAdapterState.on) {
-              // Pop the current route if Bluetooth is off
+          _availabilitySubscription ??= UniversalBle.availabilityStream.listen((state) {
+            if (state != AvailabilityState.poweredOn) {
               navigator?.pop();
             }
           });
@@ -303,7 +312,7 @@ class BluetoothAdapterStateObserver extends NavigatorObserver {
   void didPop(Route route, Route? previousRoute) {
     super.didPop(route, previousRoute);
     // Cancel the subscription when the route is popped
-    _adapterStateSubscription?.cancel();
-    _adapterStateSubscription = null;
+    _availabilitySubscription?.cancel();
+    _availabilitySubscription = null;
   }
 }

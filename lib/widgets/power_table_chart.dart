@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
@@ -23,7 +23,7 @@ class PowerTableChart extends StatefulWidget {
 
   static const List<int> cadenceTicks = <int>[60, 65, 70, 75, 80, 85, 90, 95, 100, 105];
 
-  final BluetoothDevice device;
+  final BleDevice device;
   final BLEData bleData;
   final bool pollTargetPosition;
   final Duration pollInterval;
@@ -47,6 +47,8 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   double? homingMax;
   bool _swapAxes = false; // false = Resistance(Y) vs Watts(X), true = Watts(Y) vs Resistance(X)
   static const String _prefsSwapAxesKey = 'power_table_swap_axes';
+  StreamSubscription<bool>? _connectionStateSubscription;
+  bool _isConnected = false;
 
   // Trail tracking
   final List<Map<String, double>> _positionHistory = [];
@@ -65,6 +67,7 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   @override
   void initState() {
     super.initState();
+    _monitorConnectionState();
     // Initialize pulse animation
     _pulseController = AnimationController(
       duration: const Duration(seconds: 3),
@@ -78,7 +81,7 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
 
     // Set up timer to periodically check homing values
     _homingValuesTimer = Timer.periodic(const Duration(seconds: 5), (_homingValuesTimer) {
-      if (mounted && widget.device.isConnected) {
+      if (mounted && _isConnected) {
         requestHomingValues();
       }
     });
@@ -99,11 +102,44 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   @override
   void dispose() {
     _pulseController.dispose();
+    _connectionStateSubscription?.cancel();
     _homingValuesTimer?.cancel();
     _targetPositionTimer?.cancel();
     _cadenceLinesTimer?.cancel();
     _characteristicChangeSubscription?.cancel();
     super.dispose();
+  }
+
+  void _monitorConnectionState() {
+    _loadInitialConnectionState();
+    _connectionStateSubscription = UniversalBle.connectionStream(widget.device.deviceId).listen((connected) {
+      unawaited(_handleConnectionChange(connected));
+    });
+  }
+
+  Future<void> _loadInitialConnectionState() async {
+    try {
+      final state = await UniversalBle.getConnectionState(widget.device.deviceId);
+      await _handleConnectionChange(state == BleConnectionState.connected);
+    } catch (e) {
+      debugPrint('Failed to load initial connection state: $e');
+    }
+  }
+
+  Future<void> _handleConnectionChange(bool connected) async {
+    if (!mounted) {
+      _isConnected = connected;
+      return;
+    }
+    if (_isConnected != connected) {
+      setState(() => _isConnected = connected);
+    } else {
+      _isConnected = connected;
+    }
+    if (connected) {
+      requestHomingValues();
+      requestAllCadenceLines();
+    }
   }
 
   @override
@@ -137,16 +173,16 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
         timer.cancel();
         return;
       }
-      if (mounted && widget.device.isConnected) {
-        widget.bleData.requestSetting(widget.device, targetPositionVname);
+      if (mounted && _isConnected) {
+        widget.bleData.requestSetting(targetPositionVname);
       }
     });
   }
 
   Future<void> requestHomingValues() async {
-    if (mounted && widget.device.isConnected) {
-      await widget.bleData.requestSetting(widget.device, BLE_hMinVname);
-      await widget.bleData.requestSetting(widget.device, BLE_hMaxVname);
+    if (mounted && _isConnected) {
+      await widget.bleData.requestSetting(BLE_hMinVname);
+      await widget.bleData.requestSetting(BLE_hMaxVname);
 
       _updateHomingFromCache();
     }
@@ -168,10 +204,10 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   }
 
   Future<void> requestAllCadenceLines() async {
-    if (!mounted || !widget.device.isConnected) return;
+    if (!mounted || !_isConnected) return;
     for (int i = 0; i < 10; i++) {
       if (!mounted) return;
-      await widget.bleData.requestSetting(widget.device, powerTableDataVname, extraByte: i);
+      await widget.bleData.requestSetting(powerTableDataVname, extraByte: i);
       await Future.delayed(const Duration(milliseconds: 1000));
     }
   }

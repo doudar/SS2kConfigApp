@@ -2,7 +2,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/bledata.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:universal_ble/universal_ble.dart';
 
 void main() {
   test('Dump characteristics precision', () {
