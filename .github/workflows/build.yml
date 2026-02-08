@@ -93,7 +93,7 @@ jobs:
       - name: Extract version from pubspec.yaml
         id: extract_version
         run: |
-          VERSION=$(grep 'version: ' pubspec.yaml | sed 's/version: //')
+          VERSION=$(grep 'version: ' pubspec.yaml | sed 's/version: //' | xargs)
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           
       - name: Check if tag exists
