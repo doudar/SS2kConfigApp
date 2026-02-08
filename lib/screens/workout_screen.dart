@@ -189,7 +189,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       }
       if (!widget.device.isConnected) {
         try {
-          widget.device.connect();
+          widget.device.connect(license: License.free);
         } catch (e) {
           print("failed to reconnect.");
         }

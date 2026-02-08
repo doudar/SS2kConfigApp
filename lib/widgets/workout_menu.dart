@@ -38,40 +38,106 @@ class WorkoutMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<_MenuAction>(
-      onSelected: (value) => _handleAction(context, value),
-      itemBuilder: (context) => [
-        _item(_MenuAction.importZwo, Icons.file_upload, 'Import ZWO'),
-        _item(
-          _MenuAction.intervals,
-          Icons.hub,
-          'Intervals.icu',
-          trailing: const Icon(Icons.chevron_right, size: 18),
-        ),
-        const PopupMenuDivider(),
-        _item(_MenuAction.selectWorkout, Icons.folder_open, 'Select Workout'),
-        _item(_MenuAction.deleteWorkout, Icons.delete, 'Delete Workout'),
-        const PopupMenuDivider(),
-        _item(_MenuAction.audioCoach, Icons.record_voice_over, 'Audio Coach'),
-        _item(_MenuAction.connectedAccounts, Icons.link, 'Connected Accounts'),
-        _item(_MenuAction.calibrate, Icons.tune, 'Calibrate Trainer'),
-        _item(_MenuAction.completedActivities, Icons.history, 'Completed Activities'),
-        _item(_MenuAction.workoutText, Icons.text_fields, 'Workout Text'),
-      ],
+    return IconButton(
+      icon: const Icon(Icons.more_vert),
+      tooltip: 'Workout Menu',
+      onPressed: () => _showMenuDialog(context),
     );
   }
 
-  PopupMenuItem<_MenuAction> _item(_MenuAction action, IconData icon, String label, {Widget? trailing}) {
-    return PopupMenuItem<_MenuAction>(
-      value: action,
-      child: Row(
-        children: [
-          Icon(icon),
-            const SizedBox(width: 8),
-          Expanded(child: Text(label)),
-          if (trailing != null) trailing,
-        ],
-      ),
+  Future<void> _showMenuDialog(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: SizedBox(
+              height: 420,
+              child: Column(
+                children: [
+                  Container(
+                    color: Theme.of(context).colorScheme.surfaceDim,
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Workout Menu',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          tooltip: 'Close',
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        _menuTile(dialogContext, context, _MenuAction.importZwo, Icons.file_upload, 'Import ZWO'),
+                        _menuTile(
+                          dialogContext,
+                          context,
+                          _MenuAction.intervals,
+                          Icons.hub,
+                          'Intervals.icu',
+                          trailing: const Icon(Icons.chevron_right, size: 18),
+                        ),
+                        const Divider(),
+                        _menuTile(dialogContext, context, _MenuAction.selectWorkout, Icons.folder_open, 'Select Workout'),
+                        _menuTile(dialogContext, context, _MenuAction.deleteWorkout, Icons.delete, 'Delete Workout'),
+                        const Divider(),
+                        _menuTile(dialogContext, context, _MenuAction.audioCoach, Icons.record_voice_over, 'Audio Coach'),
+                        _menuTile(dialogContext, context, _MenuAction.connectedAccounts, Icons.link, 'Connected Accounts'),
+                        _menuTile(dialogContext, context, _MenuAction.calibrate, Icons.tune, 'Calibrate Trainer'),
+                        _menuTile(dialogContext, context, _MenuAction.completedActivities, Icons.history, 'Completed Activities'),
+                        _menuTile(dialogContext, context, _MenuAction.workoutText, Icons.text_fields, 'Workout Text'),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    color: Theme.of(context).colorScheme.surfaceDim,
+                    padding: const EdgeInsets.all(8.0),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('CLOSE'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _menuTile(
+    BuildContext dialogContext,
+    BuildContext parentContext,
+    _MenuAction action,
+    IconData icon,
+    String label, {
+    Widget? trailing,
+  }) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      trailing: trailing,
+      onTap: () {
+        Navigator.of(dialogContext).pop();
+        _handleAction(parentContext, action);
+      },
     );
   }
 
