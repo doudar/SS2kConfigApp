@@ -85,7 +85,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       this.bleData.services = await this.widget.device.discoverServices();
       bleData.requestSetting(this.widget.device, fwVname);
 
-      // No need for manual setState here anymore - the listener will handle it
     } catch (e) {
       print('Error refreshing device info: $e');
     } finally {

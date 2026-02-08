@@ -47,7 +47,6 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
   // Guard to prevent animation calls during teardown.
   bool _isDisposing = false;
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
-  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   final ScrollController _scrollController = ScrollController();
   double _lastScrollPosition = 0;
   final GlobalKey _workoutGraphKey = GlobalKey();
@@ -174,9 +173,12 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
         }
       }
 
-      setState(() {
-        _workoutName = _workoutController.workoutName;
-      });
+      final String? newName = _workoutController.workoutName;
+      if (newName != _workoutName) {
+        setState(() {
+          _workoutName = newName;
+        });
+      }
     };
     _workoutController.addListener(_workoutControllerListener);
 
@@ -333,22 +335,12 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
         setState(() {});
       }
     });
-
-
-    _characteristicChangeSubscription = bleData.characteristicChanges
-        .debounce(const Duration(milliseconds: 500))
-        .listen((event) {
-      if (mounted) {
-        setState(() {});
-      }
-    });
   }
 
   @override
   void dispose() {
     _isDisposing = true;
     _workoutController.removeListener(_workoutControllerListener);
-    _characteristicChangeSubscription?.cancel();
     _connectionStateSubscription?.cancel();
 
     // Now safely dispose animation + other resources.
@@ -485,15 +477,20 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                     workoutController: _workoutController,
                     fadeAnimation: _metricsAndSummaryFadeAnimation,
                   ),
-                  WorkoutMetrics(
-                    bleData: bleData,
-                    fadeAnimation: _metricsAndSummaryFadeAnimation,
-                    elapsedTime: _workoutController.elapsedSeconds,
-                    timeToNextSegment: _workoutController.currentSegmentTimeRemaining,
-                    totalDuration: _workoutController.totalDuration,
-                    speedMph: _workoutController.speedMph,
-                    totalDistance: _workoutController.totalDistance,
-                    workoutProgressSeconds: _workoutController.workoutProgressSeconds,
+                  StreamBuilder<CharacteristicChangeEvent>(
+                    stream: bleData.characteristicChanges
+                        .where((event) => event.type == 'ftms')
+                        .debounce(const Duration(milliseconds: 100)),
+                    builder: (context, snapshot) => WorkoutMetrics(
+                      bleData: bleData,
+                      fadeAnimation: _metricsAndSummaryFadeAnimation,
+                      elapsedTime: _workoutController.elapsedSeconds,
+                      timeToNextSegment: _workoutController.currentSegmentTimeRemaining,
+                      totalDuration: _workoutController.totalDuration,
+                      speedMph: _workoutController.speedMph,
+                      totalDistance: _workoutController.totalDistance,
+                      workoutProgressSeconds: _workoutController.workoutProgressSeconds,
+                    ),
                   ),
                 ],
               ),

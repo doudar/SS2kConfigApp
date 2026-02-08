@@ -26,8 +26,8 @@ class ShifterScreen extends StatefulWidget {
 
 class _ShifterScreenState extends State<ShifterScreen> {
   late BLEData bleData;
+  late ValueNotifier<String> t;
   Map<String, Object> c = const {};
-  String t = "Loading";
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   double _chartOpacity = 0.15;
@@ -39,15 +39,16 @@ class _ShifterScreenState extends State<ShifterScreen> {
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+    t = ValueNotifier("Loading");
     c = this.bleData.customCharacteristic.firstWhere(
           (i) => i["vName"] == shifterPositionVname,
           orElse: () => <String, Object>{},
         );
-    t = c.isNotEmpty ? (c["value"]?.toString() ?? "Loading") : "Loading";
+    t.value = c.isNotEmpty ? (c["value"]?.toString() ?? "Loading") : "Loading";
 
     //special setup for demo mode
     if (bleData.isSimulated) {
-      t = "0";
+      t.value = "0";
       return;
     }
     Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
@@ -71,41 +72,36 @@ class _ShifterScreenState extends State<ShifterScreen> {
   void dispose() {
     _connectionStateSubscription?.cancel();
     _characteristicChangeSubscription?.cancel();
+    t.dispose();
     WakelockPlus.disable();
     super.dispose();
   }
 
   Future rwSubscription() async {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
-      if (state == BluetoothConnectionState.connected) {
-        _chartKey.currentState?.requestAllCadenceLines();
-        _chartKey.currentState?.requestHomingValues();
-      }
-      if (mounted) {
-        setState(() {});
-      }
+      // Connection state changes don't require rebuilding the metrics or gear
     });
 
-    _characteristicChangeSubscription =
-        bleData.characteristicChanges.debounce(Duration(milliseconds: 500)).listen((event) {
-      if (mounted) {
-        // Refresh the shifter characteristic value from BLE so UI updates when it changes remotely
-        c = bleData.customCharacteristic.firstWhere(
-          (i) => i["vName"] == shifterPositionVname,
-          orElse: () => <String, Object>{},
-        );
-        setState(() {
-          t = c["value"]?.toString() ?? "Loading";
-        });
-        if (bleData.FTMSmode == 0 || bleData.simulateTargetWatts == false) {
-          bleData.simulatedTargetWatts = "";
-        }
+    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
+      if (!mounted) return;
+
+      // Refresh the shifter characteristic value from BLE so UI updates when it changes remotely
+      c = bleData.customCharacteristic.firstWhere(
+        (i) => i["vName"] == shifterPositionVname,
+        orElse: () => <String, Object>{},
+      );
+
+      t.value = c["value"]?.toString() ?? "Loading";
+
+      // Keep simulated watts in sync with FTMS mode, matching the live updates used by the power table chart
+      if (bleData.FTMSmode == 0 || bleData.simulateTargetWatts == false) {
+        bleData.simulatedTargetWatts = "";
       }
     });
   }
 
   shift(int amount) {
-    if (t != "Loading") {
+    if (t.value != "Loading") {
       final current = int.tryParse(c["value"]?.toString() ?? "");
       if (current == null) {
         return;
@@ -115,9 +111,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
       this.bleData.writeToSS2k(this.widget.device, c);
     }
 
-    setState(() {
-      t = c["value"]?.toString() ?? t;
-    });
+    t.value = c["value"]?.toString() ?? t.value;
 
     WakelockPlus.enable();
   }
@@ -198,50 +192,60 @@ class _ShifterScreenState extends State<ShifterScreen> {
                     mainAxisSize: MainAxisSize.max,
                     children: [
                       SizedBox(height: 8),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: <Widget>[
-                            if (bleData.simulatedTargetWatts != "")
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                child: MetricBox(
-                                  value: bleData.simulatedTargetWatts.toString(),
-                                  label: 'Target Watts',
+                      StreamBuilder<CharacteristicChangeEvent>(
+                        stream: bleData.characteristicChanges,
+                        builder: (context, snapshot) {
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: <Widget>[
+                                if (bleData.simulatedTargetWatts != "")
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                    child: MetricBox(
+                                      value: bleData.simulatedTargetWatts.toString(),
+                                      label: 'Target Watts',
+                                    ),
+                                  ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                  child: MetricBox(
+                                    value: bleData.ftmsData.watts.toString(),
+                                    label: 'Watts',
+                                  ),
                                 ),
-                              ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                              child: MetricBox(
-                                value: bleData.ftmsData.watts.toString(),
-                                label: 'Watts',
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                              child: MetricBox(
-                                value: bleData.ftmsData.cadence.toString(),
-                                label: 'RPM',
-                              ),
-                            ),
-                            if (bleData.ftmsData.heartRate != 0)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                child: MetricBox(
-                                  value: bleData.ftmsData.heartRate.toString(),
-                                  label: 'BPM',
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                  child: MetricBox(
+                                    value: bleData.ftmsData.cadence.toString(),
+                                    label: 'RPM',
+                                  ),
                                 ),
-                              )
-                          ],
-                        ),
+                                if (bleData.ftmsData.heartRate != 0)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                    child: MetricBox(
+                                      value: bleData.ftmsData.heartRate.toString(),
+                                      label: 'BPM',
+                                    ),
+                                  )
+                              ],
+                            ),
+                          );
+                        },
                       ),
                       SizedBox(height: 12),
                       _buildShiftButton(Icons.arrow_upward, () {
                         shift(1);
                       }, height: buttonHeight),
                       Spacer(flex: 1),
-                      _buildGearDisplay(t, fontSize: gearFontSize),
+                      ValueListenableBuilder<String>(
+                        valueListenable: t,
+                        builder: (context, gearValue, child) {
+                          return _buildGearDisplay(gearValue, fontSize: gearFontSize);
+                        },
+                      ),
                       Spacer(flex: 1),
                       _buildShiftButton(Icons.arrow_downward, () {
                         shift(-1);

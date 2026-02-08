@@ -99,23 +99,17 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       if (state == BluetoothConnectionState.connected) {
         // Request power table data when connection is restored
-        _chartKey.currentState?.requestAllCadenceLines();
-        _chartKey.currentState?.requestHomingValues();
+        //_chartKey.currentState?.requestAllCadenceLines();
+        //_chartKey.currentState?.requestHomingValues();
       }
-      if (mounted) {
-        setState(() {});
-      }
+      // Connection state changes don't require rebuilding the metrics
     });
     
-    _characteristicChangeSubscription = bleData.characteristicChanges
-        .debounce(Duration(milliseconds: 500))
-        .listen((event) {
+    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
       if (bleData.FTMSmode == 0 || bleData.FTMSmode == 17) {
         bleData.simulatedTargetWatts = "";
       }
-      if (mounted) {
-        setState(() {});
-      }
+      // Metrics update via StreamBuilder, no need for setState
     });
   }
 
@@ -147,50 +141,55 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         child: Column(
           children: <Widget>[
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  if (bleData.simulatedTargetWatts != "")
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                      child: MetricBox(
-                        value: bleData.simulatedTargetWatts.toString(),
-                        label: 'Target Watts',
+            StreamBuilder<CharacteristicChangeEvent>(
+              stream: bleData.characteristicChanges,
+              builder: (context, snapshot) {
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      if (bleData.simulatedTargetWatts != "")
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          child: MetricBox(
+                            value: bleData.simulatedTargetWatts.toString(),
+                            label: 'Target Watts',
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: MetricBox(
+                          value: bleData.ftmsData.watts.toString(),
+                          label: 'Watts',
+                        ),
                       ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                    child: MetricBox(
-                      value: bleData.ftmsData.watts.toString(),
-                      label: 'Watts',
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                    child: MetricBox(
-                      value: bleData.ftmsData.cadence.toString(),
-                      label: 'RPM',
-                    ),
-                  ),
-                  if (bleData.ftmsData.heartRate != 0)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                      child: MetricBox(
-                        value: bleData.ftmsData.heartRate.toString(),
-                        label: 'BPM',
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: MetricBox(
+                          value: bleData.ftmsData.cadence.toString(),
+                          label: 'RPM',
+                        ),
                       ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                    child: MetricBox(
-                      value: _getGearValue(),
-                      label: 'Gear',
-                    ),
+                      if (bleData.ftmsData.heartRate != 0)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          child: MetricBox(
+                            value: bleData.ftmsData.heartRate.toString(),
+                            label: 'BPM',
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: MetricBox(
+                          value: _getGearValue(),
+                          label: 'Gear',
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             ),
             const SizedBox(height: 8),
             Expanded(

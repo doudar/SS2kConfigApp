@@ -27,7 +27,6 @@ class _BleLogScreenState extends State<BleLogScreen> {
   late Map logCharacteristic;
   final List<String> _logMessages = [];
   final ScrollController _scrollController = ScrollController();
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<String>? _logSubscription; // New subscription
   Timer? _demoTimer;
 
@@ -90,12 +89,6 @@ class _BleLogScreenState extends State<BleLogScreen> {
   }
 
   void _setupSubscriptions() {
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
-      if (mounted) {
-        setState(() {});
-      }
-    });
-
     // Subscribe directly to the log stream to catch every message
     _logSubscription = bleData.logStream.listen((message) {
       if (!mounted) return;
@@ -120,7 +113,6 @@ class _BleLogScreenState extends State<BleLogScreen> {
     _disableLogStreaming();
     
     _demoTimer?.cancel();
-    _connectionStateSubscription?.cancel();
     _logSubscription?.cancel(); // Cancel the stream subscription
     _scrollController.dispose();
     super.dispose();

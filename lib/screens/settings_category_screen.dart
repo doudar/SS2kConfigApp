@@ -42,17 +42,11 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
     bleData = BLEDataManager.forDevice(this.widget.device);
 
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
-      if (mounted) {
-        setState(() {});
-      }
+      // Connection state changes don't require rebuilding the settings tiles
     });
 
-    _characteristicChangeSubscription = bleData.characteristicChanges
-        .debounce(Duration(milliseconds: 500))
-        .listen((event) {
-      if (mounted) {
-        setState(() {});
-      }
+    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
+      // Settings tiles update via StreamBuilder, no need for setState
     });
   }
 
@@ -82,37 +76,42 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    Size _size = MediaQuery.of(context).size;
-    List<Widget> settingsTiles = buildSettingsList(context);
-
     return Scaffold(
       appBar: SS2KAppBar(
         device: widget.device,
         title: widget.title,
       ),
       body: Center(
-        child: SizedBox(
-          height: _size.height * .90,
-          width: _size.width * .80,
-          child: settingsTiles.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 20),
-                      Text(
-                        "Refreshing Data",
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+        child: StreamBuilder<CharacteristicChangeEvent>(
+          stream: bleData.characteristicChanges,
+          builder: (context, snapshot) {
+            Size _size = MediaQuery.of(context).size;
+            List<Widget> settingsTiles = buildSettingsList(context);
+
+            return SizedBox(
+              height: _size.height * .90,
+              width: _size.width * .80,
+              child: settingsTiles.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 20),
+                          Text(
+                            "Refreshing Data",
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                )
-              : ListView(
-                  clipBehavior: Clip.antiAlias,
-                  // itemExtent: 100, // Removed fixed extent to allow variable height tiles if needed, or keep for consistency
-                  children: settingsTiles,
-                ),
+                    )
+                  : ListView(
+                      clipBehavior: Clip.antiAlias,
+                      // itemExtent: 100, // Removed fixed extent to allow variable height tiles if needed, or keep for consistency
+                      children: settingsTiles,
+                    ),
+            );
+          },
         ),
       ),
     );

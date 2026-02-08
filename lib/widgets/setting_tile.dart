@@ -55,6 +55,7 @@ class _SettingTileState extends State<SettingTile> {
         // Subscribe to characteristic changes stream instead of direct onValueReceived
         _charSubscription = bleData.characteristicChanges
             .where((event) => event.vName == c["vName"])
+            .debounce(const Duration(milliseconds: 100))
             .listen((event) {
           if (_value != c["value"]) {
             _value = valueFormatter();
@@ -140,7 +141,7 @@ class _SettingTileState extends State<SettingTile> {
   Widget build(BuildContext context) {
     SizedBox(height: 10);
     Color baseColor = _getTileColor();
-    
+
     return Hero(
       tag: c["vName"],
       child: Material(
@@ -164,29 +165,27 @@ class _SettingTileState extends State<SettingTile> {
             child: ListTile(
               contentPadding: EdgeInsets.symmetric(vertical: 25.0, horizontal: 16.0),
               shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(15),
-               ),
+                borderRadius: BorderRadius.circular(15),
+              ),
               title: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
-                    child: Text(
-                      (c["humanReadableName"]),
-                      textAlign: TextAlign.left, 
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        shadows: [
-                          Shadow(
-                            offset: Offset(1.0, 1.0),
-                            blurRadius: 15.0,
-                            color: Colors.black45,
-                          ),
-                        ],
-                      )
-                    ),
+                    child: Text((c["humanReadableName"]),
+                        textAlign: TextAlign.left,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          shadows: [
+                            Shadow(
+                              offset: Offset(1.0, 1.0),
+                              blurRadius: 15.0,
+                              color: Colors.black45,
+                            ),
+                          ],
+                        )),
                   ),
                   SizedBox(height: 4),
                   Row(
@@ -199,7 +198,7 @@ class _SettingTileState extends State<SettingTile> {
                           child: Text(
                             _value,
                             style: TextStyle(
-                              color: Colors.white70, 
+                              color: Colors.white70,
                               fontSize: 18,
                               shadows: [
                                 Shadow(

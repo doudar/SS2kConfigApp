@@ -33,7 +33,7 @@ class PowerTableChart extends StatefulWidget {
     required this.device,
     required this.bleData,
     this.pollTargetPosition = true,
-    this.pollInterval = const Duration(seconds: 1),
+    this.pollInterval = const Duration(seconds: 5),
   }) : super(key: key);
 
   @override
@@ -77,7 +77,7 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
     _startTargetPositionPolling();
 
     // Set up timer to periodically check homing values
-    _homingValuesTimer = Timer.periodic(const Duration(seconds: 5), (_homingValuesTimer) {
+    _homingValuesTimer = Timer.periodic(const Duration(seconds: 60), (_homingValuesTimer) {
       if (mounted && widget.device.isConnected) {
         requestHomingValues();
       }

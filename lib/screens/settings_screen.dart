@@ -15,7 +15,6 @@ import '../utils/snackbar.dart';
 import '../utils/bledata.dart';
 import '../utils/presets.dart';
 import '../utils/constants.dart';
-import '../utils/stream_extensions.dart';
 import 'settings_category_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -27,8 +26,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen>{
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
-  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   late BLEData bleData;
 
   @override
@@ -47,30 +44,11 @@ class _SettingsScreenState extends State<SettingsScreen>{
           });
         }
       });
-    } else {
-  
     }
-
-    _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
-      if (mounted) {
-        setState(() {});
-      }
-    });
-    
-    // Subscribe to characteristic changes with debouncing
-    _characteristicChangeSubscription = bleData.characteristicChanges
-        .debounce(Duration(milliseconds: 500))
-        .listen((event) {
-      if (mounted) {
-        setState(() {});
-      }
-    });
   }
 
   @override
   void dispose() {
-    _connectionStateSubscription?.cancel();
-    _characteristicChangeSubscription?.cancel();
     super.dispose();
   }
 
