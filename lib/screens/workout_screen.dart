@@ -503,7 +503,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                             children: [
                               AnimatedBuilder(
                                 animation: Listenable.merge(
-                                    [_zoomAnimation, _pulseController]),
+                                    [_zoomAnimation, _pulseController, _workoutController]),
                                 builder: (context, child) {
                                   return LayoutBuilder(
                                     builder: (context, graphConstraints) {
@@ -648,16 +648,22 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                                                   _overlayWidth);
                                     });
                                   },
-                                  child: _buildOverlay(),
+                                  child: AnimatedBuilder(
+                                    animation: _workoutController,
+                                    builder: (context, _) => _buildOverlay(),
+                                  ),
                                 ),
                               ),
                               Positioned(
                                 bottom: 10,
                                 left: 0,
                                 right: 0,
-                                child: WorkoutControls(
-                                  workoutController: _workoutController,
-                                  onStopWorkout: _showStopWorkoutDialog,
+                                child: AnimatedBuilder(
+                                  animation: _workoutController,
+                                  builder: (context, _) => WorkoutControls(
+                                    workoutController: _workoutController,
+                                    onStopWorkout: _showStopWorkoutDialog,
+                                  ),
                                 ),
                               ),
                             ],
@@ -668,14 +674,20 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
             ],
           ),
           Positioned.fill(
-            child: _workoutController.isPlaying
-                ? WorkoutTextEventOverlay(
-                    currentSegment: _workoutController.currentSegment,
-                    secondsIntoSegment: _workoutController.currentSegmentElapsedSeconds,
-                    ttsSettings: _ttsSettings,
-                    workoutController: _workoutController,
-                  )
-                : const SizedBox.shrink(),
+            child: AnimatedBuilder(
+              animation: _workoutController,
+              builder: (context, _) {
+                if (!_workoutController.isPlaying) {
+                  return const SizedBox.shrink();
+                }
+                return WorkoutTextEventOverlay(
+                  currentSegment: _workoutController.currentSegment,
+                  secondsIntoSegment: _workoutController.currentSegmentElapsedSeconds,
+                  ttsSettings: _ttsSettings,
+                  workoutController: _workoutController,
+                );
+              },
+            ),
           ),
         ],
       ),
