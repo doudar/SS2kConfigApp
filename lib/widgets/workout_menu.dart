@@ -8,6 +8,7 @@ import '../utils/workout/workout_file_manager.dart';
 import '../utils/workout/workout_tts_settings.dart';
 import '../utils/workout/workout_text_event_overlay.dart';
 import '../utils/workout/workout_parser.dart';
+import '../utils/workout/workout_painter.dart';
 import '../utils/bledata.dart';
 import '../utils/ftmsControlPoint.dart';
 import '../utils/workout/workout_connected_accounts.dart';
@@ -254,8 +255,11 @@ class WorkoutMenu extends StatelessWidget {
         return;
       }
 
-      final workoutDoc = todaysWorkout['workout_doc'];
-      if (workoutDoc == null) {
+      final todaysWorkoutMap = Map<String, dynamic>.from(todaysWorkout);
+
+      final workoutContent = _convertIntervalsWorkoutToZwo(todaysWorkoutMap);
+
+      if (workoutContent == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Today\'s workout does not contain structured data'),
@@ -265,14 +269,8 @@ class WorkoutMenu extends StatelessWidget {
         return;
       }
 
-      final Map<String, dynamic> docToConvert = (workoutDoc is Map)
-          ? Map<String, dynamic>.from(workoutDoc)
-          : <String, dynamic>{};
-      docToConvert['name'] ??= todaysWorkout['name'];
-
-      final workoutContent = IntervalsWorkoutConverter.convertToZwo(docToConvert);
       workoutController.loadWorkout(workoutContent);
-      onWorkoutLoaded(workoutContent, name: todaysWorkout['name'] ?? 'Today\'s Workout');
+      onWorkoutLoaded(workoutContent, name: todaysWorkoutMap['name'] ?? 'Today\'s Workout');
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -313,93 +311,122 @@ class WorkoutMenu extends StatelessWidget {
         return;
       }
 
-      // Folder picker
-      final selectedFolder = await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Intervals.icu Folders'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: folders.length,
-              itemBuilder: (ctx2, index) {
-                final f = folders[index];
-                final name = (f['name'] ?? 'Folder').toString();
-                final count = (f['children'] is List) ? (f['children'] as List).length : 0;
-                return ListTile(
-                  leading: const Icon(Icons.folder),
-                  title: Text(name),
-                  subtitle: Text('$count items'),
-                  onTap: () => Navigator.of(ctx).pop(f),
-                );
-              },
-            ),
-          ),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL'))],
-        ),
-      );
-      if (selectedFolder == null) return;
+      // Single navigator dialog starting at root so we can go up any level
+      final Map<String, dynamic> rootFolder = {
+        'name': 'Intervals.icu',
+        'children': folders,
+      };
 
       Future<Map<String, dynamic>?> pickWorkoutFromFolder(Map<String, dynamic> folder) async {
-        final children = (folder['children'] is List)
-            ? List<Map<String, dynamic>>.from(
-                (folder['children'] as List)
-                    .whereType<Map>()
-                    .map((e) => Map<String, dynamic>.from(e)),
-              )
-            : <Map<String, dynamic>>[];
-        final workouts = children.where((c) => c['workout_doc'] != null || c['workout_file'] != null).toList();
-        if (workouts.isEmpty) return null;
         return showDialog<Map<String, dynamic>>(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text('Workouts • ${folder['name'] ?? 'Folder'}'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: workouts.length,
-                itemBuilder: (ctx2, index) {
-                  final w = workouts[index];
-                  final name = (w['name'] ?? 'Workout').toString();
-                  String formatDuration(int seconds) {
-                    final h = seconds ~/ 3600;
-                    final m = (seconds % 3600) ~/ 60;
-                    final s = seconds % 60;
-                    String two(int v) => v.toString().padLeft(2, '0');
-                    if (h > 0) return '${two(h)}:${two(m)}:${two(s)}';
-                    return '${two(m)}:${two(s)}';
-                  }
-                  final movingTime = (w['moving_time'] is int)
-                      ? w['moving_time'] as int
-                      : int.tryParse('${w['moving_time'] ?? ''}') ?? 0;
-                  final load = (w['icu_training_load'] is num)
-                      ? (w['icu_training_load'] as num).toInt()
-                      : int.tryParse('${w['icu_training_load'] ?? ''}') ?? 0;
-                  final intensity = (w['icu_intensity'] is num)
-                      ? (w['icu_intensity'] as num).toDouble()
-                      : double.tryParse('${w['icu_intensity'] ?? ''}') ?? 0.0;
-                  final subtitleParts = <String>[];
-                  if (movingTime > 0) subtitleParts.add(formatDuration(movingTime));
-                  if (load > 0) subtitleParts.add('TL $load');
-                  if (intensity > 0) subtitleParts.add('IF ${intensity.toStringAsFixed(2)}');
-                  final subtitle = subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
-                  return ListTile(
-                    leading: const Icon(Icons.fitness_center),
-                    title: Text(name),
-                    subtitle: subtitle != null ? Text(subtitle) : null,
-                    onTap: () => Navigator.of(ctx).pop(w),
-                  );
-                },
-              ),
-            ),
-            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CLOSE'))],
-          ),
+          builder: (ctx) {
+            final folderStack = <Map<String, dynamic>>[folder];
+
+            return StatefulBuilder(
+              builder: (ctx2, setState) {
+                Map<String, dynamic> currentFolder = folderStack.last;
+                final children = (currentFolder['children'] is List)
+                    ? List<Map<String, dynamic>>.from(
+                        (currentFolder['children'] as List)
+                            .whereType<Map>()
+                            .map((e) => Map<String, dynamic>.from(e)),
+                      )
+                    : <Map<String, dynamic>>[];
+
+                final subfolders = children.where((c) => c['children'] is List).toList();
+                final workouts = children
+                    .where((c) => c['workout_doc'] != null || c['workout_file'] != null)
+                    .toList();
+
+                return AlertDialog(
+                  title: Text('Workouts • ${currentFolder['name'] ?? 'Folder'}'),
+                  content: SizedBox(
+                    width: double.maxFinite,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (folderStack.length > 1)
+                          ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.arrow_back),
+                            title: const Text('Go back'),
+                            onTap: () {
+                              setState(() {
+                                folderStack.removeLast();
+                              });
+                            },
+                          ),
+                        if (folderStack.length > 1) const Divider(height: 8),
+                        Expanded(
+                          child: ListView(
+                            shrinkWrap: true,
+                            children: [
+                              ...subfolders.map((f) {
+                                final name = (f['name'] ?? 'Folder').toString();
+                                return ListTile(
+                                  leading: const Icon(Icons.folder),
+                                  title: Text(name),
+                                  trailing: const Icon(Icons.chevron_right, size: 18),
+                                  onTap: () {
+                                    setState(() {
+                                      folderStack.add(f);
+                                    });
+                                  },
+                                );
+                              }),
+                              ...workouts.map((w) {
+                                final name = (w['name'] ?? 'Workout').toString();
+                                String formatDuration(int seconds) {
+                                  final h = seconds ~/ 3600;
+                                  final m = (seconds % 3600) ~/ 60;
+                                  final s = seconds % 60;
+                                  String two(int v) => v.toString().padLeft(2, '0');
+                                  if (h > 0) return '${two(h)}:${two(m)}:${two(s)}';
+                                  return '${two(m)}:${two(s)}';
+                                }
+
+                                final movingTime = (w['moving_time'] is int)
+                                    ? w['moving_time'] as int
+                                    : int.tryParse('${w['moving_time'] ?? ''}') ?? 0;
+                                final load = (w['icu_training_load'] is num)
+                                    ? (w['icu_training_load'] as num).toInt()
+                                    : int.tryParse('${w['icu_training_load'] ?? ''}') ?? 0;
+                                final intensity = (w['icu_intensity'] is num)
+                                    ? (w['icu_intensity'] as num).toDouble()
+                                    : double.tryParse('${w['icu_intensity'] ?? ''}') ?? 0.0;
+
+                                final subtitleParts = <String>[];
+                                if (movingTime > 0) subtitleParts.add(formatDuration(movingTime));
+                                if (load > 0) subtitleParts.add('TL $load');
+                                if (intensity > 0) subtitleParts.add('IF ${intensity.toStringAsFixed(2)}');
+                                final subtitle = subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
+
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                  minLeadingWidth: 130,
+                                  leading: _buildIntervalsThumbnail(context, w),
+                                  title: Text(name),
+                                  subtitle: subtitle != null ? Text(subtitle) : null,
+                                  onTap: () => Navigator.of(ctx2).pop(w),
+                                );
+                              }).toList(),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('CLOSE'))],
+                );
+              },
+            );
+          },
         );
       }
 
-      final selectedWorkout = await pickWorkoutFromFolder(selectedFolder);
+      final selectedWorkout = await pickWorkoutFromFolder(rootFolder);
       if (selectedWorkout == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -410,9 +437,11 @@ class WorkoutMenu extends StatelessWidget {
         return;
       }
 
-      final workoutDoc = selectedWorkout['workout_doc'];
-      final workoutFile = selectedWorkout['workout_file'];
-      if (workoutDoc == null && workoutFile == null) {
+      final zwoContent = _convertIntervalsWorkoutToZwo(
+        Map<String, dynamic>.from(selectedWorkout),
+      );
+
+      if (zwoContent == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Selected item has no workout data'),
@@ -422,23 +451,8 @@ class WorkoutMenu extends StatelessWidget {
         return;
       }
 
-      Map<String, dynamic> docToConvert;
-      if (workoutDoc is Map) {
-        docToConvert = Map<String, dynamic>.from(workoutDoc);
-        docToConvert['name'] ??= selectedWorkout['name'];
-      } else {
-        docToConvert = {
-          'workout_file': workoutFile,
-          'name': selectedWorkout['name'],
-          'description': selectedWorkout['description'],
-          'steps':
-              (workoutDoc is Map) ? workoutDoc['steps'] : null,
-        };
-      }
-
-      final zwo = IntervalsWorkoutConverter.convertToZwo(docToConvert);
-      workoutController.loadWorkout(zwo);
-      onWorkoutLoaded(zwo, name: (selectedWorkout['name'] ?? 'Intervals.icu Workout').toString());
+      workoutController.loadWorkout(zwoContent);
+      onWorkoutLoaded(zwoContent, name: (selectedWorkout['name'] ?? 'Intervals.icu Workout').toString());
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Loaded: ${(selectedWorkout['name'] ?? 'Intervals.icu Workout').toString()}'),
@@ -452,6 +466,97 @@ class WorkoutMenu extends StatelessWidget {
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+
+  Widget _buildIntervalsThumbnail(BuildContext context, Map<String, dynamic> workout) {
+    final zwoContent = _convertIntervalsWorkoutToZwo(Map<String, dynamic>.from(workout));
+    if (zwoContent == null) {
+      return _intervalsThumbnailPlaceholder(context);
+    }
+
+    try {
+      final parsedWorkout = WorkoutParser.parseZwoFile(zwoContent);
+      final segments = parsedWorkout.segments;
+
+      if (segments.isEmpty) {
+        return _intervalsThumbnailPlaceholder(context);
+      }
+
+      final totalDuration = segments.fold<int>(0, (sum, segment) => sum + segment.duration);
+      final maxPower = segments.fold<double>(0, (currentMax, segment) =>
+          segment.maxPower > currentMax ? segment.maxPower : currentMax);
+
+      if (totalDuration <= 0 || maxPower <= 0) {
+        return _intervalsThumbnailPlaceholder(context);
+      }
+
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 120,
+          height: 70,
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: CustomPaint(
+            painter: WorkoutPainter(
+              segments: segments,
+              maxPower: maxPower,
+              totalDuration: totalDuration.toDouble(),
+              ftpValue: workoutController.ftpValue,
+              currentProgress: 0,
+              actualPowerPoints: const <int, double>{},
+              showLabels: false,
+            ),
+          ),
+        ),
+      );
+    } catch (_) {
+      return _intervalsThumbnailPlaceholder(context);
+    }
+  }
+
+  Widget _intervalsThumbnailPlaceholder(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 120,
+        height: 70,
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.fitness_center,
+          color: Theme.of(context).colorScheme.outline,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
+  String? _convertIntervalsWorkoutToZwo(Map<String, dynamic> workout) {
+    final workoutDoc = workout['workout_doc'];
+    final workoutFile = workout['workout_file'];
+
+    if (workoutDoc == null && workoutFile == null) {
+      return null;
+    }
+
+    try {
+      Map<String, dynamic> docToConvert;
+      if (workoutDoc is Map) {
+        docToConvert = Map<String, dynamic>.from(workoutDoc);
+      } else {
+        docToConvert = {
+          'workout_file': workoutFile,
+          'steps': workoutDoc is Map ? workoutDoc['steps'] : null,
+        };
+      }
+
+      docToConvert['name'] ??= workout['name'];
+      docToConvert['description'] ??= workout['description'];
+
+      return IntervalsWorkoutConverter.convertToZwo(docToConvert);
+    } catch (_) {
+      return null;
     }
   }
 
