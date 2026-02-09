@@ -515,6 +515,8 @@ jobs:
           AppVersion={#Version}
           AppPublisher=SmartSpin2k LLC
           DefaultDirName={pf}\SmartSpin2k Config App
+          SetupIconFile=windows\\runner\\resources\\app_icon.ico
+          UninstallDisplayIcon={app}\\ss2kconfigapp.exe
           OutputDir=artifacts
           OutputBaseFilename=ss2kconfigapp-{#Version}-windows
           Compression=lzma2
