@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../services/intervals_service.dart';
 import '../services/intervals_workout_converter.dart';
@@ -9,6 +11,7 @@ import '../utils/workout/workout_tts_settings.dart';
 import '../utils/workout/workout_text_event_overlay.dart';
 import '../utils/workout/workout_parser.dart';
 import '../utils/workout/workout_painter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/bledata.dart';
 import '../utils/ftmsControlPoint.dart';
 import '../utils/workout/workout_connected_accounts.dart';
@@ -22,6 +25,10 @@ import 'completed_activities.dart';
 /// hosting screen (`WorkoutScreen`) only supplies dependencies and reacts
 /// to workout load events via a single callback.
 class WorkoutMenu extends StatelessWidget {
+  static final Map<String, _IntervalsPreviewData> _intervalsPreviewCache = {};
+  static const String _intervalsThumbPrefix = 'intervals_preview_thumb_';
+  static List<Map<String, dynamic>>? _intervalsFoldersCache;
+
   const WorkoutMenu({
     super.key,
     required this.workoutController,
@@ -299,166 +306,238 @@ class WorkoutMenu extends StatelessWidget {
         );
         return;
       }
+      await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (dialogCtx) {
+          List<Map<String, dynamic>> folders = _intervalsFoldersCache ?? [];
+          bool isLoading = folders.isEmpty;
+          String? error;
+          bool started = false;
 
-      final folders = await IntervalsService.getWorkoutFolders();
-      if (folders.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No Intervals.icu folders found'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
+          Future<void> loadFolders(StateSetter setState) async {
+            setState(() {
+              isLoading = true;
+              error = null;
+              started = true;
+            });
+            try {
+              final fetched = await IntervalsService.getWorkoutFolders();
+              if (fetched.isNotEmpty) {
+                _intervalsFoldersCache = fetched;
+                folders = fetched;
+              } else {
+                error = 'No Intervals.icu folders found';
+              }
+            } catch (e) {
+              error = 'Error loading folders: $e';
+            } finally {
+              if (dialogCtx.mounted) {
+                setState(() {
+                  isLoading = false;
+                });
+              }
+            }
+          }
 
-      // Single navigator dialog starting at root so we can go up any level
-      final Map<String, dynamic> rootFolder = {
-        'name': 'Intervals.icu',
-        'children': folders,
-      };
+          Future<Map<String, dynamic>?> pickWorkoutFromFolder(Map<String, dynamic> folder) async {
+            return showDialog<Map<String, dynamic>>(
+              context: dialogCtx,
+              builder: (ctx) {
+                final folderStack = <Map<String, dynamic>>[folder];
 
-      Future<Map<String, dynamic>?> pickWorkoutFromFolder(Map<String, dynamic> folder) async {
-        return showDialog<Map<String, dynamic>>(
-          context: context,
-          builder: (ctx) {
-            final folderStack = <Map<String, dynamic>>[folder];
+                return StatefulBuilder(
+                  builder: (ctx2, setState) {
+                    Map<String, dynamic> currentFolder = folderStack.last;
+                    final children = (currentFolder['children'] is List)
+                        ? List<Map<String, dynamic>>.from(
+                            (currentFolder['children'] as List)
+                                .whereType<Map>()
+                                .map((e) => Map<String, dynamic>.from(e)),
+                          )
+                        : <Map<String, dynamic>>[];
 
-            return StatefulBuilder(
-              builder: (ctx2, setState) {
-                Map<String, dynamic> currentFolder = folderStack.last;
-                final children = (currentFolder['children'] is List)
-                    ? List<Map<String, dynamic>>.from(
-                        (currentFolder['children'] as List)
-                            .whereType<Map>()
-                            .map((e) => Map<String, dynamic>.from(e)),
-                      )
-                    : <Map<String, dynamic>>[];
+                    final subfolders = children.where((c) => c['children'] is List).toList();
+                    final workouts = children
+                        .where((c) => c['workout_doc'] != null || c['workout_file'] != null)
+                        .toList();
 
-                final subfolders = children.where((c) => c['children'] is List).toList();
-                final workouts = children
-                    .where((c) => c['workout_doc'] != null || c['workout_file'] != null)
-                    .toList();
+                    return AlertDialog(
+                      title: Text('Workouts • ${currentFolder['name'] ?? 'Folder'}'),
+                      content: SizedBox(
+                        width: double.maxFinite,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (folderStack.length > 1)
+                              ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.arrow_back),
+                                title: const Text('Go back'),
+                                onTap: () {
+                                  setState(() {
+                                    folderStack.removeLast();
+                                  });
+                                },
+                              ),
+                            if (folderStack.length > 1) const Divider(height: 8),
+                            Expanded(
+                              child: ListView(
+                                shrinkWrap: true,
+                                children: [
+                                  ...subfolders.map((f) {
+                                    final name = (f['name'] ?? 'Folder').toString();
+                                    return ListTile(
+                                      leading: const Icon(Icons.folder),
+                                      title: Text(name),
+                                      trailing: const Icon(Icons.chevron_right, size: 18),
+                                      onTap: () {
+                                        setState(() {
+                                          folderStack.add(f);
+                                        });
+                                      },
+                                    );
+                                  }),
+                                  ...workouts.map((w) {
+                                    final name = (w['name'] ?? 'Workout').toString();
+                                    String formatDuration(int seconds) {
+                                      final h = seconds ~/ 3600;
+                                      final m = (seconds % 3600) ~/ 60;
+                                      final s = seconds % 60;
+                                      String two(int v) => v.toString().padLeft(2, '0');
+                                      if (h > 0) return '${two(h)}:${two(m)}:${two(s)}';
+                                      return '${two(m)}:${two(s)}';
+                                    }
 
-                return AlertDialog(
-                  title: Text('Workouts • ${currentFolder['name'] ?? 'Folder'}'),
-                  content: SizedBox(
-                    width: double.maxFinite,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (folderStack.length > 1)
-                          ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.arrow_back),
-                            title: const Text('Go back'),
-                            onTap: () {
-                              setState(() {
-                                folderStack.removeLast();
-                              });
-                            },
-                          ),
-                        if (folderStack.length > 1) const Divider(height: 8),
-                        Expanded(
-                          child: ListView(
-                            shrinkWrap: true,
-                            children: [
-                              ...subfolders.map((f) {
-                                final name = (f['name'] ?? 'Folder').toString();
-                                return ListTile(
-                                  leading: const Icon(Icons.folder),
-                                  title: Text(name),
-                                  trailing: const Icon(Icons.chevron_right, size: 18),
-                                  onTap: () {
-                                    setState(() {
-                                      folderStack.add(f);
-                                    });
-                                  },
-                                );
-                              }),
-                              ...workouts.map((w) {
-                                final name = (w['name'] ?? 'Workout').toString();
-                                String formatDuration(int seconds) {
-                                  final h = seconds ~/ 3600;
-                                  final m = (seconds % 3600) ~/ 60;
-                                  final s = seconds % 60;
-                                  String two(int v) => v.toString().padLeft(2, '0');
-                                  if (h > 0) return '${two(h)}:${two(m)}:${two(s)}';
-                                  return '${two(m)}:${two(s)}';
-                                }
+                                    final movingTime = (w['moving_time'] is int)
+                                        ? w['moving_time'] as int
+                                        : int.tryParse('${w['moving_time'] ?? ''}') ?? 0;
+                                    final load = (w['icu_training_load'] is num)
+                                        ? (w['icu_training_load'] as num).toInt()
+                                        : int.tryParse('${w['icu_training_load'] ?? ''}') ?? 0;
+                                    final intensity = (w['icu_intensity'] is num)
+                                        ? (w['icu_intensity'] as num).toDouble()
+                                        : double.tryParse('${w['icu_intensity'] ?? ''}') ?? 0.0;
 
-                                final movingTime = (w['moving_time'] is int)
-                                    ? w['moving_time'] as int
-                                    : int.tryParse('${w['moving_time'] ?? ''}') ?? 0;
-                                final load = (w['icu_training_load'] is num)
-                                    ? (w['icu_training_load'] as num).toInt()
-                                    : int.tryParse('${w['icu_training_load'] ?? ''}') ?? 0;
-                                final intensity = (w['icu_intensity'] is num)
-                                    ? (w['icu_intensity'] as num).toDouble()
-                                    : double.tryParse('${w['icu_intensity'] ?? ''}') ?? 0.0;
+                                    final subtitleParts = <String>[];
+                                    if (movingTime > 0) subtitleParts.add(formatDuration(movingTime));
+                                    if (load > 0) subtitleParts.add('TL $load');
+                                    if (intensity > 0) subtitleParts.add('IF ${intensity.toStringAsFixed(2)}');
+                                    final subtitle = subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
 
-                                final subtitleParts = <String>[];
-                                if (movingTime > 0) subtitleParts.add(formatDuration(movingTime));
-                                if (load > 0) subtitleParts.add('TL $load');
-                                if (intensity > 0) subtitleParts.add('IF ${intensity.toStringAsFixed(2)}');
-                                final subtitle = subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
-
-                                return ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                                  minLeadingWidth: 130,
-                                  leading: _buildIntervalsThumbnail(context, w),
-                                  title: Text(name),
-                                  subtitle: subtitle != null ? Text(subtitle) : null,
-                                  onTap: () => Navigator.of(ctx2).pop(w),
-                                );
-                              }).toList(),
-                            ],
-                          ),
+                                    return ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                      minLeadingWidth: 130,
+                                      leading: _buildIntervalsThumbnail(context, w),
+                                      title: Text(name),
+                                      subtitle: subtitle != null ? Text(subtitle) : null,
+                                      onTap: () => Navigator.of(ctx2).pop(w),
+                                    );
+                                  }).toList(),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                  actions: [TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('CLOSE'))],
+                      ),
+                      actions: [TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('BACK'))],
+                    );
+                  },
                 );
               },
             );
-          },
-        );
-      }
+          }
 
-      final selectedWorkout = await pickWorkoutFromFolder(rootFolder);
-      if (selectedWorkout == null) {
+          return StatefulBuilder(
+            builder: (ctx, setState) {
+              final hasFolders = folders.isNotEmpty;
+
+              if (!started && folders.isEmpty) {
+                started = true;
+                // Start loading after first frame to avoid build-cycle setState warning
+                WidgetsBinding.instance.addPostFrameCallback((_) => loadFolders(setState));
+              }
+
+              return AlertDialog(
+                title: Row(
+                  children: [
+                    const Text('Intervals.icu'),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Refresh',
+                      onPressed: isLoading ? null : () => loadFolders(setState),
+                    ),
+                  ],
+                ),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: isLoading && !hasFolders
+                      ? const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+                      : hasFolders
+                          ? ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: folders.length,
+                              itemBuilder: (ctx2, index) {
+                                final f = folders[index];
+                                final name = (f['name'] ?? 'Folder').toString();
+                                final count = (f['children'] is List) ? (f['children'] as List).length : 0;
+                                return ListTile(
+                                  leading: const Icon(Icons.folder),
+                                  title: Text(name),
+                                  subtitle: Text('$count items'),
+                                  trailing: const Icon(Icons.chevron_right, size: 18),
+                                  onTap: () async {
+                                    final rootFolder = {
+                                      'name': name,
+                                      'children': f['children'] ?? [],
+                                    };
+                                    final selectedWorkout = await pickWorkoutFromFolder(rootFolder);
+                                    if (selectedWorkout != null && dialogCtx.mounted) {
+                                      Navigator.of(dialogCtx).pop(selectedWorkout);
+                                    }
+                                  },
+                                );
+                              },
+                            )
+                          : Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Text(error ?? 'No Intervals.icu folders found'),
+                              ),
+                            ),
+                ),
+                actions: [TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('CLOSE'))],
+              );
+            },
+          );
+        },
+      ).then((selectedWorkout) async {
+        if (selectedWorkout == null) return;
+
+        final zwoContent = _convertIntervalsWorkoutToZwo(
+          Map<String, dynamic>.from(selectedWorkout),
+        );
+
+        if (zwoContent == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Selected item has no workout data'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        workoutController.loadWorkout(zwoContent);
+        onWorkoutLoaded(zwoContent, name: (selectedWorkout['name'] ?? 'Intervals.icu Workout').toString());
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No workouts in that folder'),
-            backgroundColor: Colors.orange,
+          SnackBar(
+            content: Text('Loaded: ${(selectedWorkout['name'] ?? 'Intervals.icu Workout').toString()}'),
+            backgroundColor: const Color(0xFF1B4F72),
           ),
         );
-        return;
-      }
-
-      final zwoContent = _convertIntervalsWorkoutToZwo(
-        Map<String, dynamic>.from(selectedWorkout),
-      );
-
-      if (zwoContent == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Selected item has no workout data'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      workoutController.loadWorkout(zwoContent);
-      onWorkoutLoaded(zwoContent, name: (selectedWorkout['name'] ?? 'Intervals.icu Workout').toString());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Loaded: ${(selectedWorkout['name'] ?? 'Intervals.icu Workout').toString()}'),
-          backgroundColor: const Color(0xFF1B4F72),
-        ),
-      );
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -470,64 +549,76 @@ class WorkoutMenu extends StatelessWidget {
   }
 
   Widget _buildIntervalsThumbnail(BuildContext context, Map<String, dynamic> workout) {
-    final zwoContent = _convertIntervalsWorkoutToZwo(Map<String, dynamic>.from(workout));
-    if (zwoContent == null) {
-      return _intervalsThumbnailPlaceholder(context);
-    }
-
-    try {
-      final parsedWorkout = WorkoutParser.parseZwoFile(zwoContent);
-      final segments = parsedWorkout.segments;
-
-      if (segments.isEmpty) {
-        return _intervalsThumbnailPlaceholder(context);
-      }
-
-      final totalDuration = segments.fold<int>(0, (sum, segment) => sum + segment.duration);
-      final maxPower = segments.fold<double>(0, (currentMax, segment) =>
-          segment.maxPower > currentMax ? segment.maxPower : currentMax);
-
-      if (totalDuration <= 0 || maxPower <= 0) {
-        return _intervalsThumbnailPlaceholder(context);
-      }
-
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 120,
-          height: 70,
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: CustomPaint(
-            painter: WorkoutPainter(
-              segments: segments,
-              maxPower: maxPower,
-              totalDuration: totalDuration.toDouble(),
-              ftpValue: workoutController.ftpValue,
-              currentProgress: 0,
-              actualPowerPoints: const <int, double>{},
-              showLabels: false,
-            ),
+    return FutureBuilder<String?>(
+      future: _getOrGenerateIntervalsThumb(workout),
+      builder: (ctx, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _intervalsThumbnailPlaceholder(context, isLoading: true);
+        }
+        final data = snapshot.data;
+        if (data == null) {
+          return _intervalsThumbnailPlaceholder(context);
+        }
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.memory(
+            base64Decode(data),
+            width: 120,
+            height: 70,
+            fit: BoxFit.cover,
           ),
-        ),
-      );
-    } catch (_) {
-      return _intervalsThumbnailPlaceholder(context);
-    }
+        );
+      },
+    );
   }
 
-  Widget _intervalsThumbnailPlaceholder(BuildContext context) {
+  Widget _intervalsThumbnailPlaceholder(BuildContext context, {bool isLoading = false}) {
+    final base = Container(
+      width: 120,
+      height: 70,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.fitness_center,
+        color: Theme.of(context).colorScheme.outline,
+        size: 20,
+      ),
+    );
+
+    if (!isLoading) {
+      return ClipRRect(borderRadius: BorderRadius.circular(8), child: base);
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: Container(
-        width: 120,
-        height: 70,
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        alignment: Alignment.center,
-        child: Icon(
-          Icons.fitness_center,
-          color: Theme.of(context).colorScheme.outline,
-          size: 20,
-        ),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 1200),
+        curve: Curves.linear,
+        builder: (context, value, child) {
+          final shimmerColors = [
+            Theme.of(context).colorScheme.surfaceContainerHighest,
+            Theme.of(context).colorScheme.surface,
+            Theme.of(context).colorScheme.surfaceContainerHighest,
+          ];
+
+          return ShaderMask(
+            shaderCallback: (rect) {
+              return LinearGradient(
+                begin: Alignment(-1 - value, 0),
+                end: Alignment(1 + value, 0),
+                colors: shimmerColors,
+                stops: const [0.1, 0.5, 0.9],
+              ).createShader(rect);
+            },
+            blendMode: BlendMode.srcATop,
+            child: base,
+          );
+        },
+        onEnd: () {},
       ),
     );
   }
@@ -555,6 +646,97 @@ class WorkoutMenu extends StatelessWidget {
       docToConvert['description'] ??= workout['description'];
 
       return IntervalsWorkoutConverter.convertToZwo(docToConvert);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _IntervalsPreviewData? _getIntervalsPreviewData(Map<String, dynamic> workout) {
+    final cacheKey = _getIntervalsCacheKey(workout);
+    if (cacheKey != null && _intervalsPreviewCache.containsKey(cacheKey)) {
+      return _intervalsPreviewCache[cacheKey];
+    }
+
+    final zwoContent = _convertIntervalsWorkoutToZwo(workout);
+    if (zwoContent == null) return null;
+
+    try {
+      final parsedWorkout = WorkoutParser.parseZwoFile(zwoContent);
+      final segments = parsedWorkout.segments;
+      if (segments.isEmpty) return null;
+
+      final totalDuration = segments.fold<int>(0, (sum, segment) => sum + segment.duration);
+      final maxPower = segments.fold<double>(0, (currentMax, segment) =>
+          segment.maxPower > currentMax ? segment.maxPower : currentMax);
+
+      if (totalDuration <= 0 || maxPower <= 0) return null;
+
+      final data = _IntervalsPreviewData(
+        segments: segments,
+        totalDuration: totalDuration.toDouble(),
+        maxPower: maxPower,
+      );
+
+      if (cacheKey != null) {
+        _intervalsPreviewCache[cacheKey] = data;
+      }
+
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _getIntervalsCacheKey(Map<String, dynamic> workout) {
+    final id = workout['id'] ?? workout['workout_id'];
+    if (id != null) return 'id_$id';
+    final name = workout['name'];
+    final modified = workout['updated'] ?? workout['modified'] ?? workout['start_date_local'];
+    if (name != null && modified != null) return 'name_${name}_$modified';
+    if (name != null) return 'name_$name';
+    return null;
+  }
+
+  Future<String?> _getOrGenerateIntervalsThumb(Map<String, dynamic> workout) async {
+    final cacheKey = _getIntervalsCacheKey(workout);
+    final prefs = await SharedPreferences.getInstance();
+
+    if (cacheKey != null) {
+      final cached = prefs.getString('$_intervalsThumbPrefix$cacheKey');
+      if (cached != null) return cached;
+    }
+
+    final preview = _getIntervalsPreviewData(Map<String, dynamic>.from(workout));
+    if (preview == null) return null;
+
+    try {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      const size = Size(120, 70);
+
+      final painter = WorkoutPainter(
+        segments: preview.segments,
+        maxPower: preview.maxPower,
+        totalDuration: preview.totalDuration,
+        ftpValue: workoutController.ftpValue,
+        currentProgress: 0,
+        actualPowerPoints: const <int, double>{},
+        showLabels: false,
+      );
+
+      painter.paint(canvas, size);
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(size.width.toInt(), size.height.toInt());
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return null;
+
+      final base64Data = base64Encode(byteData.buffer.asUint8List());
+
+      if (cacheKey != null) {
+        await prefs.setString('$_intervalsThumbPrefix$cacheKey', base64Data);
+      }
+
+      return base64Data;
     } catch (_) {
       return null;
     }
@@ -741,6 +923,18 @@ class WorkoutMenu extends StatelessWidget {
       },
     );
   }
+}
+
+class _IntervalsPreviewData {
+  final List<WorkoutSegment> segments;
+  final double totalDuration;
+  final double maxPower;
+
+  _IntervalsPreviewData({
+    required this.segments,
+    required this.totalDuration,
+    required this.maxPower,
+  });
 }
 
 enum _MenuAction {
