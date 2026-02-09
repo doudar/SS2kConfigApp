@@ -450,8 +450,102 @@ jobs:
           name: linux-artifacts-${{ matrix.arch }}
           path: artifacts/
 
+  build-windows:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 'stable'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Create env.local.dart
+        shell: bash
+        env:
+          STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
+          STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+          INTERVALS_CLIENT_ID: ${{ secrets.INTERVALS_CLIENT_ID }}
+          INTERVALS_CLIENT_SECRET: ${{ secrets.INTERVALS_CLIENT_SECRET }}
+        run: |
+          mkdir -p lib/config
+          umask 077
+          cat > lib/config/env.local.dart <<EOL
+          class Environment {
+            static const String stravaClientId = '${STRAVA_CLIENT_ID}';
+            static const String stravaClientSecret = '${STRAVA_CLIENT_SECRET}';
+            static const String intervalsClientId = '${INTERVALS_CLIENT_ID}';
+            static const String intervalsClientSecret = '${INTERVALS_CLIENT_SECRET}';
+
+            static bool get hasStravaConfig =>
+              stravaClientId.isNotEmpty && stravaClientSecret.isNotEmpty;
+
+            static bool get hasIntervalsConfig =>
+              intervalsClientId.isNotEmpty && intervalsClientSecret.isNotEmpty;
+          }
+          EOL
+
+      - name: Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Fetch dependencies
+        run: flutter pub get
+
+      - name: Build Windows App
+        run: flutter build windows --release
+
+      - name: Create Inno Setup installer
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p artifacts
+          cat > installer.iss <<'EOL'
+          [Setup]
+          AppName=SmartSpin2k Config App
+          AppVersion={#Version}
+          AppPublisher=SmartSpin2k LLC
+          DefaultDirName={pf}\SmartSpin2k Config App
+          OutputDir=artifacts
+          OutputBaseFilename=ss2kconfigapp-{#Version}-windows
+          Compression=lzma2
+          SolidCompression=yes
+          ArchitecturesInstallIn64BitMode=x64
+
+          [Files]
+          Source:"build\\windows\\runner\\Release\\*"; DestDir:"{app}"; Flags: recursesubdirs createallsubdirs
+
+          [Icons]
+          Name:"{group}\\SmartSpin2k Config App"; Filename:"{app}\\ss2kconfigapp.exe"
+          Name:"{commondesktop}\\SmartSpin2k Config App"; Filename:"{app}\\ss2kconfigapp.exe"; Tasks: desktopicon
+
+          [Tasks]
+          Name: "desktopicon"; Description: "Create a &desktop icon"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
+          EOL
+
+          # Inject version into installer script
+          sed -i "s/{#Version}/${VERSION}/g" installer.iss
+
+          # Run Inno Setup Compiler
+          iscc installer.iss
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: artifacts/
+
   create-release:
-    needs: [prepare, build-android, build-macos, build-linux]
+    needs: [prepare, build-android, build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -463,9 +557,10 @@ jobs:
         run: |
           mkdir -p release
           cp all-artifacts/android-artifacts/ss2kconfigapp-${{ needs.prepare.outputs.version }}.apk release/ss2kconfigapp-${{ needs.prepare.outputs.version }}.apk
-          cp all-artifacts/macos-artifacts/ss2kconfigapp-${{ needs.prepare.outputs.version }}.zip release/
+          cp all-artifacts/macos-artifacts/ss2kconfigapp-${{ needs.prepare.outputs.version }}.zip release/ss2kconfigapp-${{ needs.prepare.outputs.version }}.zip
           cp all-artifacts/linux-artifacts-amd64/ss2kconfigapp-amd64.deb release/ss2kconfigapp-${{ needs.prepare.outputs.version }}-amd64.deb
           cp all-artifacts/linux-artifacts-arm64/ss2kconfigapp-arm64.deb release/ss2kconfigapp-${{ needs.prepare.outputs.version }}-arm64.deb
+          cp all-artifacts/windows-artifacts/ss2kconfigapp-${{ needs.prepare.outputs.version }}-windows.exe release/ss2kconfigapp-${{ needs.prepare.outputs.version }}-windows.exe
 
       - name: Create release
         uses: softprops/action-gh-release@v1
@@ -480,6 +575,7 @@ jobs:
           body: ${{ github.event.head_commit.message }}
           files: |
             release/ss2kconfigapp-${{ needs.prepare.outputs.version }}.apk
-            release/ss2kconfigapp${{ needs.prepare.outputs.version }}.zip
+            release/ss2kconfigapp-${{ needs.prepare.outputs.version }}.zip
             release/ss2kconfigapp-${{ needs.prepare.outputs.version }}-amd64.deb
             release/ss2kconfigapp-${{ needs.prepare.outputs.version }}-arm64.deb
+            release/ss2kconfigapp-${{ needs.prepare.outputs.version }}-windows.exe
