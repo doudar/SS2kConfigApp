@@ -37,6 +37,8 @@ class _ShifterScreenState extends State<ShifterScreen> {
   @override
   void initState() {
     super.initState();
+    // Keep the shifter screen awake during use, matching workout behavior.
+    WakelockPlus.enable();
     bleData = BLEDataManager.forDevice(this.widget.device);
     t = ValueNotifier("Loading");
     c = this.bleData.customCharacteristic.firstWhere(
