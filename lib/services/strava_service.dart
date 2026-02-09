@@ -1,5 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, HttpServer, InternetAddress, ContentType, HttpRequest;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
@@ -45,11 +46,11 @@ class StravaService {
     await prefs.remove(_expiresAtKey);
   }
 
-  // Check if user is authenticated
+  // Check if user is authenticated (refresh if needed)
   static Future<bool> isAuthenticated() async {
     final tokens = await getStoredTokens();
     if (tokens['accessToken'] == null) return false;
-    
+
     // Check if token is expired
     if (tokens['expiresAt'] != null) {
       final expiresAt = int.parse(tokens['expiresAt']!);
@@ -58,7 +59,7 @@ class StravaService {
         return await _refreshToken(tokens['refreshToken']!);
       }
     }
-    
+
     return true;
   }
 
@@ -135,7 +136,61 @@ class StravaService {
       }
     }
 
-    // Build common query params
+    // Desktop platforms cannot handle the custom scheme callback; use a local loopback redirect
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      const int port = 8723;
+      final redirectUri = 'http://localhost:$port/redirect';
+      final params = {
+        'client_id': Environment.stravaClientId,
+        'redirect_uri': redirectUri,
+        'response_type': 'code',
+        'approval_prompt': 'auto',
+        'scope': 'activity:write,read',
+      };
+
+      final webStandardUrl = Uri.parse(_authUrl).replace(queryParameters: params);
+
+      HttpServer? server;
+      try {
+        server = await HttpServer.bind(InternetAddress.loopbackIPv4, port, shared: false);
+      } catch (e) {
+        debugPrint('[StravaAuth] Failed to bind local redirect server: $e');
+        showSnack('Unable to start local redirect listener for Strava auth');
+        return;
+      }
+
+      await _tryLaunch(webStandardUrl, mode: LaunchMode.externalApplication);
+
+      HttpRequest request;
+      try {
+        request = await server.first.timeout(const Duration(minutes: 2));
+      } catch (e) {
+        debugPrint('[StravaAuth] No callback received: $e');
+        await server.close(force: true);
+        showSnack('No response received from Strava (timeout)');
+        return;
+      }
+
+      final code = request.uri.queryParameters['code'];
+
+      // Friendly response in the browser
+      request.response.headers.contentType = ContentType.html;
+      request.response.statusCode = 200;
+      request.response.write('<html><body><h3>Strava authorization received. You can close this window.</h3></body></html>');
+      await request.response.close();
+      await server.close(force: true);
+
+      if (code == null) {
+        showSnack('No authorization code returned from Strava');
+        return;
+      }
+
+      final success = await handleAuthCallback(code);
+      showSnack(success ? 'Strava connected' : 'Failed to connect to Strava');
+      return;
+    }
+
+    // Build common query params for mobile platforms
     final params = {
       'client_id': Environment.stravaClientId,
       'redirect_uri': _redirectUri,

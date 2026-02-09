@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform, HttpServer, InternetAddress, ContentType, HttpRequest;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher_string.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/env.dart';
 
 class IntervalsService {
@@ -100,18 +103,85 @@ class IntervalsService {
       ),
     );
 
-    // Build OAuth URL
+    void showSnack(String msg) {
+      final scaffold = ScaffoldMessenger.maybeOf(context);
+      scaffold?.showSnackBar(
+        SnackBar(content: Text(msg), duration: const Duration(seconds: 3)),
+      );
+    }
+
+    Future<bool> _tryLaunch(Uri uri) async {
+      try {
+        if (!await canLaunchUrl(uri)) return false;
+        return await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (e) {
+        debugPrint('[IntervalsAuth] launch failed for $uri: $e');
+        return false;
+      }
+    }
+
+    // Desktop loopback flow (Windows/macOS/Linux)
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      const int port = 8724;
+      final redirectUri = 'http://localhost:$port/intervals_redirect';
+      final authUrl = Uri.parse(_authUrl).replace(queryParameters: {
+        'client_id': Environment.intervalsClientId,
+        'redirect_uri': redirectUri,
+        'response_type': 'code',
+        'scope': 'ACTIVITY:WRITE,LIBRARY:READ,CALENDAR:READ',
+      });
+
+      debugPrint('Launching Intervals.icu OAuth URL (desktop): $authUrl');
+
+      HttpServer? server;
+      try {
+        server = await HttpServer.bind(InternetAddress.loopbackIPv4, port, shared: false);
+      } catch (e) {
+        debugPrint('[IntervalsAuth] Failed to bind loopback server: $e');
+        showSnack('Unable to start local redirect listener for Intervals.icu');
+        return;
+      }
+
+      await _tryLaunch(authUrl);
+
+      HttpRequest request;
+      try {
+        request = await server.first.timeout(const Duration(minutes: 2));
+      } catch (e) {
+        debugPrint('[IntervalsAuth] No callback received: $e');
+        await server.close(force: true);
+        showSnack('No response received from Intervals.icu');
+        return;
+      }
+
+      final code = request.uri.queryParameters['code'];
+
+      request.response.headers.contentType = ContentType.html;
+      request.response.statusCode = 200;
+      request.response.write('<html><body><h3>Intervals.icu authorization received. You can close this window.</h3></body></html>');
+      await request.response.close();
+      await server.close(force: true);
+
+      if (code == null) {
+        showSnack('No authorization code returned from Intervals.icu');
+        return;
+      }
+
+      final success = await handleAuthCallback(code);
+      showSnack(success ? 'Intervals.icu connected' : 'Failed to connect to Intervals.icu');
+      return;
+    }
+
+    // Mobile / custom-scheme flow
     final authUrl = Uri.parse(_authUrl).replace(queryParameters: {
       'client_id': Environment.intervalsClientId,
       'redirect_uri': _redirectUri,
       'response_type': 'code',
-      // Request calendar read so we can fetch events (today's workout)
       'scope': 'ACTIVITY:WRITE,LIBRARY:READ,CALENDAR:READ',
     });
 
-    debugPrint('Launching Intervals.icu OAuth URL: ${authUrl.toString()}');
+    debugPrint('Launching Intervals.icu OAuth URL (mobile): $authUrl');
 
-    // Use external browser so the smartspin2k:// redirect can return to the app
     await launchUrlString(
       authUrl.toString(),
       mode: LaunchMode.externalApplication,
