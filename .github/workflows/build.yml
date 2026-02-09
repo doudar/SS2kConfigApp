@@ -524,7 +524,8 @@ jobs:
           ArchitecturesInstallIn64BitMode=x64
 
           [Files]
-          Source:"build\\windows\\runner\\Release\\*"; DestDir:"{app}"; Flags: recursesubdirs createallsubdirs
+          ; Flutter builds Windows x64 into build/windows/x64/runner/Release
+          Source:"build\\windows\\x64\\runner\\Release\\*"; DestDir:"{app}"; Flags: recursesubdirs createallsubdirs
 
           [Icons]
           Name:"{group}\\SmartSpin2k Config App"; Filename:"{app}\\ss2kconfigapp.exe"
