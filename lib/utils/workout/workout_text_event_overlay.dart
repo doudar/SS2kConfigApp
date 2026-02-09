@@ -46,8 +46,13 @@ class WorkoutTextEventOverlay extends StatefulWidget {
 
 class _WorkoutTextEventOverlayState extends State<WorkoutTextEventOverlay> with SingleTickerProviderStateMixin {
   late AnimationController _scrollController;
-  late Animation<Offset> _scrollAnimation;
-  Set<String> _animatedEvents = {};  // Track which events we've already animated
+  late Animation<double> _pixelAnimation;
+
+  String? _currentEventSignature;
+  double? _lastScreenWidth;
+  double? _lastTextWidth;
+
+  static const double _edgePadding = 24.0; // extra padding to ensure text starts fully off-screen
 
   @override
   void initState() {
@@ -58,34 +63,8 @@ class _WorkoutTextEventOverlayState extends State<WorkoutTextEventOverlay> with 
       WorkoutTextStyle.scrollingText = settings['textSize']!;
       WorkoutTextStyle.scrollSpeed = settings['scrollSpeed']!;
     });
-    _scrollController = AnimationController(vsync: this)
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          // When animation completes, remove this event from animated set
-          // so it can be animated again if it appears in a future segment
-          final currentEvents = widget.currentSegment?.textEvents
-              .where((event) => event.timeOffset <= widget.secondsIntoSegment)
-              .map((e) => e.message) ?? {};
-          _animatedEvents.removeWhere((msg) => !currentEvents.contains(msg));
-        }
-      });
-    
-    // Initialize the scroll animation with null end position
-    // Will be set dynamically based on text width in build method
-    _scrollAnimation = Tween<Offset>(
-      begin: const Offset(1.0, 0.0),
-      end: const Offset(-1.0, 0.0),
-    ).animate(CurvedAnimation(
-      parent: _scrollController,
-      curve: Curves.linear,
-    ));
-
-    // Start the animation if we have a segment
-    if (widget.currentSegment != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _startScrollAnimation(MediaQuery.of(context).size.width);
-      });
-    }
+    _scrollController = AnimationController(vsync: this);
+    _pixelAnimation = Tween<double>(begin: 0.0, end: 0.0).animate(_scrollController);
   }
 
   @override
@@ -94,16 +73,64 @@ class _WorkoutTextEventOverlayState extends State<WorkoutTextEventOverlay> with 
     super.dispose();
   }
 
-  void _startScrollAnimation(double screenWidth) {
-    // Travel distance: from just off-screen right (1 screen width) across the screen (1) plus overshoot
-    final travelDistance = screenWidth * (2 + _scrollOvershootScreens);
-    final duration = Duration(
-      milliseconds: (travelDistance / WorkoutTextStyle.scrollSpeed * 1000).round(),
+  void _resetAnimationState() {
+    _currentEventSignature = null;
+    _lastScreenWidth = null;
+    _lastTextWidth = null;
+    _scrollController.stop();
+  }
+
+  double _measureTextWidth(String text, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    return painter.width;
+  }
+
+  void _startScrollAnimation({
+    required String signature,
+    required double screenWidth,
+    required double textWidth,
+  }) {
+    final safeTextWidth = textWidth <= 0 ? 1.0 : textWidth;
+    final startX = screenWidth + _edgePadding;
+    final endX = -(safeTextWidth + _edgePadding + (screenWidth * _scrollOvershootScreens));
+    final travelDistance = startX - endX;
+    final pixelsPerSecond = WorkoutTextStyle.scrollSpeed <= 0 ? 1.0 : WorkoutTextStyle.scrollSpeed;
+    final durationMs = (travelDistance / pixelsPerSecond * 1000).clamp(100.0, 600000.0).round();
+
+    _pixelAnimation = Tween<double>(begin: startX, end: endX).animate(
+      CurvedAnimation(parent: _scrollController, curve: Curves.linear),
     );
-    
-    _scrollController.duration = duration;
-    _scrollController.reset();  // Ensure animation is fully reset
+
+    _scrollController.duration = Duration(milliseconds: durationMs);
+    _scrollController.reset();
     _scrollController.forward();
+
+    _currentEventSignature = signature;
+    _lastScreenWidth = screenWidth;
+    _lastTextWidth = safeTextWidth;
+  }
+
+  void _maybeStartScrollAnimation({
+    required String signature,
+    required double screenWidth,
+    required double textWidth,
+  }) {
+    final widthChanged = _lastScreenWidth == null || (screenWidth - _lastScreenWidth!).abs() > 1.0;
+    final textChanged = _lastTextWidth == null || (textWidth - _lastTextWidth!).abs() > 1.0;
+    final hasNewEvent = _currentEventSignature != signature;
+
+    if (hasNewEvent || widthChanged || textChanged) {
+      _startScrollAnimation(
+        signature: signature,
+        screenWidth: screenWidth,
+        textWidth: textWidth,
+      );
+    }
   }
 
   @override
@@ -113,26 +140,7 @@ class _WorkoutTextEventOverlayState extends State<WorkoutTextEventOverlay> with 
     // Clear spoken messages and animated events when segment changes
     if (widget.currentSegment != oldWidget.currentSegment) {
       widget.ttsSettings.clearSpokenMessages();
-      _animatedEvents.clear();  // Reset tracking for new segment
-    }
-    
-    if (widget.currentSegment != null) {
-      // Get new events that we haven't animated yet
-      final currentEvents = widget.currentSegment!.textEvents
-          .where((event) => event.timeOffset <= widget.secondsIntoSegment)
-          .map((e) => e.message);
-      
-      final newEvents = currentEvents.where((msg) => !_animatedEvents.contains(msg));
-      
-      if (newEvents.isNotEmpty) {
-        // Add new events to our tracking set
-        _animatedEvents.addAll(newEvents);
-        
-        // Start animation for new events
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _startScrollAnimation(MediaQuery.of(context).size.width);
-        });
-      }
+      _resetAnimationState();
     }
   }
 
@@ -149,59 +157,59 @@ class _WorkoutTextEventOverlayState extends State<WorkoutTextEventOverlay> with 
 
     // Get the most recent event
     final latestEvent = currentEvents.last;
+    final message = widget.testText ?? latestEvent.message;
 
     // Speak only the latest message if it hasn't been spoken yet
-    widget.ttsSettings.speak(latestEvent.message);
+    widget.ttsSettings.speak(message);
 
-    // Calculate text width and adjust end position
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: latestEvent.message,
-        style: TextStyle(
-          fontSize: WorkoutTextStyle.scrollingText,
-          fontWeight: FontWeight.bold,
+    final textStyle = TextStyle(
+      fontSize: WorkoutTextStyle.scrollingText,
+      fontWeight: FontWeight.bold,
+      shadows: [
+        Shadow(
+          blurRadius: 3.0,
+          color: const Color.fromARGB(255, 48, 47, 47).withValues(alpha: 0.75),
+          offset: const Offset(1.0, 1.0),
         ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    
-    final screenWidth = MediaQuery.of(context).size.width;
-    final textWidth = textPainter.width;
-    final endOffset = -((textWidth / screenWidth) + 1.0 + _scrollOvershootScreens);
-    
-    // Update animation with new end position
-    _scrollAnimation = Tween<Offset>(
-      begin: const Offset(1.0, 0.0),
-      end: Offset(endOffset, 0.0),
-    ).animate(CurvedAnimation(
-      parent: _scrollController,
-      curve: Curves.linear,
-    ));
-    
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          SlideTransition(
-            position: _scrollAnimation,
-            child: Text(
-              latestEvent.message,
-              style: TextStyle(
-                fontSize: WorkoutTextStyle.scrollingText,
-                fontWeight: FontWeight.bold,
-                shadows: [
-                  Shadow(
-                    blurRadius: 3.0,
-                    color: const Color.fromARGB(255, 48, 47, 47).withValues(alpha: 0.75),
-                    offset: const Offset(1.0, 1.0),
-                  ),
-                ],
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = constraints.maxWidth;
+        final textWidth = _measureTextWidth(message, textStyle);
+        final signature = '${widget.currentSegment.hashCode}-${latestEvent.timeOffset}-$message';
+
+        _maybeStartScrollAnimation(
+          signature: signature,
+          screenWidth: screenWidth,
+          textWidth: textWidth,
+        );
+
+        return SizedBox(
+          width: screenWidth,
+          child: AnimatedBuilder(
+            animation: _pixelAnimation,
+            builder: (context, child) {
+              return Transform.translate(
+                offset: Offset(_pixelAnimation.value, 0),
+                child: child,
+              );
+            },
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                message,
+                style: textStyle,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.visible,
               ),
-              textAlign: TextAlign.center,
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
