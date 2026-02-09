@@ -9,12 +9,12 @@ import 'dart:async';
 import 'dart:io' as io;
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:archive/archive_io.dart' as archive;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:flutter_archive/flutter_archive.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../utils/bleOTA.dart';
@@ -298,6 +298,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
     try {
       final response = await http.get(Uri.parse(downloadUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download firmware zip: HTTP ${response.statusCode}');
+      }
+
       await zipFile.writeAsBytes(response.bodyBytes);
 
       if (await extractDir.exists()) {
@@ -305,19 +309,37 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       }
       await extractDir.create();
 
-      await ZipFile.extractToDirectory(zipFile: zipFile, destinationDir: extractDir);
+      final archiveBytes = await zipFile.readAsBytes();
+      final decodedArchive = archive.ZipDecoder().decodeBytes(archiveBytes);
 
-      final firmwareBin = io.File('${extractDir.path}/firmware.bin');
-      if (await firmwareBin.exists()) {
-        return firmwareBin.path;
-      } else {
-        throw Exception('firmware.bin not found in extracted files');
+      // Manually extract to ensure all files are written (workaround for partial extraction issues)
+      for (final file in decodedArchive) {
+        final filePath = io.File('${extractDir.path}/${file.name}');
+        if (file.isFile) {
+          await filePath.parent.create(recursive: true);
+          await filePath.writeAsBytes(file.content as List<int>);
+        } else {
+          await filePath.create(recursive: true);
+        }
       }
+
+      final firmwareBinPath = await _locateFirmwareBin(extractDir);
+      return firmwareBinPath;
     } finally {
       if (await zipFile.exists()) {
         await zipFile.delete();
       }
     }
+  }
+
+  // Locate the first .bin file in an extracted firmware zip.
+  Future<String> _locateFirmwareBin(io.Directory extractDir) async {
+    await for (final entity in extractDir.list(recursive: true)) {
+      if (entity is io.File && entity.path.toLowerCase().endsWith('firmware.bin')) {
+        return entity.path;
+      }
+    }
+    throw Exception('firmware.bin not found in extracted files');
   }
 
   bool _isNewerVersion(String versionA, String versionB) {

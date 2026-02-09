@@ -156,7 +156,18 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   List<Widget> _buildScanResultTiles(BuildContext context) {
-    return _scanResults
+    final csGuid = Guid(csUUID);
+    bool _isSmartSpin2kDevice(ScanResult result) {
+      final adv = result.advertisementData;
+      final hasService = adv.serviceUuids.any((uuid) => uuid == csGuid || uuid.str.toLowerCase() == csUUID.toLowerCase());
+      return hasService;
+    }
+
+    final List<ScanResult> results = io.Platform.isWindows
+        ? _scanResults.where(_isSmartSpin2kDevice).toList() // Windows filtering fails in driver; enforce client-side filter
+        : _scanResults;
+
+    return results
         .map(
           (r) => ScanResultTile(
             result: r,
