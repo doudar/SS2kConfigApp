@@ -14,7 +14,7 @@ import 'package:flutter/services.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
-  late Directory tempDir;
+  Directory? tempDir;
   
   setUp(() async {
     // Set up shared preferences mock
@@ -23,7 +23,7 @@ void main() {
     tempDir = await Directory.systemTemp.createTemp('ss2k_test');
     pathProviderChannel.setMockMethodCallHandler((call) async {
       if (call.method == 'getApplicationDocumentsDirectory' || call.method == 'getTemporaryDirectory') {
-        return tempDir.path;
+        return tempDir!.path;
       }
       return null;
     });
@@ -31,7 +31,9 @@ void main() {
 
   tearDown(() async {
     await pathProviderChannel.setMockMethodCallHandler(null);
-    await tempDir.delete(recursive: true);
+    if (tempDir != null && await tempDir!.exists()) {
+      await tempDir!.delete(recursive: true);
+    }
   });
 
   test('Generate 1-hour ERG workout FIT file', () async {

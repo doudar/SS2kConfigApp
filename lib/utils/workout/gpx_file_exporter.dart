@@ -79,8 +79,8 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
  </gpx>''';
   }
 
-  static bool _tryCloseProgressDialog(BuildContext context, bool isShown) {
-    if (isShown && context.mounted) {
+  static bool _tryCloseDialogIfShown(BuildContext context, bool dialogShown) {
+    if (dialogShown && context.mounted) {
       Navigator.of(context, rootNavigator: true).pop();
       return true;
     }
@@ -113,8 +113,8 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
     final isStravaConnected = await StravaService.isAuthenticated();
     final isIntervalsConnected = await IntervalsService.isAuthenticated();
 
-    if (optionsDialogShown && context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
+    if (_tryCloseDialogIfShown(context, optionsDialogShown)) {
+      optionsDialogShown = false;
     }
 
     final String? exportChoice = await showDialog<String>(
@@ -294,7 +294,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
             );
           }
         } else if (context.mounted) {
-          if (_tryCloseProgressDialog(context, progressDialogShown)) {
+          if (_tryCloseDialogIfShown(context, progressDialogShown)) {
             progressDialogShown = false;
           }
           final bool? shouldShare = await showDialog<bool>(
@@ -356,7 +356,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         );
       }
     } finally {
-      if (_tryCloseProgressDialog(context, progressDialogShown)) {
+      if (_tryCloseDialogIfShown(context, progressDialogShown)) {
         progressDialogShown = false;
       }
       progressMessage.dispose();

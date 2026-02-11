@@ -155,9 +155,10 @@ class FitFileReader {
     }
 
     final duration = endTime != null ? endTime.difference(startTime) : Duration.zero;
-    final averagePower = recordCount > 0 ? totalPower ~/ recordCount : 0;
-    final averageCadence = recordCount > 0 ? totalCadence ~/ recordCount : 0;
-    final averageHeartRate = recordCount > 0 ? totalHeartRate ~/ recordCount : 0;
+    final hasRecords = recordCount > 0;
+    final averagePower = hasRecords ? totalPower ~/ recordCount : 0;
+    final averageCadence = hasRecords ? totalCadence ~/ recordCount : 0;
+    final averageHeartRate = hasRecords ? totalHeartRate ~/ recordCount : 0;
     const fallbackName = 'Workout';
 
     return ActivitySummary(

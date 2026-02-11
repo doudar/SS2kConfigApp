@@ -13,13 +13,13 @@ import 'package:ss2kconfigapp/main.dart' as app;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
-  late Directory tempDir;
+  Directory? tempDir;
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('ss2k_test');
     pathProviderChannel.setMockMethodCallHandler((call) async {
       if (call.method == 'getApplicationDocumentsDirectory' || call.method == 'getTemporaryDirectory') {
-        return tempDir.path;
+        return tempDir!.path;
       }
       return null;
     });
@@ -27,7 +27,9 @@ void main() {
 
   tearDown(() async {
     await pathProviderChannel.setMockMethodCallHandler(null);
-    await tempDir.delete(recursive: true);
+    if (tempDir != null && await tempDir!.exists()) {
+      await tempDir!.delete(recursive: true);
+    }
   });
 
   testWidgets('App builds without crashing', (tester) async {
