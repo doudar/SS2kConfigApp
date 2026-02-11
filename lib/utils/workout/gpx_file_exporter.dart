@@ -76,7 +76,15 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
    </trkpt>''').join('\n')}
   </trkseg>
  </trk>
-</gpx>''';
+ </gpx>''';
+  }
+
+  static bool _tryCloseProgressDialog(BuildContext context, bool isShown) {
+    if (isShown && context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      return false;
+    }
+    return isShown;
   }
 
   static Future<void> showExportDialog(BuildContext context, WorkoutController workoutController) async {
@@ -183,12 +191,6 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         },
       );
     }
-    void closeProgressDialog() {
-      if (progressDialogShown && context.mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-        progressDialogShown = false;
-      }
-    }
     try {
       final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
       final gpxFileName = 'workout_${timestamp}.gpx';
@@ -292,7 +294,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
             );
           }
         } else if (context.mounted) {
-          closeProgressDialog();
+          progressDialogShown = _tryCloseProgressDialog(context, progressDialogShown);
           final bool? shouldShare = await showDialog<bool>(
             context: context,
             builder: (BuildContext context) {
@@ -352,7 +354,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         );
       }
     } finally {
-      closeProgressDialog();
+      progressDialogShown = _tryCloseProgressDialog(context, progressDialogShown);
       progressMessage.dispose();
     }
   }

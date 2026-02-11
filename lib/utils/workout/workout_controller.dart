@@ -264,7 +264,11 @@ class WorkoutController extends ChangeNotifier {
     await sink.close();
   }
 
-  void _removeFlushedTrackPoints(int count) {
+  List<TrackPoint> _snapshotTrackPoints() {
+    return List<TrackPoint>.from(trackPoints);
+  }
+
+  void _removeFirstTrackPoints(int count) {
     if (trackPoints.length >= count) {
       trackPoints.removeRange(0, count);
     } else {
@@ -278,9 +282,9 @@ class WorkoutController extends ChangeNotifier {
     if (trackPoints.isEmpty) return;
 
     _isWritingInProgress = true;
-    final pointsToWrite = List<TrackPoint>.from(trackPoints);
+    final pointsToWrite = _snapshotTrackPoints();
     _appendTrackPointsToInProgressFile(pointsToWrite).then((_) {
-      _removeFlushedTrackPoints(pointsToWrite.length);
+      _removeFirstTrackPoints(pointsToWrite.length);
     }).catchError((e) {
       print('Error saving in-progress workout: $e');
     }).whenComplete(() {
@@ -294,10 +298,10 @@ class WorkoutController extends ChangeNotifier {
     if (trackPoints.isEmpty) return;
 
     _isWritingInProgress = true;
-    final pointsToWrite = List<TrackPoint>.from(trackPoints);
+    final pointsToWrite = _snapshotTrackPoints();
     try {
       await _appendTrackPointsToInProgressFile(pointsToWrite);
-      _removeFlushedTrackPoints(pointsToWrite.length);
+      _removeFirstTrackPoints(pointsToWrite.length);
     } catch (e) {
       print('Error saving in-progress workout: $e');
     } finally {
