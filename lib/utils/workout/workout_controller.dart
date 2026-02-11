@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math show sqrt, max;
-import 'dart:io' show Platform;
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import '../bledata.dart';
 import '../ftmsControlPoint.dart';
 import 'workout_parser.dart';
@@ -29,6 +31,32 @@ class TrackPoint {
     required this.power,
     required this.speed,
   });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'timestamp': timestamp.toIso8601String(),
+      'lat': lat,
+      'lon': lon,
+      'elevation': elevation,
+      'heartRate': heartRate,
+      'cadence': cadence,
+      'power': power,
+      'speed': speed,
+    };
+  }
+
+  factory TrackPoint.fromJson(Map<String, dynamic> json) {
+    return TrackPoint(
+      timestamp: DateTime.parse(json['timestamp'] as String),
+      lat: (json['lat'] as num).toDouble(),
+      lon: (json['lon'] as num).toDouble(),
+      elevation: (json['elevation'] as num).toDouble(),
+      heartRate: (json['heartRate'] as num).toInt(),
+      cadence: (json['cadence'] as num).toInt(),
+      power: (json['power'] as num).toInt(),
+      speed: (json['speed'] as num).toDouble(),
+    );
+  }
 }
 
 class WorkoutController extends ChangeNotifier {
@@ -64,6 +92,9 @@ class WorkoutController extends ChangeNotifier {
   DateTime? _lastTickTime; // Track last timer tick for accurate drift compensation
   double _lastTrackPointTime = 0; // Last track point time in workout progress seconds
   int _lastRecordedSecond = -1; // Track last whole-second data point recorded
+  String? _inProgressFilePath;
+  bool _isWritingInProgress = false;
+  static const int _inProgressFlushThreshold = 60;
 
   // Factory constructor to get device-specific instance
   factory WorkoutController(BLEData bleData, BluetoothDevice device) {
@@ -107,6 +138,14 @@ class WorkoutController extends ChangeNotifier {
 
     // Load saved workout state
     final savedState = await WorkoutStorage.loadWorkoutState();
+    _inProgressFilePath = await WorkoutStorage.loadInProgressFilePath();
+    if (_inProgressFilePath != null) {
+      final inProgressFile = File(_inProgressFilePath!);
+      if (!await inProgressFile.exists()) {
+        _inProgressFilePath = null;
+        await WorkoutStorage.saveInProgressFilePath(null);
+      }
+    }
     final workoutContent = savedState['workoutContent'] as String?;
 
     if (workoutContent != null) {
@@ -128,8 +167,9 @@ class WorkoutController extends ChangeNotifier {
       }
 
       // Resume if it was playing
-  if (savedState['wasPlaying'] == true) {
+      if (savedState['wasPlaying'] == true) {
         isPlaying = true;
+        await _prepareInProgressFile();
         startProgress();
       }
     }
@@ -176,6 +216,117 @@ class WorkoutController extends ChangeNotifier {
     }
   }
 
+  Future<void> _prepareInProgressFile() async {
+    if (progressPosition == 0 && _inProgressFilePath != null) {
+      await clearInProgressFile();
+    }
+    await _ensureInProgressFile();
+  }
+
+  Future<File> _ensureInProgressFile() async {
+    if (_inProgressFilePath != null) {
+      final file = File(_inProgressFilePath!);
+      if (await file.exists()) {
+        return file;
+      }
+    }
+
+    final Directory appDir = await getApplicationDocumentsDirectory();
+    final Directory workoutsDir = Directory('${appDir.path}${Platform.pathSeparator}workouts');
+    if (!await workoutsDir.exists()) {
+      await workoutsDir.create(recursive: true);
+    }
+
+    final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+    final filePath = '${workoutsDir.path}${Platform.pathSeparator}workout_in_progress_$timestamp.jsonl';
+    final inProgressFile = File(filePath);
+    final metadata = {
+      'type': 'metadata',
+      'workoutName': workoutName ?? 'Unnamed Workout',
+      'startTime': (_workoutStartTime ?? DateTime.now()).toIso8601String(),
+    };
+
+    await inProgressFile.writeAsString('${jsonEncode(metadata)}\n', mode: FileMode.write);
+    _inProgressFilePath = filePath;
+    await WorkoutStorage.saveInProgressFilePath(filePath);
+    return inProgressFile;
+  }
+
+  Future<void> _appendTrackPointsToInProgressFile(List<TrackPoint> points) async {
+    if (points.isEmpty) return;
+    final file = await _ensureInProgressFile();
+    final sink = file.openWrite(mode: FileMode.append);
+    for (final point in points) {
+      final payload = point.toJson()..['type'] = 'trackPoint';
+      sink.writeln(jsonEncode(payload));
+    }
+    await sink.flush();
+    await sink.close();
+  }
+
+  Future<void> _flushInProgressTrackPoints({bool force = false}) async {
+    if (_isWritingInProgress) return;
+    if (!force && trackPoints.length < _inProgressFlushThreshold) return;
+    if (trackPoints.isEmpty) return;
+
+    _isWritingInProgress = true;
+    final pointsToWrite = List<TrackPoint>.from(trackPoints);
+    try {
+      await _appendTrackPointsToInProgressFile(pointsToWrite);
+      if (trackPoints.length >= pointsToWrite.length) {
+        trackPoints.removeRange(0, pointsToWrite.length);
+      } else {
+        trackPoints.clear();
+      }
+    } catch (e) {
+      print('Error saving in-progress workout: $e');
+    } finally {
+      _isWritingInProgress = false;
+    }
+  }
+
+  Future<List<TrackPoint>> _readInProgressTrackPoints() async {
+    if (_inProgressFilePath == null) return [];
+    final file = File(_inProgressFilePath!);
+    if (!await file.exists()) return [];
+
+    final lines = await file.readAsLines();
+    final points = <TrackPoint>[];
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+      final data = jsonDecode(line);
+      if (data is Map<String, dynamic> && data['type'] == 'trackPoint') {
+        points.add(TrackPoint.fromJson(data));
+      }
+    }
+    return points;
+  }
+
+  Future<List<TrackPoint>> getExportTrackPoints() async {
+    final storedPoints = await _readInProgressTrackPoints();
+    if (storedPoints.isEmpty) {
+      return List<TrackPoint>.from(trackPoints);
+    }
+    if (trackPoints.isEmpty) {
+      return storedPoints;
+    }
+    final combined = [...storedPoints, ...trackPoints];
+    combined.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return combined;
+  }
+
+  Future<void> clearInProgressFile() async {
+    final existingPath = _inProgressFilePath;
+    _inProgressFilePath = null;
+    await WorkoutStorage.saveInProgressFilePath(null);
+    if (existingPath == null) return;
+
+    final file = File(existingPath);
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
   Future<void> togglePlayPause() async {
     // For iOS, ensure we reset simulation parameters before starting
     if (Platform.isIOS && !isPlaying) {
@@ -219,6 +370,7 @@ class WorkoutController extends ChangeNotifier {
       if (_workoutStartTime == null) {
         _workoutStartTime = DateTime.now();
       }
+      await _prepareInProgressFile();
       // Update target power immediately when resuming
       _updateTargetPower();
       startProgress();
@@ -234,6 +386,7 @@ class WorkoutController extends ChangeNotifier {
     isPlaying = false;
     progressTimer?.cancel();
     _resetSimulationParameters();
+    await _flushInProgressTrackPoints(force: true);
     _saveWorkoutState();
     if (!_isDisposed) {
       notifyListeners();
@@ -410,7 +563,7 @@ class WorkoutController extends ChangeNotifier {
     // When starting/resuming, set to one second before current progress so the first timer tick records the current second and avoids a gap
     _lastRecordedSecond = _workoutProgressTime.floor() - 1;
 
-    progressTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+    progressTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) async {
       if (_isDisposed || !isPlaying) {
         timer.cancel();
         return;
@@ -473,6 +626,8 @@ class WorkoutController extends ChangeNotifier {
         ));
         _lastTrackPointTime = nextPointTime;
       }
+ 
+      await _flushInProgressTrackPoints();
 
       if (progressPosition >= 1.0) {
         //progressPosition = 0; we will reset the progress position in the workout_screen.dart so that the save file dialog triggers correctly.
@@ -483,6 +638,7 @@ class WorkoutController extends ChangeNotifier {
           workoutSoundGenerator.workoutEndSound();
           _resetSimulationParameters();
         }
+        await _flushInProgressTrackPoints(force: true);
         _saveWorkoutState();
         if (!_isDisposed) {
           notifyListeners();

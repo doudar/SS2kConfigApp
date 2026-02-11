@@ -9,6 +9,7 @@ class WorkoutStorage {
   static const String _workoutProgressTime = 'workout_progress_time';
   static const String _skippedTimeKey = 'workout_skipped_time';
   static const String _isPlayingKey = 'workout_is_playing';
+  static const String _inProgressFilePathKey = 'workout_in_progress_file_path';
   static const String _savedWorkoutsKey = 'saved_workouts';
   static const String _workoutThumbnailPrefix = 'workout_thumbnail_';
   static const String defaultWorkoutName = "Anthony's Mix";
@@ -97,6 +98,21 @@ class WorkoutStorage {
     await prefs.remove(_workoutProgressTime);
     await prefs.remove(_skippedTimeKey);
     await prefs.remove(_isPlayingKey);
+    await prefs.remove(_inProgressFilePathKey);
+  }
+
+  static Future<void> saveInProgressFilePath(String? filePath) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (filePath == null) {
+      await prefs.remove(_inProgressFilePathKey);
+    } else {
+      await prefs.setString(_inProgressFilePathKey, filePath);
+    }
+  }
+
+  static Future<String?> loadInProgressFilePath() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_inProgressFilePathKey);
   }
 
   // Save a workout to the library

@@ -22,6 +22,18 @@ class CompletedActivities extends StatelessWidget {
   }
 
   Future<void> _showActivityOptions(BuildContext context, ActivitySummary activity) async {
+    if (activity.isInProgress) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This workout is still in progress.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
     final isStravaConnected = await StravaService.isAuthenticated();
 
     final String? exportChoice = await showDialog<String>(
@@ -135,11 +147,12 @@ class CompletedActivities extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final activity = activities[index];
                   return ListTile(
-                    title: Text(activity.name),
+                    title: Text(activity.isInProgress ? '${activity.name} (In Progress)' : activity.name),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(DateFormat('MMM d, y HH:mm').format(activity.timestamp)),
+                        if (activity.isInProgress) const Text('Status: In Progress'),
                         Text(
                           'Duration: ${activity.duration.toString().split('.').first} • '
                           'Power: ${activity.averagePower}W • '

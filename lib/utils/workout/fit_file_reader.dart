@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:fit_tool/fit_tool.dart';
 import 'package:path_provider/path_provider.dart';
@@ -10,6 +11,7 @@ class ActivitySummary {
   final int averageCadence;
   final int averageHeartRate;
   final String filePath;
+  final bool isInProgress;
 
   ActivitySummary({
     required this.name,
@@ -19,6 +21,7 @@ class ActivitySummary {
     required this.averageCadence,
     required this.averageHeartRate,
     required this.filePath,
+    this.isInProgress = false,
   });
 }
 
@@ -34,12 +37,11 @@ class FitFileReader {
         return activities;
       }
 
-      final List<FileSystemEntity> files = await workoutsDir
-          .list()
-          .where((entity) => entity.path.toLowerCase().endsWith('.fit'))
-          .toList();
+      final List<FileSystemEntity> files = await workoutsDir.list().toList();
+      final fitFiles = files.where((entity) => entity.path.toLowerCase().endsWith('.fit'));
+      final inProgressFiles = files.where(_isInProgressFile);
 
-      for (final file in files) {
+      for (final file in fitFiles) {
         try {
           final bytes = await File(file.path).readAsBytes();
           final fitFile = FitFile.fromBytes(bytes);
@@ -81,6 +83,17 @@ class FitFileReader {
         }
       }
 
+      for (final file in inProgressFiles) {
+        try {
+          final summary = await _readInProgressSummary(File(file.path));
+          if (summary != null) {
+            activities.add(summary);
+          }
+        } catch (e) {
+          print('Error reading in-progress workout ${file.path}: $e');
+        }
+      }
+
       // Sort activities by date, most recent first
       activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       
@@ -89,5 +102,66 @@ class FitFileReader {
       print('Error reading completed activities: $e');
       return activities;
     }
+  }
+
+  static bool _isInProgressFile(FileSystemEntity entity) {
+    final fileName = entity.path.split(Platform.pathSeparator).last.toLowerCase();
+    return fileName.startsWith('workout_in_progress_') && fileName.endsWith('.jsonl');
+  }
+
+  static Future<ActivitySummary?> _readInProgressSummary(File file) async {
+    final lines = await file.readAsLines();
+    String? name;
+    DateTime? startTime;
+    DateTime? endTime;
+    int totalPower = 0;
+    int totalCadence = 0;
+    int totalHeartRate = 0;
+    int recordCount = 0;
+
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+      final data = jsonDecode(line);
+      if (data is! Map<String, dynamic>) continue;
+      final type = data['type'];
+      if (type == 'metadata') {
+        name = data['workoutName'] as String?;
+        final start = data['startTime'] as String?;
+        if (start != null) {
+          startTime = DateTime.tryParse(start);
+        }
+      } else if (type == 'trackPoint') {
+        final timestamp = DateTime.tryParse(data['timestamp'] as String? ?? '');
+        if (timestamp != null) {
+          startTime ??= timestamp;
+          endTime = timestamp;
+        }
+        totalPower += (data['power'] as num?)?.toInt() ?? 0;
+        totalCadence += (data['cadence'] as num?)?.toInt() ?? 0;
+        totalHeartRate += (data['heartRate'] as num?)?.toInt() ?? 0;
+        recordCount++;
+      }
+    }
+
+    if (startTime == null) {
+      return null;
+    }
+
+    final duration = endTime != null ? endTime.difference(startTime) : Duration.zero;
+    final averagePower = recordCount > 0 ? totalPower ~/ recordCount : 0;
+    final averageCadence = recordCount > 0 ? totalCadence ~/ recordCount : 0;
+    final averageHeartRate = recordCount > 0 ? totalHeartRate ~/ recordCount : 0;
+    final fallbackName = file.path.split(Platform.pathSeparator).last.replaceAll('.jsonl', '');
+
+    return ActivitySummary(
+      name: name ?? fallbackName,
+      timestamp: startTime,
+      duration: duration,
+      averagePower: averagePower,
+      averageCadence: averageCadence,
+      averageHeartRate: averageHeartRate,
+      filePath: file.path,
+      isInProgress: true,
+    );
   }
 }

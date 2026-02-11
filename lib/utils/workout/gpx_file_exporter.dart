@@ -80,8 +80,34 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
   }
 
   static Future<void> showExportDialog(BuildContext context, WorkoutController workoutController) async {
+    bool optionsDialogShown = false;
+    if (context.mounted) {
+      optionsDialogShown = true;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return const AlertDialog(
+            title: Text('Preparing Export'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Checking export options...'),
+              ],
+            ),
+          );
+        },
+      );
+    }
+
     final isStravaConnected = await StravaService.isAuthenticated();
     final isIntervalsConnected = await IntervalsService.isAuthenticated();
+
+    if (optionsDialogShown && context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
 
     final String? exportChoice = await showDialog<String>(
       context: context,
@@ -122,6 +148,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
       );
     }
 
+    await workoutController.clearInProgressFile();
     // Reset workout position to beginning
     workoutController.resetWorkout();
   }
@@ -131,15 +158,49 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
     WorkoutController workoutController, 
     {bool uploadToStrava = false, bool uploadToIntervals = false}
   ) async {
+    final progressMessage = ValueNotifier<String>('Preparing workout export...');
+    bool progressDialogShown = false;
+    if (context.mounted) {
+      progressDialogShown = true;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Processing Workout'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const LinearProgressIndicator(),
+                const SizedBox(height: 16),
+                ValueListenableBuilder<String>(
+                  valueListenable: progressMessage,
+                  builder: (context, value, _) => Text(value),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    }
+    void closeProgressDialog() {
+      if (progressDialogShown && context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        progressDialogShown = false;
+      }
+    }
     try {
       final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
       final gpxFileName = 'workout_${timestamp}.gpx';
       final workoutName = workoutController.workoutName ?? 'Unnamed Workout';
-      
+
+      progressMessage.value = 'Generating workout track...';
+      final trackPoints = await workoutController.getExportTrackPoints();
+
       // Generate GPX content using collected track points
       final gpxContent = await generateGpxContent(
         workoutName,
-        workoutController.trackPoints,
+        trackPoints,
       );
 
       if (gpxContent.isEmpty) {
@@ -154,6 +215,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         return;
       }
 
+      progressMessage.value = 'Saving workout file...';
       // Get the appropriate directory based on platform
       final Directory appDir;
       if (Platform.isIOS) {
@@ -173,6 +235,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
       await gpxFile.writeAsString(gpxContent);
 
       try {
+        progressMessage.value = 'Converting to FIT format...';
         // Convert GPX to FIT
         final fitFilePath = await GpxToFitConverter.convertAndCleanup(gpxFile.path);
 
@@ -187,6 +250,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
             );
           }
 
+          progressMessage.value = 'Uploading to Strava...';
           final success = await StravaService.uploadActivity(
             fitFilePath,
             workoutName,
@@ -212,6 +276,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
             );
           }
 
+          progressMessage.value = 'Uploading to Intervals.icu...';
           final success = await IntervalsService.uploadWorkout(
             fitFilePath,
             workoutName,
@@ -227,6 +292,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
             );
           }
         } else if (context.mounted) {
+          closeProgressDialog();
           final bool? shouldShare = await showDialog<bool>(
             context: context,
             builder: (BuildContext context) {
@@ -285,6 +351,9 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
           ),
         );
       }
+    } finally {
+      closeProgressDialog();
+      progressMessage.dispose();
     }
   }
 }
