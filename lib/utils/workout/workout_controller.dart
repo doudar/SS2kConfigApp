@@ -94,7 +94,7 @@ class WorkoutController extends ChangeNotifier {
   int _lastRecordedSecond = -1; // Track last whole-second data point recorded
   String? _inProgressFilePath;
   bool _isWritingInProgress = false;
-  static const int _inProgressFlushThreshold = 60;
+  static const int _inProgressFlushThreshold = 60; // track points (~1 minute) before flushing to disk
 
   // Factory constructor to get device-specific instance
   factory WorkoutController(BLEData bleData, BluetoothDevice device) {
@@ -276,13 +276,18 @@ class WorkoutController extends ChangeNotifier {
     }
   }
 
-  void _scheduleInProgressFlush({bool force = false}) {
-    if (_isWritingInProgress) return;
-    if (!force && trackPoints.length < _inProgressFlushThreshold) return;
-    if (trackPoints.isEmpty) return;
+  List<TrackPoint>? _beginFlush({bool force = false}) {
+    if (_isWritingInProgress) return null;
+    if (!force && trackPoints.length < _inProgressFlushThreshold) return null;
+    if (trackPoints.isEmpty) return null;
 
     _isWritingInProgress = true;
-    final pointsToWrite = _snapshotTrackPoints();
+    return _snapshotTrackPoints();
+  }
+
+  void _scheduleInProgressFlush({bool force = false}) {
+    final pointsToWrite = _beginFlush(force: force);
+    if (pointsToWrite == null) return;
     _appendTrackPointsToInProgressFile(pointsToWrite).then((_) {
       _removeFirstTrackPoints(pointsToWrite.length);
     }).catchError((e) {
@@ -293,12 +298,8 @@ class WorkoutController extends ChangeNotifier {
   }
 
   Future<void> _flushInProgressTrackPoints({bool force = false}) async {
-    if (_isWritingInProgress) return;
-    if (!force && trackPoints.length < _inProgressFlushThreshold) return;
-    if (trackPoints.isEmpty) return;
-
-    _isWritingInProgress = true;
-    final pointsToWrite = _snapshotTrackPoints();
+    final pointsToWrite = _beginFlush(force: force);
+    if (pointsToWrite == null) return;
     try {
       await _appendTrackPointsToInProgressFile(pointsToWrite);
       _removeFirstTrackPoints(pointsToWrite.length);
