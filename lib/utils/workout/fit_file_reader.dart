@@ -38,8 +38,15 @@ class FitFileReader {
       }
 
       final List<FileSystemEntity> files = await workoutsDir.list().toList();
-      final fitFiles = files.where((entity) => entity.path.toLowerCase().endsWith('.fit'));
-      final inProgressFiles = files.where(_isInProgressFile);
+      final List<FileSystemEntity> fitFiles = [];
+      final List<FileSystemEntity> inProgressFiles = [];
+      for (final file in files) {
+        if (file.path.toLowerCase().endsWith('.fit')) {
+          fitFiles.add(file);
+        } else if (_isInProgressFile(file)) {
+          inProgressFiles.add(file);
+        }
+      }
 
       for (final file in fitFiles) {
         try {

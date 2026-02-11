@@ -265,6 +265,7 @@ class WorkoutController extends ChangeNotifier {
   }
 
   List<TrackPoint> _snapshotTrackPoints() {
+    // TrackPoint is immutable, so a shallow copy is sufficient.
     return List<TrackPoint>.from(trackPoints);
   }
 
