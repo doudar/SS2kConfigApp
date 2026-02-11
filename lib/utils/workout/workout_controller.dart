@@ -264,6 +264,30 @@ class WorkoutController extends ChangeNotifier {
     await sink.close();
   }
 
+  void _removeFlushedTrackPoints(int count) {
+    if (trackPoints.length >= count) {
+      trackPoints.removeRange(0, count);
+    } else {
+      trackPoints.clear();
+    }
+  }
+
+  void _scheduleInProgressFlush({bool force = false}) {
+    if (_isWritingInProgress) return;
+    if (!force && trackPoints.length < _inProgressFlushThreshold) return;
+    if (trackPoints.isEmpty) return;
+
+    _isWritingInProgress = true;
+    final pointsToWrite = List<TrackPoint>.from(trackPoints);
+    _appendTrackPointsToInProgressFile(pointsToWrite).then((_) {
+      _removeFlushedTrackPoints(pointsToWrite.length);
+    }).catchError((e) {
+      print('Error saving in-progress workout: $e');
+    }).whenComplete(() {
+      _isWritingInProgress = false;
+    });
+  }
+
   Future<void> _flushInProgressTrackPoints({bool force = false}) async {
     if (_isWritingInProgress) return;
     if (!force && trackPoints.length < _inProgressFlushThreshold) return;
@@ -273,11 +297,7 @@ class WorkoutController extends ChangeNotifier {
     final pointsToWrite = List<TrackPoint>.from(trackPoints);
     try {
       await _appendTrackPointsToInProgressFile(pointsToWrite);
-      if (trackPoints.length >= pointsToWrite.length) {
-        trackPoints.removeRange(0, pointsToWrite.length);
-      } else {
-        trackPoints.clear();
-      }
+      _removeFlushedTrackPoints(pointsToWrite.length);
     } catch (e) {
       print('Error saving in-progress workout: $e');
     } finally {
@@ -563,7 +583,7 @@ class WorkoutController extends ChangeNotifier {
     // When starting/resuming, set to one second before current progress so the first timer tick records the current second and avoids a gap
     _lastRecordedSecond = _workoutProgressTime.floor() - 1;
 
-    progressTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) async {
+    progressTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (_isDisposed || !isPlaying) {
         timer.cancel();
         return;
@@ -627,7 +647,7 @@ class WorkoutController extends ChangeNotifier {
         _lastTrackPointTime = nextPointTime;
       }
  
-      await _flushInProgressTrackPoints();
+      _scheduleInProgressFlush();
 
       if (progressPosition >= 1.0) {
         //progressPosition = 0; we will reset the progress position in the workout_screen.dart so that the save file dialog triggers correctly.
@@ -638,7 +658,7 @@ class WorkoutController extends ChangeNotifier {
           workoutSoundGenerator.workoutEndSound();
           _resetSimulationParameters();
         }
-        await _flushInProgressTrackPoints(force: true);
+        _scheduleInProgressFlush(force: true);
         _saveWorkoutState();
         if (!_isDisposed) {
           notifyListeners();
