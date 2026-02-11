@@ -16,7 +16,7 @@ void main() {
   late Directory tempDir;
 
   setUp(() async {
-    tempDir = await Directory.systemTemp.createTemp('ss2k_widget_test');
+    tempDir = await Directory.systemTemp.createTemp('ss2k_test');
     pathProviderChannel.setMockMethodCallHandler((call) async {
       if (call.method == 'getApplicationDocumentsDirectory' || call.method == 'getTemporaryDirectory') {
         return tempDir.path;

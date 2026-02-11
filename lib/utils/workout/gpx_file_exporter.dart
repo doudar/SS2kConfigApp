@@ -79,7 +79,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
  </gpx>''';
   }
 
-  static bool _tryCloseProgressDialog(BuildContext context, bool isShown) {
+  static bool _closeProgressDialogIfShown(BuildContext context, bool isShown) {
     if (isShown && context.mounted) {
       Navigator.of(context, rootNavigator: true).pop();
       return false;
@@ -294,7 +294,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
             );
           }
         } else if (context.mounted) {
-          progressDialogShown = _tryCloseProgressDialog(context, progressDialogShown);
+          progressDialogShown = _closeProgressDialogIfShown(context, progressDialogShown);
           final bool? shouldShare = await showDialog<bool>(
             context: context,
             builder: (BuildContext context) {
@@ -354,7 +354,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         );
       }
     } finally {
-      progressDialogShown = _tryCloseProgressDialog(context, progressDialogShown);
+      progressDialogShown = _closeProgressDialogIfShown(context, progressDialogShown);
       progressMessage.dispose();
     }
   }

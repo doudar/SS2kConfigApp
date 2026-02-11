@@ -94,7 +94,7 @@ class WorkoutController extends ChangeNotifier {
   int _lastRecordedSecond = -1; // Track last whole-second data point recorded
   String? _inProgressFilePath;
   bool _isWritingInProgress = false;
-  static const int _inProgressFlushThreshold = 60; // track points (~1 minute) before flushing to disk
+  static const int _inProgressFlushThreshold = 60; // track points (~1/sec) before flushing to disk
 
   // Factory constructor to get device-specific instance
   factory WorkoutController(BLEData bleData, BluetoothDevice device) {
