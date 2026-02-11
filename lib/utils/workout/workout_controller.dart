@@ -94,7 +94,7 @@ class WorkoutController extends ChangeNotifier {
   int _lastRecordedSecond = -1; // Track last whole-second data point recorded
   String? _inProgressFilePath;
   bool _isWritingInProgress = false;
-  static const int _inProgressFlushThreshold = 60; // track points recorded ~once/sec in startProgress before flushing
+  static const int _flushIntervalTrackPoints = 60; // track points recorded ~once/sec in startProgress before flushing
 
   // Factory constructor to get device-specific instance
   factory WorkoutController(BLEData bleData, BluetoothDevice device) {
@@ -279,7 +279,7 @@ class WorkoutController extends ChangeNotifier {
 
   List<TrackPoint>? _beginFlush({bool force = false}) {
     if (_isWritingInProgress) return null;
-    if (!force && trackPoints.length < _inProgressFlushThreshold) return null;
+    if (!force && trackPoints.length < _flushIntervalTrackPoints) return null;
     if (trackPoints.isEmpty) return null;
 
     _isWritingInProgress = true;
@@ -292,6 +292,7 @@ class WorkoutController extends ChangeNotifier {
     _appendTrackPointsToInProgressFile(pointsToWrite).then((_) {
       _removeFirstTrackPoints(pointsToWrite.length);
     }).catchError((e) {
+      // Leave points in memory so the next flush can retry.
       print('Error saving in-progress workout: $e');
     }).whenComplete(() {
       _isWritingInProgress = false;
@@ -336,10 +337,28 @@ class WorkoutController extends ChangeNotifier {
     if (trackPoints.isEmpty) {
       return storedPoints;
     }
-    final combined = [...storedPoints, ...trackPoints];
-    // Sort to account for async flush timing between persisted and in-memory points.
-    combined.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-    return combined;
+    // Both lists are appended in time order; merge to preserve sorted timestamps.
+    final merged = <TrackPoint>[];
+    int storedIndex = 0;
+    int memoryIndex = 0;
+    while (storedIndex < storedPoints.length && memoryIndex < trackPoints.length) {
+      final storedPoint = storedPoints[storedIndex];
+      final memoryPoint = trackPoints[memoryIndex];
+      if (storedPoint.timestamp.isBefore(memoryPoint.timestamp)) {
+        merged.add(storedPoint);
+        storedIndex++;
+      } else {
+        merged.add(memoryPoint);
+        memoryIndex++;
+      }
+    }
+    if (storedIndex < storedPoints.length) {
+      merged.addAll(storedPoints.sublist(storedIndex));
+    }
+    if (memoryIndex < trackPoints.length) {
+      merged.addAll(trackPoints.sublist(memoryIndex));
+    }
+    return merged;
   }
 
   Future<void> clearInProgressFile() async {

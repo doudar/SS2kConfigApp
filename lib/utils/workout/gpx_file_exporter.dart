@@ -90,7 +90,6 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
   static Future<void> showExportDialog(BuildContext context, WorkoutController workoutController) async {
     bool optionsDialogShown = false;
     if (context.mounted) {
-      optionsDialogShown = true;
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -108,6 +107,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
           );
         },
       );
+      optionsDialogShown = true;
     }
 
     final isStravaConnected = await StravaService.isAuthenticated();
@@ -166,7 +166,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
     WorkoutController workoutController, 
     {bool uploadToStrava = false, bool uploadToIntervals = false}
   ) async {
-    final progressMessage = ValueNotifier<String>('Preparing workout export...');
+    final progressMessage = ValueNotifier<String>('Preparing workout export...'); // disposed in finally
     bool progressDialogShown = false;
     if (context.mounted) {
       progressDialogShown = true;

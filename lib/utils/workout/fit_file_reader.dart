@@ -159,7 +159,7 @@ class FitFileReader {
     final averagePower = hasRecords ? totalPower ~/ recordCount : 0;
     final averageCadence = hasRecords ? totalCadence ~/ recordCount : 0;
     final averageHeartRate = hasRecords ? totalHeartRate ~/ recordCount : 0;
-    const fallbackName = 'Workout';
+    const fallbackName = 'Unnamed Workout';
 
     return ActivitySummary(
       name: name ?? fallbackName,
