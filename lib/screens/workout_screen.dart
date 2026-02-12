@@ -132,6 +132,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       if (!mounted) return;
       if (_isDisposing) return; // Skip any animation updates while disposing
 
+
       // Apply an immediate animation state the first time we get a callback after (re)entering.
       // This prevents the summary card from remaining permanently visible when resuming mid-workout.
       if (!_didApplyInitialAnimation) {
@@ -473,9 +474,12 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
             children: [
               Stack(
                 children: [
-                  WorkoutSummary(
-                    workoutController: _workoutController,
-                    fadeAnimation: _metricsAndSummaryFadeAnimation,
+                  AnimatedBuilder(
+                    animation: _workoutController,
+                    builder: (context, _) => WorkoutSummary(
+                      workoutController: _workoutController,
+                      fadeAnimation: _metricsAndSummaryFadeAnimation,
+                    ),
                   ),
                   StreamBuilder<CharacteristicChangeEvent>(
                     stream: bleData.characteristicChanges

@@ -75,6 +75,9 @@ class WorkoutController extends ChangeNotifier {
   Map<int, double> actualPowerPoints = {}; // Map time index to power value
   Map<int, int> actualHrPoints = {}; // Map time index to HR value
   Map<int, int> actualCadencePoints = {}; // Map time index to Cadence value
+  final List<double> _powerPointsList = [];
+  final List<double> _hrPointsList = [];
+  final List<double> _cadencePointsList = [];
   double _workoutProgressTime = 0; // Track workout's progress position (authoritative source for duration/elapsed time)
   double _skippedTime = 0; // Time skipped by user actions; excluded from elapsed
   int currentSegmentTimeRemaining = 0;
@@ -94,7 +97,9 @@ class WorkoutController extends ChangeNotifier {
   int _lastRecordedSecond = -1; // Track last whole-second data point recorded
   String? _inProgressFilePath;
   bool _isWritingInProgress = false;
+  DateTime? _lastWorkoutStateSave;
   static const int _flushIntervalTrackPoints = 60; // track points recorded ~once/sec in startProgress before flushing
+  static const Duration _workoutStateSaveInterval = Duration(seconds: 30);
 
   // Factory constructor to get device-specific instance
   factory WorkoutController(BLEData bleData, BluetoothDevice device) {
@@ -166,13 +171,57 @@ class WorkoutController extends ChangeNotifier {
         _skippedTime = savedSkippedTime.toDouble();
       }
 
-      // Resume if it was playing
-      if (savedState['wasPlaying'] == true) {
-        isPlaying = true;
-        await _prepareInProgressFile();
-        startProgress();
+
+      // Do not auto-resume on app launch; wait for explicit user action.
+      isPlaying = false;
+    }
+  }
+
+  Future<bool> restoreSavedWorkoutState({bool autoPlay = false}) async {
+    final savedState = await WorkoutStorage.loadWorkoutState();
+    final workoutContent = savedState['workoutContent'] as String?;
+    if (workoutContent == null) {
+      return false;
+    }
+
+    _inProgressFilePath = await WorkoutStorage.loadInProgressFilePath();
+    if (_inProgressFilePath != null) {
+      final inProgressFile = File(_inProgressFilePath!);
+      if (!await inProgressFile.exists()) {
+        _inProgressFilePath = null;
+        await WorkoutStorage.saveInProgressFilePath(null);
       }
     }
+
+    isPlaying = false;
+    loadWorkout(workoutContent, isResume: true);
+
+    final savedProgress = savedState['progressPosition'];
+    if (savedProgress is num) {
+      progressPosition = savedProgress.toDouble();
+    }
+    final savedWorkoutProgress = savedState['workoutProgressTime'];
+    if (savedWorkoutProgress is num) {
+      _workoutProgressTime = savedWorkoutProgress.toDouble();
+    }
+    final savedSkippedTime = savedState['skippedTime'];
+    if (savedSkippedTime is num) {
+      _skippedTime = savedSkippedTime.toDouble();
+    }
+
+
+    if (autoPlay) {
+      isPlaying = true;
+      await _prepareInProgressFile();
+      startProgress();
+    }
+
+    _saveWorkoutState();
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+
+    return true;
   }
 
   WorkoutSegment? get currentSegment {
@@ -422,7 +471,7 @@ class WorkoutController extends ChangeNotifier {
       startProgress();
     }
     isPlaying = !isPlaying;
-    _saveWorkoutState();
+    _saveWorkoutState(force: true);
     if (!_isDisposed) {
       notifyListeners();
     }
@@ -433,7 +482,7 @@ class WorkoutController extends ChangeNotifier {
     progressTimer?.cancel();
     _resetSimulationParameters();
     await _flushInProgressTrackPoints(force: true);
-    _saveWorkoutState();
+    _saveWorkoutState(force: true);
     if (!_isDisposed) {
       notifyListeners();
     }
@@ -525,6 +574,9 @@ class WorkoutController extends ChangeNotifier {
         actualPowerPoints = {};
         actualHrPoints = {};
         actualCadencePoints = {};
+        _powerPointsList.clear();
+        _hrPointsList.clear();
+        _cadencePointsList.clear();
         _totalDistance = 0;
         _lastAltitude = 100.0;
         _totalAscent = 0;
@@ -637,6 +689,7 @@ class WorkoutController extends ChangeNotifier {
         actualPowerPoints[second] = currentPower;
         actualHrPoints[second] = currentHeartRate;
         actualCadencePoints[second] = currentCadence;
+        _appendPointLists(second, currentPower, currentHeartRate, currentCadence);
       }
       _lastRecordedSecond = currentSecond;
 
@@ -685,7 +738,7 @@ class WorkoutController extends ChangeNotifier {
           _resetSimulationParameters();
         }
         _scheduleInProgressFlush(force: true);
-        _saveWorkoutState();
+        _saveWorkoutState(force: true);
         if (!_isDisposed) {
           notifyListeners();
         }
@@ -702,6 +755,25 @@ class WorkoutController extends ChangeNotifier {
     });
   }
 
+  void _appendPointLists(int second, double power, int heartRate, int cadence) {
+    final int targetLength = second + 1;
+    if (_powerPointsList.length < targetLength) {
+      final double lastPower = _powerPointsList.isNotEmpty ? _powerPointsList.last : power;
+      final double lastHr = _hrPointsList.isNotEmpty ? _hrPointsList.last : heartRate.toDouble();
+      final double lastCadence =
+          _cadencePointsList.isNotEmpty ? _cadencePointsList.last : cadence.toDouble();
+      while (_powerPointsList.length < targetLength) {
+        _powerPointsList.add(lastPower);
+        _hrPointsList.add(lastHr);
+        _cadencePointsList.add(lastCadence);
+      }
+    }
+
+    _powerPointsList[second] = power;
+    _hrPointsList[second] = heartRate.toDouble();
+    _cadencePointsList[second] = cadence.toDouble();
+  }
+
   void _handleSegmentCountdown(int timeRemaining) {
     if (!isPlaying) return; // Don't play sounds if workout isn't active
 
@@ -713,7 +785,16 @@ class WorkoutController extends ChangeNotifier {
     }
   }
 
-  Future<void> _saveWorkoutState() async {
+  Future<void> _saveWorkoutState({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force && _lastWorkoutStateSave != null) {
+      final elapsed = now.difference(_lastWorkoutStateSave!);
+      if (elapsed < _workoutStateSaveInterval) {
+        return;
+      }
+    }
+
+    _lastWorkoutStateSave = now;
     await WorkoutStorage.saveWorkoutState(
       workoutContent: _currentWorkoutContent,
       progressPosition: progressPosition,
@@ -725,116 +806,17 @@ class WorkoutController extends ChangeNotifier {
 
   // Get power points as a list up to current time
   List<double> getPowerPointsUpToNow() {
-    final maxSeconds = _workoutProgressTime.round();
-    List<double> points = List.filled(maxSeconds + 1, 0);
-
-    for (int i = 0; i <= maxSeconds; i++) {
-      // Use the actual power value if we have it, otherwise interpolate between known points
-      if (actualPowerPoints.containsKey(i)) {
-        points[i] = actualPowerPoints[i]!;
-      } else {
-        // Find nearest known points before and after
-        int? beforeTime = actualPowerPoints.keys
-            .where((time) => time < i)
-            .fold<int?>(null, (max, time) => max == null || time > max ? time : max);
-        int? afterTime = actualPowerPoints.keys
-            .where((time) => time > i)
-            .fold<int?>(null, (min, time) => min == null || time < min ? time : min);
-
-        if (beforeTime != null && afterTime != null) {
-          // Interpolate between known points
-          double beforeValue = actualPowerPoints[beforeTime]!;
-          double afterValue = actualPowerPoints[afterTime]!;
-          double ratio = (i - beforeTime) / (afterTime - beforeTime);
-          points[i] = beforeValue + (afterValue - beforeValue) * ratio;
-        } else if (beforeTime != null) {
-          // Use last known value
-          points[i] = actualPowerPoints[beforeTime]!;
-        } else if (afterTime != null) {
-          // Use next known value
-          points[i] = actualPowerPoints[afterTime]!;
-        } else {
-          // No known values, use current power
-          points[i] = bleData.ftmsData.watts.toDouble();
-        }
-      }
-    }
-
-    return points;
+    return _powerPointsList;
   }
 
   // Get HR points as a list up to current time
   List<double> getHrPointsUpToNow() {
-    final maxSeconds = _workoutProgressTime.round();
-    List<double> points = List.filled(maxSeconds + 1, 0);
-
-    for (int i = 0; i <= maxSeconds; i++) {
-        if (actualHrPoints.containsKey(i)) {
-          points[i] = actualHrPoints[i]!.toDouble();
-        } else {
-             // Fill with 0 or previous known? 
-             // Logic says "If HR is 0 or null, it shouldn't be displayed". 
-             // Here we return list of values. 0 is fine if we handle 0 as "don't draw".
-             // Simple fill with last known or 0? 
-             // The power logic interpolates.
-             // For HR/Cadence interpolation is probably fine too, but 0 handling is key.
-             
-             // Simplistic approach: mimic Power interpolation but with int sources
-             int? beforeTime = actualHrPoints.keys
-                .where((time) => time < i)
-                .fold<int?>(null, (max, time) => max == null || time > max ? time : max);
-             int? afterTime = actualHrPoints.keys
-                .where((time) => time > i)
-                .fold<int?>(null, (min, time) => min == null || time < min ? time : min);
-
-             if (beforeTime != null && afterTime != null) {
-               double beforeValue = actualHrPoints[beforeTime]!.toDouble();
-               double afterValue = actualHrPoints[afterTime]!.toDouble();
-               double ratio = (i - beforeTime) / (afterTime - beforeTime);
-               points[i] = beforeValue + (afterValue - beforeValue) * ratio;
-             } else if (beforeTime != null) {
-               points[i] = actualHrPoints[beforeTime]!.toDouble();
-             } else if (afterTime != null) {
-               points[i] = actualHrPoints[afterTime]!.toDouble();
-             } else {
-               points[i] = bleData.ftmsData.heartRate.toDouble();
-             }
-        }
-    }
-    return points;
+    return _hrPointsList;
   }
 
   // Get Cadence points as a list up to current time
   List<double> getCadencePointsUpToNow() {
-      final maxSeconds = _workoutProgressTime.round();
-      List<double> points = List.filled(maxSeconds + 1, 0);
-
-      for (int i = 0; i <= maxSeconds; i++) {
-          if (actualCadencePoints.containsKey(i)) {
-            points[i] = actualCadencePoints[i]!.toDouble();
-          } else {
-             int? beforeTime = actualCadencePoints.keys
-                .where((time) => time < i)
-                .fold<int?>(null, (max, time) => max == null || time > max ? time : max);
-             int? afterTime = actualCadencePoints.keys
-                .where((time) => time > i)
-                .fold<int?>(null, (min, time) => min == null || time < min ? time : min);
-
-             if (beforeTime != null && afterTime != null) {
-               double beforeValue = actualCadencePoints[beforeTime]!.toDouble();
-               double afterValue = actualCadencePoints[afterTime]!.toDouble();
-               double ratio = (i - beforeTime) / (afterTime - beforeTime);
-               points[i] = beforeValue + (afterValue - beforeValue) * ratio;
-             } else if (beforeTime != null) {
-               points[i] = actualCadencePoints[beforeTime]!.toDouble();
-             } else if (afterTime != null) {
-               points[i] = actualCadencePoints[afterTime]!.toDouble();
-             } else {
-               points[i] = bleData.ftmsData.cadence.toDouble();
-             }
-          }
-      }
-      return points;
+      return _cadencePointsList;
   }
 
   Future<void> updateFTP(double? newValue) async {
@@ -865,4 +847,41 @@ class WorkoutController extends ChangeNotifier {
   
   // Getter for elapsed seconds (based on workout progress time)
   int get elapsedSeconds => (_workoutProgressTime - _skippedTime).clamp(0, double.infinity).round();
+
+  double? get averagePower {
+    if (actualPowerPoints.isEmpty) return null;
+    double sum = 0;
+    for (final value in actualPowerPoints.values) {
+      sum += value;
+    }
+    return sum / actualPowerPoints.length;
+  }
+
+  double? get averageCadence {
+    if (actualCadencePoints.isEmpty) return null;
+    int sum = 0;
+    int count = 0;
+    for (final value in actualCadencePoints.values) {
+      if (value > 0) {
+        sum += value;
+        count++;
+      }
+    }
+    if (count == 0) return null;
+    return sum / count;
+  }
+
+  double? get averageHeartRate {
+    if (actualHrPoints.isEmpty) return null;
+    int sum = 0;
+    int count = 0;
+    for (final value in actualHrPoints.values) {
+      if (value > 0) {
+        sum += value;
+        count++;
+      }
+    }
+    if (count == 0) return null;
+    return sum / count;
+  }
 }
