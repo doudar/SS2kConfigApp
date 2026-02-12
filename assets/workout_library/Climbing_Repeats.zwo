@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Climbing Repeats</name>
+  <description>Sustained climbs at threshold</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="1200" PowerLow="0.5" PowerHigh="0.75"/>
+    <IntervalsT Repeat="4" OnDuration="480" OffDuration="240" OnPower="0.95" OffPower="0.55">
+      <textevent timeoffset="0" message="Climb 1 - find your rhythm"/>
+      <textevent timeoffset="480" message="Descend and recover"/>
+      <textevent timeoffset="720" message="Climb 2 - stay seated"/>
+      <textevent timeoffset="1440" message="Climb 3 - halfway!"/>
+      <textevent timeoffset="2400" message="Final climb - dig deep!"/>
+    </IntervalsT>
+    <Cooldown Duration="600" PowerLow="0.6" PowerHigh="0.4">
+      <textevent timeoffset="0" message="Climber! Four 8-minute threshold climbs - you&apos;re ready for the mountains!"/>
+    </Cooldown>
+  </workout>
+</workout_file>

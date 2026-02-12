@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Movie Quotes Challenge</name>
+  <description>Test your movie knowledge! Quotes on work intervals, movies on recovery.</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="600" PowerLow="0.5" PowerHigh="0.75"/>
+    <IntervalsT Repeat="15" OnDuration="240" OffDuration="120" OnPower="0.88" OffPower="0.55">
+      <textevent timeoffset="0" message="Quote 1: &quot;May the Force be with you.&quot;"/>
+      <textevent timeoffset="240" message="Movie 1: Star Wars (1977)"/>
+      <textevent timeoffset="360" message="Quote 2: &quot;Here&apos;s looking at you, kid.&quot;"/>
+      <textevent timeoffset="600" message="Movie 2: Casablanca (1942)"/>
+      <textevent timeoffset="720" message="Quote 3: &quot;You&apos;re gonna need a bigger boat.&quot;"/>
+      <textevent timeoffset="960" message="Movie 3: Jaws (1975)"/>
+      <textevent timeoffset="1080" message="Quote 4: &quot;I&apos;ll be back.&quot;"/>
+      <textevent timeoffset="1320" message="Movie 4: The Terminator (1984)"/>
+      <textevent timeoffset="1440" message="Quote 5: &quot;Life is like a box of chocolates.&quot;"/>
+      <textevent timeoffset="1680" message="Movie 5: Forrest Gump (1994)"/>
+      <textevent timeoffset="1800" message="Quote 6: &quot;I see dead people.&quot;"/>
+      <textevent timeoffset="2040" message="Movie 6: The Sixth Sense (1999)"/>
+      <textevent timeoffset="2160" message="Quote 7: &quot;To infinity and beyond!&quot;"/>
+      <textevent timeoffset="2400" message="Movie 7: Toy Story (1995)"/>
+      <textevent timeoffset="2520" message="Quote 8: &quot;You can&apos;t handle the truth!&quot;"/>
+      <textevent timeoffset="2760" message="Movie 8: A Few Good Men (1992)"/>
+      <textevent timeoffset="2880" message="Quote 9: &quot;There&apos;s no place like home.&quot;"/>
+      <textevent timeoffset="3120" message="Movie 9: The Wizard of Oz (1939)"/>
+      <textevent timeoffset="3240" message="Quote 10: &quot;I&apos;m the king of the world!&quot;"/>
+      <textevent timeoffset="3480" message="Movie 10: Titanic (1997)"/>
+      <textevent timeoffset="3600" message="Quote 11: &quot;With great power comes great responsibility.&quot;"/>
+      <textevent timeoffset="3840" message="Movie 11: Spider-Man (2002)"/>
+      <textevent timeoffset="3960" message="Quote 12: &quot;Why so serious?&quot;"/>
+      <textevent timeoffset="4200" message="Movie 12: The Dark Knight (2008)"/>
+      <textevent timeoffset="4320" message="Quote 13: &quot;You talking to me?&quot;"/>
+      <textevent timeoffset="4560" message="Movie 13: Taxi Driver (1976)"/>
+      <textevent timeoffset="4680" message="Quote 14: &quot;Here&apos;s Johnny!&quot;"/>
+      <textevent timeoffset="4920" message="Movie 14: The Shining (1980)"/>
+      <textevent timeoffset="5040" message="Quote 15: &quot;Do or do not. There is no try.&quot;"/>
+      <textevent timeoffset="5280" message="Movie 15: The Empire Strikes Back (1980). Great work!"/>
+    </IntervalsT>
+    <Cooldown Duration="420" PowerLow="0.6" PowerHigh="0.4">
+      <textevent timeoffset="0" message="Amazing! 15 quality intervals and you nailed the movie trivia - a true champion!"/>
+    </Cooldown>
+  </workout>
+</workout_file>

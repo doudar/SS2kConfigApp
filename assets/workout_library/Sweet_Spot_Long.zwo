@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Sweet Spot Long</name>
+  <description>Extended sweet spot for advanced riders</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="900" PowerLow="0.5" PowerHigh="0.75"/>
+    <IntervalsT Repeat="2" OnDuration="1200" OffDuration="300" OnPower="0.9" OffPower="0.55">
+      <textevent timeoffset="0" message="20min sweet spot - settle in"/>
+      <textevent timeoffset="900" message="Halfway through interval 1"/>
+      <textevent timeoffset="1500" message="Recovery spin"/>
+      <textevent timeoffset="1800" message="Interval 2 - stay strong!"/>
+    </IntervalsT>
+    <Cooldown Duration="600" PowerLow="0.6" PowerHigh="0.4">
+      <textevent timeoffset="480" message="Champion! 40 minutes at sweet spot - your FTP is climbing!"/>
+    </Cooldown>
+  </workout>
+</workout_file>

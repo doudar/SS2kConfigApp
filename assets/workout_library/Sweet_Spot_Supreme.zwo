@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Sweet Spot Supreme</name>
+  <description>Build sustainable power with 3x10min sweet spot intervals</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="900" PowerLow="0.5" PowerHigh="0.75">
+      <textevent timeoffset="0" message="Warm up gradually"/>
+    </Warmup>
+    <IntervalsT Repeat="3" OnDuration="600" OffDuration="300" OnPower="0.9" OffPower="0.55">
+      <textevent timeoffset="0" message="First interval! Find your rhythm at 90% FTP"/>
+      <textevent timeoffset="600" message="Recovery - spin easy"/>
+      <textevent timeoffset="900" message="Interval 2 - stay focused"/>
+      <textevent timeoffset="1500" message="Recovery again"/>
+      <textevent timeoffset="1800" message="Final interval - you got this!"/>
+      <textevent timeoffset="2580" message="Incredible! Three solid sweet spot intervals - you just elevated your FTP and built serious sustainable power!"/>
+    </IntervalsT>
+    <Cooldown Duration="600" PowerLow="0.6" PowerHigh="0.4"/>
+  </workout>
+</workout_file>

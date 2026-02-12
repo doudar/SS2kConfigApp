@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Foundation Builder</name>
+  <description>Classic endurance ride building aerobic base with cycling tips and nutrition guidance</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="600" PowerLow="0.5" PowerHigh="0.7">
+      <textevent timeoffset="0" message="Welcome! Easy warm-up ahead. Stay hydrated throughout this ride."/>
+      <textevent timeoffset="180" message="TIP: Keep your shoulders relaxed and elbows slightly bent to reduce upper body tension."/>
+      <textevent timeoffset="360" message="NUTRITION: For rides over 90 minutes, aim for 30-60g of carbs per hour."/>
+      <textevent timeoffset="540" message="Warm-up complete soon. These easy watts build mitochondrial density!"/>
+    </Warmup>
+    <SteadyState Duration="2400" Power="0.65">
+      <textevent timeoffset="0" message="Main set begins! Settle into a comfortable rhythm at 65% FTP."/>
+      <textevent timeoffset="180" message="TIP: Focus on pushing through the bottom of the pedal stroke (6 o&apos;clock position)."/>
+      <textevent timeoffset="360" message="HYDRATION: Take small sips every 10-15 minutes rather than gulping."/>
+      <textevent timeoffset="540" message="TIP: Your cadence should feel natural - typically 85-95 RPM for endurance rides."/>
+      <textevent timeoffset="720" message="NUTRITION: Bananas are great - they provide quick energy and potassium to prevent cramps."/>
+      <textevent timeoffset="900" message="Quarter way through! Your aerobic engine is getting stronger."/>
+      <textevent timeoffset="1080" message="TIP: Keep your core engaged to protect your lower back and transfer power efficiently."/>
+      <textevent timeoffset="1260" message="BIKE FIT: Your knee should have a 25-35 degree bend at the bottom of the pedal stroke."/>
+      <textevent timeoffset="1440" message="TIP: Look ahead, not down. This improves breathing and maintains better posture."/>
+      <textevent timeoffset="1620" message="NUTRITION: Electrolytes matter! Sodium helps retain water and prevent cramping."/>
+      <textevent timeoffset="1800" message="TIP: Practice shifting before you need it - anticipate terrain changes."/>
+      <textevent timeoffset="1980" message="RECOVERY: Sleep is when adaptations happen. Aim for 7-9 hours per night."/>
+      <textevent timeoffset="2160" message="TIP: Clean your chain regularly. A dirty drivetrain wastes 3-5 watts!"/>
+      <textevent timeoffset="2340" message="NUTRITION: Post-ride, eat within 30-60 minutes for optimal recovery."/>
+    </SteadyState>
+    <Cooldown Duration="600" PowerLow="0.6" PowerHigh="0.4">
+      <textevent timeoffset="0" message="Final stretch! You&apos;re building the foundation for all other fitness gains."/>
+      <textevent timeoffset="120" message="TIP: Breathing through your nose at this intensity improves aerobic efficiency."/>
+      <textevent timeoffset="240" message="NUTRITION: Aim for a 3:1 or 4:1 carb-to-protein ratio post-workout."/>
+      <textevent timeoffset="360" message="TIP: Your hands should rest lightly on the bars - no white-knuckle gripping!"/>
+      <textevent timeoffset="480" message="Outstanding work! You just invested a full hour building your aerobic foundation - the base for everything else in cycling."/>
+      <textevent timeoffset="540" message="Almost done! Time to cool down and let your heart rate gradually decrease."/>
+    </Cooldown>
+  </workout>
+</workout_file>

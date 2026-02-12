@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Gran Fondo Prep</name>
+  <description>Long endurance with tempo surges</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="1200" PowerLow="0.5" PowerHigh="0.7"/>
+    <SteadyState Duration="1800" Power="0.68">
+      <textevent timeoffset="0" message="Long steady base"/>
+    </SteadyState>
+    <IntervalsT Repeat="3" OnDuration="300" OffDuration="300" OnPower="0.82" OffPower="0.68">
+      <textevent timeoffset="0" message="Tempo surges - like attacking hills"/>
+    </IntervalsT>
+    <SteadyState Duration="1200" Power="0.68">
+      <textevent timeoffset="0" message="Back to endurance pace"/>
+      <textevent timeoffset="1080" message="Gran Fondo ready! 100km of steady miles with surges - you&apos;re prepared for the big day!"/>
+    </SteadyState>
+    <Cooldown Duration="600" PowerLow="0.65" PowerHigh="0.45"/>
+  </workout>
+</workout_file>

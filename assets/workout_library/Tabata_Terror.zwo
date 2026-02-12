@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Tabata Terror</name>
+  <description>20 seconds on, 10 seconds off - maximum pain, maximum gain</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="600" PowerLow="0.5" PowerHigh="0.8"/>
+    <IntervalsT Repeat="16" OnDuration="20" OffDuration="10" OnPower="1.5" OffPower="0.5">
+      <textevent timeoffset="0" message="Tabata set 1 - GO HARD!"/>
+    </IntervalsT>
+    <SteadyState Duration="300" Power="0.5">
+      <textevent timeoffset="0" message="Rest between sets"/>
+    </SteadyState>
+    <IntervalsT Repeat="16" OnDuration="20" OffDuration="10" OnPower="1.5" OffPower="0.5">
+      <textevent timeoffset="0" message="Final Tabata set - finish strong!"/>
+      <textevent timeoffset="300" message="Unbelievable! You survived 32 Tabata intervals - that&apos;s pure warrior mentality!"/>
+    </IntervalsT>
+    <Cooldown Duration="300" PowerLow="0.5" PowerHigh="0.4"/>
+  </workout>
+</workout_file>

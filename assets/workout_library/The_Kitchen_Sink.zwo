@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>The Kitchen Sink</name>
+  <description>Everything but the kitchen sink - total variety workout</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="600" PowerLow="0.5" PowerHigh="0.75"/>
+    <SteadyState Duration="600" Power="0.88">
+      <textevent timeoffset="0" message="Sweet spot to start"/>
+    </SteadyState>
+    <SteadyState Duration="180" Power="0.6"/>
+    <IntervalsT Repeat="4" OnDuration="30" OffDuration="90" OnPower="1.8" OffPower="0.6">
+      <textevent timeoffset="0" message="Max sprints!"/>
+    </IntervalsT>
+    <SteadyState Duration="240" Power="0.6">
+      <textevent timeoffset="0" message="Threshold block"/>
+    </SteadyState>
+    <SteadyState Duration="480" Power="0.95">
+      <textevent timeoffset="420" message="VO2 max intervals!"/>
+    </SteadyState>
+    <SteadyState Duration="180" Power="0.6"/>
+    <IntervalsT Repeat="3" OnDuration="180" OffDuration="120" OnPower="1.15" OffPower="0.6">
+      <textevent timeoffset="840" message="You did everything today!"/>
+    </IntervalsT>
+    <Cooldown Duration="600" PowerLow="0.6" PowerHigh="0.4">
+      <textevent timeoffset="420" message="Kitchen Sink complete! Sweet spot, sprints, threshold, AND VO2 - total workout warrior!"/>
+    </Cooldown>
+  </workout>
+</workout_file>

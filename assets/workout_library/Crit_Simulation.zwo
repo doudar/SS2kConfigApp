@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Crit Simulation</name>
+  <description>Criterium-style repeated efforts</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="600" PowerLow="0.5" PowerHigh="0.8"/>
+    <IntervalsT Repeat="12" OnDuration="60" OffDuration="120" OnPower="1.4" OffPower="0.75">
+      <textevent timeoffset="0" message="Crit efforts - out of every corner!"/>
+      <textevent timeoffset="600" message="Stay sharp, recover fast!"/>
+      <textevent timeoffset="1200" message="Final laps - position for sprint!"/>
+    </IntervalsT>
+    <Cooldown Duration="300" PowerLow="0.6" PowerHigh="0.4">
+      <textevent timeoffset="120" message="Crit master! 12 hard accelerations - you&apos;re ready to race crits with confidence!"/>
+    </Cooldown>
+  </workout>
+</workout_file>
