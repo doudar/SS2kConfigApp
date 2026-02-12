@@ -99,14 +99,25 @@ class WorkoutConnectedAccounts {
                         color: const Color(0xFF1B4F72), // Intervals.icu blue
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Center(
-                        child: Text(
-                          'Connect with Intervals.icu',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
+                      child: Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Image.asset(
+                              'assets/intervals.png',
+                              width: 50,
+                              height: 50,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Connect with Intervals.icu',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),

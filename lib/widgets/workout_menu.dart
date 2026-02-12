@@ -11,7 +11,6 @@ import '../utils/workout/workout_tts_settings.dart';
 import '../utils/workout/workout_text_event_overlay.dart';
 import '../utils/workout/workout_parser.dart';
 import '../utils/workout/workout_painter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/bledata.dart';
 import '../utils/ftmsControlPoint.dart';
 import '../utils/workout/workout_connected_accounts.dart';
@@ -26,7 +25,6 @@ import 'completed_activities.dart';
 /// to workout load events via a single callback.
 class WorkoutMenu extends StatelessWidget {
   static final Map<String, _IntervalsPreviewData> _intervalsPreviewCache = {};
-  static const String _intervalsThumbPrefix = 'intervals_preview_thumb_';
   static List<Map<String, dynamic>>? _intervalsFoldersCache;
 
   const WorkoutMenu({
@@ -90,23 +88,14 @@ class WorkoutMenu extends StatelessWidget {
                     child: ListView(
                       children: [
                         _menuTile(dialogContext, context, _MenuAction.importZwo, Icons.file_upload, 'Import ZWO'),
-                        _menuTile(
-                          dialogContext,
-                          context,
-                          _MenuAction.intervals,
-                          Icons.hub,
-                          'Intervals.icu',
-                          trailing: const Icon(Icons.chevron_right, size: 18),
-                        ),
                         const Divider(),
-                        _menuTile(dialogContext, context, _MenuAction.selectWorkout, Icons.folder_open, 'Select Workout'),
-                        _menuTile(dialogContext, context, _MenuAction.deleteWorkout, Icons.delete, 'Delete Workout'),
+                        _menuTile(dialogContext, context, _MenuAction.selectWorkout, Icons.folder_open, 'Workout Library'),
+                        _menuTile(dialogContext, context, _MenuAction.completedActivities, Icons.history, 'Completed Activities'),
                         const Divider(),
-                        _menuTile(dialogContext, context, _MenuAction.audioCoach, Icons.record_voice_over, 'Audio Coach'),
                         _menuTile(dialogContext, context, _MenuAction.connectedAccounts, Icons.link, 'Connected Accounts'),
                         _menuTile(dialogContext, context, _MenuAction.calibrate, Icons.tune, 'Calibrate Trainer'),
-                        _menuTile(dialogContext, context, _MenuAction.completedActivities, Icons.history, 'Completed Activities'),
                         _menuTile(dialogContext, context, _MenuAction.workoutText, Icons.text_fields, 'Workout Text'),
+                        _menuTile(dialogContext, context, _MenuAction.audioCoach, Icons.record_voice_over, 'Audio Coach'),
                       ],
                     ),
                   ),
@@ -154,14 +143,8 @@ class WorkoutMenu extends StatelessWidget {
       case _MenuAction.importZwo:
         _importZwo(context);
         break;
-      case _MenuAction.intervals:
-        _showIntervalsSubDialog(context);
-        break;
       case _MenuAction.selectWorkout:
         _showWorkoutLibrary(context, selectionMode: true);
-        break;
-      case _MenuAction.deleteWorkout:
-        _showWorkoutLibrary(context, selectionMode: false);
         break;
       case _MenuAction.audioCoach:
         _showAudioCoachDialog(context);
@@ -173,7 +156,11 @@ class WorkoutMenu extends StatelessWidget {
         _showCalibrationDialog(context);
         break;
       case _MenuAction.completedActivities:
-        CompletedActivities.showCompletedActivitiesDialog(context);
+        CompletedActivities.showCompletedActivitiesDialog(
+          context,
+          workoutController: workoutController,
+          onWorkoutLoaded: onWorkoutLoaded,
+        );
         break;
       case _MenuAction.workoutText:
         _showWorkoutTextSettingsDialog(context);
@@ -181,44 +168,13 @@ class WorkoutMenu extends StatelessWidget {
     }
   }
 
-  void _showIntervalsSubDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Intervals.icu'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.calendar_today),
-              title: const Text("Today's Workout"),
-              subtitle: const Text('Load planned workout for today'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _loadTodaysWorkoutFromIntervals(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.cloud_download),
-              title: const Text('Pick Workout'),
-              subtitle: const Text('Browse folders & workouts'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _pickWorkoutFromIntervals(context);
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('CLOSE'),
-          ),
-        ],
-      ),
-    );
+  void _runAfterDialogClose(BuildContext dialogContext, VoidCallback action) {
+    Navigator.pop(dialogContext);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      action();
+    });
   }
+
 
   // ====== Internal Action Implementations ======
   Future<void> _importZwo(BuildContext context) async {
@@ -275,6 +231,8 @@ class WorkoutMenu extends StatelessWidget {
         );
         return;
       }
+
+      await _saveIntervalsWorkoutToLibrary(todaysWorkoutMap, workoutContent);
 
       workoutController.loadWorkout(workoutContent);
       onWorkoutLoaded(workoutContent, name: todaysWorkoutMap['name'] ?? 'Today\'s Workout');
@@ -382,59 +340,61 @@ class WorkoutMenu extends StatelessWidget {
                               ),
                             if (folderStack.length > 1) const Divider(height: 8),
                             Expanded(
-                              child: ListView(
+                              child: ListView.builder(
                                 shrinkWrap: true,
-                                children: [
-                                  ...subfolders.map((f) {
-                                    final name = (f['name'] ?? 'Folder').toString();
+                                itemCount: subfolders.length + workouts.length,
+                                itemBuilder: (context, index) {
+                                  if (index < subfolders.length) {
+                                    final folder = subfolders[index];
+                                    final name = (folder['name'] ?? 'Folder').toString();
                                     return ListTile(
                                       leading: const Icon(Icons.folder),
                                       title: Text(name),
                                       trailing: const Icon(Icons.chevron_right, size: 18),
                                       onTap: () {
                                         setState(() {
-                                          folderStack.add(f);
+                                          folderStack.add(folder);
                                         });
                                       },
                                     );
-                                  }),
-                                  ...workouts.map((w) {
-                                    final name = (w['name'] ?? 'Workout').toString();
-                                    String formatDuration(int seconds) {
-                                      final h = seconds ~/ 3600;
-                                      final m = (seconds % 3600) ~/ 60;
-                                      final s = seconds % 60;
-                                      String two(int v) => v.toString().padLeft(2, '0');
-                                      if (h > 0) return '${two(h)}:${two(m)}:${two(s)}';
-                                      return '${two(m)}:${two(s)}';
-                                    }
+                                  }
 
-                                    final movingTime = (w['moving_time'] is int)
-                                        ? w['moving_time'] as int
-                                        : int.tryParse('${w['moving_time'] ?? ''}') ?? 0;
-                                    final load = (w['icu_training_load'] is num)
-                                        ? (w['icu_training_load'] as num).toInt()
-                                        : int.tryParse('${w['icu_training_load'] ?? ''}') ?? 0;
-                                    final intensity = (w['icu_intensity'] is num)
-                                        ? (w['icu_intensity'] as num).toDouble()
-                                        : double.tryParse('${w['icu_intensity'] ?? ''}') ?? 0.0;
+                                  final workout = workouts[index - subfolders.length];
+                                  final name = (workout['name'] ?? 'Workout').toString();
+                                  String formatDuration(int seconds) {
+                                    final h = seconds ~/ 3600;
+                                    final m = (seconds % 3600) ~/ 60;
+                                    final s = seconds % 60;
+                                    String two(int v) => v.toString().padLeft(2, '0');
+                                    if (h > 0) return '${two(h)}:${two(m)}:${two(s)}';
+                                    return '${two(m)}:${two(s)}';
+                                  }
 
-                                    final subtitleParts = <String>[];
-                                    if (movingTime > 0) subtitleParts.add(formatDuration(movingTime));
-                                    if (load > 0) subtitleParts.add('TL $load');
-                                    if (intensity > 0) subtitleParts.add('IF ${intensity.toStringAsFixed(2)}');
-                                    final subtitle = subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
+                                  final movingTime = (workout['moving_time'] is int)
+                                      ? workout['moving_time'] as int
+                                      : int.tryParse('${workout['moving_time'] ?? ''}') ?? 0;
+                                  final load = (workout['icu_training_load'] is num)
+                                      ? (workout['icu_training_load'] as num).toInt()
+                                      : int.tryParse('${workout['icu_training_load'] ?? ''}') ?? 0;
+                                  final intensity = (workout['icu_intensity'] is num)
+                                      ? (workout['icu_intensity'] as num).toDouble()
+                                      : double.tryParse('${workout['icu_intensity'] ?? ''}') ?? 0.0;
 
-                                    return ListTile(
-                                      contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                                      minLeadingWidth: 130,
-                                      leading: _buildIntervalsThumbnail(context, w),
-                                      title: Text(name),
-                                      subtitle: subtitle != null ? Text(subtitle) : null,
-                                      onTap: () => Navigator.of(ctx2).pop(w),
-                                    );
-                                  }).toList(),
-                                ],
+                                  final subtitleParts = <String>[];
+                                  if (movingTime > 0) subtitleParts.add(formatDuration(movingTime));
+                                  if (load > 0) subtitleParts.add('TL $load');
+                                  if (intensity > 0) subtitleParts.add('IF ${intensity.toStringAsFixed(2)}');
+                                  final subtitle = subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
+
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                    minLeadingWidth: 130,
+                                    leading: _buildIntervalsThumbnail(context, workout),
+                                    title: Text(name),
+                                    subtitle: subtitle != null ? Text(subtitle) : null,
+                                    onTap: () => Navigator.of(ctx2).pop(workout),
+                                  );
+                                },
                               ),
                             ),
                           ],
@@ -529,6 +489,10 @@ class WorkoutMenu extends StatelessWidget {
           return;
         }
 
+        await _saveIntervalsWorkoutToLibrary(
+          Map<String, dynamic>.from(selectedWorkout),
+          zwoContent,
+        );
         workoutController.loadWorkout(zwoContent);
         onWorkoutLoaded(zwoContent, name: (selectedWorkout['name'] ?? 'Intervals.icu Workout').toString());
         ScaffoldMessenger.of(context).showSnackBar(
@@ -546,6 +510,20 @@ class WorkoutMenu extends StatelessWidget {
         ),
       );
     }
+  }
+
+  Future<void> _saveIntervalsWorkoutToLibrary(
+    Map<String, dynamic> workout,
+    String zwoContent,
+  ) async {
+    final workoutName = (workout['name'] ?? 'Intervals.icu Workout').toString();
+    final thumb = await _getOrGenerateIntervalsThumb(workout);
+    final thumbnailData = thumb ?? base64Encode(utf8.encode('placeholder'));
+    await WorkoutStorage.saveOrUpdateWorkoutToLibrary(
+      workoutContent: zwoContent,
+      workoutName: workoutName,
+      thumbnailData: thumbnailData,
+    );
   }
 
   Widget _buildIntervalsThumbnail(BuildContext context, Map<String, dynamic> workout) {
@@ -698,14 +676,6 @@ class WorkoutMenu extends StatelessWidget {
   }
 
   Future<String?> _getOrGenerateIntervalsThumb(Map<String, dynamic> workout) async {
-    final cacheKey = _getIntervalsCacheKey(workout);
-    final prefs = await SharedPreferences.getInstance();
-
-    if (cacheKey != null) {
-      final cached = prefs.getString('$_intervalsThumbPrefix$cacheKey');
-      if (cached != null) return cached;
-    }
-
     final preview = _getIntervalsPreviewData(Map<String, dynamic>.from(workout));
     if (preview == null) return null;
 
@@ -732,10 +702,6 @@ class WorkoutMenu extends StatelessWidget {
 
       final base64Data = base64Encode(byteData.buffer.asUint8List());
 
-      if (cacheKey != null) {
-        await prefs.setString('$_intervalsThumbPrefix$cacheKey', base64Data);
-      }
-
       return base64Data;
     } catch (_) {
       return null;
@@ -753,17 +719,141 @@ class WorkoutMenu extends StatelessWidget {
           child: Column(
             children: [
               Text(
-                selectionMode ? 'Select Workout' : 'Delete Workout',
+                'Workout Library',
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               SizedBox(height: WorkoutSpacing.medium),
+              if (selectionMode)
+                FutureBuilder<bool>(
+                  future: IntervalsService.isAuthenticated(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8.0),
+                        child: LinearProgressIndicator(),
+                      );
+                    }
+
+                    final isConnected = snapshot.data == true;
+                    if (!isConnected) {
+                      return Card(
+                        child: ListTile(
+                          leading: Image.asset(
+                            'assets/intervals.png',
+                            width: 50,
+                            height: 50,
+                          ),
+                          title: const Text('Connect Intervals.icu for more workouts'),
+                          onTap: () => _runAfterDialogClose(
+                            ctx,
+                            () => WorkoutConnectedAccounts.showConnectedAccountsDialog(context),
+                          ),
+                        ),
+                      );
+                    }
+
+                    return Card(
+                      child: Column(
+                        children: [
+                          ListTile(
+                            leading: Image.asset(
+                              'assets/intervals.png',
+                              width: 50,
+                              height: 50,
+                            ),
+                            title: const Text("Today's Intervals.icu Workout"),
+                            subtitle: const Text('Load planned workout for today'),
+                            onTap: () => _runAfterDialogClose(
+                              ctx,
+                              () => _loadTodaysWorkoutFromIntervals(context),
+                            ),
+                          ),
+                          const Divider(height: 1),
+                          ListTile(
+                            leading: Image.asset(
+                              'assets/intervals.png',
+                              width: 50,
+                              height: 50,
+                            ),
+                            title: const Text('Intervals.icu Library'),
+                            subtitle: const Text('Browse folders & workouts'),
+                            onTap: () => _runAfterDialogClose(
+                              ctx,
+                              () => _pickWorkoutFromIntervals(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              if (selectionMode)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+                    child: Text(
+                      'SmartSpin2k Library',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                ),
               Expanded(
                 child: WorkoutLibrary(
                   selectionMode: selectionMode,
-                  onWorkoutSelected: (content) async {
-                    Navigator.pop(context);
-                    workoutController.loadWorkout(content, isResume: false);
-                    onWorkoutLoaded(content, name: workoutController.workoutName);
+                  onWorkoutSelected: (name, content, isInProgress) async {
+                    if (!isInProgress) {
+                      Navigator.pop(context);
+                      workoutController.loadWorkout(content, isResume: false);
+                      onWorkoutLoaded(content, name: workoutController.workoutName);
+                      return;
+                    }
+
+                    final action = await showDialog<String>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: Text(name),
+                        content: const Text('Resume this workout or restart from the beginning?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, 'cancel'),
+                            child: const Text('CANCEL'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, 'restart'),
+                            child: const Text('RESTART'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, 'resume'),
+                            child: const Text('RESUME'),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (action == 'resume') {
+                      Navigator.pop(context);
+                      final restored = await workoutController.restoreSavedWorkoutState();
+                      if (restored) {
+                        onWorkoutLoaded(content, name: workoutController.workoutName);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Unable to resume in-progress workout.'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                      return;
+                    }
+
+                    if (action == 'restart') {
+                      Navigator.pop(context);
+                      await workoutController.clearInProgressFile();
+                      await WorkoutStorage.clearWorkoutState();
+                      workoutController.loadWorkout(content, isResume: false);
+                      onWorkoutLoaded(content, name: workoutController.workoutName);
+                    }
                   },
                   onWorkoutDeleted: (name) async {
                     await WorkoutStorage.deleteWorkout(name);
@@ -939,9 +1029,7 @@ class _IntervalsPreviewData {
 
 enum _MenuAction {
   importZwo,
-  intervals,
   selectWorkout,
-  deleteWorkout,
   audioCoach,
   connectedAccounts,
   calibrate,

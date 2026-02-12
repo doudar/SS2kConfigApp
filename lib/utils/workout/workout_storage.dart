@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:ui' as ui;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'workout_painter.dart';
+import 'workout_parser.dart';
 
 class WorkoutStorage {
   static const String _ftpKey = 'workout_ftp_value';
@@ -9,8 +12,10 @@ class WorkoutStorage {
   static const String _workoutProgressTime = 'workout_progress_time';
   static const String _skippedTimeKey = 'workout_skipped_time';
   static const String _isPlayingKey = 'workout_is_playing';
+  static const String _inProgressFilePathKey = 'workout_in_progress_file_path';
   static const String _savedWorkoutsKey = 'saved_workouts';
   static const String _workoutThumbnailPrefix = 'workout_thumbnail_';
+  static const String _placeholderThumbnail = 'cGxhY2Vob2xkZXI=';
   static const String defaultWorkoutName = "Anthony's Mix";
 
   // Save FTP value
@@ -97,6 +102,21 @@ class WorkoutStorage {
     await prefs.remove(_workoutProgressTime);
     await prefs.remove(_skippedTimeKey);
     await prefs.remove(_isPlayingKey);
+    await prefs.remove(_inProgressFilePathKey);
+  }
+
+  static Future<void> saveInProgressFilePath(String? filePath) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (filePath == null) {
+      await prefs.remove(_inProgressFilePathKey);
+    } else {
+      await prefs.setString(_inProgressFilePathKey, filePath);
+    }
+  }
+
+  static Future<String?> loadInProgressFilePath() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_inProgressFilePathKey);
   }
 
   // Save a workout to the library
@@ -121,6 +141,30 @@ class WorkoutStorage {
     await prefs.setString(_savedWorkoutsKey, jsonEncode(workouts));
     
     // Save thumbnail separately (using workout name as key)
+    await prefs.setString('$_workoutThumbnailPrefix$workoutName', thumbnailData);
+  }
+
+  static Future<void> saveOrUpdateWorkoutToLibrary({
+    required String workoutContent,
+    required String workoutName,
+    required String thumbnailData,
+  }) async {
+    if (workoutName == defaultWorkoutName) {
+      await updateWorkoutThumbnail(workoutName, thumbnailData);
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final workouts = await getSavedWorkouts();
+
+    workouts.removeWhere((workout) => workout['name'] == workoutName);
+    workouts.add({
+      'name': workoutName,
+      'content': workoutContent,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    });
+
+    await prefs.setString(_savedWorkoutsKey, jsonEncode(workouts));
     await prefs.setString('$_workoutThumbnailPrefix$workoutName', thumbnailData);
   }
 
@@ -166,6 +210,57 @@ class WorkoutStorage {
   static Future<String?> getWorkoutThumbnail(String workoutName) async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('$_workoutThumbnailPrefix$workoutName');
+  }
+
+  static Future<String?> getOrGenerateWorkoutThumbnail({
+    required String workoutName,
+    required String workoutContent,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString('$_workoutThumbnailPrefix$workoutName');
+    if (cached != null && cached != _placeholderThumbnail) {
+      return cached;
+    }
+
+    try {
+      final parsedWorkout = WorkoutParser.parseZwoFile(workoutContent);
+      if (parsedWorkout.segments.isEmpty) return null;
+
+      final totalDuration = parsedWorkout.segments.fold<int>(0, (sum, segment) => sum + segment.duration);
+      final maxPower = parsedWorkout.segments.fold<double>(
+        0,
+        (currentMax, segment) => segment.maxPower > currentMax ? segment.maxPower : currentMax,
+      );
+
+      if (totalDuration <= 0 || maxPower <= 0) return null;
+
+      final ftpValue = await loadFTP();
+      const size = ui.Size(100, 60);
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+
+      final painter = WorkoutPainter(
+        segments: parsedWorkout.segments,
+        maxPower: maxPower,
+        totalDuration: totalDuration.toDouble(),
+        ftpValue: ftpValue,
+        currentProgress: 0,
+        actualPowerPoints: const <int, double>{},
+        showLabels: false,
+      );
+
+      painter.paint(canvas, size);
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(size.width.toInt(), size.height.toInt());
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return null;
+
+      final base64Data = base64Encode(byteData.buffer.asUint8List());
+      await prefs.setString('$_workoutThumbnailPrefix$workoutName', base64Data);
+      return base64Data;
+    } catch (_) {
+      return null;
+    }
   }
 
   // Delete a workout from the library

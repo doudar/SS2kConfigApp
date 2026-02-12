@@ -29,6 +29,10 @@ class WorkoutSummary extends StatelessWidget {
 
     final intensityFactor = (normalizedWork / totalTime) / workoutController.ftpValue;
     final tss = (totalTime * intensityFactor * intensityFactor) / 36;
+    final bool isPausedInProgress = !workoutController.isPlaying && workoutController.progressPosition > 0;
+    final avgPower = workoutController.averagePower;
+    final avgCadence = workoutController.averageCadence;
+    final avgHeartRate = workoutController.averageHeartRate;
 
     return FadeTransition(
       opacity: fadeAnimation,
@@ -64,6 +68,45 @@ class WorkoutSummary extends StatelessWidget {
                   ),
                 ],
               ),
+              if (isPausedInProgress) ...[
+                SizedBox(height: WorkoutSpacing.small),
+                Text(
+                  'In-Progress Snapshot',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                SizedBox(height: WorkoutSpacing.xsmall),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _SummaryItem(
+                      label: 'Elapsed',
+                      value: workoutController.formatDuration(workoutController.elapsedSeconds),
+                      icon: Icons.timer_outlined,
+                    ),
+                    _SummaryItem(
+                      label: 'Complete',
+                      value: '${(workoutController.progressPosition * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                      icon: Icons.timelapse,
+                    ),
+                    _SummaryItem(
+                      label: 'Avg Power',
+                      value: avgPower != null ? '${avgPower.round()}W' : '--',
+                      icon: Icons.bolt,
+                    ),
+                    _SummaryItem(
+                      label: 'Avg Cadence',
+                      value: avgCadence != null ? '${avgCadence.round()}rpm' : '--',
+                      icon: Icons.speed,
+                    ),
+                    if (avgHeartRate != null)
+                      _SummaryItem(
+                        label: 'Avg HR',
+                        value: '${avgHeartRate.round()}bpm',
+                        icon: Icons.favorite,
+                      ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

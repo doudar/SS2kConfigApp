@@ -9,14 +9,31 @@ import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
 import 'package:fit_tool/fit_tool.dart';
+import 'package:flutter/services.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
+  Directory? tempDir;
   
   setUp(() async {
     // Set up shared preferences mock
     SharedPreferences.setMockInitialValues({});
     await SharedPreferences.getInstance();
+    tempDir = await Directory.systemTemp.createTemp('ss2k_test');
+    pathProviderChannel.setMockMethodCallHandler((call) async {
+      if (call.method == 'getApplicationDocumentsDirectory' || call.method == 'getTemporaryDirectory') {
+        return tempDir!.path;
+      }
+      return null;
+    });
+  });
+
+  tearDown(() async {
+    await pathProviderChannel.setMockMethodCallHandler(null);
+    if (tempDir != null && await tempDir!.exists()) {
+      await tempDir!.delete(recursive: true);
+    }
   });
 
   test('Generate 1-hour ERG workout FIT file', () async {
@@ -47,7 +64,7 @@ void main() {
     
     // Load and start the workout
     workoutController.loadWorkout(workoutContent);
-    workoutController.togglePlayPause(); // Start the workout
+    await workoutController.togglePlayPause(); // Start the workout
     
     final startTime = DateTime.now();
     
@@ -81,7 +98,7 @@ void main() {
     }
     
     // Stop the workout
-    workoutController.stopWorkout();
+    await workoutController.stopWorkout();
     
     // Export to GPX
     final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
@@ -92,9 +109,10 @@ void main() {
     }
     
     final gpxFile = File(path.join(workoutsDir.path, gpxFileName));
+    final exportTrackPoints = await workoutController.getExportTrackPoints();
     final gpxContent = await GpxFileExporter.generateGpxContent(
       '2 Hour 300W Test',
-      workoutController.trackPoints,
+      exportTrackPoints,
     );
     await gpxFile.writeAsString(gpxContent);
     

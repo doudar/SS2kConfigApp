@@ -8,6 +8,7 @@
 import 'package:ss2kconfigapp/screens/power_table_screen.dart';
 import 'package:ss2kconfigapp/widgets/ss2k_app_bar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../screens/settings_screen.dart';
@@ -31,11 +32,13 @@ class MainDeviceScreen extends StatefulWidget {
 class _MainDeviceScreenState extends State<MainDeviceScreen> {
   late BLEData bleData;
   bool _maintenanceExpanded = false;
+  late Future<String?> _appVersionFuture;
 
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+    _appVersionFuture = _loadAppVersion();
     //Are we running a demo?
     if (this.widget.device.remoteId.toString() == "SmartSpin2k Demo") {
       _demoDeviceSetup(context);
@@ -68,6 +71,16 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
         setState(() {});
       }
     });
+  }
+
+  Future<String?> _loadAppVersion() async {
+    try {
+      final content = await rootBundle.loadString('pubspec.yaml');
+      final match = RegExp(r'^version:\s*([^\s]+)', multiLine: true).firstMatch(content);
+      return match?.group(1);
+    } catch (_) {
+      return null;
+    }
   }
 
   void _crListener() {
@@ -233,6 +246,21 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                 .push(MaterialPageRoute(builder: (context) => WorkoutScreen(device: this.widget.device)));
           }),
           _buildExpandableMaintenanceCard(),
+          FutureBuilder<String?>(
+            future: _appVersionFuture,
+            builder: (context, snapshot) {
+              final version = snapshot.data ?? 'unknown';
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Center(
+                  child: Text(
+                    'App Version: $version',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
