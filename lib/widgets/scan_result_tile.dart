@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -66,24 +67,72 @@ class _ScanResultTileState extends State<ScanResultTile> {
     return _connectionState == BluetoothConnectionState.connected;
   }
 
+  Color _tileAccent(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (colorScheme.brightness == Brightness.light) {
+      return const Color(0xFFB71C1C);
+    }
+    return colorScheme.error;
+  }
+
+  TextStyle? _deviceNameStyle(BuildContext context, {double? fontSize}) {
+    final isLight = Theme.of(context).colorScheme.brightness == Brightness.light;
+    return Theme.of(context).textTheme.titleLarge?.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: fontSize,
+          shadows: [
+            Shadow(
+              color: Colors.black.withValues(alpha: isLight ? 0.90 : 0.75),
+              blurRadius: isLight ? 7 : 5,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        );
+  }
+
+  Widget _buildDeviceNameText(BuildContext context, String value) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final responsiveFontSize = (constraints.maxWidth * 0.09).clamp(14.0, 22.0).toDouble();
+        return Text(
+          value,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+          style: _deviceNameStyle(context, fontSize: responsiveFontSize),
+        );
+      },
+    );
+  }
+
   Widget _buildTitle(BuildContext context) {
     if (this.widget.result.device.platformName.isNotEmpty) {
       return Column(
-        mainAxisSize: MainAxisSize.max,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         //mainAxisAlignment: MainAxisAlignment.start,
         //crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(this.widget.result.device.advName,
-              overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge),
+          _buildDeviceNameText(context, this.widget.result.device.advName),
           _rssiRow(context),
         ],
       );
     } else {
-      return Text(this.widget.result.device.remoteId.toString());
+      return _buildDeviceNameText(context, this.widget.result.device.remoteId.toString());
     }
   }
 
-  Widget _buildConnectButton(BuildContext context) {
+  Widget _buildConnectButton(BuildContext context, {required bool compact}) {
+    final accentColor = _tileAccent(context);
+    final accentDark = Color.alphaBlend(Colors.black.withValues(alpha: 0.45), accentColor);
+
+    final buttonPadding = compact
+        ? const EdgeInsets.symmetric(horizontal: 10, vertical: 10)
+        : const EdgeInsets.symmetric(horizontal: 14, vertical: 10);
+    final disconnectPadding = compact
+      ? const EdgeInsets.symmetric(horizontal: 8, vertical: 10)
+      : const EdgeInsets.symmetric(horizontal: 10, vertical: 10);
+
     if (isConnected) {
       return Container(
         alignment: Alignment.centerRight,
@@ -94,22 +143,35 @@ class _ScanResultTileState extends State<ScanResultTile> {
               child: const Text('OPEN'),
               onPressed: (this.widget.result.advertisementData.connectable) ? this.widget.onTap : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: ThemeData().colorScheme.secondary,
-                foregroundColor: ThemeData().colorScheme.onSecondary,
+                backgroundColor: accentDark.withValues(alpha: 0.92),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: buttonPadding,
+                minimumSize: compact ? const Size(0, 36) : null,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
             const SizedBox(width: 6),
-            IconButton(
-              icon: const Icon(Icons.link_off),
+            OutlinedButton(
+              child: Text(
+                'Disconnect',
+                overflow: TextOverflow.fade,
+                softWrap: false,
+                style: TextStyle(fontSize: compact ? 11 : 12, fontWeight: FontWeight.w600),
+              ),
               onPressed: () async {
                 // Set user-initiated disconnect flag
                 BLEDataManager.forDevice(this.widget.result.device).isUserDisconnect = true;
                 await this.widget.result.device.disconnectAndUpdateStream();
               },
-              style: IconButton.styleFrom(
-                backgroundColor: ThemeData().colorScheme.onError,
-                foregroundColor: ThemeData().colorScheme.error,
-                padding: const EdgeInsets.all(8),
+              style: OutlinedButton.styleFrom(
+                backgroundColor: Colors.black.withValues(alpha: 0.35),
+                foregroundColor: accentColor,
+                side: BorderSide(color: accentColor.withValues(alpha: 0.35)),
+                padding: disconnectPadding,
+                minimumSize: compact ? const Size(0, 36) : null,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ],
@@ -120,8 +182,12 @@ class _ScanResultTileState extends State<ScanResultTile> {
         child: const Text('CONNECT'),
         onPressed: (this.widget.result.advertisementData.connectable) ? this.widget.onTap : null,
         style: ElevatedButton.styleFrom(
-          backgroundColor: ThemeData().colorScheme.secondary,
-          foregroundColor: ThemeData().colorScheme.onSecondary,
+          backgroundColor: accentDark.withValues(alpha: 0.92),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          padding: buttonPadding,
+          minimumSize: compact ? const Size(0, 36) : null,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
       );
     }
@@ -140,7 +206,9 @@ class _ScanResultTileState extends State<ScanResultTile> {
           Expanded(
             child: Text(
               value,
-              style: Theme.of(context).textTheme.bodySmall?.apply(color: Colors.black),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
               softWrap: true,
             ),
           ),
@@ -166,52 +234,120 @@ class _ScanResultTileState extends State<ScanResultTile> {
 
   Widget _rssiRow(BuildContext context) {
     int numBoxesToShow = ((this.widget.result.rssi + 100) / 2.5).ceil();
-    return Row(
-      children: [
-        Text(
-          'Signal strength:',
-          style: TextStyle(fontSize: 12, color: ThemeData().colorScheme.onSurface),
-        ),
-        SizedBox(width: 8),
-        Row(
-          children: List.generate(10, (index) {
-            if (index < numBoxesToShow) {
-              return Container(
-                width: 5,
-                height: 10,
-                margin: EdgeInsets.symmetric(horizontal: 1),
-                color: _getColor(index),
-              );
-            } else {
-              return Container(
-                width: 5,
-                height: 10,
-                margin: EdgeInsets.symmetric(horizontal: 1),
-                color: Colors.transparent,
-              );
-            }
-          }),
-        ),
-      ],
+
+    Widget bars = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(10, (index) {
+        if (index < numBoxesToShow) {
+          return Container(
+            width: 5,
+            height: 10,
+            margin: EdgeInsets.symmetric(horizontal: 1),
+            color: _getColor(index),
+          );
+        } else {
+          return Container(
+            width: 5,
+            height: 10,
+            margin: EdgeInsets.symmetric(horizontal: 1),
+            color: Colors.transparent,
+          );
+        }
+      }),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 210;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (!compact)
+              Text(
+                'Signal strength:',
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.85)),
+              ),
+            bars,
+          ],
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = _tileAccent(context);
+    final accentDark = Color.alphaBlend(Colors.black.withValues(alpha: 0.2), accentColor);
+
     var adv = this.widget.result.advertisementData;
-    return ExpansionTile(
-      title: _buildTitle(context),
-      leading: Image.asset(
-        'assets/ss2kv3.png',
-      ),
-      trailing: SizedBox(
-        width: 120, // Increased width to accommodate both buttons
-        child: _buildConnectButton(context),
-      ),
-      children: <Widget>[
-        if (adv.advName.isNotEmpty) _buildAdvRow(context, 'Name', adv.advName),
-        _buildAdvRow(context, 'RSSI', '${this.widget.result.rssi.toString()}'),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 430;
+        final trailingWidth = isConnected
+            ? (constraints.maxWidth * (compact ? 0.56 : 0.46)).clamp(170.0, 260.0).toDouble()
+            : (constraints.maxWidth * (compact ? 0.32 : 0.28)).clamp(86.0, 132.0).toDouble();
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 1.1, sigmaY: 1.1),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      accentDark.withValues(alpha: 0.82),
+                      Colors.black.withValues(alpha: 0.64),
+                    ],
+                  ),
+                  border: Border.all(color: accentColor.withValues(alpha: 0.38)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Theme(
+                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    title: _buildTitle(context),
+                    leading: Container(
+                      width: 44,
+                      height: 44,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.30),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Image.asset('assets/ss2kv3.png'),
+                    ),
+                    trailing: SizedBox(
+                      width: trailingWidth,
+                      child: _buildConnectButton(context, compact: compact),
+                    ),
+                    collapsedIconColor: Colors.white,
+                    iconColor: Colors.white,
+                    textColor: Colors.white,
+                    collapsedTextColor: Colors.white,
+                    children: <Widget>[
+                      if (adv.advName.isNotEmpty) _buildAdvRow(context, 'Name', adv.advName),
+                      _buildAdvRow(context, 'RSSI', '${this.widget.result.rssi.toString()}'),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

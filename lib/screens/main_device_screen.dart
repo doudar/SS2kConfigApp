@@ -20,6 +20,7 @@ import '../screens/shifter_screen.dart';
 import '../screens/firmware_update_screen.dart';
 import '../screens/workout_screen.dart';
 import '../screens/ble_log_screen.dart';
+import '../widgets/theme_cycle_button.dart';
 
 import '../utils/extra.dart';
 
@@ -323,8 +324,8 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withValues(alpha: 0.92),
                   Colors.red.withValues(alpha: 0.40),
+                  Colors.black.withValues(alpha: 0.92),        
                 ],
               ),
             ),
@@ -391,6 +392,9 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       appBar: SS2KAppBar(
         device: widget.device,
         title: "Main Device Screen",
+        actions: [
+          const ThemeCycleButton(),
+        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {

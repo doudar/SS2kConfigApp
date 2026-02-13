@@ -7,6 +7,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io' as io show Platform;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -18,8 +19,8 @@ import '../utils/snackbar.dart';
 import '../utils/bledata.dart';
 import '../utils/extra.dart';
 import '../widgets/scan_result_tile.dart';
+import '../widgets/theme_cycle_button.dart';
 import '../utils/demo.dart';
-import 'app_settings_screen.dart';
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({Key? key}) : super(key: key);
@@ -134,25 +135,180 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Widget buildScanButton(BuildContext context) {
-    if (FlutterBluePlus.isScanningNow) {
-      return ElevatedButton(
-        child: const Icon(Icons.stop),
-        onPressed: onStopPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: ThemeData().colorScheme.error, foregroundColor: ThemeData().colorScheme.onError,
-          //maximumSize: Size.fromWidth(100),
+    final colorScheme = Theme.of(context).colorScheme;
+    final bool scanning = FlutterBluePlus.isScanningNow;
+    final Color foregroundColor = scanning ? colorScheme.onError : Colors.white;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            scanning ? colorScheme.error.withValues(alpha: 0.88) : const Color(0xFF1B1B1B),
+            scanning ? colorScheme.error.withValues(alpha: 0.64) : const Color(0xFF2A2A2A),
+          ],
         ),
-      );
-    } else {
-      return ElevatedButton(
-        child: const Text("SCAN"),
-        onPressed: onScanPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: ThemeData().colorScheme.secondary, foregroundColor: ThemeData().colorScheme.onSecondary,
-          //maximumSize: Size.fromWidth(50),
+        border: Border.all(
+          color: scanning ? Colors.white.withValues(alpha: 0.22) : Colors.red.withValues(alpha: 0.28),
         ),
-      );
-    }
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+          if (!scanning)
+            BoxShadow(
+              color: Colors.red.withValues(alpha: 0.14),
+              blurRadius: 10,
+              spreadRadius: -2,
+            ),
+        ],
+      ),
+      child: ElevatedButton(
+        onPressed: scanning ? onStopPressed : onScanPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          foregroundColor: foregroundColor,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+        ),
+        child: scanning
+            ? const Icon(Icons.stop_rounded)
+            : const Text(
+                "SCAN",
+                style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyStatePanel(BuildContext context) {
+    final theme = Theme.of(context);
+    final headingColor = Colors.white;
+    final bodyColor = Colors.white.withValues(alpha: 0.92);
+    final secondaryBodyColor = Colors.white.withValues(alpha: 0.85);
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 1.2, sigmaY: 1.2),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.red.withValues(alpha: 0.8),
+                  Colors.black.withValues(alpha: 0.93),
+                  const Color(0xFF1A0606).withValues(alpha: 0.90),
+                ],
+                stops: const [0.0, 0.62, 1.0],
+              ),
+              border: Border.all(color: Colors.red.withValues(alpha: 0.45), width: 1.2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                OutlinedButton(
+                  onPressed: () async {
+                    Uri url = Uri(
+                        scheme: 'https',
+                        host: 'SmartSpin2k.com',
+                        path: '/',
+                        fragment: ''); //http://SmartSpin2k.com";
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(url);
+                    }
+                  },
+                  style: OutlinedButton.styleFrom(
+                    alignment: Alignment.centerLeft,
+                    minimumSize: const Size.fromHeight(0),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    backgroundColor: const Color.fromARGB(255, 54, 27, 26).withValues(alpha: 0.24),
+                    foregroundColor: bodyColor,
+                    side: BorderSide(
+                      color: const Color.fromARGB(255, 66, 26, 23).withValues(alpha: 0.42),
+                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  ),
+                  child: Text(
+                    'SmartSpin2k is a device that adds automatic resistance and virtual shifting to spin bikes. Click to learn more!',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: bodyColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton(
+                  onPressed: () async {
+                    final Uri docsUrl = Uri.parse('https://docs.smartspin2k.com/');
+                    if (await canLaunchUrl(docsUrl)) {
+                      await launchUrl(docsUrl);
+                    }
+                  },
+                  style: OutlinedButton.styleFrom(
+                    alignment: Alignment.centerLeft,
+                    minimumSize: const Size(0, 0),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    backgroundColor: const Color.fromARGB(255, 54, 27, 26).withValues(alpha: 0.24),
+                    foregroundColor: headingColor,
+                    side: BorderSide(
+                      color: const Color.fromARGB(255, 66, 26, 23).withValues(alpha: 0.42),
+                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                  child: Text(
+                    'Having Trouble?',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: headingColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'If you cannot find your SmartSpin2k, try the following steps:',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: bodyColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '1. Ensure your SmartSpin2k is powered on and within range.\n'
+                  '2. Turn off and on the Bluetooth on your device, then try scanning again.\n'
+                  '3. Restart your SmartSpin2k device.\n'
+                  '4. Each SmartSpin2k has a max connection of 3 apps (including this one). Close some if needed.\n'
+                  '5. If none of these steps work, please contact support for further assistance.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: secondaryBodyColor,
+                    height: 1.32,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   List<Widget> _buildScanResultTiles(BuildContext context) {
@@ -205,22 +361,48 @@ class _ScanScreenState extends State<ScanScreen> {
       key: Snackbar.snackBarKeyB,
       child: Scaffold(
         appBar: AppBar(
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          backgroundColor: Colors.transparent,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+          ),
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.92),
+                  Colors.red.withValues(alpha: 0.80),
+                ],
+              ),
+              border: Border(
+                bottom: BorderSide(color: Colors.red.withValues(alpha: 0.35)),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+          ),
           title: Text('Find Your SmartSpin2k:'),
-          titleTextStyle: TextStyle(
+          titleTextStyle: const TextStyle(
             fontSize: 30,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+            shadows: [
+              Shadow(color: Colors.black87, blurRadius: 6, offset: Offset(0, 1)),
+            ],
           ),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AppSettingsScreen(),
-                  ),
-                );
-              },
-            ),
+            const ThemeCycleButton(),
           ],
         ),
         body: Stack(
@@ -231,56 +413,21 @@ class _ScanScreenState extends State<ScanScreen> {
                 children: <Widget>[
                   ..._buildScanResultTiles(context),
                   if (_scanResults.isEmpty) // This line checks if there are no scan results
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          InkWell(
-                            onTap: () async {
-                              Uri url = Uri(
-                                  scheme: 'https',
-                                  host: 'SmartSpin2k.com',
-                                  path: '/',
-                                  fragment: ''); //http://SmartSpin2k.com";
-                              if (await canLaunchUrl(url)) {
-                                await launchUrl(url);
-                              }
-                            },
-                            child: Text(
-                              'SmartSpin2k is a device that adds automatic resistance and virtual shifting to spin bikes. Click to learn more!',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.blue,
-                                decoration: TextDecoration.underline,
-                              ),
-                            ),
+                    _buildEmptyStatePanel(context),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final buttonWidth = (constraints.maxWidth * 0.55).clamp(170.0, 320.0).toDouble();
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 15),
+                        child: Align(
+                          alignment: Alignment.center,
+                          child: SizedBox(
+                            width: buttonWidth,
+                            child: buildScanButton(context),
                           ),
-                          SizedBox(height: 10),
-                          Text(
-                            'Having Trouble?',
-                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                          ),
-                          SizedBox(height: 10),
-                          Text(
-                            'If you cannot find your SmartSpin2k, try the following steps:',
-                            style: TextStyle(fontSize: 18),
-                          ),
-                          SizedBox(height: 10),
-                          Text(
-                            '1. Ensure your SmartSpin2k is powered on and within range.\n'
-                            '2. Turn off and on the Bluetooth on your device, then try scanning again.\n'
-                            '3. Restart your SmartSpin2k device.\n'
-                            '4. Each SmartSpin2k has a max connection of 3 apps (including this one). Close some if needed.\n'
-                            '5. If none of these steps work, please contact support for further assistance.',
-                            style: TextStyle(fontSize: 16),
-                          ),
-                        ],
-                      ),
-                    ),
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(100, 8, 100, 15),
-                    child: buildScanButton(context),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -311,8 +458,17 @@ class _ScanScreenState extends State<ScanScreen> {
                         });
                       }
                     : null, // Button does nothing if _showDemoButton is false
-                child: Text("Tap Here to Enter\n Demo Mode"),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+                child: const Text(
+                  "Tap Here to Enter\n Demo Mode",
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                  textAlign: TextAlign.center,
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.withValues(alpha: 0.82),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  side: BorderSide(color: Colors.red.withValues(alpha: 0.35)),
+                ),
               ),
               visible: _showDemoButton,
             ),

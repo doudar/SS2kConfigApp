@@ -6,7 +6,7 @@
     "colorScheme": {
       "background": "#fffffbff",
       "brightness": "light",
-      "error": "#ffba1a1a",
+      "error": "#ffd32f2f",
       "errorContainer": "#ffffdad6",
       "inversePrimary": "#ffffb4a9",
       "inverseSurface": "#ff362f2e",
@@ -84,7 +84,7 @@
   "colorScheme": {
     "background": "#fffffbff",
     "brightness": "light",
-    "error": "#ffba1a1a",
+    "error": "#ffd32f2f",
     "errorContainer": "#ffffdad6",
     "inversePrimary": "#ffffb4a9",
     "inverseSurface": "#ff362f2e",
