@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Pain Cave Classic</name>
+  <description>Over-under intervals - sustained suffering</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="900" PowerLow="0.5" PowerHigh="0.75"/>
+    <IntervalsT Repeat="4" OnDuration="180" OffDuration="120" OnPower="1.05" OffPower="0.9">
+      <textevent timeoffset="0" message="Over-unders begin! 3min hard, 2min threshold"/>
+    </IntervalsT>
+    <SteadyState Duration="600" Power="0.55">
+      <textevent timeoffset="0" message="Rest before set 2"/>
+    </SteadyState>
+    <IntervalsT Repeat="4" OnDuration="180" OffDuration="120" OnPower="1.05" OffPower="0.9">
+      <textevent timeoffset="0" message="Final set - embrace the suffer!"/>
+      <textevent timeoffset="780" message="Conquered! Over-unders are brutal and you dominated them - threshold power improved!"/>
+    </IntervalsT>
+    <Cooldown Duration="600" PowerLow="0.6" PowerHigh="0.4"/>
+  </workout>
+</workout_file>

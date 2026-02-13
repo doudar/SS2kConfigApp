@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Easy Sunday Spin</name>
+  <description>Gentle recovery endurance</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <SteadyState Duration="3600" Power="0.55">
+      <textevent timeoffset="0" message="Easy Sunday spin - enjoy the ride"/>
+      <textevent timeoffset="1800" message="Halfway - stay relaxed"/>
+      <textevent timeoffset="3000" message="Almost done - coffee soon!"/>
+    </SteadyState>
+  </workout>
+</workout_file>

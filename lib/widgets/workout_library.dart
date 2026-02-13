@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show AssetManifest, rootBundle;
 import '../utils/workout/workout_storage.dart';
 import '../utils/workout/workout_constants.dart';
 import '../utils/workout/workout_parser.dart';
@@ -18,8 +19,147 @@ class WorkoutLibrary extends StatefulWidget {
     this.onWorkoutDeleted,
   }) : super(key: key);
 
+  static Future<List<AssetWorkout>> loadAssetWorkouts() async {
+    try {
+      Iterable<String> assets = const <String>[];
+      try {
+        final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+        assets = manifest.listAssets();
+      } catch (_) {
+        final manifestContent = await rootBundle.loadString('AssetManifest.json');
+        final Map<String, dynamic> manifest = jsonDecode(manifestContent) as Map<String, dynamic>;
+        assets = manifest.keys;
+      }
+
+      final filtered = assets
+          .where((key) => key.startsWith('assets/workout_library/'))
+          .where((key) => key.toLowerCase().endsWith('.zwo'))
+          .toList();
+
+      filtered.sort();
+      return filtered
+          .map((path) => AssetWorkout(path: path, name: _titleFromPath(path)))
+          .toList();
+    } catch (_) {
+      return <AssetWorkout>[];
+    }
+  }
+
+  static String _titleFromPath(String path) {
+    final fileName = path.split('/').last;
+    final name = fileName.replaceAll(RegExp(r'\.zwo$', caseSensitive: false), '');
+    return name.replaceAll('_', ' ');
+  }
+
+  static Future<void> showAssetWorkoutsDialog(
+    BuildContext context, {
+    required void Function(String name, String content) onSelected,
+  }) async {
+    final assets = await loadAssetWorkouts();
+    if (assets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No bundled workouts found'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Workout Library'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: assets.length,
+            itemBuilder: (context, index) {
+              final workout = assets[index];
+              return FutureBuilder<String>(
+                future: rootBundle.loadString(workout.path),
+                builder: (context, contentSnapshot) {
+                  final content = contentSnapshot.data;
+                  final summary = _buildWorkoutSummaryText(content);
+                  return ListTile(
+                    leading: _buildWorkoutThumbnail(name: workout.name, content: content),
+                    title: Text(workout.name),
+                    subtitle: summary,
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final workoutContent = content ?? await rootBundle.loadString(workout.path);
+                      onSelected(workout.name, workoutContent);
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CLOSE'))],
+      ),
+    );
+  }
+
   @override
   State<WorkoutLibrary> createState() => _WorkoutLibraryState();
+}
+
+class AssetWorkout {
+  final String path;
+  final String name;
+
+  const AssetWorkout({required this.path, required this.name});
+}
+
+Widget _buildWorkoutThumbnail({
+  required String name,
+  required String? content,
+}) {
+  if (content == null) {
+    return _workoutThumbnailPlaceholder();
+  }
+
+  return FutureBuilder<String?>(
+    future: WorkoutStorage.getOrGenerateWorkoutThumbnail(
+      workoutName: name,
+      workoutContent: content,
+    ),
+    builder: (context, snapshot) {
+      if (!snapshot.hasData) {
+        return _workoutThumbnailPlaceholder();
+      }
+      return Image.memory(
+        base64Decode(snapshot.data!),
+        width: 100,
+        height: 60,
+        fit: BoxFit.cover,
+      );
+    },
+  );
+}
+
+Widget _workoutThumbnailPlaceholder() {
+  return Container(
+    width: 100,
+    height: 60,
+    color: Colors.grey[300],
+  );
+}
+
+Text? _buildWorkoutSummaryText(String? content) {
+  if (content == null) {
+    return null;
+  }
+
+  final summary = WorkoutStorage.buildWorkoutSummary(content);
+  if (summary == null) {
+    return null;
+  }
+
+  return Text(summary);
 }
 
 class _WorkoutLibraryState extends State<WorkoutLibrary> {
@@ -226,30 +366,9 @@ class _WorkoutTile extends StatelessWidget {
     required this.onSelectionChanged,
   });
 
-  String _formatDuration(int seconds) {
-    final hours = seconds ~/ 3600;
-    final minutes = (seconds % 3600) ~/ 60;
-    return hours > 0 ? '${hours}h ${minutes}m' : '${minutes}m';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final workoutData = WorkoutParser.parseZwoFile(content);
-    int totalTime = 0;
-    double normalizedWork = 0;
-    double ftpValue = 200; // Default FTP value for thumbnail calculations
-
-    for (var segment in workoutData.segments) {
-      totalTime += segment.duration;
-      if (segment.isRamp) {
-        normalizedWork += segment.duration * ((segment.powerLow + segment.powerHigh) / 2) * ftpValue;
-      } else {
-        normalizedWork += segment.duration * segment.powerLow * ftpValue;
-      }
-    }
-
-    final intensityFactor = (normalizedWork / totalTime) / ftpValue;
-    final tss = (totalTime * intensityFactor * intensityFactor) / 36;
+    final summary = _buildWorkoutSummaryText(content);
 
     return Card(
       margin: EdgeInsets.only(bottom: WorkoutPadding.standard),
@@ -265,27 +384,7 @@ class _WorkoutTile extends StatelessWidget {
                   onChanged: (value) => onSelectionChanged(value == true),
                 ),
               // Thumbnail
-              FutureBuilder<String?>(
-                future: WorkoutStorage.getOrGenerateWorkoutThumbnail(
-                  workoutName: name,
-                  workoutContent: content,
-                ),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return Container(
-                      width: 100,
-                      height: 60,
-                      color: Colors.grey[300],
-                    );
-                  }
-                  return Image.memory(
-                    base64Decode(snapshot.data!),
-                    width: 100,
-                    height: 60,
-                    fit: BoxFit.cover,
-                  );
-                },
-              ),
+              _buildWorkoutThumbnail(name: name, content: content),
               SizedBox(width: WorkoutSpacing.medium),
               // Workout name and details
               Expanded(
@@ -319,12 +418,13 @@ class _WorkoutTile extends StatelessWidget {
                       ],
                     ),
                     SizedBox(height: WorkoutSpacing.xsmall),
-                    Text(
-                      '${_formatDuration(totalTime)} • TSS ${tss.toStringAsFixed(0)}',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).textTheme.bodySmall?.color,
+                    if (summary != null)
+                      DefaultTextStyle.merge(
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
+                        child: summary,
                       ),
-                    ),
                   ],
                 ),
               ),

@@ -400,6 +400,34 @@ class WorkoutParser {
     
     final List<WorkoutSegment> intervals = [];
     final textEvents = _parseTextEvents(element);
+    final int intervalSpan = onDuration + offDuration;
+    final List<List<TextEvent>> onEvents = List.generate(repeat, (_) => []);
+    final List<List<TextEvent>> offEvents = List.generate(repeat, (_) => []);
+
+    if (intervalSpan > 0 && textEvents.isNotEmpty) {
+      for (final event in textEvents) {
+        final int repeatIndex = event.timeOffset ~/ intervalSpan;
+        if (repeatIndex < 0 || repeatIndex >= repeat) continue;
+        final int offsetInRepeat = event.timeOffset - (repeatIndex * intervalSpan);
+        if (offsetInRepeat < onDuration) {
+          onEvents[repeatIndex].add(TextEvent(
+            timeOffset: offsetInRepeat,
+            message: event.message,
+            locIndex: event.locIndex,
+            duration: event.duration,
+            fadeOutDuration: event.fadeOutDuration,
+          ));
+        } else if (offsetInRepeat < intervalSpan) {
+          offEvents[repeatIndex].add(TextEvent(
+            timeOffset: offsetInRepeat - onDuration,
+            message: event.message,
+            locIndex: event.locIndex,
+            duration: event.duration,
+            fadeOutDuration: event.fadeOutDuration,
+          ));
+        }
+      }
+    }
     
     for (var i = 0; i < repeat; i++) {
       // On interval
@@ -415,7 +443,7 @@ class WorkoutParser {
         cadence: element.getAttribute('Cadence'),
         cadenceLow: element.getAttribute('CadenceLow'),
         cadenceHigh: element.getAttribute('CadenceHigh'),
-        textEvents: textEvents,
+        textEvents: onEvents[i],
       ));
       
       // Off interval
@@ -431,7 +459,7 @@ class WorkoutParser {
         cadence: element.getAttribute('Cadence'),
         cadenceLow: element.getAttribute('CadenceLow'),
         cadenceHigh: element.getAttribute('CadenceHigh'),
-        textEvents: textEvents,
+        textEvents: offEvents[i],
       ));
     }
     

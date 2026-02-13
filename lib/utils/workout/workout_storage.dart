@@ -263,6 +263,40 @@ class WorkoutStorage {
     }
   }
 
+  static String? buildWorkoutSummary(String workoutContent) {
+    try {
+      final workoutData = WorkoutParser.parseZwoFile(workoutContent);
+      int totalTime = 0;
+      double normalizedWork = 0;
+      const double ftpValue = 200;
+
+      for (final segment in workoutData.segments) {
+        totalTime += segment.duration;
+        if (segment.isRamp) {
+          normalizedWork += segment.duration * ((segment.powerLow + segment.powerHigh) / 2) * ftpValue;
+        } else {
+          normalizedWork += segment.duration * segment.powerLow * ftpValue;
+        }
+      }
+
+      if (totalTime <= 0) {
+        return null;
+      }
+
+      final intensityFactor = (normalizedWork / totalTime) / ftpValue;
+      final tss = (totalTime * intensityFactor * intensityFactor) / 36;
+      return '${_formatDuration(totalTime)} • TSS ${tss.toStringAsFixed(0)}';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _formatDuration(int seconds) {
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    return hours > 0 ? '${hours}h ${minutes}m' : '${minutes}m';
+  }
+
   // Delete a workout from the library
   static Future<void> deleteWorkout(String workoutName) async {
     // Prevent deletion of default workout

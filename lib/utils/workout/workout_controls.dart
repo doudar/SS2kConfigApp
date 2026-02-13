@@ -41,6 +41,7 @@ class _WorkoutControlsState extends State<WorkoutControls> {
 
   @override
   Widget build(BuildContext context) {
+    final bool hasStarted = widget.workoutController.workoutProgressSeconds > 0;
     return Container(
       height: 220,
       padding: EdgeInsets.symmetric(vertical: WorkoutPadding.small),
@@ -73,7 +74,7 @@ class _WorkoutControlsState extends State<WorkoutControls> {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (widget.workoutController.isPlaying)
+                if (widget.workoutController.isPlaying || hasStarted)
                   IconButton(
                     icon: const Icon(Icons.stop_circle),
                     iconSize: 42,

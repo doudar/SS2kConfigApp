@@ -234,21 +234,50 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     var rssiIcon = _buildSignalStrengthIcon(this.bleData.rssi.value);
 
     return PopupMenuButton<VoidCallback>(
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colorScheme.onSurface.withValues(alpha: 0.16)),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              colorScheme.surfaceContainerHighest.withValues(alpha: 0.70),
+              colorScheme.surfaceContainer.withValues(alpha: 0.60),
+            ],
           ),
-          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+            BoxShadow(
+              color: colorScheme.onSurface.withValues(alpha: 0.06),
+              blurRadius: 2,
+              offset: const Offset(0, -1),
+            ),
+          ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            rssiIcon,
+            Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: colorScheme.surface.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              alignment: Alignment.center,
+              child: rssiIcon,
+            ),
             SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -256,18 +285,31 @@ class _DeviceHeaderState extends State<DeviceHeader> {
               children: [
                 Text(
                   this.widget.device.platformName,
-                  style: Theme.of(context).textTheme.bodyMedium,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 Text(
                   'v${_fwVersion}',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.80),
+                  ),
                 ),
               ],
             ),
-            SizedBox(width: 4),
-            Icon(
-              Icons.arrow_drop_down,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
+            const SizedBox(width: 6),
+            Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: colorScheme.surface.withValues(alpha: 0.50),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.expand_more,
+                size: 16,
+                color: colorScheme.onSurface.withValues(alpha: 0.82),
+              ),
             ),
           ],
         ),

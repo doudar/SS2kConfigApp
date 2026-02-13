@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Pyramid Power</name>
+  <description>Progressive intervals: 1-2-3-4-3-2-1 minutes</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="600" PowerLow="0.5" PowerHigh="0.75"/>
+    <SteadyState Duration="60" Power="1">
+      <textevent timeoffset="0" message="Climbing the pyramid! 1 minute"/>
+    </SteadyState>
+    <SteadyState Duration="60" Power="0.55"/>
+    <SteadyState Duration="120" Power="1">
+      <textevent timeoffset="60" message="2 minutes!"/>
+    </SteadyState>
+    <SteadyState Duration="120" Power="0.55"/>
+    <SteadyState Duration="180" Power="1">
+      <textevent timeoffset="60" message="3 minutes!"/>
+    </SteadyState>
+    <SteadyState Duration="180" Power="0.55"/>
+    <SteadyState Duration="240" Power="1">
+      <textevent timeoffset="60" message="Peak! 4 minutes!"/>
+    </SteadyState>
+    <SteadyState Duration="240" Power="0.55"/>
+    <SteadyState Duration="180" Power="1">
+      <textevent timeoffset="60" message="Coming down - 3 minutes"/>
+    </SteadyState>
+    <SteadyState Duration="180" Power="0.55"/>
+    <SteadyState Duration="120" Power="1">
+      <textevent timeoffset="60" message="2 minutes"/>
+    </SteadyState>
+    <SteadyState Duration="120" Power="0.55"/>
+    <SteadyState Duration="60" Power="1"/>
+    <Cooldown Duration="300" PowerLow="0.6" PowerHigh="0.4">
+      <textevent timeoffset="0" message="Final 1 minute!"/>
+    </Cooldown>
+  </workout>
+</workout_file>

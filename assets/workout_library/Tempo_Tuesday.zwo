@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Tempo Tuesday</name>
+  <description>Classic tempo intervals at 75-85% FTP</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="900" PowerLow="0.5" PowerHigh="0.75"/>
+    <IntervalsT Repeat="3" OnDuration="720" OffDuration="180" OnPower="0.8" OffPower="0.55">
+      <textevent timeoffset="0" message="First tempo block - sustainable effort"/>
+      <textevent timeoffset="720" message="Recovery spin"/>
+      <textevent timeoffset="900" message="Second block - stay smooth"/>
+      <textevent timeoffset="1800" message="Final block - you&apos;ve got this!"/>
+      <textevent timeoffset="2580" message="Solid work! Three tempo blocks at 80% - you&apos;re building that all-day power!"/>
+    </IntervalsT>
+    <Cooldown Duration="600" PowerLow="0.6" PowerHigh="0.4"/>
+  </workout>
+</workout_file>

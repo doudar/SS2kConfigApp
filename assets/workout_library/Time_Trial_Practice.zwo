@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Time Trial Practice</name>
+  <description>Sustained TT efforts at threshold</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="900" PowerLow="0.5" PowerHigh="0.8"/>
+    <SteadyState Duration="1800" Power="0.98">
+      <textevent timeoffset="0" message="TT effort - aero position"/>
+      <textevent timeoffset="900" message="Midpoint - stay smooth"/>
+    </SteadyState>
+    <SteadyState Duration="300" Power="0.55"/>
+    <SteadyState Duration="600" Power="0.98">
+      <textevent timeoffset="0" message="Final TT block - time trial pace!"/>
+      <textevent timeoffset="480" message="Time trialist! 40 minutes at threshold - your TT speed is dialed in!"/>
+    </SteadyState>
+    <Cooldown Duration="600" PowerLow="0.6" PowerHigh="0.4"/>
+  </workout>
+</workout_file>

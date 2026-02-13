@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>FTP Test Prep</name>
+  <description>Warm-up properly for your FTP test</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="600" PowerLow="0.5" PowerHigh="0.7">
+      <textevent timeoffset="0" message="FTP test warm-up protocol"/>
+    </Warmup>
+    <SteadyState Duration="300" Power="0.75">
+      <textevent timeoffset="0" message="Tempo effort"/>
+    </SteadyState>
+    <SteadyState Duration="180" Power="0.55"/>
+    <IntervalsT Repeat="3" OnDuration="30" OffDuration="90" OnPower="1.2" OffPower="0.55">
+      <textevent timeoffset="0" message="Opener efforts"/>
+    </IntervalsT>
+    <SteadyState Duration="300" Power="0.5">
+      <textevent timeoffset="60" message="Easy spin, then start your 20min test!"/>
+    </SteadyState>
+  </workout>
+</workout_file>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Recovery Spin</name>
+  <description>Easy active recovery ride</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <SteadyState Duration="2400" Power="0.5">
+      <textevent timeoffset="0" message="Easy spinning today - let your body recover"/>
+      <textevent timeoffset="600" message="Keep cadence high, effort low"/>
+      <textevent timeoffset="1800" message="Almost done - stay relaxed"/>
+    </SteadyState>
+  </workout>
+</workout_file>

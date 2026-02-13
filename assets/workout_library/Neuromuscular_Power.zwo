@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Neuromuscular Power</name>
+  <description>Max power sprints for neuromuscular development</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="900" PowerLow="0.5" PowerHigh="0.75"/>
+    <IntervalsT Repeat="10" OnDuration="10" OffDuration="110" OnPower="2" OffPower="0.5">
+      <textevent timeoffset="0" message="10-second max power sprints!"/>
+      <textevent timeoffset="240" message="Absolute maximum effort!"/>
+      <textevent timeoffset="480" message="Recruit all muscle fibers!"/>
+    </IntervalsT>
+    <Cooldown Duration="300" PowerLow="0.6" PowerHigh="0.4">
+      <textevent timeoffset="180" message="Power unleashed! 10 max efforts - your peak power just got a serious boost!"/>
+    </Cooldown>
+  </workout>
+</workout_file>

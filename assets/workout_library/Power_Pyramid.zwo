@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Power Pyramid</name>
+  <description>Ascending then descending power levels</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="600" PowerLow="0.5" PowerHigh="0.75"/>
+    <SteadyState Duration="300" Power="0.7">
+      <textevent timeoffset="0" message="Climbing the power pyramid!"/>
+    </SteadyState>
+    <SteadyState Duration="120" Power="0.55"/>
+    <SteadyState Duration="300" Power="0.8"/>
+    <SteadyState Duration="120" Power="0.55"/>
+    <SteadyState Duration="300" Power="0.9"/>
+    <SteadyState Duration="120" Power="0.55">
+      <textevent timeoffset="60" message="Peak power!"/>
+    </SteadyState>
+    <SteadyState Duration="300" Power="1"/>
+    <SteadyState Duration="180" Power="0.55"/>
+    <SteadyState Duration="300" Power="0.9"/>
+    <SteadyState Duration="120" Power="0.55">
+      <textevent timeoffset="60" message="Coming back down!"/>
+    </SteadyState>
+    <SteadyState Duration="300" Power="0.8"/>
+    <SteadyState Duration="120" Power="0.55"/>
+    <SteadyState Duration="300" Power="0.7"/>
+    <Cooldown Duration="300" PowerLow="0.6" PowerHigh="0.4">
+      <textevent timeoffset="0" message="Pyramid conquered! Progressive power from endurance to FTP - comprehensive fitness boost!"/>
+    </Cooldown>
+  </workout>
+</workout_file>

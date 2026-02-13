@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Dad Jokes Sprint Session</name>
+  <description>Short sprints with terrible dad jokes to distract from the pain</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="600" PowerLow="0.5" PowerHigh="0.75"/>
+    <IntervalsT Repeat="20" OnDuration="30" OffDuration="150" OnPower="1.5" OffPower="0.5">
+      <textevent timeoffset="0" message="Sprint 1! Why can&apos;t bicycles stand up? They&apos;re two tired!"/>
+      <textevent timeoffset="180" message="Sprint 2! What do you call a cyclist who doesn&apos;t wear a helmet? An organ donor!"/>
+      <textevent timeoffset="360" message="Sprint 3! I used to hate facial hair, but then it grew on me!"/>
+      <textevent timeoffset="540" message="Sprint 4! I&apos;m reading a book about anti-gravity. It&apos;s impossible to put down!"/>
+      <textevent timeoffset="720" message="Sprint 5! Why don&apos;t scientists trust atoms? They make up everything!"/>
+      <textevent timeoffset="900" message="Sprint 6! What did the cyclist say after the race? I&apos;m wheely tired!"/>
+      <textevent timeoffset="1080" message="Sprint 7! Why did the cyclist break up? Too many gears in the relationship!"/>
+      <textevent timeoffset="1260" message="Sprint 8! Did you hear about the claustrophobic astronaut? He just needed space!"/>
+      <textevent timeoffset="1440" message="Sprint 9! What&apos;s the best thing about Switzerland? The flag is a big plus!"/>
+      <textevent timeoffset="1620" message="Sprint 10! I would avoid the sushi if I were you. It&apos;s a little fishy!"/>
+      <textevent timeoffset="1800" message="Sprint 11! How do you organize a space party? You planet!"/>
+      <textevent timeoffset="1980" message="Sprint 12! Why did the scarecrow win an award? He was outstanding in his field!"/>
+      <textevent timeoffset="2160" message="Sprint 13! I don&apos;t trust stairs. They&apos;re always up to something!"/>
+      <textevent timeoffset="2340" message="Sprint 14! What do you call a fake noodle? An impasta!"/>
+      <textevent timeoffset="2520" message="Sprint 15! Why did the coffee file a police report? It got mugged!"/>
+      <textevent timeoffset="2700" message="Sprint 16! What&apos;s orange and sounds like a parrot? A carrot!"/>
+      <textevent timeoffset="2880" message="Sprint 17! I told my wife she was drawing her eyebrows too high. She looked surprised!"/>
+      <textevent timeoffset="3060" message="Sprint 18! Why do chicken coops only have two doors? If they had four, they&apos;d be sedans!"/>
+      <textevent timeoffset="3240" message="Sprint 19! What did the ocean say to the beach? Nothing, it just waved!"/>
+      <textevent timeoffset="3420" message="Final sprint 20! You&apos;re doing wheelie well! Spoke too soon about being done!"/>
+      <textevent timeoffset="3480" message="Fantastic! 20 all-out sprints complete - your explosive power and dad joke tolerance just leveled up!"/>
+    </IntervalsT>
+    <Cooldown Duration="300" PowerLow="0.6" PowerHigh="0.4"/>
+  </workout>
+</workout_file>

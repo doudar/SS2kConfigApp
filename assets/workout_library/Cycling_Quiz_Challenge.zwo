@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workout_file>
+  <author>Spark Cycling</author>
+  <name>Cycling Quiz Challenge</name>
+  <description>Test your cycling knowledge during intervals! Questions on work, answers on recovery.</description>
+  <sportType>bike</sportType>
+  <tags>
+  </tags>
+  <workout>
+    <Warmup Duration="600" PowerLow="0.5" PowerHigh="0.75"/>
+    <IntervalsT Repeat="15" OnDuration="240" OffDuration="120" OnPower="0.88" OffPower="0.55">
+      <textevent timeoffset="0" message="Q1: How many Tour de France titles did Eddy Merckx win?"/>
+      <textevent timeoffset="240" message="A1: 5 (tied with Indurain, Hinault, Anquetil, and Froome)"/>
+      <textevent timeoffset="360" message="Q2: What year was the first Tour de France?"/>
+      <textevent timeoffset="600" message="A2: 1903"/>
+      <textevent timeoffset="720" message="Q3: What does FTP stand for?"/>
+      <textevent timeoffset="960" message="A3: Functional Threshold Power"/>
+      <textevent timeoffset="1080" message="Q4: What is the normal cadence range for road cycling?"/>
+      <textevent timeoffset="1320" message="A4: 80-100 RPM"/>
+      <textevent timeoffset="1440" message="Q5: How many calories are in a typical banana?"/>
+      <textevent timeoffset="1680" message="A5: About 100 calories"/>
+      <textevent timeoffset="1800" message="Q6: Who holds the current Hour Record (as of 2022)?"/>
+      <textevent timeoffset="2040" message="A6: Filippo Ganna (56.792 km)"/>
+      <textevent timeoffset="2160" message="Q7: What climbing category is the hardest in the Tour de France?"/>
+      <textevent timeoffset="2400" message="A7: Hors Catégorie (HC) - Beyond categorization"/>
+      <textevent timeoffset="2520" message="Q8: What is the best recovery drink post-workout?"/>
+      <textevent timeoffset="2760" message="A8: Chocolate milk! (4:1 carb-to-protein ratio)"/>
+      <textevent timeoffset="2880" message="Q9: How long is a standard Olympic velodrome track?"/>
+      <textevent timeoffset="3120" message="A9: 250 meters"/>
+      <textevent timeoffset="3240" message="Q10: What does VO2 max measure?"/>
+      <textevent timeoffset="3480" message="A10: Maximum oxygen uptake during intense exercise"/>
+      <textevent timeoffset="3600" message="Q11: Which Grand Tour is known for the pink jersey?"/>
+      <textevent timeoffset="3840" message="A11: The Giro d&apos;Italia"/>
+      <textevent timeoffset="3960" message="Q12: What year did women first compete in Olympic road cycling?"/>
+      <textevent timeoffset="4200" message="A12: 1984 in Los Angeles"/>
+      <textevent timeoffset="4320" message="Q13: What does peloton mean in French?"/>
+      <textevent timeoffset="4560" message="A13: &quot;Little ball&quot; or &quot;platoon&quot; - the main group of riders"/>
+      <textevent timeoffset="4680" message="Q14: Who is known as &quot;The Cannibal&quot; in cycling?"/>
+      <textevent timeoffset="4920" message="A14: Eddy Merckx (for his voracious appetite for winning)"/>
+      <textevent timeoffset="5040" message="Q15: What is the recommended carb intake per hour during racing?"/>
+      <textevent timeoffset="5280" message="A15: 60-90 grams per hour. Great work on the quiz!"/>
+    </IntervalsT>
+    <Cooldown Duration="420" PowerLow="0.6" PowerHigh="0.4">
+      <textevent timeoffset="0" message="Brilliant! 15 solid intervals and you learned some cycling history - mind and body stronger!"/>
+    </Cooldown>
+  </workout>
+</workout_file>
