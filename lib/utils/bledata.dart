@@ -176,8 +176,15 @@ class BLEData {
 
   setupConnection(BluetoothDevice device) async {
   if (device.isConnected) {
-    await _discoverServices(device);
+    // Always refresh characteristic handles on each setup/reconnect to avoid stale
+    // objects after disconnect/reconnect cycles (common on Android).
     this.subscribed = false;
+    charReceived.value = false;
+    _myCharacteristic = null;
+    indoorBikeCharacteristic = null;
+    ftmsControlPointCharacteristic = null;
+
+    await _discoverServices(device, forceRefresh: true);
     if (services.length > 1) {
       await _findChar();
       await updateCustomCharacter(device);
@@ -237,10 +244,10 @@ class BLEData {
     return _char;
   }
 
-  Future _discoverServices(BluetoothDevice device) async {
+  Future _discoverServices(BluetoothDevice device, {bool forceRefresh = false}) async {
     if (this.isSimulated) return;
     try {
-      if (services.length < 1) {
+      if (forceRefresh || services.length < 1) {
         services = await device.discoverServices();
       }
     } catch (e) {
@@ -250,68 +257,70 @@ class BLEData {
 
   Future _findChar() async {
     if (this.isSimulated) return;
-    while (!charReceived.value) {
-      try {
-        // custom characteristic
-        BluetoothService cs = services.first;
-        for (BluetoothService s in services) {
-          if (s.uuid == Guid(csUUID)) {
-            cs = s;
-            break;
+    try {
+      // custom characteristic
+      BluetoothService cs = services.first;
+      for (BluetoothService s in services) {
+        if (s.uuid == Guid(csUUID)) {
+          cs = s;
+          break;
+        }
+      }
+      List<BluetoothCharacteristic> characteristics = cs.characteristics;
+      for (BluetoothCharacteristic c in characteristics) {
+        if (c.uuid == Guid(ccUUID)) {
+          _myCharacteristic = c;
+          await _myCharacteristic!.setNotifyValue(true);
+        }
+      }
+
+      // firmware
+      configAppCompatibleFirmware = false;
+      for (BluetoothService s in services) {
+        if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {
+          firmwareService = s;
+          configAppCompatibleFirmware = true;
+          break;
+        }
+      }
+      if (configAppCompatibleFirmware) {
+        characteristics = firmwareService.characteristics;
+        for (BluetoothCharacteristic c in characteristics) {
+          print(c.uuid.toString());
+          if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130005")) {
+            firmwareDataCharacteristic = c;
+          }
+          if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130003")) {
+            firmwareControlCharacteristic = c;
           }
         }
-          List<BluetoothCharacteristic> characteristics = cs.characteristics;
-          for (BluetoothCharacteristic c in characteristics) {
-            if (c.uuid == Guid(ccUUID)) {
-              _myCharacteristic = c;
-              _myCharacteristic!.setNotifyValue(true);
-            }
-          }
-          // firmware
-          for (BluetoothService s in services) {
-            if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {
-              firmwareService = s;
-              configAppCompatibleFirmware = true;
-              break;
-            }
-          }
-          if (configAppCompatibleFirmware) {
-            characteristics = firmwareService.characteristics;
-            for (BluetoothCharacteristic c in characteristics) {
-              print(c.uuid.toString());
-              if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130005")) {
-                firmwareDataCharacteristic = c;
-              }
-              if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130003")) {
-                firmwareControlCharacteristic = c;
-              }
-            }
-          }
-          //ftms
-          BluetoothService ftmsService = services.first;
-          for (BluetoothService s in services) {
-            if (s.uuid == Guid(ftmsServiceUUID)) {
-              ftmsService = s;
-              characteristics = ftmsService.characteristics;
-              break;
-            }
-          }
-          for (BluetoothCharacteristic c in characteristics) {
-            if (c.uuid == Guid(ftmsIndoorBikeDataUUID)) {
-              indoorBikeCharacteristic = c;
-              indoorBikeCharacteristic!.setNotifyValue(true);
-              print("subscribed to indoor bike characteristic");
-            }
-            if (c.uuid == Guid(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID)) {
-              ftmsControlPointCharacteristic = c;
-              ftmsControlPointCharacteristic!.setNotifyValue(true);
-              print("subscribed to ftms control point characteristic");
-            }
-          }
-          charReceived.value = true;
-      } catch (e) {
-        charReceived.value = false;
       }
+
+      // ftms
+      BluetoothService ftmsService = services.first;
+      for (BluetoothService s in services) {
+        if (s.uuid == Guid(ftmsServiceUUID)) {
+          ftmsService = s;
+          characteristics = ftmsService.characteristics;
+          break;
+        }
+      }
+      for (BluetoothCharacteristic c in characteristics) {
+        if (c.uuid == Guid(ftmsIndoorBikeDataUUID)) {
+          indoorBikeCharacteristic = c;
+          await indoorBikeCharacteristic!.setNotifyValue(true);
+          print("subscribed to indoor bike characteristic");
+        }
+        if (c.uuid == Guid(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID)) {
+          ftmsControlPointCharacteristic = c;
+          await ftmsControlPointCharacteristic!.setNotifyValue(true);
+          print("subscribed to ftms control point characteristic");
+        }
+      }
+
+      charReceived.value = _myCharacteristic != null;
+    } catch (e) {
+      charReceived.value = false;
     }
   }
 
@@ -333,27 +342,30 @@ class BLEData {
       } catch (e) {}
     }
     _inUpdateLoop = true;
-    if (!subscribed) {
-      decode(device);
-      updateIndoorBikeData(device);
+    try {
+      if (!subscribed) {
+        decode(device);
+        await updateIndoorBikeData(device);
+      }
+      if (_myCharacteristic != null && !_myCharacteristic!.isNotifying) {
+        await _myCharacteristic!.setNotifyValue(true);
+      }
+      if (!_lastRequestStopwatch.isRunning) {
+        await requestSettings(device);
+        _lastRequestStopwatch.start();
+      } else if (_lastRequestStopwatch.elapsed > Duration(seconds: 5)) {
+        _lastRequestStopwatch.reset();
+        await requestSettings(device);
+      }
+    } finally {
+      _inUpdateLoop = false;
     }
-    if(!_myCharacteristic!.isNotifying){
-      _myCharacteristic!.setNotifyValue(true);
-    }
-    if (!_lastRequestStopwatch.isRunning) {
-      await requestSettings(device);
-      _lastRequestStopwatch.start();
-    } else if (_lastRequestStopwatch.elapsed > Duration(seconds: 5)) {
-      _lastRequestStopwatch.reset();
-      await requestSettings(device);
-    }
-    _inUpdateLoop = false;
   }
 
-  void updateIndoorBikeData(device) {
+  Future<void> updateIndoorBikeData(BluetoothDevice device) async {
     try {
       if (!indoorBikeCharacteristic!.isNotifying) {
-        indoorBikeCharacteristic!.setNotifyValue(true);
+        await indoorBikeCharacteristic!.setNotifyValue(true);
       }
       ;
     } catch (e) {

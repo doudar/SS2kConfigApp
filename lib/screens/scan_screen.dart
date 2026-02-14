@@ -76,10 +76,10 @@ class _ScanScreenState extends State<ScanScreen> {
           timeout: const Duration(seconds: 15),
         );
       } else {
-        // Native platforms (Android/iOS)
+        // Native platforms use client-side filtering for better cross-platform consistency
+        // and improved reliability when multiple BLE apps are active.
         int divisor = !kIsWeb && io.Platform.isAndroid ? 8 : 1;
         await FlutterBluePlus.startScan(
-          withServices: [Guid(csUUID)],
           timeout: const Duration(seconds: 15),
           continuousUpdates: true,
           continuousDivisor: divisor,
@@ -126,7 +126,16 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Future onRefresh() {
     if (_isScanning == false) {
-      FlutterBluePlus.startScan(withServices: [Guid(csUUID)], timeout: const Duration(seconds: 15));
+      if (kIsWeb) {
+        FlutterBluePlus.startScan(withServices: [Guid(csUUID)], timeout: const Duration(seconds: 15));
+      } else {
+        int divisor = io.Platform.isAndroid ? 8 : 1;
+        FlutterBluePlus.startScan(
+          timeout: const Duration(seconds: 15),
+          continuousUpdates: true,
+          continuousDivisor: divisor,
+        );
+      }
     }
     if (mounted) {
       setState(() {});
@@ -319,9 +328,9 @@ class _ScanScreenState extends State<ScanScreen> {
       return hasService;
     }
 
-    final List<ScanResult> results = io.Platform.isWindows
-        ? _scanResults.where(_isSmartSpin2kDevice).toList() // Windows filtering fails in driver; enforce client-side filter
-        : _scanResults;
+    final List<ScanResult> results = kIsWeb
+      ? _scanResults
+      : _scanResults.where(_isSmartSpin2kDevice).toList();
 
     return results
         .map(
