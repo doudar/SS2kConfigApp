@@ -125,8 +125,8 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
           content: const Text('How would you like to export your workout?'),
           actions: <Widget>[
             TextButton(
-              child: const Text('CANCEL'),
-              onPressed: () => Navigator.of(context).pop('cancel'),
+              child: const Text('DISCARD'),
+              onPressed: () => Navigator.of(context).pop('discard'),
             ),
             if (isStravaConnected)
               TextButton(

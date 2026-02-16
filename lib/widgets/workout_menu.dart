@@ -9,7 +9,6 @@ import '../utils/workout/workout_file_manager.dart';
 import '../utils/workout/workout_tts_settings.dart';
 import '../utils/workout/workout_text_event_overlay.dart';
 import '../utils/workout/workout_parser.dart';
-import '../utils/workout/workout_painter.dart';
 import '../utils/bledata.dart';
 import '../utils/ftmsControlPoint.dart';
 import '../utils/workout/workout_connected_accounts.dart';
@@ -52,11 +51,36 @@ class WorkoutMenu extends StatelessWidget {
   Future<void> _showAssetWorkoutFolder(BuildContext context) async {
     await WorkoutLibrary.showAssetWorkoutsDialog(
       context,
-      onSelected: (name, content) {
+      onSelected: (name, content) async {
+        final shouldReplace = await _confirmWorkoutReplacement(context);
+        if (!shouldReplace) {
+          return;
+        }
         workoutController.loadWorkout(content, isResume: false);
         onWorkoutLoaded(content, name: name);
       },
     );
+  }
+
+  Future<bool> _confirmWorkoutReplacement(BuildContext context) async {
+    final shouldReplace = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        content: const Text('This will replace your existing workout. Are you sure?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Go Back'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Replace'),
+          ),
+        ],
+      ),
+    );
+
+    return shouldReplace ?? false;
   }
 
   Future<void> _showMenuDialog(BuildContext context) async {
@@ -190,6 +214,7 @@ class WorkoutMenu extends StatelessWidget {
       context: context,
       workoutController: workoutController,
       workoutGraphKey: workoutGraphKey,
+      onBeforeLoad: () => _confirmWorkoutReplacement(context),
       onWorkoutLoaded: (content) {
         onWorkoutLoaded(content, name: workoutController.workoutName);
       },
@@ -237,6 +262,11 @@ class WorkoutMenu extends StatelessWidget {
             backgroundColor: Colors.orange,
           ),
         );
+        return;
+      }
+
+      final shouldReplace = await _confirmWorkoutReplacement(context);
+      if (!shouldReplace) {
         return;
       }
 
@@ -546,6 +576,11 @@ class WorkoutMenu extends StatelessWidget {
           return;
         }
 
+        final shouldReplace = await _confirmWorkoutReplacement(context);
+        if (!shouldReplace) {
+          return;
+        }
+
         await _saveIntervalsWorkoutToLibrary(
           Map<String, dynamic>.from(selectedWorkout),
           zwoContent,
@@ -805,6 +840,10 @@ class WorkoutMenu extends StatelessWidget {
                   selectionMode: selectionMode,
                   onWorkoutSelected: (name, content, isInProgress) async {
                     if (!isInProgress) {
+                      final shouldReplace = await _confirmWorkoutReplacement(context);
+                      if (!shouldReplace) {
+                        return;
+                      }
                       Navigator.pop(context);
                       workoutController.loadWorkout(content, isResume: false);
                       onWorkoutLoaded(content, name: workoutController.workoutName);
@@ -834,6 +873,10 @@ class WorkoutMenu extends StatelessWidget {
                     );
 
                     if (action == 'resume') {
+                      final shouldReplace = await _confirmWorkoutReplacement(context);
+                      if (!shouldReplace) {
+                        return;
+                      }
                       Navigator.pop(context);
                       final restored = await workoutController.restoreSavedWorkoutState();
                       if (restored) {
@@ -850,6 +893,10 @@ class WorkoutMenu extends StatelessWidget {
                     }
 
                     if (action == 'restart') {
+                      final shouldReplace = await _confirmWorkoutReplacement(context);
+                      if (!shouldReplace) {
+                        return;
+                      }
                       Navigator.pop(context);
                       await workoutController.clearInProgressFile();
                       await WorkoutStorage.clearWorkoutState();

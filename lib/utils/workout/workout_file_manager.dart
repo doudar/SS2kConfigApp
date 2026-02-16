@@ -28,6 +28,7 @@ class WorkoutFileManager {
     required BuildContext context,
     required WorkoutController workoutController,
     required GlobalKey workoutGraphKey,
+    Future<bool> Function()? onBeforeLoad,
     required Function(String) onWorkoutLoaded,
   }) async {
     try {
@@ -67,6 +68,13 @@ class WorkoutFileManager {
             );
           }
           return;
+        }
+
+        if (onBeforeLoad != null) {
+          final shouldLoad = await onBeforeLoad();
+          if (!shouldLoad) {
+            return;
+          }
         }
 
         // Load the workout to generate the graph, ensuring it starts in stopped state

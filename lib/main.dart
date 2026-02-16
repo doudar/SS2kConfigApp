@@ -8,7 +8,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:app_links/app_links.dart';
 import 'package:provider/provider.dart';
@@ -43,6 +44,7 @@ class SmartSpin2kApp extends StatefulWidget {
 }
 
 class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
+  static const MethodChannel _powerChannel = MethodChannel('com.example.ss2kconfigapp/power');
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
   late AppLinks _appLinks;
   StreamSubscription? _linkSubscription;
@@ -72,6 +74,24 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
       _adapterState = BluetoothAdapterState.on;
     }
     _initDeepLinkHandling();
+    _requestBatteryOptimizationExemption();
+  }
+
+  Future<void> _requestBatteryOptimizationExemption() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+
+    try {
+      final isIgnoringBatteryOptimizations =
+          await _powerChannel.invokeMethod<bool>('isIgnoringBatteryOptimizations') ?? false;
+
+      if (!isIgnoringBatteryOptimizations) {
+        await _powerChannel.invokeMethod('requestIgnoreBatteryOptimizations');
+      }
+    } catch (e) {
+      debugPrint('Unable to request battery optimization exemption: $e');
+    }
   }
 
   Future<void> _initDeepLinkHandling() async {
