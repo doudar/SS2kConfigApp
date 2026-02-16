@@ -10,6 +10,8 @@ class WorkoutLibrary extends StatefulWidget {
   final void Function(String name, String content, bool isInProgress)? onWorkoutSelected;
   final void Function(String name, String content)? onWorkoutReset;
   final Function(String name)? onWorkoutDeleted;
+  final List<Widget> headerWidgets;
+  final VoidCallback? onClose;
 
   const WorkoutLibrary({
     Key? key,
@@ -17,6 +19,8 @@ class WorkoutLibrary extends StatefulWidget {
     this.onWorkoutSelected,
     this.onWorkoutReset,
     this.onWorkoutDeleted,
+    this.headerWidgets = const [],
+    this.onClose,
   }) : super(key: key);
 
   static Future<List<AssetWorkout>> loadAssetWorkouts() async {
@@ -248,67 +252,17 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
 
         return Column(
           children: [
-            Row(
-              children: [
-                Checkbox(
-                  value: allSelected,
-                  onChanged: totalSelectable == 0
-                      ? null
-                      : (value) {
-                          setState(() {
-                            _selectedWorkouts.clear();
-                            if (value == true) {
-                              _selectedWorkouts.addAll(
-                                selectableWorkouts
-                                    .map((workout) => workout['name'] as String)
-                                    .where((name) => name.isNotEmpty),
-                              );
-                            }
-                          });
-                        },
-                ),
-                const Text('Select All'),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: selectedCount == 0
-                      ? null
-                      : () async {
-                          final confirmed = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Delete Workouts'),
-                              content: Text('Delete $selectedCount selected workouts?'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, false),
-                                  child: const Text('CANCEL'),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                                  child: const Text('DELETE'),
-                                ),
-                              ],
-                            ),
-                          );
-
-                          if (confirmed == true) {
-                            await _deleteSelected(workouts);
-                          }
-                        },
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  label: const Text('DELETE'),
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                ),
-              ],
-            ),
-            const Divider(height: 1),
             Expanded(
               child: ListView.builder(
                 padding: EdgeInsets.all(WorkoutPadding.standard),
-                itemCount: workouts.length,
+                itemCount: widget.headerWidgets.length + workouts.length,
                 itemBuilder: (context, index) {
-                  final workout = workouts[index];
+                  if (index < widget.headerWidgets.length) {
+                    return widget.headerWidgets[index];
+                  }
+
+                  final workoutIndex = index - widget.headerWidgets.length;
+                  final workout = workouts[workoutIndex];
                   final name = workout['name'] as String? ?? '';
                   final isInProgress = name == _inProgressWorkoutName;
                   final isSelectable =
@@ -334,6 +288,70 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
                     },
                   );
                 },
+              ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: allSelected,
+                    onChanged: totalSelectable == 0
+                        ? null
+                        : (value) {
+                            setState(() {
+                              _selectedWorkouts.clear();
+                              if (value == true) {
+                                _selectedWorkouts.addAll(
+                                  selectableWorkouts
+                                      .map((workout) => workout['name'] as String)
+                                      .where((name) => name.isNotEmpty),
+                                );
+                              }
+                            });
+                          },
+                  ),
+                  const Text('Select All'),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: selectedCount == 0
+                        ? null
+                        : () async {
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Delete Workouts'),
+                                content: Text('Delete $selectedCount selected workouts?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, false),
+                                    child: const Text('CANCEL'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                    child: const Text('DELETE'),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (confirmed == true) {
+                              await _deleteSelected(workouts);
+                            }
+                          },
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    label: const Text('DELETE'),
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  ),
+                  const Spacer(),
+                  if (widget.onClose != null)
+                    TextButton(
+                      onPressed: widget.onClose,
+                      child: const Text('CLOSE'),
+                    ),
+                ],
               ),
             ),
           ],

@@ -121,13 +121,17 @@ class WorkoutMenu extends StatelessWidget {
                       children: [
                         _menuTile(dialogContext, context, _MenuAction.importZwo, Icons.file_upload, 'Import ZWO'),
                         const Divider(),
-                        _menuTile(dialogContext, context, _MenuAction.selectWorkout, Icons.folder_open, 'Workout Library'),
-                        _menuTile(dialogContext, context, _MenuAction.completedActivities, Icons.history, 'Completed Activities'),
+                        _menuTile(
+                            dialogContext, context, _MenuAction.selectWorkout, Icons.folder_open, 'Workout Library'),
+                        _menuTile(dialogContext, context, _MenuAction.completedActivities, Icons.history,
+                            'Completed Activities'),
                         const Divider(),
-                        _menuTile(dialogContext, context, _MenuAction.connectedAccounts, Icons.link, 'Connected Accounts'),
+                        _menuTile(
+                            dialogContext, context, _MenuAction.connectedAccounts, Icons.link, 'Connected Accounts'),
                         _menuTile(dialogContext, context, _MenuAction.calibrate, Icons.tune, 'Calibrate Trainer'),
                         _menuTile(dialogContext, context, _MenuAction.workoutText, Icons.text_fields, 'Workout Text'),
-                        _menuTile(dialogContext, context, _MenuAction.audioCoach, Icons.record_voice_over, 'Audio Coach'),
+                        _menuTile(
+                            dialogContext, context, _MenuAction.audioCoach, Icons.record_voice_over, 'Audio Coach'),
                       ],
                     ),
                   ),
@@ -206,7 +210,6 @@ class WorkoutMenu extends StatelessWidget {
       action();
     });
   }
-
 
   // ====== Internal Action Implementations ======
   Future<void> _importZwo(BuildContext context) async {
@@ -353,9 +356,8 @@ class WorkoutMenu extends StatelessWidget {
                         : <Map<String, dynamic>>[];
 
                     final subfolders = children.where((c) => c['children'] is List).toList();
-                    final workouts = children
-                        .where((c) => c['workout_doc'] != null || c['workout_file'] != null)
-                        .toList();
+                    final workouts =
+                        children.where((c) => c['workout_doc'] != null || c['workout_file'] != null).toList();
 
                     return AlertDialog(
                       title: Text('Workouts • ${currentFolder['name'] ?? 'Folder'}'),
@@ -733,6 +735,7 @@ class WorkoutMenu extends StatelessWidget {
   }
 
   void _showWorkoutLibrary(BuildContext context, {required bool selectionMode}) {
+    final rootContext = context;
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -747,97 +750,90 @@ class WorkoutMenu extends StatelessWidget {
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               SizedBox(height: WorkoutSpacing.medium),
-              if (selectionMode)
-                FutureBuilder<bool>(
-                  future: IntervalsService.isAuthenticated(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8.0),
-                        child: LinearProgressIndicator(),
-                      );
-                    }
-
-                    final isConnected = snapshot.data == true;
-                    if (!isConnected) {
-                      return Card(
-                        child: ListTile(
-                          leading: Image.asset(
-                            'assets/intervals.png',
-                            width: 50,
-                            height: 50,
-                          ),
-                          title: const Text('Connect Intervals.icu for more workouts'),
-                          onTap: () => _runAfterDialogClose(
-                            ctx,
-                            () => WorkoutConnectedAccounts.showConnectedAccountsDialog(context),
-                          ),
-                        ),
-                      );
-                    }
-
-                    return Card(
-                      child: Column(
-                        children: [
-                          ListTile(
-                            leading: Image.asset(
-                              'assets/intervals.png',
-                              width: 50,
-                              height: 50,
-                            ),
-                            title: const Text("Today's Intervals.icu Workout"),
-                            subtitle: const Text('Load planned workout for today'),
-                            onTap: () => _runAfterDialogClose(
-                              ctx,
-                              () => _loadTodaysWorkoutFromIntervals(context),
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          ListTile(
-                            leading: Image.asset(
-                              'assets/intervals.png',
-                              width: 50,
-                              height: 50,
-                            ),
-                            title: const Text('Intervals.icu Library'),
-                            subtitle: const Text('Browse folders & workouts'),
-                            onTap: () => _runAfterDialogClose(
-                              ctx,
-                              () => _pickWorkoutFromIntervals(context),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              if (selectionMode)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
-                    child: Text(
-                      'SmartSpin2k Library',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                  ),
-                ),
-              if (selectionMode)
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.folder),
-                    title: const Text('SS2k Library'),
-                    subtitle: const Text('Bundled workouts'),
-                    trailing: const Icon(Icons.chevron_right, size: 18),
-                    onTap: () => _runAfterDialogClose(
-                      ctx,
-                      () => _showAssetWorkoutFolder(context),
-                    ),
-                  ),
-                ),
               Expanded(
                 child: WorkoutLibrary(
                   selectionMode: selectionMode,
+                  onClose: () => Navigator.pop(context),
+                  headerWidgets: selectionMode
+                      ? [
+                          FutureBuilder<bool>(
+                            future: IntervalsService.isAuthenticated(),
+                            builder: (futureContext, snapshot) {
+                              if (snapshot.connectionState == ConnectionState.waiting) {
+                                return const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 8.0),
+                                  child: LinearProgressIndicator(),
+                                );
+                              }
+
+                              final isConnected = snapshot.data == true;
+                              if (!isConnected) {
+                                return Card(
+                                  child: ListTile(
+                                    leading: Image.asset(
+                                      'assets/intervals.png',
+                                      width: 50,
+                                      height: 50,
+                                    ),
+                                    title: const Text('Connect Intervals.icu for more workouts'),
+                                    onTap: () => _runAfterDialogClose(
+                                      ctx,
+                                      () => WorkoutConnectedAccounts.showConnectedAccountsDialog(rootContext),
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              return Card(
+                                child: Column(
+                                  children: [
+                                    ListTile(
+                                      leading: Image.asset(
+                                        'assets/intervals.png',
+                                        width: 50,
+                                        height: 50,
+                                      ),
+                                      title: const Text('Intervals.icu Library'),
+                                      subtitle: const Text('Browse folders & workouts'),
+                                      trailing: const Icon(Icons.chevron_right, size: 18),
+                                      onTap: () => _runAfterDialogClose(
+                                        ctx,
+                                        () => _pickWorkoutFromIntervals(rootContext),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                          Card(
+                            child: ListTile(
+                              leading: Image.asset(
+                                'assets/ss2kv3.png',
+                                width: 50,
+                                height: 50,
+                              ),
+                              title: const Text('SmartSpin2k Library'),
+                              subtitle: const Text('Bundled workouts'),
+                              trailing: const Icon(Icons.chevron_right, size: 18),
+                              onTap: () => _runAfterDialogClose(
+                                ctx,
+                                () => _showAssetWorkoutFolder(rootContext),
+                              ),
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+                              child: Text(
+                                'Imported Workouts:',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                            ),
+                          ),
+                        ]
+                      : const [],
                   onWorkoutSelected: (name, content, isInProgress) async {
                     if (!isInProgress) {
                       final shouldReplace = await _confirmWorkoutReplacement(context);
@@ -909,7 +905,6 @@ class WorkoutMenu extends StatelessWidget {
                   },
                 ),
               ),
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('CLOSE')),
             ],
           ),
         ),
@@ -940,7 +935,8 @@ class WorkoutMenu extends StatelessWidget {
                 if (!isCalibrating)
                   const Text('Start pedaling until the SmartSpin2k knob starts to turn.\n\nPress Start when ready.'),
                 if (isCalibrating)
-                  const Text('Stop pedaling and wait for the calibration to complete.\n\nThis may take a few moments...'),
+                  const Text(
+                      'Stop pedaling and wait for the calibration to complete.\n\nThis may take a few moments...'),
               ],
             ),
             actions: [
@@ -1032,7 +1028,8 @@ class WorkoutMenu extends StatelessWidget {
                           textEvents: [
                             TextEvent(
                               timeOffset: 0,
-                              message: 'Text Size ${WorkoutTextStyle.scrollingText.toInt()} , Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
+                              message:
+                                  'Text Size ${WorkoutTextStyle.scrollingText.toInt()} , Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
                             ),
                           ],
                         );
@@ -1044,7 +1041,8 @@ class WorkoutMenu extends StatelessWidget {
                               secondsIntoSegment: 0,
                               ttsSettings: ttsSettings,
                               workoutController: workoutController,
-                              testText: 'Text Size ${WorkoutTextStyle.scrollingText.toInt()} x Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
+                              testText:
+                                  'Text Size ${WorkoutTextStyle.scrollingText.toInt()} x Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
                             ),
                           ),
                           actions: [TextButton(onPressed: () => Navigator.pop(ctx3), child: const Text('CLOSE'))],
