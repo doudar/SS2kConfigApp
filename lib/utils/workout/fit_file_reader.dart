@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:fit_tool/fit_tool.dart';
 import 'package:path_provider/path_provider.dart';
 import 'workout_painter.dart';
@@ -13,7 +14,7 @@ class ActivitySummary {
   final Duration duration;
   final int averagePower;
   final int averageCadence;
-  final int averageHeartRate;
+  final int? averageHeartRate;
   final String filePath;
   final bool isInProgress;
 
@@ -26,6 +27,18 @@ class ActivitySummary {
     required this.averageHeartRate,
     required this.filePath,
     this.isInProgress = false,
+  });
+}
+
+class ActivityPageResult {
+  final List<ActivitySummary> activities;
+  final int nextOffset;
+  final bool hasMore;
+
+  ActivityPageResult({
+    required this.activities,
+    required this.nextOffset,
+    required this.hasMore,
   });
 }
 
@@ -49,100 +62,180 @@ class WorkoutPowerSeries {
   });
 }
 
+class _AverageMetrics {
+  final int averagePower;
+  final int averageCadence;
+  final int? averageHeartRate;
+
+  const _AverageMetrics({
+    required this.averagePower,
+    required this.averageCadence,
+    required this.averageHeartRate,
+  });
+}
+
 class FitFileReader {
   static const int _thumbnailWidth = 120;
   static const int _thumbnailHeight = 70;
   static const int _thumbnailWindowSeconds = 15;
 
-  static Future<List<ActivitySummary>> getCompletedActivities() async {
+  static Future<ActivityPageResult> getCompletedActivitiesPage({
+    required int offset,
+    required int limit,
+  }) async {
     final List<ActivitySummary> activities = [];
-    
+
     try {
       final Directory appDir = await getApplicationDocumentsDirectory();
       final Directory workoutsDir = Directory('${appDir.path}${Platform.pathSeparator}workouts');
-      
+
       if (!await workoutsDir.exists()) {
-        return activities;
+        return ActivityPageResult(activities: activities, nextOffset: 0, hasMore: false);
       }
 
-      final List<FileSystemEntity> files = await workoutsDir.list().toList();
-      final List<FileSystemEntity> fitFiles = [];
-      final List<FileSystemEntity> inProgressFiles = [];
-      for (final file in files) {
-        if (file.path.toLowerCase().endsWith('.fit')) {
-          fitFiles.add(file);
-        } else if (_isInProgressFile(file)) {
-          inProgressFiles.add(file);
-        }
-      }
+      final files = await workoutsDir.list().toList();
+      final fitFiles = files
+          .whereType<File>()
+          .where((file) => file.path.toLowerCase().endsWith('.fit'))
+          .toList();
+      final inProgressFiles = files
+          .whereType<File>()
+          .where(_isInProgressFile)
+          .toList();
 
-      for (final file in fitFiles) {
-        try {
-          final bytes = await File(file.path).readAsBytes();
-          final fitFile = FitFile.fromBytes(bytes);
-          
-          int totalPower = 0;
-          int totalCadence = 0;
-          int totalHeartRate = 0;
-          int recordCount = 0;
-          DateTime? startTime;
-          DateTime? endTime;
+      fitFiles.sort((a, b) {
+        final aMs = a.statSync().modified.millisecondsSinceEpoch;
+        final bMs = b.statSync().modified.millisecondsSinceEpoch;
+        return bMs.compareTo(aMs);
+      });
 
-          for (final record in fitFile.records) {
-            if (record.message is RecordMessage) {
-              final recordMessage = record.message as RecordMessage;
-              if (recordMessage.power != null) totalPower += recordMessage.power!;
-              if (recordMessage.cadence != null) totalCadence += recordMessage.cadence!;
-              if (recordMessage.heartRate != null) totalHeartRate += recordMessage.heartRate!;
-              recordCount++;
-            } else if (record.message is SessionMessage) {
-              final session = record.message as SessionMessage;
-              startTime = DateTime.fromMillisecondsSinceEpoch(session.startTime!);
-              endTime = DateTime.fromMillisecondsSinceEpoch(session.timestamp!);
+      final safeOffset = offset.clamp(0, fitFiles.length);
+      final end = (safeOffset + limit).clamp(0, fitFiles.length);
+      final pageFiles = fitFiles.sublist(safeOffset, end);
+
+      final pageSummaries = await Future.wait(
+        pageFiles.map((file) => _readFitSummaryWithMetadata(file)),
+      );
+      activities.addAll(pageSummaries.whereType<ActivitySummary>());
+
+      if (safeOffset == 0) {
+        for (final file in inProgressFiles) {
+          try {
+            final summary = await _readInProgressSummary(file);
+            if (summary != null) {
+              activities.add(summary);
             }
+          } catch (e) {
+            print('Error reading in-progress workout ${file.path}: $e');
           }
-
-          if (recordCount > 0 && startTime != null && endTime != null) {
-            activities.add(ActivitySummary(
-              name: file.path.split(Platform.pathSeparator).last.replaceAll('.fit', ''),
-              timestamp: startTime,
-              duration: endTime.difference(startTime),
-              averagePower: totalPower ~/ recordCount,
-              averageCadence: totalCadence ~/ recordCount,
-              averageHeartRate: totalHeartRate ~/ recordCount,
-              filePath: file.path,
-            ));
-          }
-        } catch (e) {
-          print('Error reading FIT file ${file.path}: $e');
         }
       }
 
-      for (final file in inProgressFiles) {
-        try {
-          final summary = await _readInProgressSummary(File(file.path));
-          if (summary != null) {
-            activities.add(summary);
-          }
-        } catch (e) {
-          print('Error reading in-progress workout ${file.path}: $e');
-        }
-      }
-
-      // Sort activities by date, most recent first
       activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      
-      return activities;
+
+      return ActivityPageResult(
+        activities: activities,
+        nextOffset: end,
+        hasMore: end < fitFiles.length,
+      );
     } catch (e) {
       print('Error reading completed activities: $e');
-      return activities;
+      return ActivityPageResult(activities: activities, nextOffset: offset, hasMore: false);
     }
+  }
+
+  static Future<List<ActivitySummary>> getCompletedActivities() async {
+    final activities = <ActivitySummary>[];
+    int offset = 0;
+    const batchSize = 50;
+
+    while (true) {
+      final page = await getCompletedActivitiesPage(offset: offset, limit: batchSize);
+      activities.addAll(page.activities);
+      if (!page.hasMore) {
+        break;
+      }
+      offset = page.nextOffset;
+    }
+
+    activities.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return activities;
   }
 
   static bool _isInProgressFile(FileSystemEntity entity) {
     final fileName = entity.path.split(Platform.pathSeparator).last.toLowerCase();
     return fileName.startsWith('workout_in_progress_') && fileName.endsWith('.jsonl');
   }
+
+  static Future<ActivitySummary?> _readFitSummaryWithMetadata(File file) async {
+    try {
+      final metadataFile = File(_getFitMetadataPath(file.path));
+      final sourceModifiedMs = (await file.stat()).modified.millisecondsSinceEpoch;
+
+      if (await metadataFile.exists()) {
+        final raw = await metadataFile.readAsString();
+        final map = jsonDecode(raw);
+        if (map is Map<String, dynamic> && map['sourceModifiedMs'] == sourceModifiedMs) {
+          final timestamp = DateTime.tryParse(map['timestamp'] as String? ?? '');
+          final durationSeconds = map['durationSeconds'];
+          final averagePower = map['averagePower'];
+          final averageCadence = map['averageCadence'];
+          if (timestamp != null && durationSeconds is int && averagePower is int && averageCadence is int) {
+            return ActivitySummary(
+              name: (map['name'] as String?) ?? _workoutNameFromPath(file.path),
+              timestamp: timestamp,
+              duration: Duration(seconds: durationSeconds),
+              averagePower: averagePower,
+              averageCadence: averageCadence,
+              averageHeartRate: map['averageHeartRate'] as int?,
+              filePath: file.path,
+            );
+          }
+        }
+      }
+
+      final parsed = await compute(_parseFitSummaryInBackground, file.path);
+      if (parsed == null) {
+        return null;
+      }
+
+      final timestamp = DateTime.tryParse(parsed['timestamp'] as String? ?? '');
+      final durationSeconds = parsed['durationSeconds'];
+      final averagePower = parsed['averagePower'];
+      final averageCadence = parsed['averageCadence'];
+      if (timestamp == null || durationSeconds is! int || averagePower is! int || averageCadence is! int) {
+        return null;
+      }
+
+      final summary = ActivitySummary(
+        name: (parsed['name'] as String?) ?? _workoutNameFromPath(file.path),
+        timestamp: timestamp,
+        duration: Duration(seconds: durationSeconds),
+        averagePower: averagePower,
+        averageCadence: averageCadence,
+        averageHeartRate: parsed['averageHeartRate'] as int?,
+        filePath: file.path,
+      );
+
+      final metadata = {
+        'name': summary.name,
+        'timestamp': summary.timestamp.toIso8601String(),
+        'durationSeconds': summary.duration.inSeconds,
+        'averagePower': summary.averagePower,
+        'averageCadence': summary.averageCadence,
+        'averageHeartRate': summary.averageHeartRate,
+        'sourceModifiedMs': sourceModifiedMs,
+      };
+      await metadataFile.writeAsString(jsonEncode(metadata));
+
+      return summary;
+    } catch (e) {
+      print('Error reading FIT file ${file.path}: $e');
+      return null;
+    }
+  }
+
+  static String _getFitMetadataPath(String fitFilePath) => '$fitFilePath.meta.json';
 
   static Future<ActivitySummary?> _readInProgressSummary(File file) async {
     final lines = await file.readAsLines();
@@ -152,7 +245,9 @@ class FitFileReader {
     int totalPower = 0;
     int totalCadence = 0;
     int totalHeartRate = 0;
-    int recordCount = 0;
+    int powerCount = 0;
+    int cadenceCount = 0;
+    int heartRateCount = 0;
 
     for (final line in lines) {
       if (line.trim().isEmpty) continue;
@@ -171,10 +266,23 @@ class FitFileReader {
           startTime ??= timestamp;
           endTime = timestamp;
         }
-        totalPower += (data['power'] as num?)?.toInt() ?? 0;
-        totalCadence += (data['cadence'] as num?)?.toInt() ?? 0;
-        totalHeartRate += (data['heartRate'] as num?)?.toInt() ?? 0;
-        recordCount++;
+        final power = (data['power'] as num?)?.toInt();
+        if (power != null) {
+          totalPower += power;
+          powerCount++;
+        }
+
+        final cadence = (data['cadence'] as num?)?.toInt();
+        if (cadence != null) {
+          totalCadence += cadence;
+          cadenceCount++;
+        }
+
+        final heartRate = (data['heartRate'] as num?)?.toInt();
+        if (heartRate != null) {
+          totalHeartRate += heartRate;
+          heartRateCount++;
+        }
       }
     }
 
@@ -194,19 +302,23 @@ class FitFileReader {
         }
       }
     }
-    final hasRecords = recordCount > 0;
-    final averagePower = hasRecords ? totalPower ~/ recordCount : 0;
-    final averageCadence = hasRecords ? totalCadence ~/ recordCount : 0;
-    final averageHeartRate = hasRecords ? totalHeartRate ~/ recordCount : 0;
+    final averages = _calculateAverageMetrics(
+      totalPower: totalPower,
+      powerCount: powerCount,
+      totalCadence: totalCadence,
+      cadenceCount: cadenceCount,
+      totalHeartRate: totalHeartRate,
+      heartRateCount: heartRateCount,
+    );
     const fallbackName = 'Unnamed Workout';
 
     return ActivitySummary(
       name: name ?? fallbackName,
       timestamp: startTime,
       duration: duration,
-      averagePower: averagePower,
-      averageCadence: averageCadence,
-      averageHeartRate: averageHeartRate,
+      averagePower: averages.averagePower,
+      averageCadence: averages.averageCadence,
+      averageHeartRate: averages.averageHeartRate,
       filePath: file.path,
       isInProgress: true,
     );
@@ -300,6 +412,13 @@ class FitFileReader {
     }
   }
 
+  static Future<void> deleteActivityMetadata(String fitFilePath) async {
+    final metadataFile = File(_getFitMetadataPath(fitFilePath));
+    if (await metadataFile.exists()) {
+      await metadataFile.delete();
+    }
+  }
+
   static Future<String> _getWorkoutThumbnailPath(String fitFilePath) async {
     final parentDir = File(fitFilePath).parent;
     final workoutName = _workoutNameFromPath(fitFilePath);
@@ -347,6 +466,25 @@ class FitFileReader {
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&apos;');
+  }
+
+  static _AverageMetrics _calculateAverageMetrics({
+    required int totalPower,
+    required int powerCount,
+    required int totalCadence,
+    required int cadenceCount,
+    required int totalHeartRate,
+    required int heartRateCount,
+  }) {
+    final averagePower = powerCount > 0 ? (totalPower ~/ powerCount) : 0;
+    final averageCadence = cadenceCount > 0 ? (totalCadence ~/ cadenceCount) : 0;
+    final averageHeartRate = heartRateCount > 0 ? (totalHeartRate ~/ heartRateCount) : null;
+
+    return _AverageMetrics(
+      averagePower: averagePower,
+      averageCadence: averageCadence,
+      averageHeartRate: averageHeartRate,
+    );
   }
 
   static Future<WorkoutPowerSeries?> _readPowerWindows(
@@ -416,5 +554,72 @@ class FitFileReader {
       print('Error reading power windows from $fitFilePath: $e');
       return null;
     }
+  }
+}
+
+Map<String, dynamic>? _parseFitSummaryInBackground(String filePath) {
+  try {
+    final bytes = File(filePath).readAsBytesSync();
+    final fitFile = FitFile.fromBytes(bytes);
+
+    int totalPower = 0;
+    int totalCadence = 0;
+    int totalHeartRate = 0;
+    int powerCount = 0;
+    int cadenceCount = 0;
+    int heartRateCount = 0;
+    DateTime? startTime;
+    DateTime? endTime;
+
+    for (final record in fitFile.records) {
+      if (record.message is RecordMessage) {
+        final msg = record.message as RecordMessage;
+        if (msg.power != null) {
+          totalPower += msg.power!;
+          powerCount++;
+        }
+        if (msg.cadence != null) {
+          totalCadence += msg.cadence!;
+          cadenceCount++;
+        }
+        if (msg.heartRate != null) {
+          totalHeartRate += msg.heartRate!;
+          heartRateCount++;
+        }
+      } else if (record.message is SessionMessage) {
+        final session = record.message as SessionMessage;
+        if (session.startTime != null) {
+          startTime = DateTime.fromMillisecondsSinceEpoch(session.startTime!);
+        }
+        if (session.timestamp != null) {
+          endTime = DateTime.fromMillisecondsSinceEpoch(session.timestamp!);
+        }
+      }
+    }
+
+    if (startTime == null || endTime == null) {
+      return null;
+    }
+
+    final durationSeconds = endTime.difference(startTime).inSeconds;
+    final averages = FitFileReader._calculateAverageMetrics(
+      totalPower: totalPower,
+      powerCount: powerCount,
+      totalCadence: totalCadence,
+      cadenceCount: cadenceCount,
+      totalHeartRate: totalHeartRate,
+      heartRateCount: heartRateCount,
+    );
+
+    return {
+      'name': filePath.split(Platform.pathSeparator).last.replaceAll(RegExp(r'\.fit$', caseSensitive: false), ''),
+      'timestamp': startTime.toIso8601String(),
+      'durationSeconds': durationSeconds > 0 ? durationSeconds : 1,
+      'averagePower': averages.averagePower,
+      'averageCadence': averages.averageCadence,
+      'averageHeartRate': averages.averageHeartRate,
+    };
+  } catch (_) {
+    return null;
   }
 }

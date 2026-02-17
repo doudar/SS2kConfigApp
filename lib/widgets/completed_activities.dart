@@ -43,20 +43,100 @@ class CompletedActivities extends StatefulWidget {
 }
 
 class _CompletedActivitiesState extends State<CompletedActivities> {
-  Future<List<ActivitySummary>>? _activitiesFuture;
+  static const int _initialPageSize = 4;
+  static const int _pageSize = 20;
+
+  final ScrollController _scrollController = ScrollController();
+  final List<ActivitySummary> _activities = [];
   final Set<String> _selectedActivityPaths = {};
+  int _fitOffset = 0;
+  bool _hasMore = true;
+  bool _isLoadingInitial = true;
+  bool _isLoadingMore = false;
+  String? _loadError;
 
   @override
   void initState() {
     super.initState();
-    _activitiesFuture = FitFileReader.getCompletedActivities();
+    _scrollController.addListener(_onScroll);
+    _loadInitialActivities();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) {
+      return;
+    }
+
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 200) {
+      _loadMoreActivities();
+    }
+  }
+
+  Future<void> _loadInitialActivities() async {
+    setState(() {
+      _isLoadingInitial = true;
+      _isLoadingMore = false;
+      _hasMore = true;
+      _fitOffset = 0;
+      _activities.clear();
+      _selectedActivityPaths.clear();
+      _loadError = null;
+    });
+
+    try {
+      final page = await FitFileReader.getCompletedActivitiesPage(offset: 0, limit: _initialPageSize);
+      if (!mounted) return;
+      setState(() {
+        _activities.addAll(page.activities);
+        _fitOffset = page.nextOffset;
+        _hasMore = page.hasMore;
+        _isLoadingInitial = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingInitial = false;
+        _loadError = e.toString();
+      });
+    }
+  }
+
+  Future<void> _loadMoreActivities() async {
+    if (_isLoadingMore || !_hasMore) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final page = await FitFileReader.getCompletedActivitiesPage(offset: _fitOffset, limit: _pageSize);
+      if (!mounted) return;
+      setState(() {
+        _activities.addAll(page.activities);
+        _fitOffset = page.nextOffset;
+        _hasMore = page.hasMore;
+        _isLoadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingMore = false;
+      });
+    }
   }
 
   void _refreshActivities() {
-    setState(() {
-      _selectedActivityPaths.clear();
-      _activitiesFuture = FitFileReader.getCompletedActivities();
-    });
+    _loadInitialActivities();
   }
 
   Future<void> _showActivityOptions(BuildContext context, ActivitySummary activity) async {
@@ -80,7 +160,11 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
               Text('Duration: ${activity.duration.toString().split('.').first}'),
               Text('Average Power: ${activity.averagePower}W'),
               Text('Average Cadence: ${activity.averageCadence}rpm'),
-              Text('Average Heart Rate: ${activity.averageHeartRate}bpm'),
+              Text(
+                activity.averageHeartRate != null
+                    ? 'Average Heart Rate: ${activity.averageHeartRate}bpm'
+                    : 'Average Heart Rate: N/A',
+              ),
               const SizedBox(height: 16),
               const Text('Export Options:'),
             ],
@@ -225,6 +309,7 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
       if (await file.exists()) {
         await file.delete();
       }
+      await FitFileReader.deleteActivityMetadata(activity.filePath);
       await FitFileReader.deleteWorkoutThumbnail(activity.filePath);
       if (activity.isInProgress) {
         final inProgressPath = await WorkoutStorage.loadInProgressFilePath();
@@ -294,134 +379,135 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
         ),
         const SizedBox(height: 16),
         Expanded(
-          child: FutureBuilder<List<ActivitySummary>>(
-            future: _activitiesFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
+          child: _isLoadingInitial
+              ? const Center(child: CircularProgressIndicator())
+              : _loadError != null
+                  ? Center(child: Text('Error: $_loadError'))
+                  : _activities.isEmpty
+                      ? const Center(child: Text('No completed activities found'))
+                      : Builder(
+                          builder: (context) {
+                            final activities = _activities;
+                            final totalSelectable = activities.length;
+                            final selectedCount = _selectedActivityPaths.length;
+                            final allSelected = totalSelectable > 0 && selectedCount == totalSelectable;
 
-              if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              }
+                            return Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Checkbox(
+                                      value: allSelected,
+                                      onChanged: totalSelectable == 0
+                                          ? null
+                                          : (value) {
+                                              setState(() {
+                                                _selectedActivityPaths.clear();
+                                                if (value == true) {
+                                                  _selectedActivityPaths.addAll(activities.map((activity) => activity.filePath));
+                                                }
+                                              });
+                                            },
+                                    ),
+                                    const Text('Select All'),
+                                    const Spacer(),
+                                    TextButton.icon(
+                                      onPressed: selectedCount == 0
+                                          ? null
+                                          : () async {
+                                              final confirmed = await showDialog<bool>(
+                                                context: context,
+                                                builder: (context) => AlertDialog(
+                                                  title: const Text('Delete Workouts'),
+                                                  content: Text('Delete $selectedCount selected workouts?'),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () => Navigator.pop(context, false),
+                                                      child: const Text('CANCEL'),
+                                                    ),
+                                                    TextButton(
+                                                      onPressed: () => Navigator.pop(context, true),
+                                                      style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                                      child: const Text('DELETE'),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
 
-              final activities = snapshot.data ?? [];
-
-              if (activities.isEmpty) {
-                return const Center(child: Text('No completed activities found'));
-              }
-
-              final totalSelectable = activities.length;
-              final selectedCount = _selectedActivityPaths.length;
-              final allSelected = totalSelectable > 0 && selectedCount == totalSelectable;
-
-              return Column(
-                children: [
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: allSelected,
-                        onChanged: totalSelectable == 0
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  _selectedActivityPaths.clear();
-                                  if (value == true) {
-                                    _selectedActivityPaths.addAll(activities.map((activity) => activity.filePath));
-                                  }
-                                });
-                              },
-                      ),
-                      const Text('Select All'),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: selectedCount == 0
-                            ? null
-                            : () async {
-                                final confirmed = await showDialog<bool>(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: const Text('Delete Workouts'),
-                                    content: Text('Delete $selectedCount selected workouts?'),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(context, false),
-                                        child: const Text('CANCEL'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(context, true),
-                                        style: TextButton.styleFrom(foregroundColor: Colors.red),
-                                        child: const Text('DELETE'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-
-                                if (confirmed == true) {
-                                  await _deleteSelectedActivities(activities);
-                                }
-                              },
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        label: const Text('DELETE'),
-                        style: TextButton.styleFrom(foregroundColor: Colors.red),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: activities.length,
-                      itemBuilder: (context, index) {
-                        final activity = activities[index];
-                        final isSelected = _selectedActivityPaths.contains(activity.filePath);
-
-                        return ListTile(
-                          leading: Checkbox(
-                            value: isSelected,
-                            onChanged: (value) {
-                              setState(() {
-                                if (value == true) {
-                                  _selectedActivityPaths.add(activity.filePath);
-                                } else {
-                                  _selectedActivityPaths.remove(activity.filePath);
-                                }
-                              });
-                            },
-                          ),
-                          title: Row(
-                            children: [
-                              _buildThumbnail(activity),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  activity.isInProgress
-                                      ? '${activity.name} (In Progress)'
-                                      : activity.name,
+                                              if (confirmed == true) {
+                                                await _deleteSelectedActivities(activities);
+                                              }
+                                            },
+                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                      label: const Text('DELETE'),
+                                      style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ],
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(DateFormat('MMM d, y HH:mm').format(activity.timestamp)),
-                              if (activity.isInProgress) const Text('Status: In Progress'),
-                              Text(
-                                'Duration: ${activity.duration.toString().split('.').first} • '
-                                'Power: ${activity.averagePower}W • '
-                                'Cadence: ${activity.averageCadence}rpm',
-                              ),
-                            ],
-                          ),
-                          onTap: () => _showActivityOptions(context, activity),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
+                                const Divider(height: 1),
+                                Expanded(
+                                  child: ListView.builder(
+                                    controller: _scrollController,
+                                    itemCount: activities.length + (_isLoadingMore ? 1 : 0),
+                                    itemBuilder: (context, index) {
+                                      if (index >= activities.length) {
+                                        return const Padding(
+                                          padding: EdgeInsets.symmetric(vertical: 16.0),
+                                          child: Center(child: CircularProgressIndicator()),
+                                        );
+                                      }
+
+                                      final activity = activities[index];
+                                      final isSelected = _selectedActivityPaths.contains(activity.filePath);
+
+                                      return ListTile(
+                                        leading: Checkbox(
+                                          value: isSelected,
+                                          onChanged: (value) {
+                                            setState(() {
+                                              if (value == true) {
+                                                _selectedActivityPaths.add(activity.filePath);
+                                              } else {
+                                                _selectedActivityPaths.remove(activity.filePath);
+                                              }
+                                            });
+                                          },
+                                        ),
+                                        title: Row(
+                                          children: [
+                                            _buildThumbnail(activity),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Text(
+                                                activity.isInProgress
+                                                    ? '${activity.name} (In Progress)'
+                                                    : activity.name,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        subtitle: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(DateFormat('MMM d, y HH:mm').format(activity.timestamp)),
+                                            if (activity.isInProgress) const Text('Status: In Progress'),
+                                            Text(
+                                              'Duration: ${activity.duration.toString().split('.').first} • '
+                                              'Power: ${activity.averagePower}W • '
+                                              'Cadence: ${activity.averageCadence}rpm'
+                                              '${activity.averageHeartRate != null ? ' • HR: ${activity.averageHeartRate}bpm' : ''}',
+                                            ),
+                                          ],
+                                        ),
+                                        onTap: () => _showActivityOptions(context, activity),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context),
