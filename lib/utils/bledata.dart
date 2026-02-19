@@ -179,6 +179,10 @@ class BLEData {
       return;
     }
 
+    if (Platform.isAndroid && device.mtuNow <= 23) {
+      _mtuRequestedForConnection = false;
+    }
+
     final needsBootstrap = forceRefresh ||
         services.isEmpty ||
         _myCharacteristic == null ||
@@ -345,6 +349,7 @@ class BLEData {
   ///Data Helpers****************************************************************
 
   bool subscribed = false;
+  bool _mtuRequestedForConnection = false;
   final _lastRequestStopwatch = Stopwatch();
 // only used as a flag to prevent multiple concurrent instances of updateCustomCharacter
   bool _inUpdateLoop = false;
@@ -355,9 +360,14 @@ class BLEData {
       return;
     }
     if (Platform.isAndroid) {
-      try {
-        device.requestMtu(515);
-      } catch (e) {}
+      if (!_mtuRequestedForConnection && device.mtuNow <= 23) {
+        _mtuRequestedForConnection = true;
+        try {
+          await device.requestMtu(515);
+        } catch (e) {
+          _mtuRequestedForConnection = false;
+        }
+      }
     }
     _inUpdateLoop = true;
     try {

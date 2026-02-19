@@ -48,7 +48,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     bleData.firmwareVersion.addListener(_firmwareVersionListener!);
 
     // Initialize firmware version
-    _fwVersion = bleData.firmwareVersion.value;
+    _fwVersion = bleData.firmwareVersion.value.isEmpty ? "Connecting Please Wait..." : bleData.firmwareVersion.value;
 
     // Only create subscription if it doesn't exist
     _connectionStateSubscription ??= this.widget.device.connectionState.listen((state) async {
@@ -290,7 +290,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
                   ),
                 ),
                 Text(
-                  'v${_fwVersion}',
+                  '${_fwVersion}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurface.withValues(alpha: 0.80),
                   ),

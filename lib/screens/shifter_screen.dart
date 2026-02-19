@@ -28,6 +28,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
   late ValueNotifier<String> t;
   Map<String, Object> c = const {};
   Timer? _refreshTimer;
+  Timer? _pendingShiftTimer;
+  String? _confirmedShifterValue;
+  String? _pendingShifterValue;
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   double _chartOpacity = 0.15;
@@ -41,7 +44,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
     // Keep the shifter screen awake during use, matching workout behavior.
     WakelockPlus.enable();
     bleData = BLEDataManager.forDevice(this.widget.device);
-    t = ValueNotifier("Loading");
+    t = ValueNotifier("Connecting");
     _syncShifterValueFromCache();
 
     //special setup for demo mode
@@ -50,7 +53,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
       return;
     }
 
-    if (t.value == "Loading") {
+    if (t.value == "Connecting") {
       _requestShifterPosition();
     }
 
@@ -64,7 +67,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
         } catch (e) {
           print("failed to reconnect.");
         }
-      } else if (t.value == "Loading") {
+      } else if (t.value == "Connecting") {
         _requestShifterPosition();
       }
     });
@@ -76,6 +79,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _pendingShiftTimer?.cancel();
     _connectionStateSubscription?.cancel();
     _characteristicChangeSubscription?.cancel();
     t.dispose();
@@ -95,14 +99,20 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
     final shifterValue = c["value"]?.toString() ?? "";
     if (_isValidShifterValue(shifterValue)) {
+      _confirmedShifterValue = shifterValue;
+      if (_pendingShifterValue != null) {
+        _pendingShiftTimer?.cancel();
+        _pendingShiftTimer = null;
+        _pendingShifterValue = null;
+      }
       t.value = shifterValue;
     } else {
-      t.value = "Loading";
+      t.value = "Connecting";
     }
   }
 
   void _requestShifterPosition() {
-    if (!widget.device.isConnected || t.value != "Loading") {
+    if (!widget.device.isConnected || t.value != "Connecting") {
       return;
     }
     bleData.requestSetting(widget.device, shifterPositionVname);
@@ -118,8 +128,8 @@ class _ShifterScreenState extends State<ShifterScreen> {
     _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
       if (!mounted) return;
 
-      // Only hydrate shifter value from BLE while loading.
-      if (event.vName == shifterPositionVname && t.value == "Loading") {
+      // Shifter position from device is authoritative (includes external shifter and accepted app shifts).
+      if (event.vName == shifterPositionVname) {
         _syncShifterValueFromCache();
       }
 
@@ -130,16 +140,34 @@ class _ShifterScreenState extends State<ShifterScreen> {
     });
   }
 
+  void _startPendingShiftTimeout() {
+    _pendingShiftTimer?.cancel();
+    _pendingShiftTimer = Timer(const Duration(milliseconds: 1000), () {
+      if (!mounted || _pendingShifterValue == null) {
+        return;
+      }
+
+      _pendingShifterValue = null;
+      t.value = _confirmedShifterValue ?? "Connecting";
+    });
+  }
+
   shift(int amount) {
-    if (t.value != "Loading") {
-      final current = int.tryParse(t.value);
+    if (_pendingShifterValue != null) {
+      return;
+    }
+
+    if (t.value != "Connecting") {
+      final current = int.tryParse(_confirmedShifterValue ?? t.value);
       if (current == null) {
         return;
       }
       String _t = (current + amount).toString();
       c = Map<String, Object>.from(c)..["value"] = _t;
       this.bleData.writeToSS2k(this.widget.device, c);
+      _pendingShifterValue = _t;
       t.value = _t;
+      _startPendingShiftTimeout();
     }
 
     WakelockPlus.enable();
