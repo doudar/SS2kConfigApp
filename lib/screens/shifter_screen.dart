@@ -27,6 +27,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   late BLEData bleData;
   late ValueNotifier<String> t;
   Map<String, Object> c = const {};
+  Timer? _refreshTimer;
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   double _chartOpacity = 0.15;
@@ -41,18 +42,19 @@ class _ShifterScreenState extends State<ShifterScreen> {
     WakelockPlus.enable();
     bleData = BLEDataManager.forDevice(this.widget.device);
     t = ValueNotifier("Loading");
-    c = this.bleData.customCharacteristic.firstWhere(
-          (i) => i["vName"] == shifterPositionVname,
-          orElse: () => <String, Object>{},
-        );
-    t.value = c.isNotEmpty ? (c["value"]?.toString() ?? "Loading") : "Loading";
+    _syncShifterValueFromCache();
 
     //special setup for demo mode
     if (bleData.isSimulated) {
       t.value = "0";
       return;
     }
-    Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
+
+    if (t.value == "Loading") {
+      _requestShifterPosition();
+    }
+
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
       if (!mounted) {
         refreshTimer.cancel();
       }
@@ -62,6 +64,8 @@ class _ShifterScreenState extends State<ShifterScreen> {
         } catch (e) {
           print("failed to reconnect.");
         }
+      } else if (t.value == "Loading") {
+        _requestShifterPosition();
       }
     });
 
@@ -71,6 +75,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _connectionStateSubscription?.cancel();
     _characteristicChangeSubscription?.cancel();
     t.dispose();
@@ -78,21 +83,45 @@ class _ShifterScreenState extends State<ShifterScreen> {
     super.dispose();
   }
 
+  bool _isValidShifterValue(String value) {
+    return value.isNotEmpty && value != "null" && value != noFirmSupport;
+  }
+
+  void _syncShifterValueFromCache() {
+    c = this.bleData.customCharacteristic.firstWhere(
+      (i) => i["vName"] == shifterPositionVname,
+      orElse: () => <String, Object>{},
+    );
+
+    final shifterValue = c["value"]?.toString() ?? "";
+    if (_isValidShifterValue(shifterValue)) {
+      t.value = shifterValue;
+    } else {
+      t.value = "Loading";
+    }
+  }
+
+  void _requestShifterPosition() {
+    if (!widget.device.isConnected || t.value != "Loading") {
+      return;
+    }
+    bleData.requestSetting(widget.device, shifterPositionVname);
+  }
+
   Future rwSubscription() async {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
-      // Connection state changes don't require rebuilding the metrics or gear
+      if (state == BluetoothConnectionState.connected) {
+        _requestShifterPosition();
+      }
     });
 
     _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
       if (!mounted) return;
 
-      // Refresh the shifter characteristic value from BLE so UI updates when it changes remotely
-      c = bleData.customCharacteristic.firstWhere(
-        (i) => i["vName"] == shifterPositionVname,
-        orElse: () => <String, Object>{},
-      );
-
-      t.value = c["value"]?.toString() ?? "Loading";
+      // Only hydrate shifter value from BLE while loading.
+      if (event.vName == shifterPositionVname && t.value == "Loading") {
+        _syncShifterValueFromCache();
+      }
 
       // Keep simulated watts in sync with FTMS mode, matching the live updates used by the power table chart
       if (bleData.FTMSmode == 0 || bleData.simulateTargetWatts == false) {
@@ -103,16 +132,15 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
   shift(int amount) {
     if (t.value != "Loading") {
-      final current = int.tryParse(c["value"]?.toString() ?? "");
+      final current = int.tryParse(t.value);
       if (current == null) {
         return;
       }
       String _t = (current + amount).toString();
       c = Map<String, Object>.from(c)..["value"] = _t;
       this.bleData.writeToSS2k(this.widget.device, c);
+      t.value = _t;
     }
-
-    t.value = c["value"]?.toString() ?? t.value;
 
     WakelockPlus.enable();
   }

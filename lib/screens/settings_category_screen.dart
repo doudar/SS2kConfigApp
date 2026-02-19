@@ -33,6 +33,7 @@ class SettingsCategoryScreen extends StatefulWidget {
 class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
+  VoidCallback? _charReceivedListener;
   late BLEData bleData;
 
   @override
@@ -40,17 +41,31 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
 
+    _charReceivedListener = () {
+      if (mounted) {
+        setState(() {});
+      }
+    };
+    bleData.charReceived.addListener(_charReceivedListener!);
+
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
-      // Connection state changes don't require rebuilding the settings tiles
+      if (mounted) {
+        setState(() {});
+      }
     });
 
     _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
-      // Settings tiles update via StreamBuilder, no need for setState
+      if (mounted) {
+        setState(() {});
+      }
     });
   }
 
   @override
   void dispose() {
+    if (_charReceivedListener != null) {
+      bleData.charReceived.removeListener(_charReceivedListener!);
+    }
     _connectionStateSubscription?.cancel();
     _characteristicChangeSubscription?.cancel();
     super.dispose();
@@ -58,17 +73,19 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
 
   List<Widget> buildSettingsList(BuildContext context) {
     List<Widget> settings = [];
-    if (this.bleData.charReceived.value) {
-      _newEntry(Map c) {
-        if ((!this.bleData.services.isEmpty) || this.bleData.isSimulated) {
-          // Filter by isSetting AND the requested SettingType
-          if (c["isSetting"] == true && c["settingType"] == widget.settingType && c["value"] != null) {
-              settings.add(SettingTile(device: this.widget.device, c: c));
-            }
-          }
+    _newEntry(Map c) {
+      if ((!this.bleData.services.isEmpty) || this.bleData.isSimulated) {
+        final value = c["value"]?.toString();
+        // Filter by isSetting AND the requested SettingType
+        if (c["isSetting"] == true &&
+            c["settingType"] == widget.settingType &&
+            value != null &&
+            value != "null") {
+          settings.add(SettingTile(device: this.widget.device, c: c));
         }
-        this.bleData.customCharacteristic.forEach((c) => _newEntry(c));
       }
+    }
+    this.bleData.customCharacteristic.forEach((c) => _newEntry(c));
     
     return settings;
   }
@@ -81,37 +98,33 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
         title: widget.title,
       ),
       body: Center(
-        child: StreamBuilder<CharacteristicChangeEvent>(
-          stream: bleData.characteristicChanges,
-          builder: (context, snapshot) {
-            Size _size = MediaQuery.of(context).size;
-            List<Widget> settingsTiles = buildSettingsList(context);
+        child: Builder(builder: (context) {
+          Size _size = MediaQuery.of(context).size;
+          List<Widget> settingsTiles = buildSettingsList(context);
 
-            return SizedBox(
-              height: _size.height * .90,
-              width: _size.width * .80,
-              child: settingsTiles.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          CircularProgressIndicator(),
-                          SizedBox(height: 20),
-                          Text(
-                            "Refreshing Data",
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView(
-                      clipBehavior: Clip.antiAlias,
-                      // itemExtent: 100, // Removed fixed extent to allow variable height tiles if needed, or keep for consistency
-                      children: settingsTiles,
+          return SizedBox(
+            height: _size.height * .90,
+            width: _size.width * .80,
+            child: settingsTiles.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 20),
+                        Text(
+                          "Refreshing Data",
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                        ),
+                      ],
                     ),
-            );
-          },
-        ),
+                  )
+                : ListView(
+                    clipBehavior: Clip.antiAlias,
+                    children: settingsTiles,
+                  ),
+          );
+        }),
       ),
     );
   }

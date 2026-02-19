@@ -174,57 +174,69 @@ class BLEData {
     return value;
   }
 
-  setupConnection(BluetoothDevice device) async {
-  if (device.isConnected) {
-    // Always refresh characteristic handles on each setup/reconnect to avoid stale
-    // objects after disconnect/reconnect cycles (common on Android).
-    this.subscribed = false;
-    charReceived.value = false;
-    _myCharacteristic = null;
-    indoorBikeCharacteristic = null;
-    ftmsControlPointCharacteristic = null;
-
-    await _discoverServices(device, forceRefresh: true);
-    if (services.length > 1) {
-      await _findChar();
-      await updateCustomCharacter(device);
-      
-      // Set up target power change listener
-      ftmsData.onTargetPowerChanged = (int newPower) async {
-        if (ftmsControlPointCharacteristic != null) {
-          try {
-            await FTMSControlPoint.writeTargetPower(
-              ftmsControlPointCharacteristic!,
-              newPower,
-            );
-          } catch (e) {
-            print('Error writing target power to FTMS: $e');
-          }
-        }
-      };
-
-      // Set up mode change listener
-      ftmsData.onModeChanged = (bool toSimulation) async {
-        if (ftmsControlPointCharacteristic != null) {
-          try {
-            if (toSimulation) {
-              // Switch to simulation mode with 0 incline
-              await FTMSControlPoint.writeIndoorBikeSimulation(
-                ftmsControlPointCharacteristic!,
-                windSpeed: 0,
-                grade: 0,
-                crr: 0,
-                cw: 0,
-              );
-            }
-          } catch (e) {
-            print('Error switching FTMS mode: $e');
-          }
-        }
-      };
+  setupConnection(BluetoothDevice device, {bool forceRefresh = false}) async {
+    if (!device.isConnected) {
+      return;
     }
+
+    final needsBootstrap = forceRefresh ||
+        services.isEmpty ||
+        _myCharacteristic == null ||
+        indoorBikeCharacteristic == null ||
+        ftmsControlPointCharacteristic == null ||
+        !subscribed;
+
+    if (needsBootstrap) {
+      if (forceRefresh) {
+        this.subscribed = false;
+        charReceived.value = false;
+        _myCharacteristic = null;
+        indoorBikeCharacteristic = null;
+        ftmsControlPointCharacteristic = null;
+      }
+
+      await _discoverServices(device, forceRefresh: forceRefresh);
+      if (services.length > 1) {
+        await _findChar();
+      }
+    }
+
+    await updateCustomCharacter(device);
+
+    // Set up target power change listener
+    ftmsData.onTargetPowerChanged = (int newPower) async {
+      if (ftmsControlPointCharacteristic != null) {
+        try {
+          await FTMSControlPoint.writeTargetPower(
+            ftmsControlPointCharacteristic!,
+            newPower,
+          );
+        } catch (e) {
+          print('Error writing target power to FTMS: $e');
+        }
+      }
+    };
+
+    // Set up mode change listener
+    ftmsData.onModeChanged = (bool toSimulation) async {
+      if (ftmsControlPointCharacteristic != null) {
+        try {
+          if (toSimulation) {
+            // Switch to simulation mode with 0 incline
+            await FTMSControlPoint.writeIndoorBikeSimulation(
+              ftmsControlPointCharacteristic!,
+              windSpeed: 0,
+              grade: 0,
+              crr: 0,
+              cw: 0,
+            );
+          }
+        } catch (e) {
+          print('Error switching FTMS mode: $e');
+        }
+      }
+    };
   }
-}
 
   BluetoothCharacteristic getMyCharacteristic(BluetoothDevice device) {
     late BluetoothCharacteristic _char;
@@ -270,7 +282,9 @@ class BLEData {
       for (BluetoothCharacteristic c in characteristics) {
         if (c.uuid == Guid(ccUUID)) {
           _myCharacteristic = c;
-          await _myCharacteristic!.setNotifyValue(true);
+          if (!_myCharacteristic!.isNotifying) {
+            await _myCharacteristic!.setNotifyValue(true);
+          }
         }
       }
 
@@ -308,13 +322,17 @@ class BLEData {
       for (BluetoothCharacteristic c in characteristics) {
         if (c.uuid == Guid(ftmsIndoorBikeDataUUID)) {
           indoorBikeCharacteristic = c;
-          await indoorBikeCharacteristic!.setNotifyValue(true);
-          print("subscribed to indoor bike characteristic");
+          if (!indoorBikeCharacteristic!.isNotifying) {
+            await indoorBikeCharacteristic!.setNotifyValue(true);
+            print("subscribed to indoor bike characteristic");
+          }
         }
         if (c.uuid == Guid(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID)) {
           ftmsControlPointCharacteristic = c;
-          await ftmsControlPointCharacteristic!.setNotifyValue(true);
-          print("subscribed to ftms control point characteristic");
+          if (!ftmsControlPointCharacteristic!.isNotifying) {
+            await ftmsControlPointCharacteristic!.setNotifyValue(true);
+            print("subscribed to ftms control point characteristic");
+          }
         }
       }
 
@@ -363,94 +381,120 @@ class BLEData {
   }
 
   Future<void> updateIndoorBikeData(BluetoothDevice device) async {
-    try {
-      if (!indoorBikeCharacteristic!.isNotifying) {
-        await indoorBikeCharacteristic!.setNotifyValue(true);
+    if (indoorBikeCharacteristic == null) {
+      await _discoverServices(device);
+      if (services.length > 1) {
+        await _findChar();
       }
-      ;
-    } catch (e) {
+    }
+
+    final ftmsCharacteristic = indoorBikeCharacteristic;
+    if (ftmsCharacteristic == null) {
       print("no FTMS characteristic");
+      return;
+    }
+
+    try {
+      if (!ftmsCharacteristic.isNotifying) {
+        await ftmsCharacteristic.setNotifyValue(true);
+      }
+    } catch (e) {
+      print("failed to enable FTMS notify: $e");
       return;
     }
 
     // TODO handle cancelling subscription
     _ftmsSubscription?.cancel();
 
-    _ftmsSubscription = indoorBikeCharacteristic!.onValueReceived.listen((value) {
-      lastFtmsUpdate = DateTime.now();
-      if (value.length < 2) {
-        throw ArgumentError('FTMS Characteristic data list is too short');
-      }
-      Uint8List data = Uint8List.fromList(value);
-      ByteData byteData = ByteData.sublistView(data);
+    _ftmsSubscription = ftmsCharacteristic.onValueReceived.listen((value) {
+      try {
+        lastFtmsUpdate = DateTime.now();
+        if (value.length < 4) {
+          return;
+        }
 
-      int flags = byteData.getUint16(0, Endian.little);
-      int index = 2;
+        Uint8List data = Uint8List.fromList(value);
+        ByteData byteData = ByteData.sublistView(data);
 
-      // Print flags in binary format for debugging
-      String binaryFlags = flags.toRadixString(2).padLeft(16, '0');
-      print('Flags (binary): $binaryFlags');
+        int flags = byteData.getUint16(0, Endian.little);
+        int index = 2;
 
-      // Reset fields
-      ftmsData.cadence = 0;
-      ftmsData.watts = 0;
-      ftmsData.heartRate = 0;
-      ftmsData.speed = 0;
+        // Print flags in binary format for debugging
+        String binaryFlags = flags.toRadixString(2).padLeft(16, '0');
+        print('Flags (binary): $binaryFlags');
 
-      ftmsData.speed = byteData.getUint16(index, Endian.little) ~/ 100; // resolution 0.01
-      index += 2;
+        bool hasBytes(int requiredBytes) => (index + requiredBytes) <= byteData.lengthInBytes;
 
-      if ((flags & (1 << 1)) != 0) {
-        //not used
+        // Reset fields
+        ftmsData.cadence = 0;
+        ftmsData.watts = 0;
+        ftmsData.heartRate = 0;
+        ftmsData.speed = 0;
+
+        if (!hasBytes(2)) {
+          return;
+        }
+        ftmsData.speed = byteData.getUint16(index, Endian.little) ~/ 100; // resolution 0.01
         index += 2;
-      }
 
-      if ((flags & (1 << 2)) != 0) {
-        ftmsData.cadence = byteData.getUint16(index, Endian.little) ~/ 2; // resolution 0.5
-        index += 2;
-      }
+        if ((flags & (1 << 1)) != 0) {
+          if (!hasBytes(2)) return;
+          index += 2;
+        }
 
-      if ((flags & (1 << 3)) != 0) {
-        // not used
-        index += 2;
-      }
-      if ((flags & (1 << 4)) != 0) {
-        //not used
-        index += 3;
-      }
+        if ((flags & (1 << 2)) != 0) {
+          if (!hasBytes(2)) return;
+          ftmsData.cadence = byteData.getUint16(index, Endian.little) ~/ 2; // resolution 0.5
+          index += 2;
+        }
 
-      if ((flags & (1 << 5)) != 0) {
-        ftmsData.resistance = byteData.getInt16(index, Endian.little);
-        index += 2;
-      }
+        if ((flags & (1 << 3)) != 0) {
+          if (!hasBytes(2)) return;
+          index += 2;
+        }
+        if ((flags & (1 << 4)) != 0) {
+          if (!hasBytes(3)) return;
+          index += 3;
+        }
 
-      if ((flags & (1 << 6)) != 0) {
-        ftmsData.watts = byteData.getInt16(index, Endian.little);
-        index += 2;
-      }
+        if ((flags & (1 << 5)) != 0) {
+          if (!hasBytes(2)) return;
+          ftmsData.resistance = byteData.getInt16(index, Endian.little);
+          index += 2;
+        }
 
-      if ((flags & (1 << 7)) != 0) {
-        //not used
-        index += 2;
-      }
-      if ((flags & (1 << 8)) != 0) {
-        //not used
-        index += 1;
-      }
+        if ((flags & (1 << 6)) != 0) {
+          if (!hasBytes(2)) return;
+          ftmsData.watts = byteData.getInt16(index, Endian.little);
+          index += 2;
+        }
 
-      if ((flags & (1 << 9)) != 0) {
-        ftmsData.heartRate = byteData.getUint8(index);
-        index += 1;
-      }
-      
-      // Emit a characteristic change event for FTMS data updates
-      if (!_characteristicChangeController.isClosed) {
-        _characteristicChangeController.add(CharacteristicChangeEvent(
-          vName: "FTMS_DATA",
-          reference: "FTMS",
-          value: "updated",
-          type: "ftms",
-        ));
+        if ((flags & (1 << 7)) != 0) {
+          if (!hasBytes(2)) return;
+          index += 2;
+        }
+        if ((flags & (1 << 8)) != 0) {
+          if (!hasBytes(1)) return;
+          index += 1;
+        }
+
+        if ((flags & (1 << 9)) != 0) {
+          if (!hasBytes(1)) return;
+          ftmsData.heartRate = byteData.getUint8(index);
+          index += 1;
+        }
+
+        // Emit a characteristic change event for FTMS data updates
+        if (!_characteristicChangeController.isClosed) {
+          _characteristicChangeController.add(CharacteristicChangeEvent(
+            vName: "FTMS_DATA",
+            reference: "FTMS",
+            value: "updated",
+            type: "ftms",
+          ));
+        }
+      } catch (e) {
+        print('Error parsing FTMS packet: $e');
       }
     }, onError: (Object e) {
       print('Error in FTMS subscription: $e');
