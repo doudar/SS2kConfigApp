@@ -96,7 +96,7 @@ class _WorkoutControlsState extends State<WorkoutControls> {
                     widget.workoutController.togglePlayPause();
                   },
                 ),
-                if (widget.workoutController.isPlaying)
+                if (widget.workoutController.isPlaying && !widget.workoutController.isFreeRide)
                   IconButton(
                     icon: const Icon(Icons.skip_next),
                     iconSize: 42,

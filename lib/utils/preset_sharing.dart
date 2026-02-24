@@ -122,7 +122,7 @@ class PresetSharing {
           List<dynamic> currentConfig = List.from(bleData.customCharacteristic);
           List<dynamic> importedConfig = decoded;
 
-          List<dynamic> mergedConfig = currentConfig.map((item) {
+          List<Map<String, dynamic>> mergedConfig = currentConfig.map((item) {
              var currentMap = Map<String, dynamic>.from(item);
              
              if (currentMap['vName'] == ssidVname || currentMap['vName'] == passwordVname) {

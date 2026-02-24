@@ -119,6 +119,7 @@ class WorkoutMenu extends StatelessWidget {
                   Expanded(
                     child: ListView(
                       children: [
+                        _menuTile(dialogContext, context, _MenuAction.freeRide, Icons.pedal_bike, 'Free Ride'),
                         _menuTile(dialogContext, context, _MenuAction.importZwo, Icons.file_upload, 'Import ZWO'),
                         const Divider(),
                         _menuTile(
@@ -176,6 +177,9 @@ class WorkoutMenu extends StatelessWidget {
 
   void _handleAction(BuildContext context, _MenuAction action) {
     switch (action) {
+      case _MenuAction.freeRide:
+        _startFreeRide(context);
+        break;
       case _MenuAction.importZwo:
         _importZwo(context);
         break;
@@ -212,6 +216,23 @@ class WorkoutMenu extends StatelessWidget {
   }
 
   // ====== Internal Action Implementations ======
+  Future<void> _startFreeRide(BuildContext context) async {
+    final shouldReplace = await _confirmWorkoutReplacement(context);
+    if (!shouldReplace) return;
+
+    const freeRideZwo = '<?xml version="1.0" encoding="UTF-8"?>'
+        '<workout_file>'
+        '  <name>Free Ride</name>'
+        '  <description>Open ride - ride at your own pace</description>'
+        '  <workout>'
+        '    <FreeRide Duration="0"/>'
+        '  </workout>'
+        '</workout_file>';
+
+    workoutController.loadWorkout(freeRideZwo, isResume: false);
+    onWorkoutLoaded(freeRideZwo, name: 'Free Ride');
+  }
+
   Future<void> _importZwo(BuildContext context) async {
     await WorkoutFileManager.pickAndLoadWorkout(
       context: context,
@@ -717,6 +738,14 @@ class WorkoutMenu extends StatelessWidget {
       docToConvert['name'] ??= workout['name'];
       docToConvert['description'] ??= workout['description'];
 
+      // Pass through duration metadata so empty-step workouts can use it
+      if (docToConvert['duration'] == null || docToConvert['duration'] == 0) {
+        docToConvert['duration'] ??= workout['moving_time'] ?? workout['planned_duration'] ?? workout['duration'];
+        if (docToConvert['duration'] == 0) {
+          docToConvert['duration'] = workout['moving_time'] ?? workout['planned_duration'] ?? 0;
+        }
+      }
+
       return IntervalsWorkoutConverter.convertToZwo(docToConvert);
     } catch (_) {
       return null;
@@ -1063,6 +1092,7 @@ class WorkoutMenu extends StatelessWidget {
 }
 
 enum _MenuAction {
+  freeRide,
   importZwo,
   selectWorkout,
   audioCoach,

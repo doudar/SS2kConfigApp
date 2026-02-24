@@ -12,6 +12,7 @@ class WorkoutMetrics extends StatelessWidget {
   final double? speedMph;
   final double? totalDistance;
   final double workoutProgressSeconds;
+  final bool isUnlimitedFreeRide;
 
   const WorkoutMetrics({
     Key? key,
@@ -23,6 +24,7 @@ class WorkoutMetrics extends StatelessWidget {
     required this.workoutProgressSeconds,
     this.speedMph,
     this.totalDistance,
+    this.isUnlimitedFreeRide = false,
   }) : super(key: key);
 
   @override
@@ -42,12 +44,13 @@ class WorkoutMetrics extends StatelessWidget {
       WorkoutMetric.distance(miles: (totalDistance ?? 0.0) / 1609.34),
       WorkoutMetric(
         label: 'Next Block',
-        value: _formatDuration(timeToNextSegment),
+        value: isUnlimitedFreeRide ? '--:--:--' : _formatDuration(timeToNextSegment),
       ),
       WorkoutMetric.remainingTime(
         totalSeconds: totalDuration.round(),
         elapsedSeconds: elapsedTime,
         workoutProgressSeconds: workoutProgressSeconds,
+        isUnlimited: isUnlimitedFreeRide,
       ),
     ];
 

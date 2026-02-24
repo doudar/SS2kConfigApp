@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+import 'dart:async';
+
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -24,16 +26,29 @@ class _plainTextCardState extends State<plainTextCard> {
   bool passwordVisible = false;
   late BLEData bleData;
   final String _currentValue = "Current Value: ";
+  StreamSubscription<CharacteristicChangeEvent>? _charSubscription;
 
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
     controller.text = c["value"];
+    _charSubscription = bleData.characteristicChanges
+        .where((event) => event.vName == c["vName"])
+        .listen((event) {
+      if (mounted) {
+        setState(() {
+          // Update the text field only if the user hasn't modified it
+          if (controller.text == c["value"]) return;
+          controller.text = c["value"];
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _charSubscription?.cancel();
     controller.dispose();
     super.dispose();
   }

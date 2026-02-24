@@ -4,6 +4,8 @@
  *
  * SPDX-License-Identifier: GPL-2.0-only
  */
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -24,15 +26,29 @@ class _sliderCardState extends State<sliderCard> {
   late BLEData bleData;
   late double _currentSliderValue = double.parse(c["value"]);
   final controller = TextEditingController();
+  StreamSubscription<CharacteristicChangeEvent>? _charSubscription;
+  bool _userIsInteracting = false;
 
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+    _charSubscription = bleData.characteristicChanges
+        .where((event) => event.vName == c["vName"])
+        .listen((event) {
+      if (!mounted || _userIsInteracting) return;
+      final newVal = double.tryParse(c["value"]?.toString() ?? "");
+      if (newVal != null && newVal != _currentSliderValue) {
+        setState(() {
+          _currentSliderValue = newVal;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _charSubscription?.cancel();
     controller.dispose();
     super.dispose();
   }
@@ -161,6 +177,9 @@ class _sliderCardState extends State<sliderCard> {
                 label: this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c)),
                 divisions: 100,
                 value: constrainValue(this._currentSliderValue),
+                onChangeStart: (double v) {
+                  _userIsInteracting = true;
+                },
                 onChanged: (double v) {
                   setState(() {
                     this._currentSliderValue = v;
@@ -169,6 +188,7 @@ class _sliderCardState extends State<sliderCard> {
                   });
                 },
                 onChangeEnd: (double v) {
+                  _userIsInteracting = false;
                   setState(() {
                     this._currentSliderValue = v;
                     this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));

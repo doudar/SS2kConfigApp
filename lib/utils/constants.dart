@@ -97,6 +97,14 @@ final String homingSensitivityVname = "BLE_homingSensitivity";
 final String pTab4pwrVname = "BLE_pTab4pwr";
 final String BLE_logStreamVname = "BLE_BLELogging";
 
+/// Returns a deep copy of the characteristic framework so each BLEData
+/// instance gets its own independent mutable state.
+List<Map<String, dynamic>> createCustomCharacteristicFramework() {
+  return customCharacteristicFramework
+      .map<Map<String, dynamic>>((c) => Map<String, dynamic>.from(c as Map))
+      .toList();
+}
+
 // Refactored customCharacteristicFramework to directly use Dart map
 final dynamic customCharacteristicFramework = [
   {

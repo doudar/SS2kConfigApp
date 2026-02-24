@@ -10,7 +10,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../utils/bledata.dart';
-import '../utils/extra.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/power_table_chart.dart';
@@ -26,7 +25,7 @@ class ShifterScreen extends StatefulWidget {
 class _ShifterScreenState extends State<ShifterScreen> {
   late BLEData bleData;
   late ValueNotifier<String> t;
-  Map<String, Object> c = const {};
+  Map<String, dynamic> c = const {};
   Timer? _refreshTimer;
   Timer? _pendingShiftTimer;
   String? _confirmedShifterValue;
@@ -60,14 +59,11 @@ class _ShifterScreenState extends State<ShifterScreen> {
     _refreshTimer = Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
       if (!mounted) {
         refreshTimer.cancel();
+        return;
       }
-      if (!this.widget.device.isConnected) {
-        try {
-          this.widget.device.connectAndUpdateStream();
-        } catch (e) {
-          print("failed to reconnect.");
-        }
-      } else if (t.value == "Connecting") {
+      // Reconnection is handled centrally by BLEData.startConnectionMonitor.
+      // This timer only needs to re-request the shifter position if still pending.
+      if (this.widget.device.isConnected && t.value == "Connecting") {
         _requestShifterPosition();
       }
     });
@@ -94,7 +90,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   void _syncShifterValueFromCache() {
     c = this.bleData.customCharacteristic.firstWhere(
       (i) => i["vName"] == shifterPositionVname,
-      orElse: () => <String, Object>{},
+      orElse: () => <String, dynamic>{},
     );
 
     final shifterValue = c["value"]?.toString() ?? "";
@@ -121,6 +117,14 @@ class _ShifterScreenState extends State<ShifterScreen> {
   Future rwSubscription() async {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       if (state == BluetoothConnectionState.connected) {
+        // After a reconnection the cached gear value is stale.
+        // Reset to "Connecting" so _requestShifterPosition re-fetches
+        // from the device and the UI shows a loading state until the
+        // authoritative value arrives via characteristicChanges.
+        _confirmedShifterValue = null;
+        _pendingShifterValue = null;
+        _pendingShiftTimer?.cancel();
+        t.value = "Connecting";
         _requestShifterPosition();
       }
     });

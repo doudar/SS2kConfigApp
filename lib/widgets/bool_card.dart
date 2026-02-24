@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
@@ -20,17 +22,23 @@ class boolCard extends StatefulWidget {
 }
 
 class _boolCardState extends State<boolCard> {
-late BLEData bleData;
+  late BLEData bleData;
+  StreamSubscription<CharacteristicChangeEvent>? _charSubscription;
 
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+    _charSubscription = bleData.characteristicChanges
+        .where((event) => event.vName == widget.c["vName"])
+        .listen((event) {
+      if (mounted) setState(() {});
+    });
   }
-
 
   @override
   void dispose() {
+    _charSubscription?.cancel();
     super.dispose();
   }
 

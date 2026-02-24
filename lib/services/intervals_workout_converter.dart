@@ -37,6 +37,12 @@ class IntervalsWorkoutConverter {
     
     _emitSteps(buffer, steps, ftp: ftp);
 
+    // If no steps were emitted, create a Free Ride segment
+    if (steps is! List || steps.isEmpty) {
+      final duration = _toNum(workoutDoc['duration'])?.toInt() ?? 0;
+      buffer.writeln('    <FreeRide Duration="$duration"/>');
+    }
+
     buffer.writeln('  </workout>');
     buffer.writeln('</workout_file>');
     

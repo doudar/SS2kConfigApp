@@ -260,7 +260,13 @@ class WorkoutMetric {
     );
   }
 
-  factory WorkoutMetric.remainingTime({required int totalSeconds, required int elapsedSeconds, required double workoutProgressSeconds}) {
+  factory WorkoutMetric.remainingTime({required int totalSeconds, required int elapsedSeconds, required double workoutProgressSeconds, bool isUnlimited = false}) {
+    if (isUnlimited) {
+      return const WorkoutMetric(
+        label: 'Remaining Time',
+        value: '--:--:--',
+      );
+    }
     final remainingSeconds = totalSeconds - workoutProgressSeconds.round();
     final hours = remainingSeconds ~/ 3600;
     final minutes = (remainingSeconds % 3600) ~/ 60;

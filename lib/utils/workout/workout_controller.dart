@@ -88,6 +88,8 @@ class WorkoutController extends ChangeNotifier {
   double _totalDistance = 0; // Track total distance in meters
   double _lastAltitude = 100.0; // Starting altitude in meters
   double _totalAscent = 0; // Track total ascent in meters
+  bool _isFreeRide = false; // True when workout is entirely free ride segments
+  bool _isUnlimitedFreeRide = false; // True when free ride has no predefined end time
 
   // Store track points during workout
   final List<TrackPoint> trackPoints = [];
@@ -171,6 +173,11 @@ class WorkoutController extends ChangeNotifier {
         _skippedTime = savedSkippedTime.toDouble();
       }
 
+      // Ensure unlimited free rides cover restored progress
+      _ensureFreeRideDuration();
+      if (_isUnlimitedFreeRide && totalDuration > 0) {
+        progressPosition = _workoutProgressTime / totalDuration;
+      }
 
       // Do not auto-resume on app launch; wait for explicit user action.
       isPlaying = false;
@@ -209,6 +216,11 @@ class WorkoutController extends ChangeNotifier {
       _skippedTime = savedSkippedTime.toDouble();
     }
 
+    // Ensure unlimited free rides cover restored progress
+    _ensureFreeRideDuration();
+    if (_isUnlimitedFreeRide && totalDuration > 0) {
+      progressPosition = _workoutProgressTime / totalDuration;
+    }
 
     if (autoPlay) {
       isPlaying = true;
@@ -548,10 +560,44 @@ class WorkoutController extends ChangeNotifier {
     try {
       final workoutData = WorkoutParser.parseZwoFile(xmlContent);
 
+      // Detect free ride mode
+      final bool allFreeRide = workoutData.segments.isNotEmpty &&
+          workoutData.segments.every((s) => s.type == SegmentType.freeRide);
+      final bool hasUnlimitedSegment = workoutData.segments.any((s) =>
+          s.type == SegmentType.freeRide && s.duration == 0);
+
+      // For unlimited free rides, replace 0-duration segments with initial 1-hour duration
+      List<WorkoutSegment> processedSegments;
+      if (allFreeRide && hasUnlimitedSegment) {
+        processedSegments = workoutData.segments.map((s) {
+          if (s.duration == 0) {
+            return WorkoutSegment(
+              type: s.type,
+              duration: 3600, // 1 hour initial duration
+              powerLow: s.powerLow,
+              powerHigh: s.powerHigh,
+              isRamp: s.isRamp,
+              repeat: s.repeat,
+              onDuration: s.onDuration,
+              offDuration: s.offDuration,
+              onPower: s.onPower,
+              offPower: s.offPower,
+              cadence: s.cadence,
+              cadenceLow: s.cadenceLow,
+              cadenceHigh: s.cadenceHigh,
+              textEvents: s.textEvents,
+            );
+          }
+          return s;
+        }).toList();
+      } else {
+        processedSegments = workoutData.segments;
+      }
+
       double maxPowerTemp = 0;
       double totalDurationTemp = 0;
 
-      for (var segment in workoutData.segments) {
+      for (var segment in processedSegments) {
         if (segment.isRamp) {
           maxPowerTemp =
               [maxPowerTemp, segment.powerLow, segment.powerHigh].reduce((curr, next) => curr > next ? curr : next);
@@ -561,9 +607,17 @@ class WorkoutController extends ChangeNotifier {
         totalDurationTemp += segment.duration;
       }
 
+      // For free rides, set max power to 3x FTP for a reasonable chart scale
+      if (allFreeRide) {
+        maxPowerTemp = 3.0;
+      }
+
       maxPowerTemp *= 1.1;
 
-      segments = workoutData.segments;
+      _isFreeRide = allFreeRide;
+      _isUnlimitedFreeRide = allFreeRide && hasUnlimitedSegment;
+
+      segments = processedSegments;
       workoutName = workoutData.name;
       maxPower = maxPowerTemp;
       totalDuration = totalDurationTemp;
@@ -728,6 +782,11 @@ class WorkoutController extends ChangeNotifier {
  
       _scheduleInProgressFlush();
 
+      // For unlimited free rides, extend duration when approaching the end
+      if (_isUnlimitedFreeRide && _workoutProgressTime > totalDuration - 300) {
+        _extendFreeRideDuration();
+      }
+
       if (progressPosition >= 1.0) {
         //progressPosition = 0; we will reset the progress position in the workout_screen.dart so that the save file dialog triggers correctly.
         isPlaying = false;
@@ -819,6 +878,42 @@ class WorkoutController extends ChangeNotifier {
       return _cadencePointsList;
   }
 
+  /// Extends the last free ride segment by 1 hour.
+  void _extendFreeRideDuration() {
+    const extensionSeconds = 3600; // Add 1 hour
+    for (int i = segments.length - 1; i >= 0; i--) {
+      if (segments[i].type == SegmentType.freeRide) {
+        final s = segments[i];
+        segments[i] = WorkoutSegment(
+          type: s.type,
+          duration: s.duration + extensionSeconds,
+          powerLow: s.powerLow,
+          powerHigh: s.powerHigh,
+          isRamp: s.isRamp,
+          repeat: s.repeat,
+          onDuration: s.onDuration,
+          offDuration: s.offDuration,
+          onPower: s.onPower,
+          offPower: s.offPower,
+          cadence: s.cadence,
+          cadenceLow: s.cadenceLow,
+          cadenceHigh: s.cadenceHigh,
+          textEvents: s.textEvents,
+        );
+        totalDuration += extensionSeconds;
+        break;
+      }
+    }
+  }
+
+  /// Ensures the free ride duration covers the current progress time.
+  void _ensureFreeRideDuration() {
+    if (!_isUnlimitedFreeRide) return;
+    while (_workoutProgressTime > totalDuration - 300) {
+      _extendFreeRideDuration();
+    }
+  }
+
   Future<void> updateFTP(double? newValue) async {
     if (newValue != null) {
       ftpValue = newValue;
@@ -847,6 +942,10 @@ class WorkoutController extends ChangeNotifier {
   
   // Getter for elapsed seconds (based on workout progress time)
   int get elapsedSeconds => (_workoutProgressTime - _skippedTime).clamp(0, double.infinity).round();
+
+  // Free ride getters
+  bool get isFreeRide => _isFreeRide;
+  bool get isUnlimitedFreeRide => _isUnlimitedFreeRide;
 
   double? get averagePower {
     if (actualPowerPoints.isEmpty) return null;

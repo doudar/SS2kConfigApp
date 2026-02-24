@@ -163,7 +163,8 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
             _zoomController.reverse();
           }
           // Check if workout completed naturally (reached the end)
-          if (_workoutController.progressPosition >= 1.0) {
+          // Skip for unlimited free rides since they extend dynamically
+          if (_workoutController.progressPosition >= 1.0 && !_workoutController.isUnlimitedFreeRide) {
             _workoutController.progressPosition = 0;
             Future.delayed(const Duration(milliseconds: 500), () {
               if (mounted) {
@@ -183,24 +184,8 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     };
     _workoutController.addListener(_workoutControllerListener);
 
-    Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
-      if (bleData.isUserDisconnect) {
-        refreshTimer.cancel();
-        return;
-      }
-      if (!widget.device.isConnected) {
-        try {
-          widget.device.connect(license: License.free);
-        } catch (e) {
-          print("failed to reconnect.");
-        }
-      } else {
-        if (!mounted) {
-          refreshTimer.cancel();
-        return;
-        }
-      }
-    });
+    // Reconnection is handled centrally by BLEData.startConnectionMonitor.
+    // No per-screen reconnect timer needed.
   }
 
   Future<void> _initTTSSettings() async {
@@ -494,6 +479,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                       speedMph: _workoutController.speedMph,
                       totalDistance: _workoutController.totalDistance,
                       workoutProgressSeconds: _workoutController.workoutProgressSeconds,
+                      isUnlimitedFreeRide: _workoutController.isUnlimitedFreeRide,
                     ),
                   ),
                 ],

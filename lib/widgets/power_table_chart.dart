@@ -159,7 +159,7 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
     double? value = double.tryParse(widget.bleData.getVnameValue(BLE_hMinVname));
     double? value2 = double.tryParse(widget.bleData.getVnameValue(BLE_hMaxVname));
 
-    if (mounted) {
+    if (mounted && (value != null && value2 != null)) {
       setState(() {
         homingMin = (value == INT32_MIN) ? null : value! / widget.bleData.tableDivisor;
         homingMax = (value2 == INT32_MIN) ? null : value2! / widget.bleData.tableDivisor;

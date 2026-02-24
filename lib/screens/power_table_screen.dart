@@ -10,7 +10,6 @@ import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
-import '../utils/extra.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/power_table_chart.dart';
@@ -35,25 +34,8 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
-    // refresh the screen completely every VV seconds.
-    Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
-      if (bleData.isUserDisconnect) {
-        refreshTimer.cancel();
-        return;
-      }
-      if (!this.widget.device.isConnected && mounted) {
-        try {
-          this.widget.device.connectAndUpdateStream();
-        } catch (e) {
-          print("failed to reconnect.");
-        }
-      } else {
-        if (!mounted) {
-          refreshTimer.cancel();
-          return;
-        }
-      }
-    });
+    // Reconnection is handled centrally by BLEData.startConnectionMonitor.
+    // No per-screen reconnect timer needed.
     // If the data is simulated, wait for a second before calling setState
     if (bleData.isSimulated) {
       Timer(Duration(seconds: 2), () {

@@ -41,17 +41,13 @@ extension Extra on BluetoothDevice {
   // connect & update stream
   Future connectAndUpdateStream() async {
     _cstream.add(true);
-   // bool _connected = false;
-   // while (!_connected) {
-      try {
-        await connect(license: License.free);
-     //   _connected = true;
-      } catch (e) {
-        sleep(Duration(milliseconds: 50));
-      } finally {
-        _cstream.add(false);
-      }
-   // }
+    try {
+      await connect(license: License.free);
+    } catch (e) {
+      sleep(Duration(milliseconds: 50));
+    } finally {
+      _cstream.add(false);
+    }
   }
 
   // disconnect & update stream

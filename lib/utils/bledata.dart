@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 import 'constants.dart';
+import 'extra.dart';
 import 'ftmsControlPoint.dart';
 import 'bleConstants.dart';
 
@@ -100,6 +101,79 @@ class BLEData {
   StreamSubscription<BluetoothConnectionState>? connectionStateSubscription;
   StreamSubscription<bool>? isConnectingSubscription;
   StreamSubscription<bool>? isDisconnectingSubscription;
+
+  // Centralized auto-reconnect monitor
+  StreamSubscription<BluetoothConnectionState>? _reconnectSubscription;
+  bool _reconnecting = false;
+
+  /// Start monitoring the connection and automatically reconnect on unexpected
+  /// disconnects.  Safe to call multiple times – only one listener is created.
+  /// [onReconnected] is an optional callback invoked after a successful
+  /// reconnect so the caller can refresh services / UI.
+  void startConnectionMonitor(
+    BluetoothDevice device, {
+    Future<void> Function()? onReconnected,
+  }) {
+    // Guard against duplicate subscriptions
+    if (_reconnectSubscription != null) return;
+
+    _reconnectSubscription = device.connectionState.listen((state) async {
+      connectionState = state;
+
+      if (state == BluetoothConnectionState.disconnected) {
+        // Reset connection-specific state so the next setupConnection
+        // performs a full re-bootstrap (re-discover services, re-subscribe
+        // to notifications, etc.).  Without this, stale references to the
+        // old connection's characteristics remain and no data flows after
+        // reconnection.
+        _resetConnectionState();
+
+        if (isUserDisconnect || isUpdatingFirmware) return;
+        if (_reconnecting) return;
+        _reconnecting = true;
+
+        print('[AutoReconnect] Unexpected disconnect – attempting reconnect…');
+        try {
+          await device.connectAndUpdateStream();
+          await setupConnection(device);
+          print('[AutoReconnect] Reconnected successfully.');
+          if (onReconnected != null) {
+            await onReconnected();
+          }
+        } catch (e) {
+          print('[AutoReconnect] Reconnect failed: $e');
+        } finally {
+          _reconnecting = false;
+        }
+      }
+    });
+  }
+
+  /// Reset BLE state that is tied to a specific connection so that the next
+  /// [setupConnection] call performs a full re-bootstrap.
+  void _resetConnectionState() {
+    subscribed = false;
+    charReceived.value = false;
+    _myCharacteristic = null;
+    indoorBikeCharacteristic = null;
+    ftmsControlPointCharacteristic = null;
+    services = [];
+    _notifySubscription?.cancel();
+    _notifySubscription = null;
+    _ftmsSubscription?.cancel();
+    _ftmsSubscription = null;
+    _inUpdateLoop = false;
+    _lastRequestStopwatch.reset();
+    _cachedCharacteristicMap = null;
+    lastFtmsUpdate = null;
+    _ftmsRecoveryInProgress = false;
+  }
+
+  /// Stop the auto-reconnect monitor.
+  void stopConnectionMonitor() {
+    _reconnectSubscription?.cancel();
+    _reconnectSubscription = null;
+  }
   StreamSubscription<List<int>>? _notifySubscription;
   StreamSubscription<List<int>>? _ftmsSubscription;
   late BluetoothService firmwareService;
@@ -108,6 +182,7 @@ class BLEData {
   BluetoothCharacteristic? _myCharacteristic;
   BluetoothCharacteristic? ftmsControlPointCharacteristic;
   BluetoothCharacteristic? indoorBikeCharacteristic;
+  Completer<void>? _discoverServicesCompleter;
   BluetoothConnectionState connectionState = BluetoothConnectionState.disconnected;
   List<BluetoothService> services = [];
   FtmsData ftmsData = FtmsData();
@@ -141,7 +216,7 @@ class BLEData {
     (i) => List.generate(38, (j) => null),
   );
 
-  var customCharacteristic = customCharacteristicFramework;
+  var customCharacteristic = createCustomCharacteristicFramework();
   
   Map<int, Map>? _cachedCharacteristicMap;
 
@@ -262,12 +337,24 @@ class BLEData {
 
   Future _discoverServices(BluetoothDevice device, {bool forceRefresh = false}) async {
     if (this.isSimulated) return;
+
+    // If a discovery is already in flight, just await it and return.
+    if (_discoverServicesCompleter != null) {
+      print('[discoverServices] Already in progress – waiting for existing call to finish.');
+      await _discoverServicesCompleter!.future;
+      return;
+    }
+
+    if (!forceRefresh && services.isNotEmpty) return;
+
+    _discoverServicesCompleter = Completer<void>();
     try {
-      if (forceRefresh || services.length < 1) {
-        services = await device.discoverServices();
-      }
+      services = await device.discoverServices();
     } catch (e) {
       print(e);
+    } finally {
+      _discoverServicesCompleter!.complete();
+      _discoverServicesCompleter = null;
     }
   }
 
@@ -512,9 +599,13 @@ class BLEData {
     device.cancelWhenDisconnected(_ftmsSubscription!);
   }
 
-  /// Checks the health of the FTMS data stream and attempts to recover if stalled
+  bool _ftmsRecoveryInProgress = false;
+
+  /// Checks the health of the FTMS data stream and attempts to recover if stalled.
+  /// Skips if a recovery is already in progress.
   Future<void> checkFtmsHealth(BluetoothDevice device) async {
     if (isSimulated || !device.isConnected) return;
+    if (_ftmsRecoveryInProgress) return;
 
     final now = DateTime.now();
     const watchdogTimeout = Duration(seconds: 3);
@@ -522,24 +613,38 @@ class BLEData {
     // If we have received data before, and it's been more than watchdogTimeout
     if (lastFtmsUpdate != null && now.difference(lastFtmsUpdate!) > watchdogTimeout) {
       print('FTMS connection appears stalled (last update: $lastFtmsUpdate). Attempting recovery...');
-      
+      _ftmsRecoveryInProgress = true;
+
       try {
-        if (indoorBikeCharacteristic != null) {
+        if (indoorBikeCharacteristic != null && device.isConnected) {
           // Toggle notifications to reset the stream
           await indoorBikeCharacteristic!.setNotifyValue(false);
           await Future.delayed(const Duration(milliseconds: 200));
+
+          if (!device.isConnected) {
+            print('[FTMS Recovery] Device disconnected during recovery.');
+            _triggerReconnect(device);
+            return;
+          }
+
           await indoorBikeCharacteristic!.setNotifyValue(true);
-          
+
           // Force internal tracking update
           lastFtmsUpdate = DateTime.now(); // Reset to avoid loop
         }
       } catch (e) {
         print('Error attempting FTMS recovery: $e');
+        // If recovery failed because the device disconnected, trigger reconnect
+        if (!device.isConnected) {
+          _triggerReconnect(device);
+        }
+      } finally {
+        _ftmsRecoveryInProgress = false;
       }
     } else if (lastFtmsUpdate == null && indoorBikeCharacteristic != null) {
          // If we have a characteristic but never received a packet, try enabling notify
          try {
-             if (!indoorBikeCharacteristic!.isNotifying) {
+             if (!indoorBikeCharacteristic!.isNotifying && device.isConnected) {
                  print('FTMS never received data and not notifying. enabling...');
                  await indoorBikeCharacteristic!.setNotifyValue(true);
              }
@@ -547,6 +652,27 @@ class BLEData {
              print('Error checking FTMS notify status: $e');
          }
     }
+  }
+
+  /// Proactively trigger auto-reconnect when we detect disconnection through
+  /// a failed BLE operation rather than through the connectionState stream.
+  void _triggerReconnect(BluetoothDevice device) {
+    if (isUserDisconnect || isUpdatingFirmware || _reconnecting) return;
+    _reconnecting = true;
+    _resetConnectionState();
+    print('[FTMS Recovery] Device appears disconnected. Triggering reconnect...');
+
+    () async {
+      try {
+        await device.connectAndUpdateStream();
+        await setupConnection(device);
+        print('[FTMS Recovery] Reconnected successfully.');
+      } catch (e) {
+        print('[FTMS Recovery] Reconnect failed: $e');
+      } finally {
+        _reconnecting = false;
+      }
+    }();
   }
 
   void findNSave(BluetoothDevice device, Map c, String find) {
@@ -566,23 +692,33 @@ class BLEData {
 
   Future saveAllSettings(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    await this.customCharacteristic.forEach((c) => c["isSetting"] ? writeToSS2k(device, c) : ());
-    await this.customCharacteristic.forEach((c) => findNSave(device, c, saveVname));
+    for (var c in this.customCharacteristic) {
+      if (c["isSetting"] == true) writeToSS2k(device, c);
+    }
+    for (var c in this.customCharacteristic) {
+      findNSave(device, c, saveVname);
+    }
   }
 
   Future reboot(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    await this.customCharacteristic.forEach((c) => findNSave(device, c, rebootVname));
+    for (var c in this.customCharacteristic) {
+      findNSave(device, c, rebootVname);
+    }
   }
 
   Future resetToDefaults(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    await this.customCharacteristic.forEach((c) => findNSave(device, c, resetVname));
+    for (var c in this.customCharacteristic) {
+      findNSave(device, c, resetVname);
+    }
   }
 
   Future resetPowerTable(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    await this.customCharacteristic.forEach((c) => findNSave(device, c, resetPowerTableVname));
+    for (var c in this.customCharacteristic) {
+      findNSave(device, c, resetPowerTableVname);
+    }
   }
 
 //request all settings
@@ -632,7 +768,9 @@ class BLEData {
       }
     }
 
-    await this.customCharacteristic.forEach((c) => _request(c));
+    for (var c in this.customCharacteristic) {
+      _request(c);
+    }
   }
 
   int getPrecision(Map c) {

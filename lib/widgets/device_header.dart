@@ -50,20 +50,30 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     // Initialize firmware version
     _fwVersion = bleData.firmwareVersion.value.isEmpty ? "Connecting Please Wait..." : bleData.firmwareVersion.value;
 
-    // Only create subscription if it doesn't exist
+    // Start the centralized auto-reconnect monitor.
+    // The onReconnected callback handles UI-specific refresh after reconnecting.
+    bleData.startConnectionMonitor(
+      this.widget.device,
+      onReconnected: () async {
+        if (!mounted) return;
+        this.bleData.rssi.value = await this.widget.device.readRssi();
+        if (!_isRefreshing) {
+          await _refreshDeviceInfo();
+        }
+        if (mounted) setState(() {});
+      },
+    );
+
+    // Listen for connection state changes to update UI (e.g. RSSI, services)
     _connectionStateSubscription ??= this.widget.device.connectionState.listen((state) async {
       if (state == BluetoothConnectionState.connected) {
-        // When device connects/reconnects, update RSSI and refresh services
         this.bleData.rssi.value = await this.widget.device.readRssi();
         await this.bleData.setupConnection(this.widget.device);
         if (!_isRefreshing) {
           await _refreshDeviceInfo();
         }
       } else {
-        print("*********Detected Disconnect**************");
         this.bleData.rssi.value = 0;
-        await this.widget.device.connectAndUpdateStream();
-        await this.bleData.setupConnection(this.widget.device);
       }
       if (mounted) {
         setState(() {});
@@ -96,6 +106,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   void dispose() {
     _connectionStateSubscription?.cancel();
     _connectionStateSubscription = null;
+    bleData.stopConnectionMonitor();
     rssiTimer.cancel();
     setupTimer.cancel();
     if (_firmwareVersionListener != null) {

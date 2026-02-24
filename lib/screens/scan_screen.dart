@@ -121,7 +121,20 @@ class _ScanScreenState extends State<ScanScreen> {
     });
     MaterialPageRoute route = MaterialPageRoute(
         builder: (context) => MainDeviceScreen(device: device), settings: RouteSettings(name: '/MainDeviceScreen'));
-    Navigator.of(context).push(route);
+    Navigator.of(context).push(route).then((_) {
+      // Clear stale scan results when returning from device screen.
+      // This prevents showing a cached entry for a previous device
+      // that has the same name (e.g. "SmartSpin2k") but a different MAC.
+      if (mounted) {
+        setState(() {
+          _scanResults = [];
+        });
+        // Automatically start a fresh scan so new devices are discovered
+        if (!_showDemoButton) {
+          onScanPressed();
+        }
+      }
+    });
   }
 
   Future onRefresh() {
