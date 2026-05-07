@@ -109,3 +109,10 @@ android/build/reports/problems/problems-report.html
 
 # Coverage artifacts
 /coverage/
+
+#Extensions
+.claude/
+.docs/
+.specify/
+.speckit/
+CLAUDE.md
