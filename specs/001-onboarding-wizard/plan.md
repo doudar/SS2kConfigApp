@@ -49,7 +49,7 @@ are QA-verified targets in v1).
 **Scale/Scope**: 13 wizard steps (one branch on bike type), ~3 new utility classes
 (`OnboardingState`, `WizardSession`, step controller), ~10–13 new step widgets (some are thin
 wrappers around existing widgets), 1 new "Guided Setup" entry point on the scan screen, 1 new
-Completion screen. Estimated <1500 LOC added in `lib/screens/onboarding/`, plus tests.
+Completion screen, 1 new ConnectTrainingApp step. Estimated <1500 LOC added in `lib/screens/onboarding/`, plus tests.
 
 ## Constitution Check
 
@@ -113,21 +113,21 @@ lib/
 │   ├── scan_screen.dart                         # MODIFIED: adds "Guided Setup" button (FR-008)
 │   └── onboarding/                              # NEW: wizard screens
 │       ├── onboarding_wizard.dart               # NEW: top-level wizard host (PageView/Navigator)
-│       ├── steps/
-│       │   ├── welcome_step.dart                # NEW
-│       │   ├── bike_type_step.dart              # NEW
-│       │   ├── hardware_install_step.dart       # NEW
-│       │   ├── wiring_step.dart                 # NEW (path-aware copy)
-│       │   ├── side_switch_step.dart            # NEW (Peloton Original only)
-│       │   ├── ss2k_connection_step.dart        # NEW: thin wrapper around existing scan+connect
-│       │   ├── data_source_step.dart            # NEW: thin wrapper around existing data-source UI
-│       │   ├── confirm_data_flowing_step.dart   # NEW: 3s stability detector + 30s fallback
-│       │   ├── motor_test_step.dart             # NEW: invokes existing shifter command path
-│       │   ├── physical_shifter_step.dart       # NEW: observes existing shifter event stream
-│       │   ├── hrm_step.dart                    # NEW: invokes existing HRM selection
-│       │   ├── wifi_step.dart                   # NEW: invokes existing WiFi/Dircon flow
-│       │   └── completion_step.dart             # NEW: persists flag + 2 outbound paths
-│       └── start_a_workout_step.dart            # NEW: small launcher to existing workout flow
+│       └── steps/
+│           ├── welcome_step.dart                # NEW
+│           ├── bike_type_step.dart              # NEW
+│           ├── hardware_install_step.dart       # NEW
+│           ├── wiring_step.dart                 # NEW (path-aware copy)
+│           ├── side_switch_step.dart            # NEW (Peloton Original only)
+│           ├── ss2k_connection_step.dart        # NEW: thin wrapper around existing scan+connect
+│           ├── data_source_step.dart            # NEW: thin wrapper around existing data-source UI
+│           ├── confirm_data_flowing_step.dart   # NEW: 3s stability detector + 30s fallback
+│           ├── motor_test_step.dart             # NEW: invokes existing shifter command path
+│           ├── physical_shifter_step.dart       # NEW: observes existing shifter event stream
+│           ├── hrm_step.dart                    # NEW: invokes existing HRM selection
+│           ├── wifi_step.dart                   # NEW: invokes existing WiFi/Dircon flow
+│           ├── completion_step.dart             # NEW: persists flag + 2 outbound paths
+│           └── connect_training_app_step.dart   # NEW: "How to connect your training app" pairing instructions (FR-011 outbound path a)
 ├── widgets/
 │   └── onboarding/                              # NEW: shared wizard widgets
 │       ├── wizard_scaffold.dart                 # NEW: app bar + back/skip + progress
@@ -137,7 +137,9 @@ lib/
     └── onboarding/                              # NEW: persistence + state
         ├── onboarding_state.dart                # NEW: SharedPreferences-backed boolean
         ├── wizard_session.dart                  # NEW: ChangeNotifier (current step, bike type, etc.)
-        └── wizard_step_machine.dart             # NEW: pure step-transition logic (testable)
+        ├── wizard_step_machine.dart             # NEW: pure step-transition logic (testable)
+        ├── confirm_data_flowing_detector.dart   # NEW: 3s power+cadence stability logic (T009)
+        └── auto_detect_fallback_timer.dart      # NEW: 30s fallback timer with restart/cancel (T029)
 
 test/
 ├── wizard_step_machine_test.dart                # NEW: pure step-machine tests
