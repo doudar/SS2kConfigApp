@@ -1,4 +1,4 @@
-enum BikeType { mostSpinBikes, pelotonBikePlus, pelotonOriginal }
+enum BikeType { mostSpinBikes, pelotonBikePlus, pelotonOriginal, powerMeterBike }
 
 enum DataSource { grupetto, powerMeter }
 
