@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../utils/onboarding/onboarding_state.dart';
+import '../../../utils/onboarding/wizard_session.dart';
+import '../../workout_screen.dart';
 import 'connect_training_app_step.dart';
 
 class CompletionStep extends StatefulWidget {
@@ -62,10 +65,14 @@ class _CompletionStepState extends State<CompletionStep> {
                   icon: const Icon(Icons.fitness_center),
                   label: const Text('Start a Guided Workout'),
                   onPressed: () {
-                    // completedNotifier has already fired in initState, causing
-                    // _SmartSpin2kAppState to rebuild with ScanScreen as root.
-                    // Pop everything; the app root is now ScanScreen.
-                    Navigator.of(context).popUntil((route) => route.isFirst);
+                    final device = context.read<WizardSession>().connectedDevice;
+                    final navigator = Navigator.of(context);
+                    navigator.popUntil((route) => route.isFirst);
+                    if (device != null) {
+                      navigator.push(MaterialPageRoute(
+                        builder: (_) => WorkoutScreen(device: device),
+                      ));
+                    }
                   },
                 ),
               ),
