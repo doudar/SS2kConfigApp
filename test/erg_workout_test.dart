@@ -30,7 +30,7 @@ void main() {
   });
 
   tearDown(() async {
-    await pathProviderChannel.setMockMethodCallHandler(null);
+    pathProviderChannel.setMockMethodCallHandler(null);
     if (tempDir != null && await tempDir!.exists()) {
       await tempDir!.delete(recursive: true);
     }
