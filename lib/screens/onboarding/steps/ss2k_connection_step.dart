@@ -79,7 +79,9 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
       }
     } catch (_) {}
 
-    device.connectAndUpdateStream().catchError((e) {
+    device.connectAndUpdateStream().then((_) {
+      BLEDataManager.forDevice(device).setupConnection(device);
+    }).catchError((e) {
       Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
     });
 
