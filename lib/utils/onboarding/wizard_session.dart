@@ -3,10 +3,13 @@ import 'package:flutter/widgets.dart' show PageController;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'wizard_step_machine.dart';
 
+enum SideSwitchMode { tabletMode, headlessMode }
+
 class WizardSession extends ChangeNotifier {
   int currentStepIndex = 0;
   BikeType? bikeType;
   DataSource? dataSourceChoice;
+  SideSwitchMode? sideSwitchMode;
   BluetoothDevice? connectedDevice;
   bool motorTestPassed = false;
   bool physicalShifterSeen = false;
@@ -24,6 +27,7 @@ class WizardSession extends ChangeNotifier {
     currentStepIndex = 0;
     bikeType = null;
     dataSourceChoice = null;
+    sideSwitchMode = null;
     connectedDevice = null;
     motorTestPassed = false;
     physicalShifterSeen = false;

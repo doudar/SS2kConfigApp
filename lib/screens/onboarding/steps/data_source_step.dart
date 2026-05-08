@@ -4,6 +4,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
+import '../../../widgets/onboarding/ble_device_selector.dart';
+import '../../../utils/constants.dart';
 
 class DataSourceStep extends StatelessWidget {
   const DataSourceStep({Key? key}) : super(key: key);
@@ -48,62 +50,100 @@ class _DataSourceBody extends StatelessWidget {
       case BikeType.pelotonBikePlus:
         return _PelotonBikePlusDataSource(onAdvance: onAdvance);
       case BikeType.pelotonOriginal:
-        return const _WiredDataSource();
+        return _WiredDataSource(sideSwitchMode: session.sideSwitchMode);
       default:
-        return const _BLEPowerMeterDataSource();
+        return _BLEPowerMeterDataSource(session: session);
     }
   }
 }
 
+/// MostSpinBikes: embed the power-meter BLE selector.
 class _BLEPowerMeterDataSource extends StatelessWidget {
-  const _BLEPowerMeterDataSource();
+  final WizardSession session;
+  const _BLEPowerMeterDataSource({required this.session});
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        const Text(
           'Pair a Power Meter',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
-        SizedBox(height: 16),
-        Text(
-          'Your bike uses a BLE power meter as the data source. '
-          'Make sure your power meter is active and in range.\n\n'
-          'The SmartSpin2k will automatically scan for and connect to your paired power meter. '
-          'Tap Continue to proceed to the data verification step.',
+        const SizedBox(height: 12),
+        const Text(
+          'Select your power meter below. Make sure it is active and in range. '
+          'The SmartSpin2k will connect to it automatically.',
           style: TextStyle(fontSize: 16, height: 1.5),
         ),
+        const SizedBox(height: 20),
+        if (session.connectedDevice != null)
+          BleDeviceSelector(
+            device: session.connectedDevice!,
+            vName: connectedPWRVname,
+          )
+        else
+          const Text(
+            'Connect your SmartSpin2k first (previous step) to scan for power meters.',
+            style: TextStyle(fontSize: 14),
+          ),
       ],
     );
   }
 }
 
+/// PelotonOriginal: branch on sideSwitchMode written by SideSwitchStep.
 class _WiredDataSource extends StatelessWidget {
-  const _WiredDataSource();
+  final SideSwitchMode? sideSwitchMode;
+  const _WiredDataSource({required this.sideSwitchMode});
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        const Text(
           'Wired Data Connection',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
-        SizedBox(height: 16),
-        Text(
-          'Your Peloton Bike (Original) uses a wired sensor connection — no BLE pairing is needed. '
-          'Data flows automatically through the sensor cable you connected earlier.\n\n'
-          'Tap Continue to verify data is flowing.',
-          style: TextStyle(fontSize: 16, height: 1.5),
-        ),
+        const SizedBox(height: 12),
+        if (sideSwitchMode == SideSwitchMode.tabletMode) ...[
+          const Text(
+            'Tablet Mode detected.',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Start a ride on the Peloton tablet first — data will not flow until you do. '
+            'Once riding, tap Continue to verify data is flowing.',
+            style: TextStyle(fontSize: 16, height: 1.5),
+          ),
+        ] else if (sideSwitchMode == SideSwitchMode.headlessMode) ...[
+          const Text(
+            'Headless Mode detected.',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'No action needed — sensor data flows automatically through the sensor cable '
+            'you connected earlier. Tap Continue to verify data is flowing.',
+            style: TextStyle(fontSize: 16, height: 1.5),
+          ),
+        ] else ...[
+          const Text(
+            'Your Peloton Bike (Original) uses a wired sensor connection — no BLE pairing needed. '
+            'Data flows through the sensor cable you connected earlier.\n\n'
+            'Tap Continue to verify data is flowing.',
+            style: TextStyle(fontSize: 16, height: 1.5),
+          ),
+        ],
       ],
     );
   }
 }
 
+/// PelotonBike+: Grupetto or BLE power meter selection.
 class _PelotonBikePlusDataSource extends StatefulWidget {
   final VoidCallback onAdvance;
   const _PelotonBikePlusDataSource({required this.onAdvance});
@@ -126,7 +166,7 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
           'Choose Your Data Source',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         const Text(
           'The Peloton Bike+ supports two data source options:',
           style: TextStyle(fontSize: 16),
@@ -162,6 +202,19 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
             session.dataSourceChoice = DataSource.powerMeter;
           }),
         ),
+        // Inline power-meter selector when BLE Power Meter is chosen.
+        if (_selected == DataSource.powerMeter && session.connectedDevice != null) ...[
+          const SizedBox(height: 20),
+          const Text(
+            'Select your power meter:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          BleDeviceSelector(
+            device: session.connectedDevice!,
+            vName: connectedPWRVname,
+          ),
+        ],
       ],
     );
   }
@@ -215,8 +268,7 @@ class _SourceCard extends StatelessWidget {
                     Text(title,
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     const SizedBox(height: 4),
-                    Text(description,
-                        style: const TextStyle(fontSize: 14, height: 1.4)),
+                    Text(description, style: const TextStyle(fontSize: 14, height: 1.4)),
                     if (trailing != null) ...[
                       const SizedBox(height: 8),
                       trailing!,

@@ -8,7 +8,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:app_links/app_links.dart';
@@ -22,6 +22,7 @@ import 'screens/onboarding/onboarding_wizard.dart';
 import 'utils/onboarding/onboarding_state.dart';
 import 'utils/onboarding/wizard_session.dart';
 import 'utils/theme_provider.dart';
+import 'utils/demo.dart' show demoModeBypass;
 
 void main() async {
   FlutterBluePlus.setLogLevel(LogLevel.verbose, color: true);
@@ -55,7 +56,9 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   final GlobalKey<ScaffoldMessengerState> _scaffoldKey = GlobalKey<ScaffoldMessengerState>();
 
   late StreamSubscription<BluetoothAdapterState> _adapterStateStateSubscription;
-  bool _onboardingCompleted = true;
+  // Start false on native so a clean install shows the wizard, not a ScanScreen flash.
+  // kIsWeb stays true because the wizard is never shown on web.
+  bool _onboardingCompleted = kIsWeb;
 
   @override
   void initState() {
@@ -78,6 +81,20 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     _initDeepLinkHandling();
     _requestBatteryOptimizationExemption();
     _checkOnboardingState();
+    // React to markCompleted() fired mid-session (e.g. CompletionStep).
+    OnboardingState.completedNotifier.addListener(_onCompletedNotifierChanged);
+    // React to demo-mode tap-target activated from ScanScreen or WelcomeStep.
+    demoModeBypass.addListener(_onDemoModeChanged);
+  }
+
+  void _onCompletedNotifierChanged() {
+    if (OnboardingState.completedNotifier.value && mounted) {
+      setState(() => _onboardingCompleted = true);
+    }
+  }
+
+  void _onDemoModeChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _checkOnboardingState() async {
@@ -279,22 +296,36 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   void dispose() {
     _adapterStateStateSubscription.cancel();
     _linkSubscription?.cancel();
+    OnboardingState.completedNotifier.removeListener(_onCompletedNotifierChanged);
+    demoModeBypass.removeListener(_onDemoModeChanged);
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    Widget screen;
-    if (_adapterState != BluetoothAdapterState.on && !kIsWeb) {
-      screen = BluetoothOffScreen(adapterState: _adapterState);
-    } else if (_onboardingCompleted) {
-      screen = const ScanScreen();
+  @visibleForTesting
+  Widget buildHomeScreen({
+    required BluetoothAdapterState adapterState,
+    required bool onboardingCompleted,
+    required bool demoMode,
+  }) {
+    if (adapterState != BluetoothAdapterState.on && !kIsWeb) {
+      return BluetoothOffScreen(adapterState: adapterState);
+    } else if (onboardingCompleted || demoMode) {
+      return const ScanScreen();
     } else {
-      screen = ChangeNotifierProvider(
+      return ChangeNotifierProvider(
         create: (_) => WizardSession(),
         child: const OnboardingWizard(),
       );
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = buildHomeScreen(
+      adapterState: _adapterState,
+      onboardingCompleted: _onboardingCompleted,
+      demoMode: demoModeBypass.value,
+    );
 
     final themeProvider = Provider.of<ThemeProvider>(context);
     return ScaffoldMessenger(

@@ -62,7 +62,7 @@ class WizardScaffold extends StatelessWidget {
           ],
         ),
         centerTitle: true,
-        automaticallyImplyLeading: !meta.backDisabled,
+        automaticallyImplyLeading: false,
         leading: meta.backDisabled
             ? null
             : IconButton(

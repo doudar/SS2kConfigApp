@@ -362,8 +362,8 @@ class _ScanScreenState extends State<ScanScreen> {
     setState(() {
       _tapCount++;
       if (_tapCount >= 5) {
-        _showDemoButton = true; // Show the button after 5 taps
-        // _tapCount = 0; // Reset the counter
+        _showDemoButton = true;
+        demoModeBypass.value = true; // also expose to main.dart routing
       }
     });
   }

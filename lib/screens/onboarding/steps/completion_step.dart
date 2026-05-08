@@ -62,7 +62,9 @@ class _CompletionStepState extends State<CompletionStep> {
                   icon: const Icon(Icons.fitness_center),
                   label: const Text('Start a Guided Workout'),
                   onPressed: () {
-                    // Exit the wizard; the existing workout flow handles routing.
+                    // completedNotifier has already fired in initState, causing
+                    // _SmartSpin2kAppState to rebuild with ScanScreen as root.
+                    // Pop everything; the app root is now ScanScreen.
                     Navigator.of(context).popUntil((route) => route.isFirst);
                   },
                 ),
