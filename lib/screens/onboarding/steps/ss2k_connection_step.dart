@@ -83,21 +83,16 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
       Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
     });
 
-    _connectionStateSubscription?.cancel();
-    _connectionStateSubscription = device.connectionState.listen((state) {
-      if (state == BluetoothConnectionState.connected && mounted) {
-        session.connectedDevice = device;
-        final machine = WizardStepMachine();
-        final next = machine.nextStep(
-          currentStep: WizardStepId.ss2kConnection,
-          session: session.snapshot,
-        );
-        if (next != null) {
-          final steps = machine.activeSteps(bikeType: session.bikeType);
-          session.setStepIndex(steps.indexOf(next));
-        }
-      }
-    });
+    session.connectedDevice = device;
+    final machine = WizardStepMachine();
+    final next = machine.nextStep(
+      currentStep: WizardStepId.ss2kConnection,
+      session: session.snapshot,
+    );
+    if (next != null) {
+      final steps = machine.activeSteps(bikeType: session.bikeType);
+      session.setStepIndex(steps.indexOf(next));
+    }
   }
 
   List<ScanResult> get _filteredResults {
@@ -114,11 +109,9 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
   Widget build(BuildContext context) {
     final session = context.watch<WizardSession>();
 
-    return ScaffoldMessenger(
-      key: Snackbar.snackBarKeyB,
-      child: WizardScaffold(
-        title: 'Connect SmartSpin2k',
-        stepId: WizardStepId.ss2kConnection,
+    return WizardScaffold(
+      title: 'Connect SmartSpin2k',
+      stepId: WizardStepId.ss2kConnection,
         body: Column(
           children: [
             Expanded(
@@ -148,7 +141,6 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
             ),
           ],
         ),
-      ),
     );
   }
 }
