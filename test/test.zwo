@@ -7,151 +7,151 @@
   <tags/>
   <workout>
     <Ramp Duration="600" PowerLow="0.39899999999999997" PowerHigh="0.73" Cadence="90">
-      <textevent timeoffset="0" message="For this first interval let&apos;s aim for 10m ramp 39.9-73% ftp 90rpm." duration="10"/>
+      <textevent timeoffset="0" message="For this first interval let&apos;s aim for 10min ramp 40-73% ftp 90rpm." duration="10"/>
     </Ramp>
     <SteadyState Duration="300" Power="0.88" Cadence="90">
-      <textevent timeoffset="0" message="30sec to go! Nice job with this first effort! 5m 88% ftp 90rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec to go! Nice job with this first effort! 5min 88% ftp 90rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="120" Power="0.529" Cadence="85">
-      <textevent timeoffset="0" message="All right next up I want you to aim for 2mins at 2m 52.9% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="All right next up I want you to aim for 2mins at 2min 53% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="120" Power="0.88" Cadence="90">
-      <textevent timeoffset="0" message="2m 88% ftp 90rpm." duration="10"/>
+      <textevent timeoffset="0" message="2min 88% ftp 90rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.88" Cadence="105">
-      <textevent timeoffset="0" message="30s 88% ftp 105rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 88% ftp 105rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="120" Power="0.88" Cadence="90">
-      <textevent timeoffset="0" message="2m 88% ftp 90rpm." duration="10"/>
+      <textevent timeoffset="0" message="2min 88% ftp 90rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.88" Cadence="105">
-      <textevent timeoffset="0" message="30s 88% ftp 105rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 88% ftp 105rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="120" Power="0.529" Cadence="85">
-      <textevent timeoffset="0" message="All right for our final steady state interval I want to aim for 2m 52.9% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="All right for our final steady state interval I want to aim for 2min 53% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="300" Power="0.88" Cadence="95">
-      <textevent timeoffset="0" message="Final minute! You&apos;re looking great here! Don&apos;t let your cadence drop off now! 5m 88% ftp 95rpm." duration="10"/>
+      <textevent timeoffset="0" message="Final minute! You&apos;re looking great here! Don&apos;t let your cadence drop off now! 5min 88% ftp 95rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="120" Power="0.529" Cadence="85">
-      <textevent timeoffset="0" message="Ready? We&apos;re starting at 100 RPM... 2m 52.9% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="Ready? We&apos;re starting at 100 RPM... 2min 53% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="240" Power="0.529" Cadence="85">
-      <textevent timeoffset="0" message="Ready? We&apos;re starting these standing at 70 RPM. 4m 52.9% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="Ready? We&apos;re starting these standing at 70 RPM. 4min 53% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="70">
-      <textevent timeoffset="0" message="30s 100% ftp 70rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 70rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="90">
-      <textevent timeoffset="0" message="30s 73% ftp 90rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 90rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="70">
-      <textevent timeoffset="0" message="30s 100% ftp 70rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 70rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="90">
-      <textevent timeoffset="0" message="30s 73% ftp 90rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 90rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="70">
-      <textevent timeoffset="0" message="30s 100% ftp 70rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 70rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="90">
-      <textevent timeoffset="0" message="30s 73% ftp 90rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 90rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="70">
-      <textevent timeoffset="0" message="30s 100% ftp 70rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 70rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="90">
-      <textevent timeoffset="0" message="30s 73% ftp 90rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 90rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="70">
-      <textevent timeoffset="0" message="30s 100% ftp 70rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 70rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="90">
-      <textevent timeoffset="0" message="30s 73% ftp 90rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 90rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="70">
-      <textevent timeoffset="0" message="30s 100% ftp 70rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 70rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="90">
-      <textevent timeoffset="0" message="30s 73% ftp 90rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 90rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="240" Power="0.529" Cadence="85">
-      <textevent timeoffset="0" message="Start spinning those legs up we&apos;re starting at 100 RPM. 4m 52.9% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="Start spinning those legs up we&apos;re starting at 100 RPM. 4min 53% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="1.0" Cadence="100">
-      <textevent timeoffset="0" message="30s 100% ftp 100rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 100% ftp 100rpm." duration="10"/>
     </SteadyState>
     <SteadyState Duration="30" Power="0.73" Cadence="85">
-      <textevent timeoffset="0" message="30s 73% ftp 85rpm." duration="10"/>
+      <textevent timeoffset="0" message="30sec 73% ftp 85rpm." duration="10"/>
     </SteadyState>
     <Ramp Duration="300" PowerLow="0.529" PowerHigh="0.39899999999999997" Cadence="90">
-      <textevent timeoffset="0" message="See you next time :-) 5m ramp 52.9-39.9% ftp 90rpm." duration="10"/>
+      <textevent timeoffset="0" message="See you next time :-) 5min ramp 53-40% ftp 90rpm." duration="10"/>
     </Ramp>
   </workout>
 </workout_file>

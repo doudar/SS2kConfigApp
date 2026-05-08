@@ -1,43 +1,66 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'dart:io';
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ss2kconfigapp/main.dart' as app;
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ss2kconfigapp/screens/scan_screen.dart';
+import 'package:ss2kconfigapp/screens/onboarding/onboarding_wizard.dart';
+import 'package:ss2kconfigapp/utils/onboarding/onboarding_state.dart';
+import 'package:ss2kconfigapp/utils/onboarding/wizard_session.dart';
+import 'package:ss2kconfigapp/utils/theme_provider.dart';
+
+/// Minimal harness that mirrors the onboarding routing in SmartSpin2kApp.build()
+/// without touching BLE. Reads SharedPreferences via OnboardingState, then
+/// shows ScanScreen (completed) or OnboardingWizard (not completed).
+class _RoutingHarness extends StatefulWidget {
+  const _RoutingHarness();
+
+  @override
+  State<_RoutingHarness> createState() => _RoutingHarnessState();
+}
+
+class _RoutingHarnessState extends State<_RoutingHarness> {
+  bool _completed = true;
+  final WizardSession _session = WizardSession();
+
+  @override
+  void initState() {
+    super.initState();
+    OnboardingState.isCompleted().then((v) {
+      if (mounted) setState(() => _completed = v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_completed) return const ScanScreen();
+    return ChangeNotifierProvider<WizardSession>.value(
+      value: _session,
+      child: const OnboardingWizard(),
+    );
+  }
+}
+
+Widget _wrap() => ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: const MaterialApp(home: _RoutingHarness()),
+    );
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
-  Directory? tempDir;
 
-  setUp(() async {
-    tempDir = await Directory.systemTemp.createTemp('ss2k_test');
-    pathProviderChannel.setMockMethodCallHandler((call) async {
-      if (call.method == 'getApplicationDocumentsDirectory' || call.method == 'getTemporaryDirectory') {
-        return tempDir!.path;
-      }
-      return null;
-    });
-  });
-
-  tearDown(() async {
-    await pathProviderChannel.setMockMethodCallHandler(null);
-    if (tempDir != null && await tempDir!.exists()) {
-      await tempDir!.delete(recursive: true);
-    }
-  });
-
-  testWidgets('App builds without crashing', (tester) async {
-    // Pump the real app entrypoint
-    app.main();
+  testWidgets('Shows ScanScreen when onboarding_completed is true', (tester) async {
+    SharedPreferences.setMockInitialValues({'onboarding_completed': true});
+    await tester.pumpWidget(_wrap());
     await tester.pumpAndSettle();
+    expect(find.byType(ScanScreen), findsOneWidget);
+    expect(find.byType(OnboardingWizard), findsNothing);
+  });
 
-    // Basic sanity check: at least one widget is present
-    expect(find.byType(Object), findsWidgets);
+  testWidgets('Shows OnboardingWizard when onboarding_completed is false', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(_wrap());
+    await tester.pumpAndSettle();
+    expect(find.byType(OnboardingWizard), findsOneWidget);
+    expect(find.byType(ScanScreen), findsNothing);
   });
 }
