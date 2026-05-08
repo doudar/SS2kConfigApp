@@ -26,21 +26,20 @@ class _MotorTestStepState extends State<MotorTestStep> {
     setState(() => _testRunning = true);
     final bleData = BLEDataManager.forDevice(device);
 
-    // Find shiftDir characteristic map
-    final framework = createCustomCharacteristicFramework();
-    final shiftDirMap = framework.firstWhere(
-      (c) => c['vName'] == shiftDirVname,
-      orElse: () => {},
+    var c = bleData.customCharacteristic.firstWhere(
+      (i) => i['vName'] == shifterPositionVname,
+      orElse: () => <String, dynamic>{},
     );
 
-    if (shiftDirMap.isNotEmpty) {
-      // +2 virtual shifts
-      shiftDirMap['value'] = 2;
-      await bleData.requestSetting(device, shiftDirVname);
-      await Future.delayed(const Duration(milliseconds: 800));
-      // -2 virtual shifts
-      shiftDirMap['value'] = -2;
-      await bleData.requestSetting(device, shiftDirVname);
+    if (c.isNotEmpty) {
+      final base = int.tryParse(c['value']?.toString() ?? '') ?? 0;
+
+      // Two upshifts then two downshifts, matching the shifter screen's write path
+      for (final delta in [1, 2, 1, 0]) {
+        c = Map<String, Object>.from(c)..['value'] = (base + delta).toString();
+        bleData.writeToSS2k(device, c);
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
     }
 
     setState(() {
