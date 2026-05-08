@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../utils/onboarding/wizard_step_machine.dart';
 import '../../utils/onboarding/wizard_session.dart';
+import '../../utils/onboarding/onboarding_state.dart';
+import '../../screens/scan_screen.dart';
 
 class WizardScaffold extends StatelessWidget {
   final String title;
@@ -11,6 +13,7 @@ class WizardScaffold extends StatelessWidget {
   final bool nextEnabled;
   final bool showSkip;
   final VoidCallback? onSkip;
+  final bool showSkipSetup;
   final WizardStepId stepId;
 
   const WizardScaffold({
@@ -23,7 +26,18 @@ class WizardScaffold extends StatelessWidget {
     this.nextEnabled = true,
     this.showSkip = false,
     this.onSkip,
+    this.showSkipSetup = true,
   }) : super(key: key);
+
+  Future<void> _skipSetup(BuildContext context) async {
+    await OnboardingState.markCompleted();
+    if (context.mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const ScanScreen()),
+        (route) => false,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,17 +80,24 @@ class WizardScaffold extends StatelessWidget {
                   }
                 },
               ),
-        actions: showSkip
-            ? [
-                TextButton(
-                  onPressed: onSkip,
-                  child: const Text(
-                    'Skip',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                ),
-              ]
-            : null,
+        actions: [
+          if (showSkipSetup)
+            TextButton(
+              onPressed: () => _skipSetup(context),
+              child: const Text(
+                'Skip Setup',
+                style: TextStyle(color: Colors.white54),
+              ),
+            ),
+          if (showSkip)
+            TextButton(
+              onPressed: onSkip,
+              child: const Text(
+                'Skip',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(6),
           child: currentIndex >= 0

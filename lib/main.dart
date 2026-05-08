@@ -18,6 +18,9 @@ import 'services/strava_service.dart';
 import 'services/intervals_service.dart';
 import 'screens/bluetooth_off_screen.dart';
 import 'screens/scan_screen.dart';
+import 'screens/onboarding/onboarding_wizard.dart';
+import 'utils/onboarding/onboarding_state.dart';
+import 'utils/onboarding/wizard_session.dart';
 import 'utils/theme_provider.dart';
 
 void main() async {
@@ -52,6 +55,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   final GlobalKey<ScaffoldMessengerState> _scaffoldKey = GlobalKey<ScaffoldMessengerState>();
 
   late StreamSubscription<BluetoothAdapterState> _adapterStateStateSubscription;
+  bool _onboardingCompleted = true;
 
   @override
   void initState() {
@@ -66,15 +70,21 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
         });
       } catch (e) {
         debugPrint('Error listening to adapter state: $e');
-        // Set a default state for web
         _adapterState = BluetoothAdapterState.on;
       }
     } else {
-      // For web platform, assume adapter is on
       _adapterState = BluetoothAdapterState.on;
     }
     _initDeepLinkHandling();
     _requestBatteryOptimizationExemption();
+    _checkOnboardingState();
+  }
+
+  Future<void> _checkOnboardingState() async {
+    final completed = await OnboardingState.isCompleted();
+    if (mounted) {
+      setState(() => _onboardingCompleted = completed);
+    }
   }
 
   Future<void> _requestBatteryOptimizationExemption() async {
@@ -274,9 +284,17 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 
   @override
   Widget build(BuildContext context) {
-    Widget screen = kIsWeb || _adapterState == BluetoothAdapterState.on
-        ? const ScanScreen()
-        : BluetoothOffScreen(adapterState: _adapterState);
+    Widget screen;
+    if (_adapterState != BluetoothAdapterState.on && !kIsWeb) {
+      screen = BluetoothOffScreen(adapterState: _adapterState);
+    } else if (_onboardingCompleted) {
+      screen = const ScanScreen();
+    } else {
+      screen = ChangeNotifierProvider(
+        create: (_) => WizardSession(),
+        child: const OnboardingWizard(),
+      );
+    }
 
     final themeProvider = Provider.of<ThemeProvider>(context);
     return ScaffoldMessenger(

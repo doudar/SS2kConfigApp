@@ -21,6 +21,9 @@ import '../utils/extra.dart';
 import '../widgets/scan_result_tile.dart';
 import '../widgets/theme_cycle_button.dart';
 import '../utils/demo.dart';
+import 'onboarding/onboarding_wizard.dart';
+import '../utils/onboarding/wizard_session.dart';
+import 'package:provider/provider.dart';
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({Key? key}) : super(key: key);
@@ -424,6 +427,22 @@ class _ScanScreenState extends State<ScanScreen> {
             ],
           ),
           actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ChangeNotifierProvider(
+                      create: (_) => WizardSession(),
+                      child: const OnboardingWizard(),
+                    ),
+                  ),
+                );
+              },
+              child: const Text(
+                'Guided Setup',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
             const ThemeCycleButton(),
           ],
         ),
