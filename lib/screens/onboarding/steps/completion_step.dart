@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../../../utils/onboarding/onboarding_state.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../workout_screen.dart';
+import '../../scan_screen.dart';
+import '../../main_device_screen.dart';
 import 'connect_training_app_step.dart';
 
 class CompletionStep extends StatefulWidget {
@@ -67,8 +69,21 @@ class _CompletionStepState extends State<CompletionStep> {
                   onPressed: () {
                     final device = context.read<WizardSession>().connectedDevice;
                     final navigator = Navigator.of(context);
-                    navigator.popUntil((route) => route.isFirst);
+                    
+                    // Always ensure the root route is ScanScreen when the wizard finishes.
+                    // This unifies the route stack for both new and returning users.
+                    navigator.pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const ScanScreen()),
+                      (route) => false,
+                    );
+                    
                     if (device != null) {
+                      // Insert the MainDeviceScreen so the back button from the workout
+                      // returns to the logical home of the device settings.
+                      navigator.push(MaterialPageRoute(
+                        builder: (_) => MainDeviceScreen(device: device),
+                        settings: const RouteSettings(name: '/MainDeviceScreen'),
+                      ));
                       navigator.push(MaterialPageRoute(
                         builder: (_) => WorkoutScreen(device: device),
                       ));
