@@ -174,22 +174,39 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
         const SizedBox(height: 16),
         _SourceCard(
           title: 'Grupetto (Recommended)',
-          description: 'Uses the Peloton Bike+ cadence/power data directly. '
-              'Start a ride on the Peloton tablet before the data verification step.',
+          description: 'Unlock native cadence and power data from your Peloton Bike+.'
+              ' This requires a one-time installation of the Grupetto app on your bike\'s tablet.'
+              ' Install with OpenPelo, following the instructions below.',
           selected: _selected == DataSource.grupetto,
           onTap: () => setState(() {
             _selected = DataSource.grupetto;
             session.dataSourceChoice = DataSource.grupetto;
           }),
-          trailing: TextButton.icon(
-            icon: const Icon(Icons.open_in_new, size: 16),
-            label: const Text('Docs'),
-            onPressed: () async {
-              final url = Uri.parse('https://docs.smartspin2k.com/');
-              if (await canLaunchUrl(url)) {
-                await launchUrl(url, mode: LaunchMode.externalApplication);
-              }
-            },
+          // Adding multiple actions for the tool and instructions
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton.icon(
+                icon: const Icon(Icons.code, size: 16),
+                label: const Text('Get OpenPelo'),
+                onPressed: () async {
+                  final url = Uri.parse('https://github.com/doudar/Openpelo');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
+              TextButton.icon(
+                icon: const Icon(Icons.play_circle_outline, size: 16),
+                label: const Text('Installation Guide'),
+                onPressed: () async {
+                  final url = Uri.parse('https://www.youtube.com/watch?v=X3oN8JhHe_8');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 12),
@@ -202,6 +219,25 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
             session.dataSourceChoice = DataSource.powerMeter;
           }),
         ),
+        // Inline guidance + selector when Grupetto is chosen.
+        if (_selected == DataSource.grupetto && session.connectedDevice != null) ...[
+          const SizedBox(height: 20),
+          const Text(
+            'Enable BLE TX in Grupetto',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Open the Grupetto app on your Peloton tablet and enable BLE TX in its settings. '
+            'Then select "Grupetto FTMS" as your power meter below.',
+            style: TextStyle(fontSize: 16, height: 1.5),
+          ),
+          const SizedBox(height: 16),
+          BleDeviceSelector(
+            device: session.connectedDevice!,
+            vName: connectedPWRVname,
+          ),
+        ],
         // Inline power-meter selector when BLE Power Meter is chosen.
         if (_selected == DataSource.powerMeter && session.connectedDevice != null) ...[
           const SizedBox(height: 20),
@@ -256,17 +292,14 @@ class _SourceCard extends StatelessWidget {
             children: [
               Icon(
                 selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                color: selected
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).disabledColor,
+                color: selected ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     const SizedBox(height: 4),
                     Text(description, style: const TextStyle(fontSize: 14, height: 1.4)),
                     if (trailing != null) ...[
