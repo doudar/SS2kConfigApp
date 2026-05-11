@@ -26,7 +26,7 @@ class PresetSharing {
       // Convert settings to JSON, excluding sensitive data and complex objects
       List<Map<String, dynamic>> exportList = [];
       for (var item in bleData.customCharacteristic) {
-        if (item is Map && item.containsKey('vName') && item.containsKey('value')) {
+        if (item.containsKey('vName') && item.containsKey('value')) {
           if (item['vName'] != ssidVname && item['vName'] != passwordVname) {
             exportList.add({
               'vName': item['vName'],

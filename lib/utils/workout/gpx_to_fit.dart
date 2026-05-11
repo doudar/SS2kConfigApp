@@ -7,6 +7,18 @@ class GpxToFitConverter {
     return (dt.toUtc().millisecondsSinceEpoch);
   }
 
+  static int? _extractExtensionInt(String? extensionValue, String tagName) {
+    if (extensionValue == null || extensionValue.isEmpty) return null;
+
+    final tagMatch = RegExp('<(?:\\w+:)?$tagName>([^<]+)</(?:\\w+:)?$tagName>')
+        .firstMatch(extensionValue);
+    if (tagMatch != null) {
+      return int.tryParse(tagMatch.group(1)!.trim());
+    }
+
+    return null;
+  }
+
   /// Converts a GPX file to FIT format and returns the path to the new FIT file
   static Future<String> convertGpxToFit(String gpxFilePath) async {
     // Read GPX file
@@ -53,7 +65,8 @@ class GpxToFitConverter {
     if (xmlGpx.trks.isNotEmpty && xmlGpx.trks[0].trksegs.isNotEmpty) {
       for (var trackPoint in xmlGpx.trks[0].trksegs[0].trkpts) {
         final tpTime = trackPoint.time;
-        final timestamp = tpTime != null ? _toFitTimestamp(tpTime) : (previousTimestamp + 1);
+        final timestamp =
+            tpTime != null ? _toFitTimestamp(tpTime) : (previousTimestamp + 1);
         final record = RecordMessage()
           ..timestamp = timestamp
           ..positionLong = trackPoint.lon
@@ -62,36 +75,35 @@ class GpxToFitConverter {
 
         // Extract heart rate, cadence, and power from extensions
         final ext = trackPoint.extensions;
-        
+
         // Extract power
         final powerStr = ext['power']?.toString() ?? '0';
         record.power = int.tryParse(powerStr) ?? 0;
-        
+
         // Extract heart rate and cadence from TrackPointExtension
-        final tpExt = ext['gpxtpx:TrackPointExtension'];
-        if (tpExt is Map) {
-          final hr = tpExt['gpxtpx:hr'];
-          final cad = tpExt['gpxtpx:cad'];
-          if (hr != null) {
-            record.heartRate = int.tryParse(hr.toString()) ?? 0;
-          }
-          if (cad != null) {
-            record.cadence = int.tryParse(cad.toString()) ?? 0;
-          }
-        } else {
-          // Legacy/Fallback parsing logic
-          final tpExtStr = tpExt?.toString() ?? '';
-          if (tpExtStr.isNotEmpty) {
-            // The TrackPointExtension string contains both HR and cadence values
-            // Split the string and extract the values
-            final values = tpExtStr.trim().split('\n').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
-            if (values.length >= 2) {
-              record.heartRate = int.tryParse(values[0]) ?? 0;
-              record.cadence = int.tryParse(values[1]) ?? 0;
-            }
+        final tpExtStr = ext['gpxtpx:TrackPointExtension'];
+        final heartRate = _extractExtensionInt(tpExtStr, 'hr');
+        final cadence = _extractExtensionInt(tpExtStr, 'cad');
+        if (heartRate != null) {
+          record.heartRate = heartRate;
+        }
+        if (cadence != null) {
+          record.cadence = cadence;
+        }
+
+        if (tpExtStr != null && heartRate == null && cadence == null) {
+          final values = tpExtStr
+              .trim()
+              .split('\n')
+              .map((s) => s.trim())
+              .where((s) => s.isNotEmpty)
+              .toList();
+          if (values.length >= 2) {
+            record.heartRate = int.tryParse(values[0]) ?? 0;
+            record.cadence = int.tryParse(values[1]) ?? 0;
           }
         }
-      
+
         records.add(record);
         previousTimestamp = timestamp;
       }
@@ -101,16 +113,16 @@ class GpxToFitConverter {
       final lapMessage = LapMessage()
         ..timestamp = lastRecordTimestamp
         ..startTime = startTimestamp;
-       // ..totalElapsedTime = elapsedTime
-       // ..totalTimerTime = elapsedTime;
+      // ..totalElapsedTime = elapsedTime
+      // ..totalTimerTime = elapsedTime;
       builder.add(lapMessage);
 
       // Add Session message
       final sessionMessage = SessionMessage()
         ..timestamp = lastRecordTimestamp
         ..startTime = startTimestamp
-       // ..totalElapsedTime = elapsedTime
-       // ..totalTimerTime = elapsedTime
+        // ..totalElapsedTime = elapsedTime
+        // ..totalTimerTime = elapsedTime
         ..sport = Sport.cycling
         ..subSport = SubSport.virtualActivity
         ..firstLapIndex = 0
