@@ -41,20 +41,37 @@ class WiringStep extends StatelessWidget {
               wiringInstructions,
               style: const TextStyle(fontSize: 16, height: 1.5),
             ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: Image.asset(
+                _wiringImage(session.bikeType),
+                width: double.infinity,
+                fit: BoxFit.contain,
+                alignment: Alignment.topCenter,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
+  String _wiringImage(BikeType? bikeType) {
+    if (bikeType == BikeType.pelotonOriginal) {
+      return 'assets/images/wiring_harness_pelotonOriginal.webp';
+    }
+    return 'assets/images/wiring_harness_BLE.webp';
+  }
+
   String _wiringCopy(BikeType? bikeType) {
     switch (bikeType) {
       case BikeType.pelotonBikePlus:
-        return 'Connect the power cable and the shifter cable to the SmartSpin2k. '
-            'Do not use Peloton-specific connectors — the Bike+ uses standard cables only.';
+        return '''Connect the power cable and the shifter cable to the SmartSpin2k.
+
+Bike+ uses a wireless connection that will be set up on the next page. Do not connect the cables labeled 'Peloton Bike' and 'Peloton Tablet' to your bike.''';
       case BikeType.pelotonOriginal:
-        return 'Connect the power cable, the shifter cable, and the sensor cable to the SmartSpin2k. '
-            'All three connections are required for the original Peloton Bike.';
+        return '''Connect the power cable, the shifter cable, and the sensor cable to the SmartSpin2k.
+We will connect the SmartSpin2k to your bike in the next step''';
       default:
         return 'Connect the power cable and the shifter cable to the SmartSpin2k.';
     }
