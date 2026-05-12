@@ -6,6 +6,7 @@ import 'steps/welcome_step.dart';
 import 'steps/bike_type_step.dart';
 import 'steps/hardware_install_step.dart';
 import 'steps/wiring_step.dart';
+import 'steps/sensor_wiring_step.dart';
 import 'steps/side_switch_step.dart';
 import 'steps/ss2k_connection_step.dart';
 import 'steps/data_source_step.dart';
@@ -77,6 +78,8 @@ class _OnboardingWizardState extends State<OnboardingWizard> with WidgetsBinding
         return const HardwareInstallStep();
       case WizardStepId.wiring:
         return const WiringStep();
+      case WizardStepId.sensorWiring:
+        return const SensorWiringStep();
       case WizardStepId.sideSwitch:
         return const SideSwitchStep();
       case WizardStepId.ss2kConnection:

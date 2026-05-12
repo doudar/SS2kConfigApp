@@ -7,6 +7,7 @@ enum WizardStepId {
   bikeType,
   hardwareInstall,
   wiring,
+  sensorWiring,
   sideSwitch,
   ss2kConnection,
   dataSource,
@@ -78,6 +79,7 @@ const _allStepsWithSideSwitch = [
   WizardStepId.bikeType,
   WizardStepId.hardwareInstall,
   WizardStepId.wiring,
+  WizardStepId.sensorWiring,
   WizardStepId.sideSwitch,
   WizardStepId.ss2kConnection,
   WizardStepId.dataSource,
@@ -111,6 +113,10 @@ const _stepMetaTable = <WizardStepId, WizardStepMeta>{
   WizardStepId.wiring: WizardStepMeta(
     id: WizardStepId.wiring,
     kind: StepKind.informational,
+  ),
+  WizardStepId.sensorWiring: WizardStepMeta(
+    id: WizardStepId.sensorWiring,
+    kind: StepKind.action,
   ),
   WizardStepId.sideSwitch: WizardStepMeta(
     id: WizardStepId.sideSwitch,

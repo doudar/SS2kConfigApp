@@ -30,12 +30,15 @@ void main() {
       expect(steps.last, WizardStepId.completion);
     });
 
-    test('pelotonOriginal includes sideSwitch after wiring', () {
+    test('pelotonOriginal includes sensorWiring then sideSwitch after wiring', () {
       final steps = machine.activeSteps(bikeType: BikeType.pelotonOriginal);
       expect(steps.contains(WizardStepId.sideSwitch), isTrue);
+      expect(steps.contains(WizardStepId.sensorWiring), isTrue);
       final wiringIndex = steps.indexOf(WizardStepId.wiring);
+      final sensorWiringIndex = steps.indexOf(WizardStepId.sensorWiring);
       final sideSwitchIndex = steps.indexOf(WizardStepId.sideSwitch);
-      expect(sideSwitchIndex, wiringIndex + 1);
+      expect(sensorWiringIndex, wiringIndex + 1);
+      expect(sideSwitchIndex, sensorWiringIndex + 1);
       expect(steps.first, WizardStepId.welcome);
       expect(steps.last, WizardStepId.completion);
     });
@@ -63,6 +66,7 @@ void main() {
         WizardStepId.bikeType,
         WizardStepId.hardwareInstall,
         WizardStepId.wiring,
+        WizardStepId.sensorWiring,
         WizardStepId.sideSwitch,
         WizardStepId.ss2kConnection,
         WizardStepId.dataSource,
