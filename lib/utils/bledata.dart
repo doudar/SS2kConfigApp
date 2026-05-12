@@ -105,6 +105,10 @@ class BLEData {
   // Centralized auto-reconnect monitor
   StreamSubscription<BluetoothConnectionState>? _reconnectSubscription;
   bool _reconnecting = false;
+  bool _reconnectRequested = false;
+  Completer<bool>? _reconnectCompleter;
+  int _connectionMonitorUsers = 0;
+  final List<Future<void> Function()> _onReconnectedCallbacks = [];
 
   /// Start monitoring the connection and automatically reconnect on unexpected
   /// disconnects.  Safe to call multiple times – only one listener is created.
@@ -114,6 +118,12 @@ class BLEData {
     BluetoothDevice device, {
     Future<void> Function()? onReconnected,
   }) {
+    _connectionMonitorUsers++;
+    if (onReconnected != null &&
+        !_onReconnectedCallbacks.contains(onReconnected)) {
+      _onReconnectedCallbacks.add(onReconnected);
+    }
+
     // Guard against duplicate subscriptions
     if (_reconnectSubscription != null) return;
 
@@ -128,25 +138,97 @@ class BLEData {
         // reconnection.
         _resetConnectionState();
 
-        if (isUserDisconnect || isUpdatingFirmware) return;
-        if (_reconnecting) return;
-        _reconnecting = true;
+        if (isUserDisconnect) return;
 
-        print('[AutoReconnect] Unexpected disconnect – attempting reconnect…');
-        try {
-          await device.connectAndUpdateStream();
-          await setupConnection(device);
-          print('[AutoReconnect] Reconnected successfully.');
-          if (onReconnected != null) {
-            await onReconnected();
-          }
-        } catch (e) {
-          print('[AutoReconnect] Reconnect failed: $e');
-        } finally {
-          _reconnecting = false;
-        }
+        await reconnectAndSetup(device);
       }
     });
+  }
+
+  /// Reconnect and rebuild all connection-scoped BLE state so all recovery
+  /// paths behave the same way after a reboot or dropped link.
+  Future<bool> reconnectAndSetup(
+    BluetoothDevice device, {
+    int maxAttempts = 10,
+    Duration retryDelay = const Duration(seconds: 1),
+    Duration settleDelay = const Duration(milliseconds: 750),
+    Future<void> Function()? onReconnected,
+  }) async {
+    if (isUserDisconnect) return false;
+
+    if (_reconnecting) {
+      _reconnectRequested = true;
+      return await _reconnectCompleter?.future ?? device.isConnected;
+    }
+
+    _reconnecting = true;
+    _reconnectRequested = false;
+    _reconnectCompleter = Completer<bool>();
+
+    bool success = false;
+    try {
+      for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (isUserDisconnect) break;
+
+        _resetConnectionState();
+
+        try {
+          if (!device.isConnected) {
+            print(
+                '[AutoReconnect] Attempt $attempt/$maxAttempts connecting...');
+            await device.connectAndUpdateStream();
+          }
+
+          await Future.delayed(settleDelay);
+
+          if (!device.isConnected) {
+            throw Exception(
+                'Device disconnected during reconnect settle period.');
+          }
+
+          await setupConnection(device, forceRefresh: true);
+
+          if (!device.isConnected) {
+            throw Exception('Device disconnected during setup.');
+          }
+
+          if (onReconnected != null) {
+            await onReconnected();
+          } else {
+            for (final callback in List<Future<void> Function()>.from(
+                _onReconnectedCallbacks)) {
+              await callback();
+            }
+          }
+
+          success = true;
+          print('[AutoReconnect] Reconnected successfully.');
+          break;
+        } catch (e) {
+          print('[AutoReconnect] Reconnect attempt $attempt failed: $e');
+          if (attempt < maxAttempts) {
+            await Future.delayed(retryDelay);
+          }
+        }
+      }
+    } finally {
+      _reconnecting = false;
+      _reconnectCompleter?.complete(success);
+      _reconnectCompleter = null;
+    }
+
+    if (!success && _reconnectRequested && !isUserDisconnect) {
+      _reconnectRequested = false;
+      return reconnectAndSetup(
+        device,
+        maxAttempts: maxAttempts,
+        retryDelay: retryDelay,
+        settleDelay: settleDelay,
+        onReconnected: onReconnected,
+      );
+    }
+
+    return success;
   }
 
   /// Reset BLE state that is tied to a specific connection so that the next
@@ -170,10 +252,22 @@ class BLEData {
   }
 
   /// Stop the auto-reconnect monitor.
-  void stopConnectionMonitor() {
+  void stopConnectionMonitor({Future<void> Function()? onReconnected}) {
+    if (onReconnected != null) {
+      _onReconnectedCallbacks.remove(onReconnected);
+    }
+
+    if (_connectionMonitorUsers > 0) {
+      _connectionMonitorUsers--;
+    }
+
+    if (_connectionMonitorUsers > 0) return;
+
     _reconnectSubscription?.cancel();
     _reconnectSubscription = null;
+    _onReconnectedCallbacks.clear();
   }
+
   StreamSubscription<List<int>>? _notifySubscription;
   StreamSubscription<List<int>>? _ftmsSubscription;
   late BluetoothService firmwareService;
@@ -183,18 +277,19 @@ class BLEData {
   BluetoothCharacteristic? ftmsControlPointCharacteristic;
   BluetoothCharacteristic? indoorBikeCharacteristic;
   Completer<void>? _discoverServicesCompleter;
-  BluetoothConnectionState connectionState = BluetoothConnectionState.disconnected;
+  BluetoothConnectionState connectionState =
+      BluetoothConnectionState.disconnected;
   List<BluetoothService> services = [];
   FtmsData ftmsData = FtmsData();
   bool isSimulated = false; //Is this a demo device?
   bool isConnecting = false;
   bool isDisconnecting = false;
   bool configAppCompatibleFirmware = false;
-  bool isUpdatingFirmware = false;
   ValueNotifier<String> firmwareVersion = ValueNotifier("");
-  
+
   // Create a broadcast stream controller for logs
-  final StreamController<String> _logStreamController = StreamController<String>.broadcast();
+  final StreamController<String> _logStreamController =
+      StreamController<String>.broadcast();
   Stream<String> get logStream => _logStreamController.stream;
 
   String simulatedTargetWatts = "";
@@ -204,12 +299,13 @@ class BLEData {
   double tableDivisor = 10.0; // Default divisor for power table data
 
   // Stream controller for characteristic changes
-  final StreamController<CharacteristicChangeEvent> _characteristicChangeController =
+  final StreamController<CharacteristicChangeEvent>
+      _characteristicChangeController =
       StreamController<CharacteristicChangeEvent>.broadcast();
 
   /// Stream of characteristic changes
-  Stream<CharacteristicChangeEvent> get characteristicChanges => _characteristicChangeController.stream;
-
+  Stream<CharacteristicChangeEvent> get characteristicChanges =>
+      _characteristicChangeController.stream;
 
   List<List<int?>> powerTableData = List.generate(
     10,
@@ -217,7 +313,7 @@ class BLEData {
   );
 
   var customCharacteristic = createCustomCharacteristicFramework();
-  
+
   Map<int, Map>? _cachedCharacteristicMap;
 
   void _ensureCachedMap() {
@@ -232,7 +328,6 @@ class BLEData {
       }
     }
   }
-
 
   /// @brief
   /// Returns the value of a custom characteristic by its vName.
@@ -335,12 +430,14 @@ class BLEData {
     return _char;
   }
 
-  Future _discoverServices(BluetoothDevice device, {bool forceRefresh = false}) async {
+  Future _discoverServices(BluetoothDevice device,
+      {bool forceRefresh = false}) async {
     if (this.isSimulated) return;
 
     // If a discovery is already in flight, just await it and return.
     if (_discoverServicesCompleter != null) {
-      print('[discoverServices] Already in progress – waiting for existing call to finish.');
+      print(
+          '[discoverServices] Already in progress – waiting for existing call to finish.');
       await _discoverServicesCompleter!.future;
       return;
     }
@@ -520,7 +617,8 @@ class BLEData {
         String binaryFlags = flags.toRadixString(2).padLeft(16, '0');
         print('Flags (binary): $binaryFlags');
 
-        bool hasBytes(int requiredBytes) => (index + requiredBytes) <= byteData.lengthInBytes;
+        bool hasBytes(int requiredBytes) =>
+            (index + requiredBytes) <= byteData.lengthInBytes;
 
         // Reset fields
         ftmsData.cadence = 0;
@@ -531,7 +629,8 @@ class BLEData {
         if (!hasBytes(2)) {
           return;
         }
-        ftmsData.speed = byteData.getUint16(index, Endian.little) ~/ 100; // resolution 0.01
+        ftmsData.speed =
+            byteData.getUint16(index, Endian.little) ~/ 100; // resolution 0.01
         index += 2;
 
         if ((flags & (1 << 1)) != 0) {
@@ -541,7 +640,8 @@ class BLEData {
 
         if ((flags & (1 << 2)) != 0) {
           if (!hasBytes(2)) return;
-          ftmsData.cadence = byteData.getUint16(index, Endian.little) ~/ 2; // resolution 0.5
+          ftmsData.cadence =
+              byteData.getUint16(index, Endian.little) ~/ 2; // resolution 0.5
           index += 2;
         }
 
@@ -611,8 +711,10 @@ class BLEData {
     const watchdogTimeout = Duration(seconds: 3);
 
     // If we have received data before, and it's been more than watchdogTimeout
-    if (lastFtmsUpdate != null && now.difference(lastFtmsUpdate!) > watchdogTimeout) {
-      print('FTMS connection appears stalled (last update: $lastFtmsUpdate). Attempting recovery...');
+    if (lastFtmsUpdate != null &&
+        now.difference(lastFtmsUpdate!) > watchdogTimeout) {
+      print(
+          'FTMS connection appears stalled (last update: $lastFtmsUpdate). Attempting recovery...');
       _ftmsRecoveryInProgress = true;
 
       try {
@@ -642,36 +744,27 @@ class BLEData {
         _ftmsRecoveryInProgress = false;
       }
     } else if (lastFtmsUpdate == null && indoorBikeCharacteristic != null) {
-         // If we have a characteristic but never received a packet, try enabling notify
-         try {
-             if (!indoorBikeCharacteristic!.isNotifying && device.isConnected) {
-                 print('FTMS never received data and not notifying. enabling...');
-                 await indoorBikeCharacteristic!.setNotifyValue(true);
-             }
-         } catch(e) {
-             print('Error checking FTMS notify status: $e');
-         }
+      // If we have a characteristic but never received a packet, try enabling notify
+      try {
+        if (!indoorBikeCharacteristic!.isNotifying && device.isConnected) {
+          print('FTMS never received data and not notifying. enabling...');
+          await indoorBikeCharacteristic!.setNotifyValue(true);
+        }
+      } catch (e) {
+        print('Error checking FTMS notify status: $e');
+      }
     }
   }
 
   /// Proactively trigger auto-reconnect when we detect disconnection through
   /// a failed BLE operation rather than through the connectionState stream.
   void _triggerReconnect(BluetoothDevice device) {
-    if (isUserDisconnect || isUpdatingFirmware || _reconnecting) return;
-    _reconnecting = true;
-    _resetConnectionState();
-    print('[FTMS Recovery] Device appears disconnected. Triggering reconnect...');
+    if (isUserDisconnect) return;
+    print(
+        '[FTMS Recovery] Device appears disconnected. Triggering reconnect...');
 
     () async {
-      try {
-        await device.connectAndUpdateStream();
-        await setupConnection(device);
-        print('[FTMS Recovery] Reconnected successfully.');
-      } catch (e) {
-        print('[FTMS Recovery] Reconnect failed: $e');
-      } finally {
-        _reconnecting = false;
-      }
+      await reconnectAndSetup(device);
     }();
   }
 
@@ -685,7 +778,8 @@ class BLEData {
       try {
         write(device, [0x02, int.parse(c["reference"]), 0x01]);
       } catch (e) {
-        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
+        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
+            success: false);
       }
     }
   }
@@ -724,7 +818,7 @@ class BLEData {
 //request all settings
   Future requestSettings(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    
+
     for (var c in this.customCharacteristic) {
       // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
       if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
@@ -740,13 +834,15 @@ class BLEData {
         await Future.delayed(Duration(milliseconds: 50));
         await write(device, [0x01, int.parse(c["reference"])]);
       } catch (e) {
-        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
+        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
+            success: false);
       }
     }
   }
 
 //request single setting
-  Future requestSetting(BluetoothDevice device, String name, {int? extraByte}) async {
+  Future requestSetting(BluetoothDevice device, String name,
+      {int? extraByte}) async {
     if (this.isSimulated) return;
     _request(Map c) {
       // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
@@ -807,32 +903,51 @@ class BLEData {
         int t = double.parse(s).round();
         final list = new Uint64List.fromList([t]);
         final bytes = new Uint8List.view(list.buffer);
-        final out = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+        final out =
+            bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
         print('bytes: ${out}');
-        value = [0x02, int.parse(c["reference"]), int.parse(out.elementAt(0)), int.parse(out.elementAt(1))];
+        value = [
+          0x02,
+          int.parse(c["reference"]),
+          int.parse(out.elementAt(0)),
+          int.parse(out.elementAt(1))
+        ];
         break;
       case "bool":
         (s == "false") ? s = "0" : s = "1";
         int t = double.parse(s).round();
         final list = new Uint64List.fromList([t]);
         final bytes = new Uint8List.view(list.buffer);
-        final out = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+        final out =
+            bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
         print('bytes: ${out}');
-        value = [0x02, int.parse(c["reference"]), int.parse(out.elementAt(0)), int.parse(out.elementAt(1))];
+        value = [
+          0x02,
+          int.parse(c["reference"]),
+          int.parse(out.elementAt(0)),
+          int.parse(out.elementAt(1))
+        ];
         break;
       case "float":
         int t = (double.parse(s) * 10).round();
         final list = new Uint64List.fromList([t]);
         final bytes = new Uint8List.view(list.buffer);
-        final out = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+        final out =
+            bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
         print('bytes: ${out}');
-        value = [0x02, int.parse(c["reference"]), int.parse(out.elementAt(0)), int.parse(out.elementAt(1))];
+        value = [
+          0x02,
+          int.parse(c["reference"]),
+          int.parse(out.elementAt(0)),
+          int.parse(out.elementAt(1))
+        ];
         break;
       case "long":
         int t = double.parse(s).round();
         final list = new Uint64List.fromList([t]);
         final bytes = new Uint8List.view(list.buffer);
-        final out = bytes.map((b) => '0x${b.toRadixString(32).padLeft(2, '0')}');
+        final out =
+            bytes.map((b) => '0x${b.toRadixString(32).padLeft(2, '0')}');
         print('bytes: ${out}');
         value = [
           0x02,
@@ -848,7 +963,9 @@ class BLEData {
         const int intMinValue = -32768;
 
         // Loop through each row of the tableData
-        for (int rowIndex = 0; rowIndex < this.powerTableData.length; rowIndex++) {
+        for (int rowIndex = 0;
+            rowIndex < this.powerTableData.length;
+            rowIndex++) {
           List<int?> row = this.powerTableData[rowIndex];
           List<int> rowValue = [];
 
@@ -857,20 +974,23 @@ class BLEData {
             int valueToConvert = entry ?? intMinValue;
             final list = Uint16List.fromList([valueToConvert]);
             final bytes = Uint8List.view(list.buffer);
-            final out = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+            final out =
+                bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
             print('bytes: ${out}');
             rowValue.add(bytes[0]); // Low byte
             rowValue.add(bytes[1]); // High byte
           }
 
           // Combine the request, reference, and row data
-          List<int> rowToSend = [0x02, int.parse(c["reference"]), rowIndex + 1] + rowValue;
+          List<int> rowToSend =
+              [0x02, int.parse(c["reference"]), rowIndex + 1] + rowValue;
 
           // Write the data to the device
           try {
             write(device, rowToSend);
           } catch (e) {
-            Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
+            Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
+                success: false);
             return;
           }
         }
@@ -892,10 +1012,12 @@ class BLEData {
       try {
         await this.getMyCharacteristic(device).write(value);
       } catch (e) {
-        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
+        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
+            success: false);
       }
     } else {
-      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k - Net Connected", success: false);
+      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k - Net Connected",
+          success: false);
     }
   }
 
@@ -906,16 +1028,17 @@ class BLEData {
     _ensureCachedMap();
 
     _notifySubscription?.cancel();
-    _notifySubscription = this.getMyCharacteristic(device).onValueReceived.listen((value) {
+    _notifySubscription =
+        this.getMyCharacteristic(device).onValueReceived.listen((value) {
       try {
         if (value.isEmpty) return;
 
         if (value[0] == 0x80) {
           if (value.length < 2) return;
-          
+
           // Use cached map for O(1) lookup
           var c = _cachedCharacteristicMap?[value[1]];
-          
+
           if (c != null) {
             var length = value.length;
             var t = new Uint8List(length);
@@ -932,7 +1055,9 @@ class BLEData {
                   } else {
                     c["value"] = data.getInt16(2, Endian.little).toString();
 
-                    simulatedTargetWatts = (c["reference"] == "0x28") ? c["value"] : simulatedTargetWatts;
+                    simulatedTargetWatts = (c["reference"] == "0x28")
+                        ? c["value"]
+                        : simulatedTargetWatts;
                     if (c["vName"] == FTMSModeVname) {
                       this.simulatedFTMSmode = c["value"];
                       FTMSmode = int.parse(this.simulatedFTMSmode);
@@ -962,7 +1087,8 @@ class BLEData {
                 }
               case "float":
                 {
-                  c["value"] = (data.getInt16(2, Endian.little) / 10).toString();
+                  c["value"] =
+                      (data.getInt16(2, Endian.little) / 10).toString();
                   // Emit characteristic change event
                   _emitCharacteristicChange(c);
                   break;
@@ -1022,7 +1148,8 @@ class BLEData {
                   //Set the firmware version
                   if (c["vName"] == fwVname) {
                     this.firmwareVersion.value = c["value"];
-                    print("FW Version Was Updated!! ${c['value']} ${this.firmwareVersion.value}");
+                    print(
+                        "FW Version Was Updated!! ${c['value']} ${this.firmwareVersion.value}");
                   }
                   // Emit characteristic change event
                   _emitCharacteristicChange(c);
@@ -1030,7 +1157,8 @@ class BLEData {
                 }
               case "powerTableData":
                 int cadenceRow = value[2];
-                if (cadenceRow >= 0 && cadenceRow < this.powerTableData.length) {
+                if (cadenceRow >= 0 &&
+                    cadenceRow < this.powerTableData.length) {
                   List<int?> row = [];
                   for (int i = 3; i < value.length; i += 2) {
                     if (data.getInt16(i, Endian.little) == -32768) {

@@ -12,17 +12,19 @@ import 'package:fit_tool/fit_tool.dart';
 import 'package:flutter/services.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  final messenger = binding.defaultBinaryMessenger;
   const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
   Directory? tempDir;
-  
+
   setUp(() async {
     // Set up shared preferences mock
     SharedPreferences.setMockInitialValues({});
     await SharedPreferences.getInstance();
     tempDir = await Directory.systemTemp.createTemp('ss2k_test');
-    pathProviderChannel.setMockMethodCallHandler((call) async {
-      if (call.method == 'getApplicationDocumentsDirectory' || call.method == 'getTemporaryDirectory') {
+    messenger.setMockMethodCallHandler(pathProviderChannel, (call) async {
+      if (call.method == 'getApplicationDocumentsDirectory' ||
+          call.method == 'getTemporaryDirectory') {
         return tempDir!.path;
       }
       return null;
@@ -30,7 +32,7 @@ void main() {
   });
 
   tearDown(() async {
-    pathProviderChannel.setMockMethodCallHandler(null);
+    messenger.setMockMethodCallHandler(pathProviderChannel, null);
     if (tempDir != null && await tempDir!.exists()) {
       await tempDir!.delete(recursive: true);
     }
@@ -54,52 +56,55 @@ void main() {
     // Create mock BLE device and data
     final mockDevice = BluetoothDevice.fromId('00:00:00:00:00:00');
     final bleData = BLEDataManager.forDevice(mockDevice);
-    
+
     // Initialize FTMS data
     bleData.ftmsData = FtmsData();
-    
+
     // Create workout controller with 300W FTP
     final workoutController = WorkoutController(bleData, mockDevice);
     workoutController.updateFTP(300.0); // Set FTP to 300W for 1.0 power = 300W
-    
+
     // Load and start the workout
     workoutController.loadWorkout(workoutContent);
     await workoutController.togglePlayPause(); // Start the workout
-    
+
     final startTime = DateTime.now();
-    
+
     // Simulate the workout data - one data point per second for 2 hours
     for (var i = 0; i < 1200; i++) {
       // Update mock BLE data
       bleData.ftmsData.watts = 300;
       bleData.ftmsData.cadence = 90;
       bleData.ftmsData.heartRate = 170;
-      
+
       // Create track point with proper timestamp
       final currentTime = startTime.add(Duration(seconds: i));
-      workoutController.trackPoints.add(TrackPoint(
-        timestamp: currentTime,
-        power: 300,
-        cadence: 90,
-        heartRate: 170,
-        lat: 0,
-        lon: 0,
-        elevation: 0,
-        speed: 8.33, // ~30 km/h
-      ));
-      
+      workoutController.trackPoints.add(
+        TrackPoint(
+          timestamp: currentTime,
+          power: 300,
+          cadence: 90,
+          heartRate: 170,
+          lat: 0,
+          lon: 0,
+          elevation: 0,
+          speed: 8.33, // ~30 km/h
+        ),
+      );
+
       // Update progress (using total duration from workout XML)
       workoutController.progressPosition = i / 7200;
-      
+
       // Only wait a small amount to keep test runtime reasonable
-      if (i % 60 == 0) { // Update every minute in test time
+      if (i % 60 == 0) {
+        // Update every minute in test time
         await Future.delayed(const Duration(milliseconds: 10));
       }
     }
-    
+
     // Stop the workout
     await workoutController.stopWorkout();
-    
+
     // Export to GPX
     final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
     final gpxFileName = 'workout_${timestamp}.gpx';
@@ -107,7 +112,7 @@ void main() {
     if (!await workoutsDir.exists()) {
       await workoutsDir.create(recursive: true);
     }
-    
+
     final gpxFile = File(path.join(workoutsDir.path, gpxFileName));
     final exportTrackPoints = await workoutController.getExportTrackPoints();
     final gpxContent = await GpxFileExporter.generateGpxContent(
@@ -115,17 +120,17 @@ void main() {
       exportTrackPoints,
     );
     await gpxFile.writeAsString(gpxContent);
-    
+
     // Convert GPX to FIT
     final fitFileName = gpxFileName.replaceAll('.gpx', '.fit');
     final fitFile = File(path.join(workoutsDir.path, fitFileName));
     await GpxToFitConverter.convertAndCleanup(gpxFile.path);
-    
+
     // Success - both files were generated
     print('Test completed successfully:');
     print('GPX file: ${gpxFile.path}');
     print('FIT file: ${fitFile.path}');
-    
+
     // Cleanup
     workoutController.cleanup();
   });
@@ -178,7 +183,9 @@ void main() {
     final controllerElapsed = workoutController.elapsedSeconds;
 
     // Controller elapsed time should closely follow wall time even with delayed ticks
-    final elapsedWithinTolerance = controllerElapsed >= wallElapsed - 1 && controllerElapsed <= wallElapsed + 1;
+    final elapsedWithinTolerance =
+        controllerElapsed >= wallElapsed - 1 &&
+        controllerElapsed <= wallElapsed + 1;
     expect(elapsedWithinTolerance, isTrue);
 
     // Track points should exist for essentially every elapsed second
@@ -187,7 +194,9 @@ void main() {
     // Export and validate FIT elapsed time matches controller time
     final fileTimestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
     final gpxFileName = 'drift_${fileTimestamp}.gpx';
-    final workoutsDir = await Directory.systemTemp.createTemp('ss2k_drift_test');
+    final workoutsDir = await Directory.systemTemp.createTemp(
+      'ss2k_drift_test',
+    );
 
     final gpxFile = File(path.join(workoutsDir.path, gpxFileName));
     final gpxContent = await GpxFileExporter.generateGpxContent(

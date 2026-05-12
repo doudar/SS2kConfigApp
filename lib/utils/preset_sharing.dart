@@ -18,47 +18,50 @@ import './constants.dart';
 
 class PresetSharing {
   // Export preset as .ss2k file
-  static Future<void> exportPreset(BuildContext context, BLEData bleData, String fileName) async {
+  static Future<void> exportPreset(
+    BuildContext context,
+    BLEData bleData,
+    String fileName,
+  ) async {
     try {
       final directory = await getApplicationDocumentsDirectory();
       final String filePath = '${directory.path}/$fileName.ss2k';
-      
+
       // Convert settings to JSON, excluding sensitive data and complex objects
       List<Map<String, dynamic>> exportList = [];
       for (var item in bleData.customCharacteristic) {
-        if (item is Map && item.containsKey('vName') && item.containsKey('value')) {
+        if (item.containsKey('vName') && item.containsKey('value')) {
           if (item['vName'] != ssidVname && item['vName'] != passwordVname) {
-            exportList.add({
-              'vName': item['vName'],
-              'value': item['value'],
-            });
+            exportList.add({'vName': item['vName'], 'value': item['value']});
           }
         }
       }
       String jsonContent = jsonEncode(exportList);
-      
+
       await File(filePath).writeAsString(jsonContent);
 
       // Get the RenderBox for positioning the share dialog on macOS
       final RenderBox? box = context.findRenderObject() as RenderBox?;
       Rect? sharePositionOrigin;
-      
+
       if (box != null) {
         final offset = box.localToGlobal(Offset.zero);
         sharePositionOrigin = offset & box.size;
       }
-      
+
       // Share the file with proper positioning
-      final result = await Share.shareXFiles(
-        [XFile(filePath)],
-        text: 'SmartSpin2k Settings Preset',
-        subject: fileName,
-        sharePositionOrigin: sharePositionOrigin,
+      final result = await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(filePath)],
+          text: 'SmartSpin2k Settings Preset',
+          subject: fileName,
+          sharePositionOrigin: sharePositionOrigin,
+        ),
       );
-      
+
       // Clean up temporary file
       await File(filePath).delete();
-      
+
       if (context.mounted) {
         switch (result.status) {
           case ShareResultStatus.success:
@@ -80,7 +83,11 @@ class PresetSharing {
   }
 
   // Import preset from .ss2k or .json file
-  static Future<void> importPreset(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static Future<void> importPreset(
+    BuildContext context,
+    BLEData bleData,
+    BluetoothDevice device,
+  ) async {
     try {
       // Pick file
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -92,7 +99,7 @@ class PresetSharing {
       // Read file content
       final File file = File(result.files.single.path!);
       final String jsonContent = await file.readAsString();
-      
+
       // Get filename without extension for save name
       String saveName = result.files.single.name;
       if (saveName.toLowerCase().endsWith('.ss2k')) {
@@ -100,68 +107,72 @@ class PresetSharing {
       } else if (saveName.toLowerCase().endsWith('.json')) {
         saveName = saveName.substring(0, saveName.length - 5);
       }
-      
+
       // Check for duplicate name
       // Note: We need to access shared prefs to check for duplicates, which is done in PresetManager
       // Since isPresetNameExists isn't public, we'll try to save and let the user decide if they want to overwrite
       // via the UI logic we'll add here
-      
 
       bool shouldSave = true;
-      // We'll skip the duplicate check here for simplicity and rely on the fact that saving overwrites 
+      // We'll skip the duplicate check here for simplicity and rely on the fact that saving overwrites
       // or we could implement a check here if needed.
-      
+
       if (shouldSave) {
         // Parse JSON content to validate it
         try {
           // Validate structure by decoding
           final dynamic decoded = jsonDecode(jsonContent);
           if (decoded is! List) throw FormatException("Invalid preset format");
-          
+
           // Create merged version
           List<dynamic> currentConfig = List.from(bleData.customCharacteristic);
           List<dynamic> importedConfig = decoded;
 
           List<Map<String, dynamic>> mergedConfig = currentConfig.map((item) {
-             var currentMap = Map<String, dynamic>.from(item);
-             
-             if (currentMap['vName'] == ssidVname || currentMap['vName'] == passwordVname) {
-                 return currentMap; 
-             }
-             
-             var matchingImported = importedConfig.where(
-                (element) => element['vName'] == currentMap['vName']
-             );
-             var importedItem = matchingImported.isNotEmpty ? matchingImported.first : null;
+            var currentMap = Map<String, dynamic>.from(item);
 
-             if (importedItem != null) {
-                 if (importedItem['value'] != null) {
-                    currentMap['value'] = importedItem['value'];
-                 } else if (importedItem['defaultData'] != null) {
-                    // Fallback for legacy files
-                    currentMap['value'] = importedItem['defaultData'];
-                 }
-             }
-             return currentMap;
+            if (currentMap['vName'] == ssidVname ||
+                currentMap['vName'] == passwordVname) {
+              return currentMap;
+            }
+
+            var matchingImported = importedConfig.where(
+              (element) => element['vName'] == currentMap['vName'],
+            );
+            var importedItem = matchingImported.isNotEmpty
+                ? matchingImported.first
+                : null;
+
+            if (importedItem != null) {
+              if (importedItem['value'] != null) {
+                currentMap['value'] = importedItem['value'];
+              } else if (importedItem['defaultData'] != null) {
+                // Fallback for legacy files
+                currentMap['value'] = importedItem['defaultData'];
+              }
+            }
+            return currentMap;
           }).toList();
-          
+
           // Apply to BLEData temporarily to save
           var oldSettings = bleData.customCharacteristic;
           bleData.customCharacteristic = mergedConfig;
-          
+
           await PresetManager.savePreset(context, bleData, saveName);
-          
+
           // Restore old settings until user explicitly loads it
           bleData.customCharacteristic = oldSettings;
-          
+
           if (context.mounted) {
-             // Ask if user wants to apply it now
+            // Ask if user wants to apply it now
             bool? applyNow = await showDialog<bool>(
               context: context,
               builder: (BuildContext context) {
                 return AlertDialog(
                   title: Text('Import Successful'),
-                  content: Text('Preset "$saveName" imported. Do you want to apply these settings to your device now?'),
+                  content: Text(
+                    'Preset "$saveName" imported. Do you want to apply these settings to your device now?',
+                  ),
                   actions: <Widget>[
                     TextButton(
                       child: Text('No, save only'),
@@ -175,7 +186,7 @@ class PresetSharing {
                 );
               },
             );
-            
+
             if (applyNow == true) {
               bleData.customCharacteristic = mergedConfig;
               await bleData.saveAllSettings(device);
@@ -185,7 +196,7 @@ class PresetSharing {
             }
           }
         } catch (e) {
-           if (context.mounted) {
+          if (context.mounted) {
             Snackbar.show(ABC.c, "Invalid preset file: $e", success: false);
           }
         }

@@ -17,7 +17,8 @@ import '../utils/constants.dart';
 class DeviceHeader extends StatefulWidget {
   final BluetoothDevice device;
   final bool connectOnly;
-  const DeviceHeader({Key? key, required this.device, this.connectOnly = false}) : super(key: key);
+  const DeviceHeader({Key? key, required this.device, this.connectOnly = false})
+      : super(key: key);
 
   @override
   State<DeviceHeader> createState() => _DeviceHeaderState();
@@ -31,11 +32,13 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   bool _isRefreshing = false;
   String _fwVersion = "";
   VoidCallback? _firmwareVersionListener;
+  late final Future<void> Function() _onReconnectedCallback;
 
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+    _onReconnectedCallback = _handleReconnected;
 
     // Listen for firmware version changes to automatically update the UI
     _firmwareVersionListener = () {
@@ -48,24 +51,20 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     bleData.firmwareVersion.addListener(_firmwareVersionListener!);
 
     // Initialize firmware version
-    _fwVersion = bleData.firmwareVersion.value.isEmpty ? "Connecting Please Wait..." : bleData.firmwareVersion.value;
+    _fwVersion = bleData.firmwareVersion.value.isEmpty
+        ? "Connecting Please Wait..."
+        : bleData.firmwareVersion.value;
 
     // Start the centralized auto-reconnect monitor.
     // The onReconnected callback handles UI-specific refresh after reconnecting.
     bleData.startConnectionMonitor(
       this.widget.device,
-      onReconnected: () async {
-        if (!mounted) return;
-        this.bleData.rssi.value = await this.widget.device.readRssi();
-        if (!_isRefreshing) {
-          await _refreshDeviceInfo();
-        }
-        if (mounted) setState(() {});
-      },
+      onReconnected: _onReconnectedCallback,
     );
 
     // Listen for connection state changes to update UI (e.g. RSSI, services)
-    _connectionStateSubscription ??= this.widget.device.connectionState.listen((state) async {
+    _connectionStateSubscription ??=
+        this.widget.device.connectionState.listen((state) async {
       if (state == BluetoothConnectionState.connected) {
         this.bleData.rssi.value = await this.widget.device.readRssi();
         await this.bleData.setupConnection(this.widget.device);
@@ -94,7 +93,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       // Discover services to get new firmware version
       this.bleData.services = await this.widget.device.discoverServices();
       bleData.requestSetting(this.widget.device, fwVname);
-
     } catch (e) {
       print('Error refreshing device info: $e');
     } finally {
@@ -106,13 +104,22 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   void dispose() {
     _connectionStateSubscription?.cancel();
     _connectionStateSubscription = null;
-    bleData.stopConnectionMonitor();
+    bleData.stopConnectionMonitor(onReconnected: _onReconnectedCallback);
     rssiTimer.cancel();
     setupTimer.cancel();
     if (_firmwareVersionListener != null) {
       bleData.firmwareVersion.removeListener(_firmwareVersionListener!);
     }
     super.dispose();
+  }
+
+  Future<void> _handleReconnected() async {
+    if (!mounted) return;
+    this.bleData.rssi.value = await this.widget.device.readRssi();
+    if (!_isRefreshing) {
+      await _refreshDeviceInfo();
+    }
+    if (mounted) setState(() {});
   }
 
   startTimer() async {
@@ -134,9 +141,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   }
 
   Future<void> _updateRssi() async {
-    if (this.bleData.isUpdatingFirmware) {
-      return; // Do not check RSSI if the firmware is being updated
-    }
     if (this.widget.device.isConnected) {
       try {
         this.bleData.rssi.value = await this.widget.device.readRssi();
@@ -163,10 +167,12 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       Snackbar.show(ABC.c, "Connect: Success", success: true);
       await onDiscoverServicesPressed();
     } catch (e) {
-      if (e is FlutterBluePlusException && e.code == FbpErrorCode.connectionCanceled.index) {
+      if (e is FlutterBluePlusException &&
+          e.code == FbpErrorCode.connectionCanceled.index) {
         // ignore connections canceled by the user
       } else {
-        Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
+        Snackbar.show(ABC.c, prettyException("Connect Error:", e),
+            success: false);
       }
     }
   }
@@ -176,7 +182,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       await this.widget.device.disconnectAndUpdateStream();
       Snackbar.show(ABC.c, "Disconnect: Success", success: true);
     } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Disconnect Error:", e), success: false);
+      Snackbar.show(ABC.c, prettyException("Disconnect Error:", e),
+          success: false);
     }
   }
 
@@ -185,7 +192,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       await _refreshDeviceInfo();
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
+      Snackbar.show(ABC.c, prettyException("Discover Services Error:", e),
+          success: false);
     }
   }
 
@@ -196,7 +204,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       await onDisconnectPressed();
       await onConnectPressed();
     } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Reboot Failed ", e), success: false);
+      Snackbar.show(ABC.c, prettyException("Reboot Failed ", e),
+          success: false);
     }
   }
 
@@ -254,7 +263,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: colorScheme.onSurface.withValues(alpha: 0.16)),
+          border:
+              Border.all(color: colorScheme.onSurface.withValues(alpha: 0.16)),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
