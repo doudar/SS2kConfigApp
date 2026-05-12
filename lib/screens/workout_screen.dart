@@ -34,7 +34,8 @@ class WorkoutScreen extends StatefulWidget {
   State<WorkoutScreen> createState() => _WorkoutScreenState();
 }
 
-class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateMixin {
+class _WorkoutScreenState extends State<WorkoutScreen>
+    with TickerProviderStateMixin {
   String? _workoutName;
   late AnimationController _metricsAndSummaryFadeController;
   late Animation<double> _metricsAndSummaryFadeAnimation;
@@ -54,7 +55,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
   late AnimationController _zoomController;
   late Animation<double> _zoomAnimation;
   late AnimationController _pulseController;
-  
+
   // Keep a reference to the workout controller listener so we can detach it on dispose.
   late VoidCallback _workoutControllerListener;
   OverlayMode _overlayMode = OverlayMode.none;
@@ -85,19 +86,22 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       vsync: this,
     );
 
-    _metricsAndSummaryFadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(_metricsAndSummaryFadeController);
+    _metricsAndSummaryFadeAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(_metricsAndSummaryFadeController);
 
     _zoomController = AnimationController(
       duration: const Duration(milliseconds: 500),
       vsync: this,
     );
-    _zoomAnimation = Tween<double>(
-      begin: WorkoutDurations.previewMinutes,
-      end: WorkoutDurations.playingMinutes,
-    ).animate(CurvedAnimation(
-      parent: _zoomController,
-      curve: Curves.easeInOut,
-    ));
+    _zoomAnimation =
+        Tween<double>(
+          begin: WorkoutDurations.previewMinutes,
+          end: WorkoutDurations.playingMinutes,
+        ).animate(
+          CurvedAnimation(parent: _zoomController, curve: Curves.easeInOut),
+        );
 
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -132,12 +136,12 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       if (!mounted) return;
       if (_isDisposing) return; // Skip any animation updates while disposing
 
-
       // Apply an immediate animation state the first time we get a callback after (re)entering.
       // This prevents the summary card from remaining permanently visible when resuming mid-workout.
       if (!_didApplyInitialAnimation) {
         if (_workoutController.isPlaying) {
-          _metricsAndSummaryFadeController.value = 1.0; // Summary hidden, metrics visible
+          _metricsAndSummaryFadeController.value =
+              1.0; // Summary hidden, metrics visible
           _zoomController.value = 1.0; // Zoomed-in state
           _updateScrollPosition();
         } else {
@@ -148,23 +152,30 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       } else {
         // Normal animated transitions after initial state applied.
         if (_workoutController.isPlaying) {
-          if (_metricsAndSummaryFadeController.status != AnimationStatus.forward && _metricsAndSummaryFadeController.value != 1.0) {
+          if (_metricsAndSummaryFadeController.status !=
+                  AnimationStatus.forward &&
+              _metricsAndSummaryFadeController.value != 1.0) {
             _metricsAndSummaryFadeController.forward();
           }
-          if (_zoomController.status != AnimationStatus.forward && _zoomController.value != 1.0) {
+          if (_zoomController.status != AnimationStatus.forward &&
+              _zoomController.value != 1.0) {
             _zoomController.forward();
           }
           _updateScrollPosition();
         } else {
-          if (_metricsAndSummaryFadeController.status != AnimationStatus.reverse && _metricsAndSummaryFadeController.value != 0.0) {
+          if (_metricsAndSummaryFadeController.status !=
+                  AnimationStatus.reverse &&
+              _metricsAndSummaryFadeController.value != 0.0) {
             _metricsAndSummaryFadeController.reverse();
           }
-          if (_zoomController.status != AnimationStatus.reverse && _zoomController.value != 0.0) {
+          if (_zoomController.status != AnimationStatus.reverse &&
+              _zoomController.value != 0.0) {
             _zoomController.reverse();
           }
           // Check if workout completed naturally (reached the end)
           // Skip for unlimited free rides since they extend dynamically
-          if (_workoutController.progressPosition >= 1.0 && !_workoutController.isUnlimitedFreeRide) {
+          if (_workoutController.progressPosition >= 1.0 &&
+              !_workoutController.isUnlimitedFreeRide) {
             _workoutController.progressPosition = 0;
             Future.delayed(const Duration(milliseconds: 500), () {
               if (mounted) {
@@ -199,13 +210,13 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
 
   /// Rebuilds the zoom animation tween using the current preview + playing minutes.
   void _rebuildZoomAnimation() {
-    _zoomAnimation = Tween<double>(
-      begin: WorkoutDurations.previewMinutes,
-      end: WorkoutDurations.playingMinutes,
-    ).animate(CurvedAnimation(
-      parent: _zoomController,
-      curve: Curves.easeInOut,
-    ));
+    _zoomAnimation =
+        Tween<double>(
+          begin: WorkoutDurations.previewMinutes,
+          end: WorkoutDurations.playingMinutes,
+        ).animate(
+          CurvedAnimation(parent: _zoomController, curve: Curves.easeInOut),
+        );
   }
 
   /// Update the preview (zoomed-out) minutes to match the currently loaded workout's
@@ -224,7 +235,9 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     final bool wasPlaying = _workoutController.isPlaying;
     // Reset controller to start position for a new workout preview.
     _zoomController.stop();
-    _zoomController.value = wasPlaying ? 1.0 : 0.0; // if already playing keep zoomed-in state
+    _zoomController.value = wasPlaying
+        ? 1.0
+        : 0.0; // if already playing keep zoomed-in state
     _rebuildZoomAnimation();
     if (!wasPlaying) {
       // Ensure we start at preview (value 0) visually.
@@ -244,9 +257,14 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       await Future.delayed(const Duration(milliseconds: 100));
 
       // Generate and save thumbnail for default workout
-      final thumbnail = await WorkoutFileManager.captureWorkoutThumbnail(_workoutGraphKey);
+      final thumbnail = await WorkoutFileManager.captureWorkoutThumbnail(
+        _workoutGraphKey,
+      );
       if (thumbnail != null) {
-        await WorkoutStorage.updateWorkoutThumbnail(WorkoutStorage.defaultWorkoutName, thumbnail);
+        await WorkoutStorage.updateWorkoutThumbnail(
+          WorkoutStorage.defaultWorkoutName,
+          thumbnail,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -299,8 +317,11 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_workoutController.isPlaying && _scrollController.hasClients) {
         final viewportWidth = _scrollController.position.viewportDimension;
-        final totalWidth = _scrollController.position.maxScrollExtent + viewportWidth;
-        final progressWidth = _workoutController.progressPosition * (totalWidth - (2 * WorkoutPadding.standard));
+        final totalWidth =
+            _scrollController.position.maxScrollExtent + viewportWidth;
+        final progressWidth =
+            _workoutController.progressPosition *
+            (totalWidth - (2 * WorkoutPadding.standard));
         final targetScroll = progressWidth - (viewportWidth / 2);
 
         if ((targetScroll - _lastScrollPosition).abs() > 1.0) {
@@ -316,7 +337,9 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
   }
 
   Future<void> rwSubscription() async {
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
+    _connectionStateSubscription = widget.device.connectionState.listen((
+      state,
+    ) async {
       if (mounted) {
         setState(() {});
       }
@@ -358,7 +381,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
       width: _overlayWidth,
       height: _overlayHeight,
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.9),
+        color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.9),
         border: Border.all(color: Colors.grey),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -384,12 +407,11 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                       currentCadence: _workoutController.isPlaying
                           ? bleData.ftmsData.cadence
                           : null,
-                      powerPointsList:
-                          _workoutController.getPowerPointsUpToNow(),
-                      hrPointsList:
-                          _workoutController.getHrPointsUpToNow(),
-                      cadencePointsList:
-                          _workoutController.getCadencePointsUpToNow(),
+                      powerPointsList: _workoutController
+                          .getPowerPointsUpToNow(),
+                      hrPointsList: _workoutController.getHrPointsUpToNow(),
+                      cadencePointsList: _workoutController
+                          .getCadencePointsUpToNow(),
                       showLabels: false,
                     ),
                   ),
@@ -397,17 +419,11 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                     left: _workoutController.progressPosition * _overlayWidth,
                     top: 0,
                     bottom: 0,
-                    child: Container(
-                      width: 2,
-                      color: Colors.red,
-                    ),
+                    child: Container(width: 2, color: Colors.red),
                   ),
                 ],
               )
-            : PowerTableChart(
-                device: widget.device,
-                bleData: bleData,
-              ),
+            : PowerTableChart(device: widget.device, bleData: bleData),
       ),
     );
   }
@@ -415,11 +431,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
   @override
   Widget build(BuildContext context) {
     if (!_ttsInitialized) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -429,11 +441,13 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
         actions: [
           if (MediaQuery.of(context).orientation == Orientation.landscape)
             IconButton(
-              icon: Icon(_overlayMode == OverlayMode.none
-                  ? Icons.layers_clear
-                  : _overlayMode == OverlayMode.overview
-                      ? Icons.map
-                      : Icons.grid_on),
+              icon: Icon(
+                _overlayMode == OverlayMode.none
+                    ? Icons.layers_clear
+                    : _overlayMode == OverlayMode.overview
+                    ? Icons.map
+                    : Icons.grid_on,
+              ),
               onPressed: _toggleOverlay,
               tooltip: 'Toggle Overlay',
             ),
@@ -474,12 +488,15 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                       bleData: bleData,
                       fadeAnimation: _metricsAndSummaryFadeAnimation,
                       elapsedTime: _workoutController.elapsedSeconds,
-                      timeToNextSegment: _workoutController.currentSegmentTimeRemaining,
+                      timeToNextSegment:
+                          _workoutController.currentSegmentTimeRemaining,
                       totalDuration: _workoutController.totalDuration,
                       speedMph: _workoutController.speedMph,
                       totalDistance: _workoutController.totalDistance,
-                      workoutProgressSeconds: _workoutController.workoutProgressSeconds,
-                      isUnlimitedFreeRide: _workoutController.isUnlimitedFreeRide,
+                      workoutProgressSeconds:
+                          _workoutController.workoutProgressSeconds,
+                      isUnlimitedFreeRide:
+                          _workoutController.isUnlimitedFreeRide,
                     ),
                   ),
                 ],
@@ -492,21 +509,25 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                           return Stack(
                             children: [
                               AnimatedBuilder(
-                                animation: Listenable.merge(
-                                    [_zoomAnimation, _pulseController, _workoutController]),
+                                animation: Listenable.merge([
+                                  _zoomAnimation,
+                                  _pulseController,
+                                  _workoutController,
+                                ]),
                                 builder: (context, child) {
                                   return LayoutBuilder(
                                     builder: (context, graphConstraints) {
                                       final minutesWidth =
                                           graphConstraints.maxWidth /
-                                              _zoomAnimation.value;
+                                          _zoomAnimation.value;
                                       final totalWidth =
                                           _workoutController.totalDuration /
-                                              60 *
-                                              minutesWidth;
+                                          60 *
+                                          minutesWidth;
 
                                       return SingleChildScrollView(
-                                        physics: const NeverScrollableScrollPhysics(),
+                                        physics:
+                                            const NeverScrollableScrollPhysics(),
                                         controller: _scrollController,
                                         scrollDirection: Axis.horizontal,
                                         child: RepaintBoundary(
@@ -517,13 +538,13 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                                               children: [
                                                 Padding(
                                                   padding: EdgeInsets.all(
-                                                      WorkoutPadding.standard),
+                                                    WorkoutPadding.standard,
+                                                  ),
                                                   child: Column(
                                                     children: [
                                                       Expanded(
                                                         child: CustomPaint(
-                                                          painter:
-                                                              WorkoutPainter(
+                                                          painter: WorkoutPainter(
                                                             segments:
                                                                 _workoutController
                                                                     .segments,
@@ -542,24 +563,27 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                                                             actualPowerPoints:
                                                                 _workoutController
                                                                     .actualPowerPoints,
-                                                            currentPower: _workoutController
+                                                            currentPower:
+                                                                _workoutController
                                                                     .isPlaying
                                                                 ? bleData
-                                                                    .ftmsData
-                                                                    .watts
-                                                                    .toDouble()
+                                                                      .ftmsData
+                                                                      .watts
+                                                                      .toDouble()
                                                                 : null,
-                                                            currentHr: _workoutController
+                                                            currentHr:
+                                                                _workoutController
                                                                     .isPlaying
                                                                 ? bleData
-                                                                    .ftmsData
-                                                                    .heartRate
+                                                                      .ftmsData
+                                                                      .heartRate
                                                                 : null,
-                                                            currentCadence: _workoutController
+                                                            currentCadence:
+                                                                _workoutController
                                                                     .isPlaying
                                                                 ? bleData
-                                                                    .ftmsData
-                                                                    .cadence
+                                                                      .ftmsData
+                                                                      .cadence
                                                                 : null,
                                                             powerPointsList:
                                                                 _workoutController
@@ -578,35 +602,41 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                                                         ),
                                                       ),
                                                       SizedBox(
-                                                          height: WorkoutSpacing
-                                                              .medium),
+                                                        height: WorkoutSpacing
+                                                            .medium,
+                                                      ),
                                                     ],
                                                   ),
                                                 ),
                                                 if (_workoutController
                                                     .isPlaying)
                                                   Positioned(
-                                                    left: _workoutController
+                                                    left:
+                                                        _workoutController
                                                                 .progressPosition *
                                                             (totalWidth -
                                                                 (2 *
                                                                     WorkoutPadding
                                                                         .standard)) +
                                                         WorkoutPadding.standard,
-                                                    top: WorkoutPadding
-                                                        .standard,
-                                                    bottom: WorkoutSpacing
-                                                            .medium +
+                                                    top:
+                                                        WorkoutPadding.standard,
+                                                    bottom:
+                                                        WorkoutSpacing.medium +
                                                         WorkoutPadding.standard,
                                                     child: Container(
                                                       width: WorkoutSizes
                                                           .progressIndicatorWidth,
-                                                      color: const Color
-                                                              .fromARGB(
-                                                              255, 0, 0, 0)
-                                                          .withValues(
-                                                              alpha: WorkoutOpacity
-                                                                  .segmentBorder),
+                                                      color:
+                                                          const Color.fromARGB(
+                                                            255,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                          ).withValues(
+                                                            alpha: WorkoutOpacity
+                                                                .segmentBorder,
+                                                          ),
                                                     ),
                                                   ),
                                               ],
@@ -624,18 +654,20 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                                 child: GestureDetector(
                                   onPanUpdate: (details) {
                                     setState(() {
-                                      _overlayTop = (_overlayTop +
-                                              details.delta.dy)
-                                          .clamp(
-                                              0.0,
-                                              constraints.maxHeight -
-                                                  _overlayHeight);
-                                      _overlayLeft = (_overlayLeft +
-                                              details.delta.dx)
-                                          .clamp(
-                                              0.0,
-                                              constraints.maxWidth -
-                                                  _overlayWidth);
+                                      _overlayTop =
+                                          (_overlayTop + details.delta.dy)
+                                              .clamp(
+                                                0.0,
+                                                constraints.maxHeight -
+                                                    _overlayHeight,
+                                              );
+                                      _overlayLeft =
+                                          (_overlayLeft + details.delta.dx)
+                                              .clamp(
+                                                0.0,
+                                                constraints.maxWidth -
+                                                    _overlayWidth,
+                                              );
                                     });
                                   },
                                   child: AnimatedBuilder(
@@ -672,7 +704,8 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
                 }
                 return WorkoutTextEventOverlay(
                   currentSegment: _workoutController.currentSegment,
-                  secondsIntoSegment: _workoutController.currentSegmentElapsedSeconds,
+                  secondsIntoSegment:
+                      _workoutController.currentSegmentElapsedSeconds,
                   ttsSettings: _ttsSettings,
                   workoutController: _workoutController,
                 );
@@ -684,4 +717,3 @@ class _WorkoutScreenState extends State<WorkoutScreen> with TickerProviderStateM
     );
   }
 }
-
