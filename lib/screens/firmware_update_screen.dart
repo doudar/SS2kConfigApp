@@ -20,12 +20,14 @@ import 'package:file_picker/file_picker.dart';
 import '../utils/bleOTA.dart';
 import '../utils/wifi_ota.dart';
 import '../utils/bledata.dart';
+import '../utils/constants.dart';
 import '../widgets/ss2k_app_bar.dart';
 
 class FirmwareUpdateScreen extends StatefulWidget {
   final BluetoothDevice device;
 
-  const FirmwareUpdateScreen({Key? key, required this.device}) : super(key: key);
+  const FirmwareUpdateScreen({Key? key, required this.device})
+      : super(key: key);
 
   @override
   State<FirmwareUpdateScreen> createState() => _FirmwareUpdateState();
@@ -57,7 +59,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   final BleRepository bleRepo = BleRepository();
   String _builtinFirmwareVersion = '';
 
-  Timer _loadingTimer = Timer.periodic(Duration(seconds: 30), (_loadingTimer) {});
+  Timer _loadingTimer =
+      Timer.periodic(Duration(seconds: 30), (_loadingTimer) {});
 
   List<FirmwareRelease> _availableReleases = [];
   FirmwareRelease? _selectedRelease;
@@ -106,7 +109,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     // Monitor device disconnection during firmware update
     charSubscription = this.widget.device.connectionState.listen((state) {
       // If progress is high (>95%), assume disconnect is due to reboot/completion
-      if (!_usingWifi && state != BluetoothConnectionState.connected && updatingFirmware && _progress < 0.95) {
+      if (!_usingWifi &&
+          state != BluetoothConnectionState.connected &&
+          updatingFirmware &&
+          _progress < 0.95) {
         _showUploadCompleteDialog(false);
       }
     });
@@ -115,6 +121,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   void dispose() {
     progressSubscription?.cancel();
+    charSubscription?.cancel();
+    this.bleData.charReceived.removeListener(_charListener);
     _loadingTimer.cancel();
     WakelockPlus.disable();
     super.dispose();
@@ -189,7 +197,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   Future<void> _initialize() async {
     //check for demo mode
     if (!bleData.isSimulated) {
-      otaPackage = Esp32OtaPackage(this.bleData.firmwareDataCharacteristic, this.bleData.firmwareControlCharacteristic);
+      otaPackage = Esp32OtaPackage(this.bleData.firmwareDataCharacteristic,
+          this.bleData.firmwareControlCharacteristic);
       await _progressStreamSubscription();
     }
     await _fetchBuiltinFirmwareVersion();
@@ -228,7 +237,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   Future<void> _fetchAllFirmwareReleases() async {
     try {
       // Fetch all releases from SmartSpin2k repository
-      final response = await http.get(Uri.parse('https://api.github.com/repos/doudar/SmartSpin2k/releases'));
+      final response = await http.get(Uri.parse(
+          'https://api.github.com/repos/doudar/SmartSpin2k/releases'));
 
       if (response.statusCode == 200) {
         final List<dynamic> releases = json.decode(response.body);
@@ -236,7 +246,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
         // Add built-in firmware first
         releasesList.add(
-          FirmwareRelease(version: _builtinFirmwareVersion, downloadUrl: 'assets/firmware.bin', isBuiltin: true),
+          FirmwareRelease(
+              version: _builtinFirmwareVersion,
+              downloadUrl: 'assets/firmware.bin',
+              isBuiltin: true),
         );
 
         // Process all releases from GitHub
@@ -255,7 +268,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           }
 
           if (downloadUrl != null) {
-            releasesList.add(FirmwareRelease(version: tagName, downloadUrl: downloadUrl, isMostRecent: isFirst));
+            releasesList.add(FirmwareRelease(
+                version: tagName,
+                downloadUrl: downloadUrl,
+                isMostRecent: isFirst));
             isFirst = false;
           }
         }
@@ -275,7 +291,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       // Fallback to built-in firmware only
       setState(() {
         _availableReleases = [
-          FirmwareRelease(version: _builtinFirmwareVersion, downloadUrl: 'assets/firmware.bin', isBuiltin: true),
+          FirmwareRelease(
+              version: _builtinFirmwareVersion,
+              downloadUrl: 'assets/firmware.bin',
+              isBuiltin: true),
         ];
         _selectedRelease = _availableReleases.first;
         _updateSelectedVersionColor();
@@ -284,7 +303,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   }
 
   void _updateSelectedVersionColor() {
-    if (_selectedRelease == null || this.bleData.firmwareVersion.value.isEmpty) {
+    if (_selectedRelease == null ||
+        this.bleData.firmwareVersion.value.isEmpty) {
       return;
     }
 
@@ -299,7 +319,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     try {
       final response = await http.get(Uri.parse(downloadUrl));
       if (response.statusCode != 200) {
-        throw Exception('Failed to download firmware zip: HTTP ${response.statusCode}');
+        throw Exception(
+            'Failed to download firmware zip: HTTP ${response.statusCode}');
       }
 
       await zipFile.writeAsBytes(response.bodyBytes);
@@ -335,7 +356,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   // Locate the first .bin file in an extracted firmware zip.
   Future<String> _locateFirmwareBin(io.Directory extractDir) async {
     await for (final entity in extractDir.list(recursive: true)) {
-      if (entity is io.File && entity.path.toLowerCase().endsWith('firmware.bin')) {
+      if (entity is io.File &&
+          entity.path.toLowerCase().endsWith('firmware.bin')) {
         return entity.path;
       }
     }
@@ -344,8 +366,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   bool _isNewerVersion(String versionA, String versionB) {
     final regex = RegExp(r'\d+');
-    final versionAParts = regex.allMatches(versionA).map((m) => int.parse(m.group(0)!)).toList();
-    final versionBParts = regex.allMatches(versionB).map((m) => int.parse(m.group(0)!)).toList();
+    final versionAParts =
+        regex.allMatches(versionA).map((m) => int.parse(m.group(0)!)).toList();
+    final versionBParts =
+        regex.allMatches(versionB).map((m) => int.parse(m.group(0)!)).toList();
 
     for (int i = 0; i < 3; i++) {
       if (i < versionAParts.length && i < versionBParts.length) {
@@ -371,7 +395,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       final timeElapsed = DateTime.now().difference(startTime!).inSeconds;
       final estimatedTotalTime = timeElapsed / _progress;
       final estimatedTimeRemaining = estimatedTotalTime - timeElapsed;
-      timeRemaining = formatDuration(Duration(seconds: estimatedTimeRemaining.toInt()));
+      timeRemaining =
+          formatDuration(Duration(seconds: estimatedTimeRemaining.toInt()));
     }
   }
 
@@ -414,14 +439,16 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     }
     // Note: For PICKER (2), targetVersion remains null as we can't easily know the version
 
-    print('Target firmware version for verification: $targetVersion (Type: $type)');
+    print(
+        'Target firmware version for verification: $targetVersion (Type: $type)');
 
     try {
       String binFilePath;
 
       if (type == PICKER) {
         // Get firmware file path from picker
-        final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['bin']);
+        final result = await FilePicker.platform
+            .pickFiles(type: FileType.custom, allowedExtensions: ['bin']);
 
         if (result == null || result.files.isEmpty) {
           setState(() {
@@ -467,7 +494,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('WiFi update failed. Falling back to Bluetooth (this may take up to 5 minutes)...'),
+            content: Text(
+                'WiFi update failed. Falling back to Bluetooth (this may take up to 5 minutes)...'),
             duration: Duration(seconds: 5),
           ),
         );
@@ -477,9 +505,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           await bleData.indoorBikeCharacteristic!.setNotifyValue(false);
         }
         bleData.subscribed = false;
-
-        // Fall back to BLE update
-        this.bleData.isUpdatingFirmware = true;
 
         // Re-initialize OTA package to ensure we have a fresh stream controller
         otaPackage = Esp32OtaPackage(
@@ -503,7 +528,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           this.bleData.firmwareControlCharacteristic,
           binFilePath: binFilePath,
         );
-        this.bleData.isUpdatingFirmware = false;
 
         updateSuccess = otaPackage!.firmwareupdate;
 
@@ -519,15 +543,18 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       // (as BLE connection often drops right at the end causing "failure" report)
       bool shouldVerify = updateSuccess;
       if (!updateSuccess && !_usingWifi && _progress > 0.95) {
-        print('Update reported failure but progress is high ($_progress). Attempting verification.');
+        print(
+            'Update reported failure but progress is high ($_progress). Attempting verification.');
         shouldVerify = true;
       }
 
       if (shouldVerify) {
-        String? verifiedVersion = await _verifyFirmwareUpdate(targetVersion, originalVersion);
+        String? verifiedVersion =
+            await _verifyFirmwareUpdate(targetVersion, originalVersion);
 
         if (verifiedVersion != null) {
-          _showUploadCompleteDialog(true, from: originalVersion, to: verifiedVersion);
+          _showUploadCompleteDialog(true,
+              from: originalVersion, to: verifiedVersion);
         } else {
           // Verification failed - reboot and show error
           _showUploadCompleteDialog(false);
@@ -544,10 +571,13 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       bool recovered = false;
       // If error occurred but progress was high, try to verify anyway
       if (!_usingWifi && _progress > 0.95) {
-        print('Exception caught but progress is high. Attempting verification. Error: $e');
-        String? verifiedVersion = await _verifyFirmwareUpdate(targetVersion, originalVersion);
+        print(
+            'Exception caught but progress is high. Attempting verification. Error: $e');
+        String? verifiedVersion =
+            await _verifyFirmwareUpdate(targetVersion, originalVersion);
         if (verifiedVersion != null) {
-          _showUploadCompleteDialog(true, from: originalVersion, to: verifiedVersion);
+          _showUploadCompleteDialog(true,
+              from: originalVersion, to: verifiedVersion);
           recovered = true;
         }
       }
@@ -570,7 +600,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     }
   }
 
-  Future<String?> _verifyFirmwareUpdate(String? targetVersion, String originalVersion) async {
+  Future<String?> _verifyFirmwareUpdate(
+      String? targetVersion, String originalVersion) async {
     // Show verifying dialog
     showDialog(
       context: context,
@@ -600,10 +631,30 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     // Clear the current version to ensure we get a fresh reading
     bleData.firmwareVersion.value = "";
 
+    await bleData.reconnectAndSetup(
+      widget.device,
+      maxAttempts: 30,
+      retryDelay: const Duration(seconds: 1),
+      settleDelay: const Duration(seconds: 2),
+    );
+
     while (checkCount < 60) {
       // 60 seconds (checking every 1s)
       await Future.delayed(Duration(seconds: 1));
       checkCount++;
+
+      if (!widget.device.isConnected) {
+        await bleData.reconnectAndSetup(
+          widget.device,
+          maxAttempts: 5,
+          retryDelay: const Duration(seconds: 1),
+          settleDelay: const Duration(seconds: 2),
+        );
+      }
+
+      if (widget.device.isConnected) {
+        await bleData.requestSetting(widget.device, fwVname);
+      }
 
       // Get current version from bleData
       // Note: bleData.firmwareVersion is updated via notification/polling
@@ -614,8 +665,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       if (currentVersion.isNotEmpty) {
         if (targetVersion != null) {
           if (_versionsMatch(targetVersion, currentVersion)) {
-            verifiedVersion = currentVersion;
-            break;
+            if (await _versionRemainsStable(currentVersion, targetVersion)) {
+              verifiedVersion = currentVersion;
+              break;
+            }
           }
         } else {
           // If no target version (e.g. picker), accept any version that is valid
@@ -624,8 +677,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           // The user requested: "whatever the firmware version from BLEData has changed to"
           // We can check against originalVersion if desired, but for file picker
           // users might re-flash same version.
-          verifiedVersion = currentVersion;
-          break;
+          if (await _versionRemainsStable(currentVersion, targetVersion)) {
+            verifiedVersion = currentVersion;
+            break;
+          }
         }
       }
     }
@@ -634,6 +689,33 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     Navigator.of(context).pop();
 
     return verifiedVersion;
+  }
+
+  Future<bool> _versionRemainsStable(
+      String candidateVersion, String? targetVersion) async {
+    for (int i = 0; i < 4; i++) {
+      await Future.delayed(const Duration(seconds: 1));
+
+      if (!widget.device.isConnected) {
+        return false;
+      }
+
+      await bleData.requestSetting(widget.device, fwVname);
+      final currentVersion = bleData.firmwareVersion.value;
+      if (currentVersion.isEmpty) {
+        continue;
+      }
+
+      if (targetVersion != null) {
+        if (!_versionsMatch(targetVersion, currentVersion)) {
+          return false;
+        }
+      } else if (currentVersion != candidateVersion) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   bool _versionsMatch(String versionA, String versionB) {
@@ -647,7 +729,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   List<Widget> _buildUpdateButtons() {
     return <Widget>[
       updatingFirmware
-          ? Text("Don't leave this screen until the update completes", textAlign: TextAlign.center)
+          ? Text("Don't leave this screen until the update completes",
+              textAlign: TextAlign.center)
           : Text(
               "Firmware will be uploaded via WiFi if available, falling back to BLE if needed.",
               textAlign: TextAlign.center,
@@ -662,7 +745,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                 SizedBox(height: 10),
                 LinearProgressIndicator(value: _progress, minHeight: 10),
                 Text('Time remaining: $timeRemaining'),
-                Text(_usingWifi ? 'Updating via WiFi...' : 'Updating via Bluetooth...'),
+                Text(_usingWifi
+                    ? 'Updating via WiFi...'
+                    : 'Updating via Bluetooth...'),
               ],
             )
           : Column(
@@ -675,24 +760,37 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Select Firmware Version:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text('Select Firmware Version:',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                         SizedBox(height: 8),
                         Container(
-                          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.4),
+                          constraints: BoxConstraints(
+                              maxHeight:
+                                  MediaQuery.of(context).size.height * 0.4),
                           decoration: BoxDecoration(
                             border: Border.all(color: Colors.grey.shade300),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: SingleChildScrollView(
                             child: Column(
-                              children: _availableReleases.asMap().entries.map((entry) {
+                              children: _availableReleases
+                                  .asMap()
+                                  .entries
+                                  .map((entry) {
                                 final index = entry.key;
                                 final release = entry.value;
-                                final bool isSelected = _selectedRelease == release;
-                                final String current = this.bleData.firmwareVersion.value;
-                                Color dotColor = const Color.fromARGB(255, 242, 0, 255);
+                                final bool isSelected =
+                                    _selectedRelease == release;
+                                final String current =
+                                    this.bleData.firmwareVersion.value;
+                                Color dotColor =
+                                    const Color.fromARGB(255, 242, 0, 255);
                                 if (current.isNotEmpty) {
-                                  dotColor = _isNewerVersion(release.version, current) ? Colors.green : Colors.red;
+                                  dotColor =
+                                      _isNewerVersion(release.version, current)
+                                          ? Colors.green
+                                          : Colors.red;
                                 }
 
                                 return Column(
@@ -707,33 +805,54 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                                       child: ListTile(
                                         dense: true,
                                         visualDensity: VisualDensity.compact,
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 4),
                                         leading: Container(
                                           width: 10,
                                           height: 10,
-                                          decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+                                          decoration: BoxDecoration(
+                                              color: dotColor,
+                                              shape: BoxShape.circle),
                                         ),
                                         title: Text(
                                           release.displayName,
-                                          style: TextStyle(fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400),
+                                          style: TextStyle(
+                                              fontWeight: isSelected
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w400),
                                         ),
                                         trailing: Icon(
-                                          isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-                                          color: isSelected ? Theme.of(context).colorScheme.primary : Colors.grey,
+                                          isSelected
+                                              ? Icons.radio_button_checked
+                                              : Icons.radio_button_off,
+                                          color: isSelected
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                              : Colors.grey,
                                         ),
-                                        subtitle: (release.isBuiltin || release.isMostRecent)
+                                        subtitle: (release.isBuiltin ||
+                                                release.isMostRecent)
                                             ? Wrap(
                                                 spacing: 8,
                                                 children: [
-                                                  if (release.isBuiltin) _buildBadge(context, 'Built-in'),
-                                                  if (release.isMostRecent) _buildBadge(context, 'Latest'),
+                                                  if (release.isBuiltin)
+                                                    _buildBadge(
+                                                        context, 'Built-in'),
+                                                  if (release.isMostRecent)
+                                                    _buildBadge(
+                                                        context, 'Latest'),
                                                 ],
                                               )
                                             : null,
                                       ),
                                     ),
                                     if (index < _availableReleases.length - 1)
-                                      Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+                                      Divider(
+                                          height: 1,
+                                          thickness: 1,
+                                          color: Colors.grey.shade200),
                                   ],
                                 );
                               }).toList(),
@@ -753,8 +872,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                           children: [
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Theme.of(context).colorScheme.secondary,
-                                foregroundColor: Theme.of(context).colorScheme.onSecondary,
+                                backgroundColor:
+                                    Theme.of(context).colorScheme.secondary,
+                                foregroundColor:
+                                    Theme.of(context).colorScheme.onSecondary,
                               ),
                               onPressed: _selectedRelease == null
                                   ? null
@@ -762,7 +883,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                                       bool confirm = await _showConfirmDialog();
                                       if (confirm) {
                                         WakelockPlus.enable();
-                                        startFirmwareUpdate(RELEASE, release: _selectedRelease);
+                                        startFirmwareUpdate(RELEASE,
+                                            release: _selectedRelease);
                                       }
                                     },
                               child: Text(
@@ -774,8 +896,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                             if (!io.Platform.isMacOS)
                               ElevatedButton(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Theme.of(context).colorScheme.secondary,
-                                  foregroundColor: Theme.of(context).colorScheme.onSecondary,
+                                  backgroundColor:
+                                      Theme.of(context).colorScheme.secondary,
+                                  foregroundColor:
+                                      Theme.of(context).colorScheme.onSecondary,
                                 ),
                                 onPressed: () async {
                                   bool confirm = await _showConfirmDialog();
@@ -784,7 +908,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                                     startFirmwareUpdate(PICKER);
                                   }
                                 },
-                                child: const Text(textAlign: TextAlign.center, 'Choose Firmware From Dialog'),
+                                child: const Text(
+                                    textAlign: TextAlign.center,
+                                    'Choose Firmware From Dialog'),
                               ),
                           ],
                         ),
@@ -808,7 +934,11 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                       } else {
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [legend, const SizedBox(width: 12), buttons],
+                          children: [
+                            legend,
+                            const SizedBox(width: 12),
+                            buttons
+                          ],
                         );
                       }
                     },
@@ -822,7 +952,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   List<Widget> _notBLECompatible() {
     return <Widget>[
       _loaded
-          ? Text("This firmware isn't compatible with the configuration app. Please upgrade your firmware via HTTP")
+          ? Text(
+              "This firmware isn't compatible with the configuration app. Please upgrade your firmware via HTTP")
           : Text("Loading....Please Wait"),
     ];
   }
@@ -847,7 +978,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                 const SizedBox(width: 6),
                 Text(
                   'Color Coding',
-                  style: TextStyle(fontWeight: FontWeight.w600, color: scheme.primary),
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600, color: scheme.primary),
                 ),
               ],
             ),
@@ -855,14 +987,18 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
             if (!_loaded)
               Row(
                 children: const [
-                  SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                  SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
                   SizedBox(width: 8),
                   Text('Determining versions...'),
                 ],
               )
             else ...[
               _legendItem(Colors.green, 'Firmware is NEWER than current'),
-              _legendItem(const Color.fromARGB(255, 242, 0, 255), 'Firmware version is UNKNOWN'),
+              _legendItem(const Color.fromARGB(255, 242, 0, 255),
+                  'Firmware version is UNKNOWN'),
               _legendItem(Colors.red, 'Firmware is OLDER than current'),
             ],
           ],
@@ -885,10 +1021,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   }
 
   Widget _dot(Color color) => Container(
-    width: 10,
-    height: 10,
-    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-  );
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      );
 
   Widget _buildBadge(BuildContext context, String text) {
     final scheme = Theme.of(context).colorScheme;
@@ -899,7 +1035,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: scheme.secondary, width: 0.5),
       ),
-      child: Text(text, style: TextStyle(fontSize: 11, color: scheme.onSecondaryContainer)),
+      child: Text(text,
+          style: TextStyle(fontSize: 11, color: scheme.onSecondaryContainer)),
     );
   }
 
@@ -911,7 +1048,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0),
               child: ConstrainedBox(
                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
                 child: Column(
@@ -919,7 +1057,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     const SizedBox(height: 8),
-                    ...(this.bleData.configAppCompatibleFirmware ? _buildUpdateButtons() : _notBLECompatible()),
+                    ...(this.bleData.configAppCompatibleFirmware
+                        ? _buildUpdateButtons()
+                        : _notBLECompatible()),
                   ],
                 ),
               ),

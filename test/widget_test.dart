@@ -6,19 +6,22 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/main.dart' as app;
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  final messenger = binding.defaultBinaryMessenger;
   const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
   Directory? tempDir;
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('ss2k_test');
-    pathProviderChannel.setMockMethodCallHandler((call) async {
-      if (call.method == 'getApplicationDocumentsDirectory' || call.method == 'getTemporaryDirectory') {
+    messenger.setMockMethodCallHandler(pathProviderChannel, (call) async {
+      if (call.method == 'getApplicationDocumentsDirectory' ||
+          call.method == 'getTemporaryDirectory') {
         return tempDir!.path;
       }
       return null;
@@ -26,7 +29,7 @@ void main() {
   });
 
   tearDown(() async {
-    await pathProviderChannel.setMockMethodCallHandler(null);
+    messenger.setMockMethodCallHandler(pathProviderChannel, null);
     if (tempDir != null && await tempDir!.exists()) {
       await tempDir!.delete(recursive: true);
     }
@@ -38,6 +41,6 @@ void main() {
     await tester.pumpAndSettle();
 
     // Basic sanity check: at least one widget is present
-    expect(find.byType(Object), findsWidgets);
+    expect(find.byType(MaterialApp), findsOneWidget);
   });
 }

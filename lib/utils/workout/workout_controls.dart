@@ -56,7 +56,7 @@ class _WorkoutControlsState extends State<WorkoutControls> {
               border: Border.all(color: Colors.white24, width: 1),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.5),
+                  color: Colors.black.withValues(alpha: 0.5),
                   offset: const Offset(0, 6),
                   blurRadius: 8,
                 ),
@@ -64,10 +64,7 @@ class _WorkoutControlsState extends State<WorkoutControls> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Colors.grey[800]!,
-                  Colors.black,
-                ],
+                colors: [Colors.grey[800]!, Colors.black],
               ),
             ),
             child: Row(
@@ -83,12 +80,16 @@ class _WorkoutControlsState extends State<WorkoutControls> {
                     onPressed: widget.onStopWorkout,
                   ),
                 IconButton(
-                  icon: Icon(widget.workoutController.isPlaying
-                      ? Icons.pause_circle_filled
-                      : Icons.play_circle_filled),
+                  icon: Icon(
+                    widget.workoutController.isPlaying
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_filled,
+                  ),
                   iconSize: 56,
                   color: Colors.greenAccent,
-                  tooltip: widget.workoutController.isPlaying ? 'Pause' : 'Play',
+                  tooltip: widget.workoutController.isPlaying
+                      ? 'Pause'
+                      : 'Play',
                   onPressed: () {
                     if (!widget.workoutController.isPlaying) {
                       workoutSoundGenerator.playButtonSound();
@@ -96,7 +97,8 @@ class _WorkoutControlsState extends State<WorkoutControls> {
                     widget.workoutController.togglePlayPause();
                   },
                 ),
-                if (widget.workoutController.isPlaying && !widget.workoutController.isFreeRide)
+                if (widget.workoutController.isPlaying &&
+                    !widget.workoutController.isFreeRide)
                   IconButton(
                     icon: const Icon(Icons.skip_next),
                     iconSize: 42,
@@ -134,7 +136,9 @@ class _WorkoutControlsState extends State<WorkoutControls> {
                     onSelectedItemChanged: (index) {
                       setState(() {
                         _selectedFTP = minFTP + (index * ftpStep);
-                        widget.workoutController.updateFTP(_selectedFTP.toDouble());
+                        widget.workoutController.updateFTP(
+                          _selectedFTP.toDouble(),
+                        );
                       });
                     },
                     childDelegate: ListWheelChildBuilderDelegate(
@@ -147,7 +151,9 @@ class _WorkoutControlsState extends State<WorkoutControls> {
                             value.toString(),
                             style: TextStyle(
                               fontSize: 20,
-                              fontWeight: value == _selectedFTP ? FontWeight.bold : FontWeight.normal,
+                              fontWeight: value == _selectedFTP
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                           ),
                         );

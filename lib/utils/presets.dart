@@ -26,7 +26,7 @@ class PresetManager {
       // Filter out non-encodable objects like SettingType enum and only save vName/value
       List<Map<String, dynamic>> saveableData = [];
       for (var item in bleData.customCharacteristic) {
-        if (item is Map && item.containsKey('vName') && item.containsKey('value')) {
+        if (item.containsKey('vName') && item.containsKey('value')) {
           saveableData.add({
             'vName': item['vName'],
             'value': item['value'],
