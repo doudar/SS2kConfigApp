@@ -7,11 +7,19 @@ class GpxToFitConverter {
     return (dt.toUtc().millisecondsSinceEpoch);
   }
 
-  static int? _extractExtensionInt(String? extensionValue, String tagName) {
-    if (extensionValue == null || extensionValue.isEmpty) return null;
+  static String? _extensionText(Object? extensionValue) {
+    if (extensionValue == null) return null;
+
+    final text = extensionValue.toString();
+    return text.isEmpty ? null : text;
+  }
+
+  static int? _extractExtensionInt(Object? extensionValue, String tagName) {
+    final extensionText = _extensionText(extensionValue);
+    if (extensionText == null) return null;
 
     final tagMatch = RegExp('<(?:\\w+:)?$tagName>([^<]+)</(?:\\w+:)?$tagName>')
-        .firstMatch(extensionValue);
+        .firstMatch(extensionText);
     if (tagMatch != null) {
       return int.tryParse(tagMatch.group(1)!.trim());
     }
@@ -77,11 +85,11 @@ class GpxToFitConverter {
         final ext = trackPoint.extensions;
 
         // Extract power
-        final powerStr = ext['power']?.toString() ?? '0';
+        final powerStr = _extensionText(ext['power']) ?? '0';
         record.power = int.tryParse(powerStr) ?? 0;
 
         // Extract heart rate and cadence from TrackPointExtension
-        final tpExtStr = ext['gpxtpx:TrackPointExtension'];
+        final tpExtStr = _extensionText(ext['gpxtpx:TrackPointExtension']);
         final heartRate = _extractExtensionInt(tpExtStr, 'hr');
         final cadence = _extractExtensionInt(tpExtStr, 'cad');
         if (heartRate != null) {
