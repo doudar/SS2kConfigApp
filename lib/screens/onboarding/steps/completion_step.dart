@@ -35,9 +35,7 @@ class _CompletionStepState extends State<CompletionStep> {
               const SizedBox(height: 16),
               Text(
                 "You're all set!",
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
               const Text(
@@ -52,11 +50,37 @@ class _CompletionStepState extends State<CompletionStep> {
                   icon: const Icon(Icons.link),
                   label: const Text('How to connect your training app'),
                   onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const ConnectTrainingAppStep(),
-                      ),
-                    );
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ConnectTrainingAppStep()));
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.tune),
+                  label: const Text('Go to Device Settings'),
+                  onPressed: () {
+                    final device = context.read<WizardSession>().connectedDevice;
+                    final navigator = Navigator.of(context);
+
+                    if (navigator.canPop()) {
+                      navigator.popUntil((route) => route.isFirst);
+                    } else {
+                      navigator.pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const ScanScreen()),
+                        (route) => false,
+                      );
+                    }
+
+                    if (device != null) {
+                      navigator.push(
+                        MaterialPageRoute(
+                          builder: (_) => MainDeviceScreen(device: device),
+                          settings: const RouteSettings(name: '/MainDeviceScreen'),
+                        ),
+                      );
+                    }
                   },
                 ),
               ),
@@ -84,13 +108,13 @@ class _CompletionStepState extends State<CompletionStep> {
                     }
 
                     if (device != null) {
-                      navigator.push(MaterialPageRoute(
-                        builder: (_) => MainDeviceScreen(device: device),
-                        settings: const RouteSettings(name: '/MainDeviceScreen'),
-                      ));
-                      navigator.push(MaterialPageRoute(
-                        builder: (_) => WorkoutScreen(device: device),
-                      ));
+                      navigator.push(
+                        MaterialPageRoute(
+                          builder: (_) => MainDeviceScreen(device: device),
+                          settings: const RouteSettings(name: '/MainDeviceScreen'),
+                        ),
+                      );
+                      navigator.push(MaterialPageRoute(builder: (_) => WorkoutScreen(device: device)));
                     }
                   },
                 ),
