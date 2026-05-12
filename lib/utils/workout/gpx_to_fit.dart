@@ -14,12 +14,32 @@ class GpxToFitConverter {
     return text.isEmpty ? null : text;
   }
 
+  static Object? _findExtensionValue(Map extensionMap, String tagName) {
+    for (final entry in extensionMap.entries) {
+      final key = entry.key.toString();
+      if (key == tagName || key.endsWith(':$tagName')) {
+        return entry.value;
+      }
+    }
+
+    return null;
+  }
+
   static int? _extractExtensionInt(Object? extensionValue, String tagName) {
+    if (extensionValue is Map) {
+      final mapValue = _findExtensionValue(extensionValue, tagName);
+      final parsedMapValue = int.tryParse(mapValue?.toString() ?? '');
+      if (parsedMapValue != null) {
+        return parsedMapValue;
+      }
+    }
+
     final extensionText = _extensionText(extensionValue);
     if (extensionText == null) return null;
 
-    final tagMatch = RegExp('<(?:\\w+:)?$tagName>([^<]+)</(?:\\w+:)?$tagName>')
-        .firstMatch(extensionText);
+    final tagMatch = RegExp(
+      '<(?:\\w+:)?$tagName>([^<]+)</(?:\\w+:)?$tagName>',
+    ).firstMatch(extensionText);
     if (tagMatch != null) {
       return int.tryParse(tagMatch.group(1)!.trim());
     }
@@ -38,7 +58,8 @@ class GpxToFitConverter {
     final builder = FitFileBuilder(autoDefine: true, minStringSize: 50);
 
     // Use GPX timestamps when available
-    final firstTrackPointTime = xmlGpx.trks.isNotEmpty &&
+    final firstTrackPointTime =
+        xmlGpx.trks.isNotEmpty &&
             xmlGpx.trks[0].trksegs.isNotEmpty &&
             xmlGpx.trks[0].trksegs[0].trkpts.isNotEmpty
         ? xmlGpx.trks[0].trksegs[0].trkpts.first.time
@@ -73,8 +94,9 @@ class GpxToFitConverter {
     if (xmlGpx.trks.isNotEmpty && xmlGpx.trks[0].trksegs.isNotEmpty) {
       for (var trackPoint in xmlGpx.trks[0].trksegs[0].trkpts) {
         final tpTime = trackPoint.time;
-        final timestamp =
-            tpTime != null ? _toFitTimestamp(tpTime) : (previousTimestamp + 1);
+        final timestamp = tpTime != null
+            ? _toFitTimestamp(tpTime)
+            : (previousTimestamp + 1);
         final record = RecordMessage()
           ..timestamp = timestamp
           ..positionLong = trackPoint.lon
@@ -89,9 +111,10 @@ class GpxToFitConverter {
         record.power = int.tryParse(powerStr) ?? 0;
 
         // Extract heart rate and cadence from TrackPointExtension
-        final tpExtStr = _extensionText(ext['gpxtpx:TrackPointExtension']);
-        final heartRate = _extractExtensionInt(tpExtStr, 'hr');
-        final cadence = _extractExtensionInt(tpExtStr, 'cad');
+        final tpExt = ext['gpxtpx:TrackPointExtension'];
+        final tpExtStr = _extensionText(tpExt);
+        final heartRate = _extractExtensionInt(tpExt, 'hr');
+        final cadence = _extractExtensionInt(tpExt, 'cad');
         if (heartRate != null) {
           record.heartRate = heartRate;
         }
