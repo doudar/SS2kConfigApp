@@ -69,17 +69,21 @@ class _CompletionStepState extends State<CompletionStep> {
                   onPressed: () {
                     final device = context.read<WizardSession>().connectedDevice;
                     final navigator = Navigator.of(context);
-                    
-                    // Always ensure the root route is ScanScreen when the wizard finishes.
-                    // This unifies the route stack for both new and returning users.
-                    navigator.pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const ScanScreen()),
-                      (route) => false,
-                    );
-                    
+
+                    if (navigator.canPop()) {
+                      // Returning user: ScanScreen is already the root route — pop
+                      // back to it rather than creating a duplicate instance, which
+                      // causes a GlobalKey conflict on ScaffoldMessengerState.
+                      navigator.popUntil((route) => route.isFirst);
+                    } else {
+                      // New user: wizard was the initial route, replace with ScanScreen.
+                      navigator.pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const ScanScreen()),
+                        (route) => false,
+                      );
+                    }
+
                     if (device != null) {
-                      // Insert the MainDeviceScreen so the back button from the workout
-                      // returns to the logical home of the device settings.
                       navigator.push(MaterialPageRoute(
                         builder: (_) => MainDeviceScreen(device: device),
                         settings: const RouteSettings(name: '/MainDeviceScreen'),
