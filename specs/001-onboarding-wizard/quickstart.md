@@ -86,8 +86,7 @@ then implement:
 Run these on at least one real device with a SmartSpin2k connected:
 
 1. **Cold-start happy path**: clear app data, launch app, complete the wizard end-to-end on
-   each of the three bike types (run three times, one per type). Confirm Completion step is
-   reached and the flag is persisted (relaunch — should land on scan screen).
+   each of the four (4) bike types (run four times, one per type). Confirm Completion step is reached and the flag is persisted (relaunch — should land on scan screen).  
 2. **Re-entry**: tap "Guided Setup" on the scan screen, confirm wizard opens at Welcome,
    exit via back gesture, confirm `onboarding_completed` is unchanged (relaunch still lands
    on scan screen).

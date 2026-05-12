@@ -42,10 +42,12 @@ class _MotorTestStepState extends State<MotorTestStep> {
       }
     }
 
-    setState(() {
-      _testRunning = false;
-      _testRan = true;
-    });
+    if (mounted) {
+      setState(() {
+        _testRunning = false;
+        _testRan = true;
+      });
+    }
   }
 
   void _advance(WizardSession session) {

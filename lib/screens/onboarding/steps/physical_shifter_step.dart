@@ -3,10 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../utils/constants.dart';
 import '../../../utils/bledata.dart';
-import '../../../utils/onboarding/auto_detect_fallback_timer.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
-import '../../../widgets/onboarding/auto_detect_step_scaffold.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 
 class PhysicalShifterStep extends StatefulWidget {
@@ -18,8 +16,16 @@ class PhysicalShifterStep extends StatefulWidget {
 
 class _PhysicalShifterStepState extends State<PhysicalShifterStep> {
   StreamSubscription<CharacteristicChangeEvent>? _charSubscription;
-  AutoDetectFallbackTimer? _fallbackTimer;
-  final GlobalKey<AutoDetectStepScaffoldState> _scaffoldKey = GlobalKey();
+
+  bool _upShiftSeen = false;
+  bool _downShiftSeen = false;
+  int? _lastGearValue;
+  String _gearDisplay = '—';
+  bool _swapDirection = false;
+  Map<String, dynamic> _shiftDirChar = {};
+  Map<String, dynamic> _shifterPosChar = {};
+
+  bool get _bothShiftsSeen => _upShiftSeen && _downShiftSeen;
 
   @override
   void didChangeDependencies() {
@@ -29,27 +35,100 @@ class _PhysicalShifterStepState extends State<PhysicalShifterStep> {
 
   void _subscribe() {
     _charSubscription?.cancel();
-    _fallbackTimer?.cancel();
 
     final session = context.read<WizardSession>();
     final device = session.connectedDevice;
     if (device == null) return;
 
-    _fallbackTimer = AutoDetectFallbackTimer(
-      onTimeout: () => _scaffoldKey.currentState?.show(),
+    final bleData = BLEDataManager.forDevice(device);
+
+    _shiftDirChar = Map<String, dynamic>.from(
+      bleData.customCharacteristic.firstWhere(
+        (c) => c["vName"] == shiftDirVname,
+        orElse: () => <String, dynamic>{},
+      ),
+    );
+    _shifterPosChar = Map<String, dynamic>.from(
+      bleData.customCharacteristic.firstWhere(
+        (c) => c["vName"] == shifterPositionVname,
+        orElse: () => <String, dynamic>{},
+      ),
     );
 
-    final bleData = BLEDataManager.forDevice(device);
-    _charSubscription = bleData.characteristicChanges
-        .where((e) => e.vName == shifterPositionVname)
-        .listen((_) => _onShifterEvent());
+    _swapDirection = _shiftDirChar["value"]?.toString().toLowerCase() == "true";
+
+    final cachedGear = _shifterPosChar["value"]?.toString() ?? "";
+    if (cachedGear.isNotEmpty && cachedGear != "null" && cachedGear != noFirmSupport) {
+      _gearDisplay = cachedGear;
+      _lastGearValue = int.tryParse(cachedGear);
+    }
+
+    bleData.requestSetting(device, shifterPositionVname);
+    bleData.requestSetting(device, shiftDirVname);
+
+    _charSubscription = bleData.characteristicChanges.listen((event) {
+      if (!mounted) return;
+      if (event.vName == shifterPositionVname) {
+        _onGearChange();
+      } else if (event.vName == shiftDirVname) {
+        final cached = BLEDataManager.forDevice(device).customCharacteristic.firstWhere(
+          (c) => c["vName"] == shiftDirVname,
+          orElse: () => <String, dynamic>{},
+        );
+        setState(() {
+          _swapDirection = cached["value"]?.toString().toLowerCase() == "true";
+        });
+      }
+    });
   }
 
-  void _onShifterEvent() {
+  void _onGearChange() {
     if (!mounted) return;
-    _fallbackTimer?.cancel();
-    _scaffoldKey.currentState?.dismiss();
     final session = context.read<WizardSession>();
+    final device = session.connectedDevice;
+    if (device == null) return;
+
+    final bleData = BLEDataManager.forDevice(device);
+    final rawValue = bleData.customCharacteristic
+        .firstWhere(
+          (c) => c["vName"] == shifterPositionVname,
+          orElse: () => <String, dynamic>{"value": ""},
+        )["value"]
+        ?.toString();
+    final newGear = int.tryParse(rawValue ?? "");
+    if (newGear == null) return;
+
+    setState(() {
+      if (_lastGearValue != null) {
+        if (newGear > _lastGearValue!) _upShiftSeen = true;
+        if (newGear < _lastGearValue!) _downShiftSeen = true;
+      }
+      _lastGearValue = newGear;
+      _gearDisplay = newGear.toString();
+    });
+  }
+
+  void _onToggleSwapDir(bool value) {
+    final session = context.read<WizardSession>();
+    final device = session.connectedDevice;
+    if (device == null) return;
+
+    setState(() => _swapDirection = value);
+    final bleData = BLEDataManager.forDevice(device);
+    final updated = Map<String, dynamic>.from(_shiftDirChar)..["value"] = value.toString();
+    bleData.writeToSS2k(device, updated);
+  }
+
+  void _onContinue() {
+    final session = context.read<WizardSession>();
+    final device = session.connectedDevice;
+    if (device == null) return;
+
+    final bleData = BLEDataManager.forDevice(device);
+    final updated = Map<String, dynamic>.from(_shiftDirChar)..["value"] = _swapDirection.toString();
+    bleData.writeToSS2k(device, updated);
+    bleData.customCharacteristic.forEach((c) => bleData.findNSave(device, c, saveVname));
+
     session.physicalShifterSeen = true;
     final machine = WizardStepMachine();
     final next = machine.nextStep(
@@ -65,48 +144,145 @@ class _PhysicalShifterStepState extends State<PhysicalShifterStep> {
   @override
   void dispose() {
     _charSubscription?.cancel();
-    _fallbackTimer?.cancel();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final session = context.watch<WizardSession>();
-    final pageController = session.pageController ?? PageController();
+  Widget _buildShiftCard({
+    required bool detected,
+    required IconData waitingIcon,
+    required String label,
+  }) {
+    final theme = Theme.of(context);
+    final color = detected ? Colors.green : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4);
 
-    return AutoDetectStepScaffold(
-      key: _scaffoldKey,
-      onTryAgain: _subscribe,
-      pageController: pageController,
-      child: const WizardScaffold(
-        title: 'Test Shifter',
-        stepId: WizardStepId.physicalShifter,
-        body: Padding(
-          padding: EdgeInsets.all(24),
-          child: Column(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+      decoration: BoxDecoration(
+        color: detected
+            ? Colors.green.withValues(alpha: 0.12)
+            : theme.colorScheme.surfaceContainerHighest,
+        border: Border.all(
+          color: detected ? Colors.green.withValues(alpha: 0.6) : theme.colorScheme.outline.withValues(alpha: 0.25),
+          width: detected ? 1.5 : 1,
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: Icon(
+              detected ? Icons.check_circle_rounded : waitingIcon,
+              key: ValueKey(detected),
+              color: color,
+              size: 36,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Press a Shifter Button',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                label,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: detected ? Colors.green : theme.colorScheme.onSurface,
+                ),
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 2),
               Text(
-                'Press either the up or down shifter button attached to your bike. '
-                'The wizard will automatically advance when it detects the shifter event.',
-                style: TextStyle(fontSize: 16, height: 1.5),
-              ),
-              SizedBox(height: 32),
-              Center(child: CircularProgressIndicator()),
-              SizedBox(height: 16),
-              Center(
-                child: Text(
-                  'Waiting for shifter press...',
-                  style: TextStyle(color: Colors.grey),
+                detected ? 'Detected' : 'Waiting for press…',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: color,
                 ),
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGearDisplay() {
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        Text(
+          'GEAR',
+          style: TextStyle(
+            fontSize: 11,
+            letterSpacing: 1.5,
+            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          _gearDisplay,
+          style: TextStyle(
+            fontSize: 56,
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    context.watch<WizardSession>();
+
+    return WizardScaffold(
+      title: 'Test Shifter',
+      stepId: WizardStepId.physicalShifter,
+      nextEnabled: _bothShiftsSeen,
+      onNext: _onContinue,
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Press both buttons on your physical shifter to continue.',
+              style: TextStyle(fontSize: 15, height: 1.5),
+            ),
+            const SizedBox(height: 28),
+            _buildShiftCard(
+              detected: _upShiftSeen,
+              waitingIcon: Icons.arrow_upward_rounded,
+              label: 'Up Shift',
+            ),
+            const SizedBox(height: 20),
+            Center(child: _buildGearDisplay()),
+            const SizedBox(height: 20),
+            _buildShiftCard(
+              detected: _downShiftSeen,
+              waitingIcon: Icons.arrow_downward_rounded,
+              label: 'Down Shift',
+            ),
+            const SizedBox(height: 28),
+            const Divider(),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Swap Shifter Direction',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                Switch(value: _swapDirection, onChanged: _onToggleSwapDir),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Toggle if your up and down buttons are reversed.',
+              style: TextStyle(color: Colors.grey, fontSize: 13),
+            ),
+          ],
         ),
       ),
     );
