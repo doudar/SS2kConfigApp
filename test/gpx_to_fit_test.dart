@@ -9,7 +9,8 @@ void main() {
     final tempDir = await Directory.systemTemp.createTemp('gpx_to_fit_test');
     final gpxFile = File('${tempDir.path}/track_metrics.gpx');
 
-    await gpxFile.writeAsString('''<?xml version="1.0" encoding="UTF-8"?>
+    try {
+      await gpxFile.writeAsString('''<?xml version="1.0" encoding="UTF-8"?>
 <gpx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     version="1.1"
     xmlns="http://www.topografix.com/GPX/1/1"
@@ -31,17 +32,18 @@ void main() {
   </trk>
 </gpx>''');
 
-    final fitPath = await GpxToFitConverter.convertGpxToFit(gpxFile.path);
-    final fitFile = FitFile.fromBytes(await File(fitPath).readAsBytes());
-    final record = fitFile.records
-        .map((r) => r.message)
-        .whereType<RecordMessage>()
-        .first;
+      final fitPath = await GpxToFitConverter.convertGpxToFit(gpxFile.path);
+      final fitFile = FitFile.fromBytes(await File(fitPath).readAsBytes());
+      final record = fitFile.records
+          .map((r) => r.message)
+          .whereType<RecordMessage>()
+          .first;
 
-    expect(record.power, 200);
-    expect(record.heartRate, 150);
-    expect(record.cadence, 90);
-
-    await Directory(tempDir.path).delete(recursive: true);
+      expect(record.power, 200);
+      expect(record.heartRate, 150);
+      expect(record.cadence, 90);
+    } finally {
+      await Directory(tempDir.path).delete(recursive: true);
+    }
   });
 }
