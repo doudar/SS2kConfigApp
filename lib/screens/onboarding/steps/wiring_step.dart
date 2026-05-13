@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
+import '../../../widgets/onboarding/instruction_step_card.dart';
 
 class WiringStep extends StatelessWidget {
   const WiringStep({Key? key}) : super(key: key);
@@ -11,8 +12,7 @@ class WiringStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = context.watch<WizardSession>();
     final machine = WizardStepMachine();
-
-    final wiringInstructions = _wiringCopy(session.bikeType);
+    final bikeType = session.bikeType;
 
     return WizardScaffold(
       title: 'Wiring',
@@ -27,29 +27,26 @@ class WiringStep extends StatelessWidget {
           session.setStepIndex(steps.indexOf(next));
         }
       },
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Connect the cables',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            InstructionStepCard(
+              title: 'Connect the cables',
+              body: _wiringCopy(bikeType),
+              imageAsset: _wiringImage(bikeType),
+              imagePlaceholderLabel: 'Photo: SmartSpin2k wiring harness',
             ),
-            const SizedBox(height: 16),
-            Text(
-              wiringInstructions,
-              style: const TextStyle(fontSize: 16, height: 1.5),
-            ),
-            const SizedBox(height: 24),
-            Expanded(
-              child: Image.asset(
-                _wiringImage(session.bikeType),
-                width: double.infinity,
-                fit: BoxFit.contain,
-                alignment: Alignment.topCenter,
+            if (bikeType == BikeType.pelotonBikePlus) ...[
+              const SizedBox(height: 16),
+              const _WarningCallout(
+                text:
+                    'Do not connect the cables labeled "Peloton Bike" or "Peloton Tablet" to your bike. '
+                    'Bike+ uses a wireless connection, which we will set up on the next page.',
               ),
-            ),
+            ],
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -65,15 +62,46 @@ class WiringStep extends StatelessWidget {
 
   String _wiringCopy(BikeType? bikeType) {
     switch (bikeType) {
-      case BikeType.pelotonBikePlus:
-        return '''Connect the power cable and the shifter cable to the SmartSpin2k.
-
-Bike+ uses a wireless connection that will be set up on the next page. Do not connect the cables labeled 'Peloton Bike' and 'Peloton Tablet' to your bike.''';
       case BikeType.pelotonOriginal:
-        return '''Connect the power cable, the shifter cable, and the sensor cable to the SmartSpin2k.
-We will connect the SmartSpin2k to your bike in the next step''';
+        return 'Connect the power cable, the shifter cable, and the sensor cable to the SmartSpin2k.\n\n'
+            'We will connect the SmartSpin2k to your bike in the next step.';
+      case BikeType.pelotonBikePlus:
       default:
         return 'Connect the power cable and the shifter cable to the SmartSpin2k.';
     }
+  }
+}
+
+class _WarningCallout extends StatelessWidget {
+  final String text;
+
+  const _WarningCallout({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final warningColor = theme.colorScheme.error;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: warningColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: warningColor.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, color: warningColor),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 15, height: 1.5),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
