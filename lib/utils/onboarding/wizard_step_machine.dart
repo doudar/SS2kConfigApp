@@ -11,7 +11,7 @@ enum WizardStepId {
   sideSwitch,
   ss2kConnection,
   dataSource,
-  confirmDataFlowing,
+  bikeDataTest,
   motorTest,
   physicalShifter,
   hrm,
@@ -23,7 +23,7 @@ enum StepKind { informational, action, autoDetect, optional }
 
 enum AutoAdvanceRule {
   bleConnected,
-  powerAndCadenceStableFor3s,
+  bikeDataDetected,
   shifterEvent,
 }
 
@@ -66,7 +66,7 @@ const _allStepsWithoutSideSwitch = [
   WizardStepId.wiring,
   WizardStepId.ss2kConnection,
   WizardStepId.dataSource,
-  WizardStepId.confirmDataFlowing,
+  WizardStepId.bikeDataTest,
   WizardStepId.motorTest,
   WizardStepId.physicalShifter,
   WizardStepId.hrm,
@@ -83,7 +83,7 @@ const _allStepsWithSideSwitch = [
   WizardStepId.sideSwitch,
   WizardStepId.ss2kConnection,
   WizardStepId.dataSource,
-  WizardStepId.confirmDataFlowing,
+  WizardStepId.bikeDataTest,
   WizardStepId.motorTest,
   WizardStepId.physicalShifter,
   WizardStepId.hrm,
@@ -131,11 +131,11 @@ const _stepMetaTable = <WizardStepId, WizardStepMeta>{
     id: WizardStepId.dataSource,
     kind: StepKind.action,
   ),
-  WizardStepId.confirmDataFlowing: WizardStepMeta(
-    id: WizardStepId.confirmDataFlowing,
+  WizardStepId.bikeDataTest: WizardStepMeta(
+    id: WizardStepId.bikeDataTest,
     kind: StepKind.autoDetect,
     fallbackTimerMs: 30000,
-    autoAdvanceRule: AutoAdvanceRule.powerAndCadenceStableFor3s,
+    autoAdvanceRule: AutoAdvanceRule.bikeDataDetected,
   ),
   WizardStepId.motorTest: WizardStepMeta(
     id: WizardStepId.motorTest,

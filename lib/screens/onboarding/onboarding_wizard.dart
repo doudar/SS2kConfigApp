@@ -10,7 +10,7 @@ import 'steps/sensor_wiring_step.dart';
 import 'steps/side_switch_step.dart';
 import 'steps/ss2k_connection_step.dart';
 import 'steps/data_source_step.dart';
-import 'steps/confirm_data_flowing_step.dart';
+import 'steps/bike_data_test_step.dart';
 import 'steps/motor_test_step.dart';
 import 'steps/physical_shifter_step.dart';
 import 'steps/hrm_step.dart';
@@ -86,8 +86,8 @@ class _OnboardingWizardState extends State<OnboardingWizard> with WidgetsBinding
         return const Ss2kConnectionStep();
       case WizardStepId.dataSource:
         return const DataSourceStep();
-      case WizardStepId.confirmDataFlowing:
-        return const ConfirmDataFlowingStep();
+      case WizardStepId.bikeDataTest:
+        return const BikeDataTestStep();
       case WizardStepId.motorTest:
         return const MotorTestStep();
       case WizardStepId.physicalShifter:

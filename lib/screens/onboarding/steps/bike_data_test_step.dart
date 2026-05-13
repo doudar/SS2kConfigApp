@@ -7,14 +7,14 @@ import '../../../utils/onboarding/wizard_session.dart';
 import '../../../utils/bledata.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 
-class ConfirmDataFlowingStep extends StatefulWidget {
-  const ConfirmDataFlowingStep({Key? key}) : super(key: key);
+class BikeDataTestStep extends StatefulWidget {
+  const BikeDataTestStep({Key? key}) : super(key: key);
 
   @override
-  State<ConfirmDataFlowingStep> createState() => _ConfirmDataFlowingStepState();
+  State<BikeDataTestStep> createState() => _BikeDataTestStepState();
 }
 
-class _ConfirmDataFlowingStepState extends State<ConfirmDataFlowingStep> {
+class _BikeDataTestStepState extends State<BikeDataTestStep> {
   StreamSubscription<CharacteristicChangeEvent>? _charSubscription;
 
   bool _powerSeen = false;
@@ -54,7 +54,7 @@ class _ConfirmDataFlowingStepState extends State<ConfirmDataFlowingStep> {
     if (!mounted) return;
     final session = context.read<WizardSession>();
     final machine = WizardStepMachine();
-    final next = machine.nextStep(currentStep: WizardStepId.confirmDataFlowing, session: session.snapshot);
+    final next = machine.nextStep(currentStep: WizardStepId.bikeDataTest, session: session.snapshot);
     if (next != null) {
       final steps = machine.activeSteps(bikeType: session.bikeType);
       session.setStepIndex(steps.indexOf(next));
@@ -78,7 +78,7 @@ class _ConfirmDataFlowingStepState extends State<ConfirmDataFlowingStep> {
   Widget build(BuildContext context) {
     return WizardScaffold(
       title: 'Test Your Connection',
-      stepId: WizardStepId.confirmDataFlowing,
+      stepId: WizardStepId.bikeDataTest,
       showSkip: true,
       onSkip: _advance,
       nextEnabled: _bothSeen,

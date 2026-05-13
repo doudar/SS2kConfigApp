@@ -51,7 +51,7 @@ void main() {
         WizardStepId.wiring,
         WizardStepId.ss2kConnection,
         WizardStepId.dataSource,
-        WizardStepId.confirmDataFlowing,
+        WizardStepId.bikeDataTest,
         WizardStepId.motorTest,
         WizardStepId.physicalShifter,
         WizardStepId.hrm,
@@ -70,7 +70,7 @@ void main() {
         WizardStepId.sideSwitch,
         WizardStepId.ss2kConnection,
         WizardStepId.dataSource,
-        WizardStepId.confirmDataFlowing,
+        WizardStepId.bikeDataTest,
         WizardStepId.motorTest,
         WizardStepId.physicalShifter,
         WizardStepId.hrm,
@@ -203,11 +203,11 @@ void main() {
       expect(machine.metaFor(WizardStepId.dataSource).kind, StepKind.action);
     });
 
-    test('confirmDataFlowing: autoDetect, fallbackTimerMs=30000', () {
-      final meta = machine.metaFor(WizardStepId.confirmDataFlowing);
+    test('bikeDataTest: autoDetect, fallbackTimerMs=30000', () {
+      final meta = machine.metaFor(WizardStepId.bikeDataTest);
       expect(meta.kind, StepKind.autoDetect);
       expect(meta.fallbackTimerMs, 30000);
-      expect(meta.autoAdvanceRule, AutoAdvanceRule.powerAndCadenceStableFor3s);
+      expect(meta.autoAdvanceRule, AutoAdvanceRule.bikeDataDetected);
     });
 
     test('motorTest: action', () {
