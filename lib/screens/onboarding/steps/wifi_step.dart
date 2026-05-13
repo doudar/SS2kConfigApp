@@ -11,10 +11,7 @@ class WifiStep extends StatelessWidget {
   void _advance(WizardSession session, {bool skipped = false}) {
     session.wifiSkipped = skipped;
     final machine = WizardStepMachine();
-    final next = machine.nextStep(
-      currentStep: WizardStepId.wifi,
-      session: session.snapshot,
-    );
+    final next = machine.nextStep(currentStep: WizardStepId.wifi, session: session.snapshot);
     if (next != null) {
       final steps = machine.activeSteps(bikeType: session.bikeType);
       session.setStepIndex(steps.indexOf(next));
@@ -36,15 +33,12 @@ class WifiStep extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Optional: Connect to WiFi',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
+            const Text('Optional: Connect to WiFi', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             const Text(
-              'WiFi enables over-the-air firmware updates and DirCon connectivity '
-              'for apps like Wahoo SYSTM. Enter your network credentials below, '
-              'or tap Skip to continue.',
+              'Connecting to WiFi allows your bike to automatically download the '
+              'latest features and performance updates. It also provides a faster '
+              'WiFi connection for compatible training apps.',
               style: TextStyle(fontSize: 16, height: 1.5),
             ),
             const SizedBox(height: 20),

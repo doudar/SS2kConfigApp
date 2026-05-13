@@ -112,6 +112,17 @@ class _PhysicalShifterStepState extends State<PhysicalShifterStep> {
     bleData.writeToSS2k(device, updated);
   }
 
+  void _skip() {
+    if (!mounted) return;
+    final session = context.read<WizardSession>();
+    final machine = WizardStepMachine();
+    final next = machine.nextStep(currentStep: WizardStepId.physicalShifter, session: session.snapshot);
+    if (next != null) {
+      final steps = machine.activeSteps(bikeType: session.bikeType);
+      session.setStepIndex(steps.indexOf(next));
+    }
+  }
+
   void _onContinue() {
     final session = context.read<WizardSession>();
     final device = session.connectedDevice;
@@ -215,6 +226,8 @@ class _PhysicalShifterStepState extends State<PhysicalShifterStep> {
     return WizardScaffold(
       title: 'Test Shifter',
       stepId: WizardStepId.physicalShifter,
+      showSkip: true,
+      onSkip: _skip,
       nextEnabled: _bothShiftsSeen,
       onNext: _onContinue,
       body: Padding(
