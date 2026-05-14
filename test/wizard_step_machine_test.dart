@@ -164,67 +164,24 @@ void main() {
   });
 
   group('metaFor', () {
-    test('welcome: informational, backDisabled=true, not skippable', () {
+    test('welcome: backDisabled=true, not skippable', () {
       final meta = machine.metaFor(WizardStepId.welcome);
-      expect(meta.kind, StepKind.informational);
       expect(meta.backDisabled, isTrue);
       expect(meta.isSkippable, isFalse);
     });
 
-    test('bikeType: action, backDisabled=false', () {
+    test('bikeType: backDisabled=false, not skippable', () {
       final meta = machine.metaFor(WizardStepId.bikeType);
-      expect(meta.kind, StepKind.action);
       expect(meta.backDisabled, isFalse);
       expect(meta.isSkippable, isFalse);
     });
 
-    test('hardwareInstall: informational', () {
-      final meta = machine.metaFor(WizardStepId.hardwareInstall);
-      expect(meta.kind, StepKind.informational);
+    test('hrm: isSkippable=true', () {
+      expect(machine.metaFor(WizardStepId.hrm).isSkippable, isTrue);
     });
 
-    test('wiring: informational', () {
-      expect(machine.metaFor(WizardStepId.wiring).kind, StepKind.informational);
-    });
-
-    test('sideSwitch: action', () {
-      expect(machine.metaFor(WizardStepId.sideSwitch).kind, StepKind.action);
-    });
-
-    test('ss2kConnection: action', () {
-      expect(machine.metaFor(WizardStepId.ss2kConnection).kind, StepKind.action);
-    });
-
-    test('dataSource: action', () {
-      expect(machine.metaFor(WizardStepId.dataSource).kind, StepKind.action);
-    });
-
-    test('bikeDataTest: autoDetect', () {
-      expect(machine.metaFor(WizardStepId.bikeDataTest).kind, StepKind.autoDetect);
-    });
-
-    test('motorTest: action', () {
-      expect(machine.metaFor(WizardStepId.motorTest).kind, StepKind.action);
-    });
-
-    test('physicalShifter: autoDetect', () {
-      expect(machine.metaFor(WizardStepId.physicalShifter).kind, StepKind.autoDetect);
-    });
-
-    test('hrm: optional, isSkippable=true', () {
-      final meta = machine.metaFor(WizardStepId.hrm);
-      expect(meta.kind, StepKind.optional);
-      expect(meta.isSkippable, isTrue);
-    });
-
-    test('wifi: optional, isSkippable=true', () {
-      final meta = machine.metaFor(WizardStepId.wifi);
-      expect(meta.kind, StepKind.optional);
-      expect(meta.isSkippable, isTrue);
-    });
-
-    test('completion: informational', () {
-      expect(machine.metaFor(WizardStepId.completion).kind, StepKind.informational);
+    test('wifi: isSkippable=true', () {
+      expect(machine.metaFor(WizardStepId.wifi).isSkippable, isTrue);
     });
   });
 }

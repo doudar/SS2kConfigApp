@@ -19,17 +19,13 @@ enum WizardStepId {
   completion,
 }
 
-enum StepKind { informational, action, autoDetect, optional }
-
 class WizardStepMeta {
   final WizardStepId id;
-  final StepKind kind;
   final bool isSkippable;
   final bool backDisabled;
 
   const WizardStepMeta({
     required this.id,
-    required this.kind,
     this.isSkippable = false,
     this.backDisabled = false,
   });
@@ -89,63 +85,27 @@ const _nullBikeTypeSteps = [
 const _stepMetaTable = <WizardStepId, WizardStepMeta>{
   WizardStepId.welcome: WizardStepMeta(
     id: WizardStepId.welcome,
-    kind: StepKind.informational,
     backDisabled: true,
   ),
-  WizardStepId.bikeType: WizardStepMeta(
-    id: WizardStepId.bikeType,
-    kind: StepKind.action,
-  ),
-  WizardStepId.hardwareInstall: WizardStepMeta(
-    id: WizardStepId.hardwareInstall,
-    kind: StepKind.informational,
-  ),
-  WizardStepId.wiring: WizardStepMeta(
-    id: WizardStepId.wiring,
-    kind: StepKind.informational,
-  ),
-  WizardStepId.sensorWiring: WizardStepMeta(
-    id: WizardStepId.sensorWiring,
-    kind: StepKind.action,
-  ),
-  WizardStepId.sideSwitch: WizardStepMeta(
-    id: WizardStepId.sideSwitch,
-    kind: StepKind.action,
-  ),
-  WizardStepId.ss2kConnection: WizardStepMeta(
-    id: WizardStepId.ss2kConnection,
-    kind: StepKind.action,
-  ),
-  WizardStepId.dataSource: WizardStepMeta(
-    id: WizardStepId.dataSource,
-    kind: StepKind.action,
-  ),
-  WizardStepId.bikeDataTest: WizardStepMeta(
-    id: WizardStepId.bikeDataTest,
-    kind: StepKind.autoDetect,
-  ),
-  WizardStepId.motorTest: WizardStepMeta(
-    id: WizardStepId.motorTest,
-    kind: StepKind.action,
-  ),
-  WizardStepId.physicalShifter: WizardStepMeta(
-    id: WizardStepId.physicalShifter,
-    kind: StepKind.autoDetect,
-  ),
+  WizardStepId.bikeType: WizardStepMeta(id: WizardStepId.bikeType),
+  WizardStepId.hardwareInstall: WizardStepMeta(id: WizardStepId.hardwareInstall),
+  WizardStepId.wiring: WizardStepMeta(id: WizardStepId.wiring),
+  WizardStepId.sensorWiring: WizardStepMeta(id: WizardStepId.sensorWiring),
+  WizardStepId.sideSwitch: WizardStepMeta(id: WizardStepId.sideSwitch),
+  WizardStepId.ss2kConnection: WizardStepMeta(id: WizardStepId.ss2kConnection),
+  WizardStepId.dataSource: WizardStepMeta(id: WizardStepId.dataSource),
+  WizardStepId.bikeDataTest: WizardStepMeta(id: WizardStepId.bikeDataTest),
+  WizardStepId.motorTest: WizardStepMeta(id: WizardStepId.motorTest),
+  WizardStepId.physicalShifter: WizardStepMeta(id: WizardStepId.physicalShifter),
   WizardStepId.hrm: WizardStepMeta(
     id: WizardStepId.hrm,
-    kind: StepKind.optional,
     isSkippable: true,
   ),
   WizardStepId.wifi: WizardStepMeta(
     id: WizardStepId.wifi,
-    kind: StepKind.optional,
     isSkippable: true,
   ),
-  WizardStepId.completion: WizardStepMeta(
-    id: WizardStepId.completion,
-    kind: StepKind.informational,
-  ),
+  WizardStepId.completion: WizardStepMeta(id: WizardStepId.completion),
 };
 
 class WizardStepMachine {
