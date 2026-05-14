@@ -79,57 +79,131 @@ class _MotorTestStepState extends State<MotorTestStep> {
   @override
   Widget build(BuildContext context) {
     final session = context.read<WizardSession>();
+    final theme = Theme.of(context);
 
     return WizardScaffold(
       title: 'Motor Test',
       stepId: WizardStepId.motorTest,
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+      showSkip: true,
+      onSkip: () => _skip(session),
+      onNext: _testRan ? () => _advance(session) : null,
+      nextLabel: 'Yes, I Saw It Move',
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Test the Motor', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
             const Text(
-              'Tap "Run Test" to send virtual shift commands to the SmartSpin2k. '
-              'Watch the resistance knob — it should physically rotate slightly.',
+              'Watch for the knob to rotate',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Tap "Run Test" below. The SmartSpin2k will send two shift-up commands '
+              'then two shift-down commands to the motor. Watch the resistance knob — '
+              'you should see it click slightly in each direction.',
               style: TextStyle(fontSize: 16, height: 1.5),
             ),
+            const SizedBox(height: 20),
+
+            // Video/animation placeholder — replace imageAsset with the real asset when ready
+            // Target: assets/images/motor_test_loop.webp — 720×720, 24 fps, ≤ 4 s, ≤ 400 KB
+            _MediaPlaceholder(),
+
             const SizedBox(height: 24),
-            Row(
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _testRunning ? null : () => _runTest(session),
-                  icon: _testRunning
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.play_arrow),
-                  label: Text(_testRunning ? 'Running...' : 'Run Test'),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _testRunning ? null : () => _runTest(session),
+                icon: _testRunning
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.play_arrow),
+                label: Text(_testRunning ? 'Running…' : 'Run Test'),
+              ),
+            ),
+
+            if (_testRan) ...[
+              const SizedBox(height: 28),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(width: 16),
-                TextButton(
-                  onPressed: _testRunning ? null : () => _skip(session),
-                  child: const Text('Skip'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.check_circle_outline,
+                            color: theme.colorScheme.primary, size: 22),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Test complete',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Did you see the knob rotate? Tap "Yes, I Saw It Move" below to continue.',
+                      style: TextStyle(fontSize: 15, height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: _openTroubleshooting,
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text('Having trouble? Troubleshooting guide'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MediaPlaceholder extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 220,
+        width: double.infinity,
+        color: theme.colorScheme.surfaceContainerHighest,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.rotate_right,
+                    size: 48, color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                const SizedBox(height: 12),
+                Text(
+                  'Animation: SmartSpin2k knob rotating\n'
+                  '(replace with motor_test_loop.webp)',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  ),
                 ),
               ],
             ),
-            if (_testRan) ...[
-              const SizedBox(height: 32),
-              const Text(
-                'Did you see the resistance knob rotate?',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(onPressed: () => _advance(session), child: const Text('Yes')),
-              ),
-              const SizedBox(height: 12),
-              TextButton.icon(
-                onPressed: _openTroubleshooting,
-                icon: const Icon(Icons.open_in_new, size: 16),
-                label: const Text('Having trouble? Visit the troubleshooting guide'),
-              ),
-            ],
           ],
         ),
       ),

@@ -16,10 +16,7 @@ class DataSourceStep extends StatelessWidget {
     final machine = WizardStepMachine();
 
     void advance() {
-      final next = machine.nextStep(
-        currentStep: WizardStepId.dataSource,
-        session: session.snapshot,
-      );
+      final next = machine.nextStep(currentStep: WizardStepId.dataSource, session: session.snapshot);
       if (next != null) {
         final steps = machine.activeSteps(bikeType: session.bikeType);
         session.setStepIndex(steps.indexOf(next));
@@ -67,10 +64,7 @@ class _BLEPowerMeterDataSource extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Pair a Power Meter',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
+        const Text('Pair a Power Meter', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         const Text(
           'Select your power meter below. Make sure it is active and in range. '
@@ -79,10 +73,7 @@ class _BLEPowerMeterDataSource extends StatelessWidget {
         ),
         const SizedBox(height: 20),
         if (session.connectedDevice != null)
-          BleDeviceSelector(
-            device: session.connectedDevice!,
-            vName: connectedPWRVname,
-          )
+          BleDeviceSelector(device: session.connectedDevice!, vName: connectedPWRVname)
         else
           const Text(
             'Connect your SmartSpin2k first (previous step) to scan for power meters.',
@@ -103,16 +94,10 @@ class _WiredDataSource extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Wired Data Connection',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
+        const Text('Wired Data Connection', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         if (sideSwitchMode == SideSwitchMode.tabletMode) ...[
-          const Text(
-            'Tablet Mode detected.',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
+          const Text('Tablet Mode detected.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
           const Text(
             'Start a ride on the Peloton tablet first — data will not flow until you do. '
@@ -120,10 +105,7 @@ class _WiredDataSource extends StatelessWidget {
             style: TextStyle(fontSize: 16, height: 1.5),
           ),
         ] else if (sideSwitchMode == SideSwitchMode.headlessMode) ...[
-          const Text(
-            'Headless Mode detected.',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
+          const Text('Headless Mode detected.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
           const Text(
             'No action needed — sensor data flows automatically through the sensor cable '
@@ -162,19 +144,14 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Choose Your Data Source',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
+        const Text('Choose Your Data Source', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
-        const Text(
-          'The Peloton Bike+ supports two data source options:',
-          style: TextStyle(fontSize: 16),
-        ),
+        const Text('The Peloton Bike+ supports two data source options:', style: TextStyle(fontSize: 16)),
         const SizedBox(height: 16),
         _SourceCard(
           title: 'Grupetto (Recommended)',
-          description: 'Unlock native cadence and power data from your Peloton Bike+.'
+          description:
+              'Unlock native cadence and power data from your Peloton Bike+.'
               ' This requires a one-time installation of the Grupetto app on your bike\'s tablet.'
               ' Install with OpenPelo, following the instructions below.',
           selected: _selected == DataSource.grupetto,
@@ -188,7 +165,7 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
             children: [
               TextButton.icon(
                 icon: const Icon(Icons.code, size: 16),
-                label: const Text('Get OpenPelo'),
+                label: const Text('Install with OpenPelo'),
                 onPressed: () async {
                   final url = Uri.parse('https://github.com/doudar/Openpelo');
                   if (await canLaunchUrl(url)) {
@@ -198,7 +175,7 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
               ),
               TextButton.icon(
                 icon: const Icon(Icons.play_circle_outline, size: 16),
-                label: const Text('Installation Guide'),
+                label: const Text('Installation Video'),
                 onPressed: () async {
                   final url = Uri.parse('https://www.youtube.com/watch?v=X3oN8JhHe_8');
                   if (await canLaunchUrl(url)) {
@@ -222,10 +199,7 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
         // Inline guidance + selector when Grupetto is chosen.
         if (_selected == DataSource.grupetto && session.connectedDevice != null) ...[
           const SizedBox(height: 20),
-          const Text(
-            'Enable BLE TX in Grupetto',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
+          const Text('Enable BLE TX in Grupetto', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
           const Text(
             'Open the Grupetto app on your Peloton tablet and enable BLE TX in its settings. '
@@ -233,23 +207,14 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
             style: TextStyle(fontSize: 16, height: 1.5),
           ),
           const SizedBox(height: 16),
-          BleDeviceSelector(
-            device: session.connectedDevice!,
-            vName: connectedPWRVname,
-          ),
+          BleDeviceSelector(device: session.connectedDevice!, vName: connectedPWRVname),
         ],
         // Inline power-meter selector when BLE Power Meter is chosen.
         if (_selected == DataSource.powerMeter && session.connectedDevice != null) ...[
           const SizedBox(height: 20),
-          const Text(
-            'Select your power meter:',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
+          const Text('Select your power meter:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
-          BleDeviceSelector(
-            device: session.connectedDevice!,
-            vName: connectedPWRVname,
-          ),
+          BleDeviceSelector(device: session.connectedDevice!, vName: connectedPWRVname),
         ],
       ],
     );
@@ -278,10 +243,7 @@ class _SourceCard extends StatelessWidget {
       elevation: selected ? 4 : 1,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: selected ? colorScheme.primary : Colors.transparent,
-          width: 2,
-        ),
+        side: BorderSide(color: selected ? colorScheme.primary : Colors.transparent, width: 2),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -302,10 +264,7 @@ class _SourceCard extends StatelessWidget {
                     Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     const SizedBox(height: 4),
                     Text(description, style: const TextStyle(fontSize: 14, height: 1.4)),
-                    if (trailing != null) ...[
-                      const SizedBox(height: 8),
-                      trailing!,
-                    ],
+                    if (trailing != null) ...[const SizedBox(height: 8), trailing!],
                   ],
                 ),
               ),
