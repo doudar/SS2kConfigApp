@@ -169,8 +169,6 @@ void main() {
       expect(meta.kind, StepKind.informational);
       expect(meta.backDisabled, isTrue);
       expect(meta.isSkippable, isFalse);
-      expect(meta.fallbackTimerMs, isNull);
-      expect(meta.autoAdvanceRule, isNull);
     });
 
     test('bikeType: action, backDisabled=false', () {
@@ -193,32 +191,24 @@ void main() {
       expect(machine.metaFor(WizardStepId.sideSwitch).kind, StepKind.action);
     });
 
-    test('ss2kConnection: action, autoAdvanceRule=bleConnected', () {
-      final meta = machine.metaFor(WizardStepId.ss2kConnection);
-      expect(meta.kind, StepKind.action);
-      expect(meta.autoAdvanceRule, AutoAdvanceRule.bleConnected);
+    test('ss2kConnection: action', () {
+      expect(machine.metaFor(WizardStepId.ss2kConnection).kind, StepKind.action);
     });
 
     test('dataSource: action', () {
       expect(machine.metaFor(WizardStepId.dataSource).kind, StepKind.action);
     });
 
-    test('bikeDataTest: autoDetect, fallbackTimerMs=30000', () {
-      final meta = machine.metaFor(WizardStepId.bikeDataTest);
-      expect(meta.kind, StepKind.autoDetect);
-      expect(meta.fallbackTimerMs, 30000);
-      expect(meta.autoAdvanceRule, AutoAdvanceRule.bikeDataDetected);
+    test('bikeDataTest: autoDetect', () {
+      expect(machine.metaFor(WizardStepId.bikeDataTest).kind, StepKind.autoDetect);
     });
 
     test('motorTest: action', () {
       expect(machine.metaFor(WizardStepId.motorTest).kind, StepKind.action);
     });
 
-    test('physicalShifter: autoDetect, fallbackTimerMs=30000', () {
-      final meta = machine.metaFor(WizardStepId.physicalShifter);
-      expect(meta.kind, StepKind.autoDetect);
-      expect(meta.fallbackTimerMs, 30000);
-      expect(meta.autoAdvanceRule, AutoAdvanceRule.shifterEvent);
+    test('physicalShifter: autoDetect', () {
+      expect(machine.metaFor(WizardStepId.physicalShifter).kind, StepKind.autoDetect);
     });
 
     test('hrm: optional, isSkippable=true', () {

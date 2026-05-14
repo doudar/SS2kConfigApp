@@ -21,27 +21,17 @@ enum WizardStepId {
 
 enum StepKind { informational, action, autoDetect, optional }
 
-enum AutoAdvanceRule {
-  bleConnected,
-  bikeDataDetected,
-  shifterEvent,
-}
-
 class WizardStepMeta {
   final WizardStepId id;
   final StepKind kind;
   final bool isSkippable;
   final bool backDisabled;
-  final int? fallbackTimerMs;
-  final AutoAdvanceRule? autoAdvanceRule;
 
   const WizardStepMeta({
     required this.id,
     required this.kind,
     this.isSkippable = false,
     this.backDisabled = false,
-    this.fallbackTimerMs,
-    this.autoAdvanceRule,
   });
 }
 
@@ -125,7 +115,6 @@ const _stepMetaTable = <WizardStepId, WizardStepMeta>{
   WizardStepId.ss2kConnection: WizardStepMeta(
     id: WizardStepId.ss2kConnection,
     kind: StepKind.action,
-    autoAdvanceRule: AutoAdvanceRule.bleConnected,
   ),
   WizardStepId.dataSource: WizardStepMeta(
     id: WizardStepId.dataSource,
@@ -134,8 +123,6 @@ const _stepMetaTable = <WizardStepId, WizardStepMeta>{
   WizardStepId.bikeDataTest: WizardStepMeta(
     id: WizardStepId.bikeDataTest,
     kind: StepKind.autoDetect,
-    fallbackTimerMs: 30000,
-    autoAdvanceRule: AutoAdvanceRule.bikeDataDetected,
   ),
   WizardStepId.motorTest: WizardStepMeta(
     id: WizardStepId.motorTest,
@@ -144,8 +131,6 @@ const _stepMetaTable = <WizardStepId, WizardStepMeta>{
   WizardStepId.physicalShifter: WizardStepMeta(
     id: WizardStepId.physicalShifter,
     kind: StepKind.autoDetect,
-    fallbackTimerMs: 30000,
-    autoAdvanceRule: AutoAdvanceRule.shifterEvent,
   ),
   WizardStepId.hrm: WizardStepMeta(
     id: WizardStepId.hrm,

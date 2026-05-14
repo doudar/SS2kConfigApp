@@ -25,7 +25,6 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
   bool _isScanning = false;
   StreamSubscription<List<ScanResult>>? _scanResultsSubscription;
   StreamSubscription<bool>? _isScanningSubscription;
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
 
   final Guid _csGuid = Guid(csUUID);
 
@@ -47,7 +46,6 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
   void dispose() {
     _scanResultsSubscription?.cancel();
     _isScanningSubscription?.cancel();
-    _connectionStateSubscription?.cancel();
     super.dispose();
   }
 
@@ -73,11 +71,9 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
 
   void _onConnectPressed(BluetoothDevice device, WizardSession session) {
     if (FlutterBluePlus.isScanningNow) FlutterBluePlus.stopScan();
-    try {
-      if (BLEDataManager.forDevice(device).isUserDisconnect) {
-        BLEDataManager.forDevice(device).isUserDisconnect = false;
-      }
-    } catch (_) {}
+    if (BLEDataManager.forDevice(device).isUserDisconnect) {
+      BLEDataManager.forDevice(device).isUserDisconnect = false;
+    }
 
     device.connectAndUpdateStream().then((_) {
       BLEDataManager.forDevice(device).setupConnection(device);
