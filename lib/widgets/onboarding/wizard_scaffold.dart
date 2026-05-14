@@ -15,6 +15,7 @@ class WizardScaffold extends StatelessWidget {
   final VoidCallback? onSkip;
   final bool showSkipSetup;
   final WizardStepId stepId;
+  final VoidCallback? onBack;
 
   const WizardScaffold({
     Key? key,
@@ -27,6 +28,7 @@ class WizardScaffold extends StatelessWidget {
     this.showSkip = false,
     this.onSkip,
     this.showSkipSetup = true,
+    this.onBack,
   }) : super(key: key);
 
   Future<void> _skipSetup(BuildContext context) async {
@@ -67,18 +69,19 @@ class WizardScaffold extends StatelessWidget {
             ? null
             : IconButton(
                 icon: const Icon(Icons.arrow_back),
-                onPressed: () {
-                  final prev = machine.previousStep(
-                    currentStep: stepId,
-                    session: session.snapshot,
-                  );
-                  if (prev != null) {
-                    final prevIndex =
-                        machine.activeSteps(bikeType: session.bikeType).indexOf(prev);
-                    // The OnboardingWizard's PageController is notified via session
-                    session.setStepIndex(prevIndex);
-                  }
-                },
+                onPressed: onBack ??
+                    () {
+                      final prev = machine.previousStep(
+                        currentStep: stepId,
+                        session: session.snapshot,
+                      );
+                      if (prev != null) {
+                        final prevIndex =
+                            machine.activeSteps(bikeType: session.bikeType).indexOf(prev);
+                        // The OnboardingWizard's PageController is notified via session
+                        session.setStepIndex(prevIndex);
+                      }
+                    },
               ),
         actions: [
           if (showSkipSetup)
