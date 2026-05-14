@@ -39,22 +39,34 @@ class _CompletionStepState extends State<CompletionStep> {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Your SmartSpin2k is configured and ready to use. '
-                'What would you like to do next?',
+                "Your SmartSpin2k is configured and ready. Take 30 seconds to read your personalized first-ride routine — "
+                "it's the same checklist every ride, so you'll have it down by tomorrow.",
                 style: TextStyle(fontSize: 16, height: 1.5),
               ),
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.link),
-                  label: const Text('How to connect your training app'),
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.menu_book),
+                  label: const Text('Your First Ride Guide'),
                   onPressed: () {
-                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ConnectTrainingAppStep()));
+                    final session = context.read<WizardSession>();
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => ConnectTrainingAppStep(
+                        bikeType: session.bikeType,
+                        dataSource: session.dataSourceChoice,
+                        sideSwitchMode: session.sideSwitchMode,
+                      ),
+                    ));
                   },
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 20),
+              Text(
+                'Or jump straight to:',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(

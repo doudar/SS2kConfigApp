@@ -17,10 +17,7 @@ class SensorWiringStep extends StatelessWidget {
       title: 'Sensor Wiring',
       stepId: WizardStepId.sensorWiring,
       onNext: () {
-        final next = machine.nextStep(
-          currentStep: WizardStepId.sensorWiring,
-          session: session.snapshot,
-        );
+        final next = machine.nextStep(currentStep: WizardStepId.sensorWiring, session: session.snapshot);
         if (next != null) {
           final steps = machine.activeSteps(bikeType: session.bikeType);
           session.setStepIndex(steps.indexOf(next));
@@ -38,8 +35,7 @@ class SensorWiringStep extends StatelessWidget {
                   'Unlatch the cable retention clip on the back of your Peloton tablet, '
                   'then unplug the sensor wire from the tablet.',
               imageAsset: 'assets/images/sensor_wiring_tablet_back.webp',
-              imagePlaceholderLabel:
-                  'Photo: back of tablet\n(sensor cable & retention clip circled)',
+              imagePlaceholderLabel: 'Photo: back of tablet\n(sensor cable & retention clip circled)',
             ),
             SizedBox(height: 16),
             InstructionStepCard(
@@ -47,10 +43,9 @@ class SensorWiringStep extends StatelessWidget {
               title: 'Connect to the SmartSpin2k',
               body:
                   'Connect the sensor wire to the "Peloton Sensor" connector on the '
-                  'SmartSpin2k wiring harness.',
+                  'SmartSpin2k wiring harness. Leave the cable retention clip unlatched for now.',
               imageAsset: 'assets/images/sensor_wiring_harness_connected.webp',
-              imagePlaceholderLabel:
-                  'Photo: sensor wire connected\nto SmartSpin2k harness',
+              imagePlaceholderLabel: 'Photo: sensor wire connected\nto SmartSpin2k harness',
             ),
             SizedBox(height: 8),
           ],

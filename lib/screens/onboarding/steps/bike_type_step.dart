@@ -18,10 +18,7 @@ class BikeTypeStep extends StatelessWidget {
       nextEnabled: session.bikeType != null,
       onNext: session.bikeType != null
           ? () {
-              final next = machine.nextStep(
-                currentStep: WizardStepId.bikeType,
-                session: session.snapshot,
-              );
+              final next = machine.nextStep(currentStep: WizardStepId.bikeType, session: session.snapshot);
               if (next != null) {
                 final steps = machine.activeSteps(bikeType: session.bikeType);
                 session.setStepIndex(steps.indexOf(next));
@@ -48,7 +45,7 @@ class BikeTypeStep extends StatelessWidget {
             ),
             _BikeTypeCard(
               bikeType: BikeType.mostSpinBikes,
-              title: 'Bluetooth Compatible Spin Bikes',
+              title: 'Most Spin Bikes With Bluetooth Support',
               subtitle: 'Bowflex C6, Schwinn IC4, Yesoul S3, etc.',
               selected: session.bikeType == BikeType.mostSpinBikes,
             ),
@@ -86,12 +83,7 @@ class _BikeTypeCard extends StatelessWidget {
   final String subtitle;
   final bool selected;
 
-  const _BikeTypeCard({
-    required this.bikeType,
-    required this.title,
-    required this.subtitle,
-    required this.selected,
-  });
+  const _BikeTypeCard({required this.bikeType, required this.title, required this.subtitle, required this.selected});
 
   @override
   Widget build(BuildContext context) {
@@ -101,10 +93,7 @@ class _BikeTypeCard extends StatelessWidget {
       elevation: selected ? 4 : 1,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: selected ? colorScheme.primary : Colors.transparent,
-          width: 2,
-        ),
+        side: BorderSide(color: selected ? colorScheme.primary : Colors.transparent, width: 2),
       ),
       child: RadioListTile<BikeType>(
         value: bikeType,
