@@ -2,6 +2,8 @@ enum BikeType { mostSpinBikes, pelotonBikePlus, pelotonOriginal, powerMeterBike 
 
 enum DataSource { grupetto, powerMeter }
 
+enum SideSwitchMode { tabletMode, headlessMode }
+
 enum WizardStepId {
   welcome,
   bikeType,

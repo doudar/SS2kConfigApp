@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../utils/onboarding/wizard_session.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../widgets/basic_app_bar.dart';
 import '../../../widgets/onboarding/instruction_step_card.dart';
