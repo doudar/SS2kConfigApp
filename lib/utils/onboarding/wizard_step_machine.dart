@@ -62,7 +62,9 @@ const _allStepsWithoutSideSwitch = [
   WizardStepId.completion,
 ];
 
-const _allStepsWithSideSwitch = [
+// Peloton Original has no real data-source choice (wired sensors only), so
+// the dataSource step is folded into bikeDataTest's pre-ride guidance.
+const _pelotonOriginalSteps = [
   WizardStepId.welcome,
   WizardStepId.bikeType,
   WizardStepId.hardwareInstall,
@@ -70,7 +72,6 @@ const _allStepsWithSideSwitch = [
   WizardStepId.sensorWiring,
   WizardStepId.sideSwitch,
   WizardStepId.ss2kConnection,
-  WizardStepId.dataSource,
   WizardStepId.bikeDataTest,
   WizardStepId.motorTest,
   WizardStepId.physicalShifter,
@@ -116,7 +117,7 @@ class WizardStepMachine {
   List<WizardStepId> activeSteps({required BikeType? bikeType}) {
     if (bikeType == null) return List.unmodifiable(_nullBikeTypeSteps);
     if (bikeType == BikeType.pelotonOriginal) {
-      return List.unmodifiable(_allStepsWithSideSwitch);
+      return List.unmodifiable(_pelotonOriginalSteps);
     }
     return List.unmodifiable(_allStepsWithoutSideSwitch);
   }

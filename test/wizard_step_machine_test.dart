@@ -61,6 +61,8 @@ void main() {
     });
 
     test('pelotonOriginal full step list matches contract', () {
+      // Note: pelotonOriginal omits dataSource — wired sensors only, so the
+      // "how to wake your bike" guidance lives inline on bikeDataTest instead.
       expect(machine.activeSteps(bikeType: BikeType.pelotonOriginal), [
         WizardStepId.welcome,
         WizardStepId.bikeType,
@@ -69,7 +71,6 @@ void main() {
         WizardStepId.sensorWiring,
         WizardStepId.sideSwitch,
         WizardStepId.ss2kConnection,
-        WizardStepId.dataSource,
         WizardStepId.bikeDataTest,
         WizardStepId.motorTest,
         WizardStepId.physicalShifter,
@@ -77,6 +78,19 @@ void main() {
         WizardStepId.wifi,
         WizardStepId.completion,
       ]);
+    });
+
+    test('pelotonOriginal omits dataSource', () {
+      final steps = machine.activeSteps(bikeType: BikeType.pelotonOriginal);
+      expect(steps.contains(WizardStepId.dataSource), isFalse);
+      final ss2kIndex = steps.indexOf(WizardStepId.ss2kConnection);
+      final bikeDataIndex = steps.indexOf(WizardStepId.bikeDataTest);
+      expect(bikeDataIndex, ss2kIndex + 1);
+    });
+
+    test('pelotonBikePlus still includes dataSource', () {
+      final steps = machine.activeSteps(bikeType: BikeType.pelotonBikePlus);
+      expect(steps.contains(WizardStepId.dataSource), isTrue);
     });
   });
 

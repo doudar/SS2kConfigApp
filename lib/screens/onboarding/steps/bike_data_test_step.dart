@@ -6,6 +6,9 @@ import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../utils/bledata.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
+import '../../../widgets/onboarding/instruction_step_card.dart';
+
+enum _PelotonTabletApp { peloton, grupetto }
 
 class BikeDataTestStep extends StatefulWidget {
   const BikeDataTestStep({Key? key}) : super(key: key);
@@ -21,6 +24,7 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
   bool _cadenceSeen = false;
   int _lastWatts = 0;
   int _lastCadence = 0;
+  _PelotonTabletApp _pelotonTabletApp = _PelotonTabletApp.peloton;
 
   bool get _bothSeen => _powerSeen && _cadenceSeen;
 
@@ -74,8 +78,47 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
     super.dispose();
   }
 
+  ({String title, String body, Uri? linkUrl, String? linkLabel})? _wakeCopy(
+      BikeType? bikeType, SideSwitchMode? mode) {
+    if (bikeType != BikeType.pelotonOriginal) return null;
+    if (mode == SideSwitchMode.tabletMode) {
+      if (_pelotonTabletApp == _PelotonTabletApp.peloton) {
+        return (
+          title: 'Start a free ride on the Peloton tablet',
+          body: 'Open the Peloton app and start a Just Ride. Pedal a few seconds — '
+              'when cadence and output show on screen, your SmartSpin2k is awake and reading the bike.',
+          linkUrl: null,
+          linkLabel: null,
+        );
+      }
+      return (
+        title: 'Launch Grupetto on the tablet',
+        body: 'Open Grupetto on your Peloton tablet. Pedal a few seconds — '
+            'when Grupetto shows live cadence and power, your SmartSpin2k is reading data.',
+        linkUrl: Uri.parse('https://github.com/doudar/Openpelo'),
+        linkLabel: 'Install with OpenPelo',
+      );
+    }
+    if (mode == SideSwitchMode.headlessMode) {
+      return (
+        title: 'Pedal to wake your SmartSpin2k',
+        body: 'Your sensors feed the SmartSpin2k through the cable you connected — no tablet needed. '
+            "Pedal a few seconds and you're awake.",
+        linkUrl: null,
+        linkLabel: null,
+      );
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final session = context.watch<WizardSession>();
+    final bikeType = session.bikeType;
+    final sideSwitchMode = session.sideSwitchMode;
+    final wake = _wakeCopy(bikeType, sideSwitchMode);
+    final showTabletToggle = bikeType == BikeType.pelotonOriginal && sideSwitchMode == SideSwitchMode.tabletMode;
+
     return WizardScaffold(
       title: 'Test Your Connection',
       stepId: WizardStepId.bikeDataTest,
@@ -88,6 +131,37 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (showTabletToggle) ...[
+              SegmentedButton<_PelotonTabletApp>(
+                segments: const [
+                  ButtonSegment(value: _PelotonTabletApp.peloton, label: Text('Peloton app')),
+                  ButtonSegment(value: _PelotonTabletApp.grupetto, label: Text('Grupetto overlay')),
+                ],
+                selected: {_pelotonTabletApp},
+                onSelectionChanged: (s) => setState(() => _pelotonTabletApp = s.first),
+              ),
+              const SizedBox(height: 16),
+            ],
+            if (wake != null) ...[
+              InstructionStepCard(
+                title: wake.title,
+                body: wake.body,
+                trailing: wake.linkUrl != null
+                    ? TextButton.icon(
+                        style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
+                        icon: const Icon(Icons.open_in_new, size: 16),
+                        label: Text(wake.linkLabel!),
+                        onPressed: () async {
+                          final url = wake.linkUrl!;
+                          if (await canLaunchUrl(url)) {
+                            await launchUrl(url, mode: LaunchMode.externalApplication);
+                          }
+                        },
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 16),
+            ],
             const Text(
               'Give the pedals a quick spin! '
               'Your power and cadence numbers will pop up here as soon as your bike is ready to go.',

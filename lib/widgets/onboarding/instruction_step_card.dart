@@ -17,6 +17,7 @@ class InstructionStepCard extends StatelessWidget {
   final String body;
   final String? imageAsset;
   final String? imagePlaceholderLabel;
+  final Widget? trailing;
 
   const InstructionStepCard({
     Key? key,
@@ -25,6 +26,7 @@ class InstructionStepCard extends StatelessWidget {
     required this.body,
     this.imageAsset,
     this.imagePlaceholderLabel,
+    this.trailing,
   }) : super(key: key);
 
   @override
@@ -75,6 +77,10 @@ class InstructionStepCard extends StatelessWidget {
               body,
               style: const TextStyle(fontSize: 16, height: 1.5),
             ),
+            if (trailing != null) ...[
+              const SizedBox(height: 8),
+              trailing!,
+            ],
           ],
         ),
       ),
