@@ -128,7 +128,7 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
         stepNumber: 1,
         title: 'Flip the side switch UP',
         body: 'On the side of your SmartSpin2k, slide the switch to the UP position.',
-        imageAsset: 'assets/images/side_switch_up.webp',
+        imageAsset: 'assets/images/side_switch_up.svg',
         imagePlaceholderLabel: 'Photo: SmartSpin2k side switch in UP position',
       ),
       SizedBox(height: 16),
@@ -138,7 +138,7 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
         body:
             'Plug the SmartSpin2k cable labeled "Peloton Tablet" into the back of '
             'your bike\'s tablet — into the same port the original sensor wire used.',
-        imageAsset: 'assets/images/side_switch_tablet_cable_connected.webp',
+        imageAsset: 'assets/images/side_switch_tablet_cable_connected.svg',
         imagePlaceholderLabel: 'Photo: Peloton Tablet cable plugged into back of tablet',
       ),
       SizedBox(height: 16),
@@ -146,7 +146,7 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
         stepNumber: 3,
         title: 'Re-latch the cable retention clip',
         body: 'Snap the cable retention clip back into place to keep the wires secure.',
-        imageAsset: 'assets/images/side_switch_clip_latched.webp',
+        imageAsset: 'assets/images/side_switch_tablet_clip_latched.svg',
         imagePlaceholderLabel: 'Photo: retention clip latched over wires',
       ),
     ];
@@ -158,7 +158,7 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
         stepNumber: 1,
         title: 'Flip the side switch DOWN',
         body: 'On the side of your SmartSpin2k, slide the switch to the DOWN position.',
-        imageAsset: 'assets/images/side_switch_down.webp',
+        imageAsset: 'assets/images/side_switch_down.svg',
         imagePlaceholderLabel: 'Photo: SmartSpin2k side switch in DOWN position',
       ),
       SizedBox(height: 16),
@@ -168,7 +168,7 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
         body:
             'Do not plug the SmartSpin2k\'s "Peloton Tablet" cable into your bike. '
             'Coil it up out of the way.',
-        imageAsset: 'assets/images/side_switch_tablet_cable_unused.webp',
+        imageAsset: 'assets/images/side_switch_tablet_cable_unused.svg',
         imagePlaceholderLabel: 'Photo: unconnected Peloton Tablet cable coiled aside',
       ),
       SizedBox(height: 16),
@@ -176,7 +176,7 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
         stepNumber: 3,
         title: 'Re-latch the cable retention clip',
         body: 'Snap the cable retention clip back into place to keep the sensor wire secure.',
-        imageAsset: 'assets/images/side_switch_clip_latched.webp',
+        imageAsset: 'assets/images/side_switch_clip_latched.svg',
         imagePlaceholderLabel: 'Photo: retention clip latched over wires',
       ),
     ];
