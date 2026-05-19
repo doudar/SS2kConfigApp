@@ -130,10 +130,11 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: 'stable'
+          sdk: '3.11.5'
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.41.9'
           channel: stable
 
       - name: Accept Android SDK licenses
@@ -209,10 +210,11 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: 'stable'
+          sdk: '3.11.5'
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.41.9'
           channel: stable
 
       # Debug environment variables
@@ -293,13 +295,14 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: 'stable'
+          sdk: '3.11.5'
 
       # Use official action for amd64
       - name: Setup Flutter (amd64)
         if: matrix.arch == 'amd64'
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.41.9'
           channel: stable
 
       # Manual install for arm64 (action currently fails to resolve version on ubuntu-24.04-arm)
@@ -309,7 +312,7 @@ jobs:
           set -e
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git curl unzip xz-utils zip
-          git clone https://github.com/flutter/flutter.git -b stable $HOME/flutter
+          git clone https://github.com/flutter/flutter.git -b 3.41.9 --depth 1 $HOME/flutter
           echo "$HOME/flutter/bin" >> $GITHUB_PATH
           $HOME/flutter/bin/flutter config --no-analytics
           $HOME/flutter/bin/flutter doctor -v || true
@@ -459,11 +462,12 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: 'stable'
+          sdk: '3.11.5'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.41.9'
           channel: stable
 
       - name: Install Inno Setup

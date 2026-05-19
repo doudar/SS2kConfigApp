@@ -92,7 +92,10 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
     });
 
     try {
-      final page = await FitFileReader.getCompletedActivitiesPage(offset: 0, limit: _initialPageSize);
+      final page = await FitFileReader.getCompletedActivitiesPage(
+        offset: 0,
+        limit: _initialPageSize,
+      );
       if (!mounted) return;
       setState(() {
         _activities.addAll(page.activities);
@@ -119,7 +122,10 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
     });
 
     try {
-      final page = await FitFileReader.getCompletedActivitiesPage(offset: _fitOffset, limit: _pageSize);
+      final page = await FitFileReader.getCompletedActivitiesPage(
+        offset: _fitOffset,
+        limit: _pageSize,
+      );
       if (!mounted) return;
       setState(() {
         _activities.addAll(page.activities);
@@ -139,7 +145,10 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
     _loadInitialActivities();
   }
 
-  Future<void> _showActivityOptions(BuildContext context, ActivitySummary activity) async {
+  Future<void> _showActivityOptions(
+    BuildContext context,
+    ActivitySummary activity,
+  ) async {
     if (activity.isInProgress) {
       await _promptResumeInProgress(context, activity);
       return;
@@ -156,8 +165,12 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Date: ${DateFormat('MMM d, y HH:mm').format(activity.timestamp)}'),
-              Text('Duration: ${activity.duration.toString().split('.').first}'),
+              Text(
+                'Date: ${DateFormat('MMM d, y HH:mm').format(activity.timestamp)}',
+              ),
+              Text(
+                'Duration: ${activity.duration.toString().split('.').first}',
+              ),
               Text('Average Power: ${activity.averagePower}W'),
               Text('Average Cadence: ${activity.averageCadence}rpm'),
               Text(
@@ -192,7 +205,9 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
 
     if (exportChoice == 'share') {
       try {
-        await Share.shareXFiles([XFile(activity.filePath)]);
+        await SharePlus.instance.share(
+          ShareParams(files: [XFile(activity.filePath)]),
+        );
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -222,7 +237,11 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(success ? 'Successfully uploaded to Strava' : 'Failed to upload to Strava'),
+            content: Text(
+              success
+                  ? 'Successfully uploaded to Strava'
+                  : 'Failed to upload to Strava',
+            ),
             backgroundColor: success ? Colors.green : Colors.red,
           ),
         );
@@ -230,7 +249,10 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
     }
   }
 
-  Future<void> _promptResumeInProgress(BuildContext context, ActivitySummary activity) async {
+  Future<void> _promptResumeInProgress(
+    BuildContext context,
+    ActivitySummary activity,
+  ) async {
     final choice = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -254,7 +276,8 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
     }
 
     final savedInProgressPath = await WorkoutStorage.loadInProgressFilePath();
-    if (savedInProgressPath == null || savedInProgressPath != activity.filePath) {
+    if (savedInProgressPath == null ||
+        savedInProgressPath != activity.filePath) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('No matching in-progress workout state found.'),
@@ -292,13 +315,18 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
     if (context.mounted) {
       Navigator.pop(context);
     }
-    widget.onWorkoutLoaded(workoutContent, name: widget.workoutController.workoutName);
+    widget.onWorkoutLoaded(
+      workoutContent,
+      name: widget.workoutController.workoutName,
+    );
   }
 
-  Future<void> _deleteSelectedActivities(List<ActivitySummary> activities) async {
+  Future<void> _deleteSelectedActivities(
+    List<ActivitySummary> activities,
+  ) async {
     final toDelete = activities
-      .where((activity) => _selectedActivityPaths.contains(activity.filePath))
-      .toList();
+        .where((activity) => _selectedActivityPaths.contains(activity.filePath))
+        .toList();
 
     if (toDelete.isEmpty) {
       return;
@@ -341,12 +369,7 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
 
         return ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: Image.file(
-            file,
-            width: 120,
-            height: 70,
-            fit: BoxFit.cover,
-          ),
+          child: Image.file(file, width: 120, height: 70, fit: BoxFit.cover),
         );
       },
     );
@@ -361,11 +384,7 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
         borderRadius: BorderRadius.circular(8),
       ),
       alignment: Alignment.center,
-      child: Icon(
-        Icons.fitness_center,
-        color: Colors.grey.shade600,
-        size: 18,
-      ),
+      child: Icon(Icons.fitness_center, color: Colors.grey.shade600, size: 18),
     );
   }
 
@@ -382,132 +401,161 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
           child: _isLoadingInitial
               ? const Center(child: CircularProgressIndicator())
               : _loadError != null
-                  ? Center(child: Text('Error: $_loadError'))
-                  : _activities.isEmpty
-                      ? const Center(child: Text('No completed activities found'))
-                      : Builder(
-                          builder: (context) {
-                            final activities = _activities;
-                            final totalSelectable = activities.length;
-                            final selectedCount = _selectedActivityPaths.length;
-                            final allSelected = totalSelectable > 0 && selectedCount == totalSelectable;
+              ? Center(child: Text('Error: $_loadError'))
+              : _activities.isEmpty
+              ? const Center(child: Text('No completed activities found'))
+              : Builder(
+                  builder: (context) {
+                    final activities = _activities;
+                    final totalSelectable = activities.length;
+                    final selectedCount = _selectedActivityPaths.length;
+                    final allSelected =
+                        totalSelectable > 0 && selectedCount == totalSelectable;
 
-                            return Column(
-                              children: [
-                                Row(
+                    return Column(
+                      children: [
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: allSelected,
+                              onChanged: totalSelectable == 0
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        _selectedActivityPaths.clear();
+                                        if (value == true) {
+                                          _selectedActivityPaths.addAll(
+                                            activities.map(
+                                              (activity) => activity.filePath,
+                                            ),
+                                          );
+                                        }
+                                      });
+                                    },
+                            ),
+                            const Text('Select All'),
+                            const Spacer(),
+                            TextButton.icon(
+                              onPressed: selectedCount == 0
+                                  ? null
+                                  : () async {
+                                      final confirmed = await showDialog<bool>(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          title: const Text('Delete Workouts'),
+                                          content: Text(
+                                            'Delete $selectedCount selected workouts?',
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, false),
+                                              child: const Text('CANCEL'),
+                                            ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, true),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor: Colors.red,
+                                              ),
+                                              child: const Text('DELETE'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+
+                                      if (confirmed == true) {
+                                        await _deleteSelectedActivities(
+                                          activities,
+                                        );
+                                      }
+                                    },
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              label: const Text('DELETE'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            itemCount:
+                                activities.length + (_isLoadingMore ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (index >= activities.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 16.0),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              }
+
+                              final activity = activities[index];
+                              final isSelected = _selectedActivityPaths
+                                  .contains(activity.filePath);
+
+                              return ListTile(
+                                leading: Checkbox(
+                                  value: isSelected,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      if (value == true) {
+                                        _selectedActivityPaths.add(
+                                          activity.filePath,
+                                        );
+                                      } else {
+                                        _selectedActivityPaths.remove(
+                                          activity.filePath,
+                                        );
+                                      }
+                                    });
+                                  },
+                                ),
+                                title: Row(
                                   children: [
-                                    Checkbox(
-                                      value: allSelected,
-                                      onChanged: totalSelectable == 0
-                                          ? null
-                                          : (value) {
-                                              setState(() {
-                                                _selectedActivityPaths.clear();
-                                                if (value == true) {
-                                                  _selectedActivityPaths.addAll(activities.map((activity) => activity.filePath));
-                                                }
-                                              });
-                                            },
-                                    ),
-                                    const Text('Select All'),
-                                    const Spacer(),
-                                    TextButton.icon(
-                                      onPressed: selectedCount == 0
-                                          ? null
-                                          : () async {
-                                              final confirmed = await showDialog<bool>(
-                                                context: context,
-                                                builder: (context) => AlertDialog(
-                                                  title: const Text('Delete Workouts'),
-                                                  content: Text('Delete $selectedCount selected workouts?'),
-                                                  actions: [
-                                                    TextButton(
-                                                      onPressed: () => Navigator.pop(context, false),
-                                                      child: const Text('CANCEL'),
-                                                    ),
-                                                    TextButton(
-                                                      onPressed: () => Navigator.pop(context, true),
-                                                      style: TextButton.styleFrom(foregroundColor: Colors.red),
-                                                      child: const Text('DELETE'),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-
-                                              if (confirmed == true) {
-                                                await _deleteSelectedActivities(activities);
-                                              }
-                                            },
-                                      icon: const Icon(Icons.delete, color: Colors.red),
-                                      label: const Text('DELETE'),
-                                      style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                    _buildThumbnail(activity),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        activity.isInProgress
+                                            ? '${activity.name} (In Progress)'
+                                            : activity.name,
+                                      ),
                                     ),
                                   ],
                                 ),
-                                const Divider(height: 1),
-                                Expanded(
-                                  child: ListView.builder(
-                                    controller: _scrollController,
-                                    itemCount: activities.length + (_isLoadingMore ? 1 : 0),
-                                    itemBuilder: (context, index) {
-                                      if (index >= activities.length) {
-                                        return const Padding(
-                                          padding: EdgeInsets.symmetric(vertical: 16.0),
-                                          child: Center(child: CircularProgressIndicator()),
-                                        );
-                                      }
-
-                                      final activity = activities[index];
-                                      final isSelected = _selectedActivityPaths.contains(activity.filePath);
-
-                                      return ListTile(
-                                        leading: Checkbox(
-                                          value: isSelected,
-                                          onChanged: (value) {
-                                            setState(() {
-                                              if (value == true) {
-                                                _selectedActivityPaths.add(activity.filePath);
-                                              } else {
-                                                _selectedActivityPaths.remove(activity.filePath);
-                                              }
-                                            });
-                                          },
-                                        ),
-                                        title: Row(
-                                          children: [
-                                            _buildThumbnail(activity),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Text(
-                                                activity.isInProgress
-                                                    ? '${activity.name} (In Progress)'
-                                                    : activity.name,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        subtitle: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(DateFormat('MMM d, y HH:mm').format(activity.timestamp)),
-                                            if (activity.isInProgress) const Text('Status: In Progress'),
-                                            Text(
-                                              'Duration: ${activity.duration.toString().split('.').first} • '
-                                              'Power: ${activity.averagePower}W • '
-                                              'Cadence: ${activity.averageCadence}rpm'
-                                              '${activity.averageHeartRate != null ? ' • HR: ${activity.averageHeartRate}bpm' : ''}',
-                                            ),
-                                          ],
-                                        ),
-                                        onTap: () => _showActivityOptions(context, activity),
-                                      );
-                                    },
-                                  ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      DateFormat(
+                                        'MMM d, y HH:mm',
+                                      ).format(activity.timestamp),
+                                    ),
+                                    if (activity.isInProgress)
+                                      const Text('Status: In Progress'),
+                                    Text(
+                                      'Duration: ${activity.duration.toString().split('.').first} • '
+                                      'Power: ${activity.averagePower}W • '
+                                      'Cadence: ${activity.averageCadence}rpm'
+                                      '${activity.averageHeartRate != null ? ' • HR: ${activity.averageHeartRate}bpm' : ''}',
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            );
-                          },
+                                onTap: () =>
+                                    _showActivityOptions(context, activity),
+                              );
+                            },
+                          ),
                         ),
+                      ],
+                    );
+                  },
+                ),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context),

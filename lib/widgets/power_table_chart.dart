@@ -161,8 +161,8 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
 
     if (mounted && (value != null && value2 != null)) {
       setState(() {
-        homingMin = (value == INT32_MIN) ? null : value! / widget.bleData.tableDivisor;
-        homingMax = (value2 == INT32_MIN) ? null : value2! / widget.bleData.tableDivisor;
+        homingMin = (value == INT32_MIN) ? null : value / widget.bleData.tableDivisor;
+        homingMax = (value2 == INT32_MIN) ? null : value2 / widget.bleData.tableDivisor;
       });
     }
   }

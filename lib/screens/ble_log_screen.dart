@@ -34,7 +34,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(widget.device);
-    
+
     // Find the log characteristic
     logCharacteristic = bleData.customCharacteristic.firstWhere(
       (i) => i["vName"] == BLE_logStreamVname,
@@ -82,7 +82,9 @@ class _BleLogScreenState extends State<BleLogScreen> {
         return;
       }
       setState(() {
-        _logMessages.add('[${DateTime.now().toIso8601String()}] Demo log message ${_logMessages.length + 1}');
+        _logMessages.add(
+          '[${DateTime.now().toIso8601String()}] Demo log message ${_logMessages.length + 1}',
+        );
         _scrollToBottom();
       });
     });
@@ -92,12 +94,12 @@ class _BleLogScreenState extends State<BleLogScreen> {
     // Subscribe directly to the log stream to catch every message
     _logSubscription = bleData.logStream.listen((message) {
       if (!mounted) return;
-      
+
       String newMessage = message;
       if (newMessage == "1") {
         newMessage = "Initializing Logging.";
       }
-      
+
       if (newMessage.isNotEmpty) {
         setState(() {
           _logMessages.add(newMessage);
@@ -111,7 +113,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
   void dispose() {
     // Automatically disable streaming when leaving the screen
     _disableLogStreaming();
-    
+
     _demoTimer?.cancel();
     _logSubscription?.cancel(); // Cancel the stream subscription
     _scrollController.dispose();
@@ -148,11 +150,11 @@ class _BleLogScreenState extends State<BleLogScreen> {
       final directory = await getApplicationDocumentsDirectory();
       final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
       final filePath = '${directory.path}/ble_logs_$timestamp.txt';
-      
+
       // Create the file and write logs
       final file = File(filePath);
       await file.writeAsString(_logMessages.join('\n'));
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -183,15 +185,17 @@ class _BleLogScreenState extends State<BleLogScreen> {
       final directory = await getTemporaryDirectory();
       final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
       final filePath = '${directory.path}/ble_logs_$timestamp.txt';
-      
+
       final file = File(filePath);
       await file.writeAsString(_logMessages.join('\n'));
-      
+
       // Share the file
-      await Share.shareXFiles(
-        [XFile(filePath)],
-        subject: 'SmartSpin2k BLE Logs',
-        text: 'BLE logs from SmartSpin2k device',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(filePath)],
+          subject: 'SmartSpin2k BLE Logs',
+          text: 'BLE logs from SmartSpin2k device',
+        ),
       );
     } catch (e) {
       if (mounted) {
@@ -208,10 +212,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: SS2KAppBar(
-        device: widget.device,
-        title: "View Logs",
-      ),
+      appBar: SS2KAppBar(device: widget.device, title: "View Logs"),
       body: Column(
         children: [
           // Control panel
@@ -224,7 +225,10 @@ class _BleLogScreenState extends State<BleLogScreen> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.info_outline, color: Theme.of(context).colorScheme.primary),
+                      Icon(
+                        Icons.info_outline,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                       SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -255,7 +259,9 @@ class _BleLogScreenState extends State<BleLogScreen> {
                       SizedBox(width: 8),
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: _logMessages.isNotEmpty ? _clearLogs : null,
+                          onPressed: _logMessages.isNotEmpty
+                              ? _clearLogs
+                              : null,
                           icon: Icon(Icons.clear_all),
                           label: Text('Clear'),
                         ),
@@ -285,8 +291,8 @@ class _BleLogScreenState extends State<BleLogScreen> {
                         'No logs to display.\nWaiting for logs...',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     )
                   : ListView.builder(

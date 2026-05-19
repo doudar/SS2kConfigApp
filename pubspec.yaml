@@ -1,13 +1,13 @@
 name: ss2kconfigapp
 description: Configures the SmartSpin2k using BLE
-version: 1.2.2+56
+version: 1.2.3+58
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: "none"
 
 environment:
-  sdk: ">=3.5.0 <4.0.0"
-  flutter: ">=3.24.0"
+  sdk: ">=3.11.5 <4.0.0"
+  flutter: ">=3.41.9"
 
 dependencies:
   flutter:
@@ -49,6 +49,7 @@ flutter:
 
   assets:
     - assets/
+    - assets/images/
     - assets/workout_library/
     - assets/appainter_theme.json
     - assets/appainter_theme_dark.json
