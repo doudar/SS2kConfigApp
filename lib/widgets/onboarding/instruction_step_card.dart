@@ -103,13 +103,17 @@ class InstructionStepCard extends StatelessWidget {
           return ConstrainedBox(
             constraints: BoxConstraints(maxHeight: maxHeight),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: InkWell(
-                onTap: () => _openFullScreen(context, assetPath),
-                child: SvgPicture.memory(
-                  bytes,
-                  fit: BoxFit.fitWidth,
-                  alignment: Alignment.topCenter,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: double.infinity,
+                color: const Color(0xFFE6E6E6),
+                child: InkWell(
+                  onTap: () => _openFullScreen(context, assetPath),
+                  child: SvgPicture.memory(
+                    bytes,
+                    fit: BoxFit.fitWidth,
+                    alignment: Alignment.topCenter,
+                  ),
                 ),
               ),
             ),
@@ -121,14 +125,18 @@ class InstructionStepCard extends StatelessWidget {
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxHeight),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: () => _openFullScreen(context, assetPath),
-          child: Image.asset(
-            assetPath,
-            fit: BoxFit.fitWidth,
-            alignment: Alignment.topCenter,
-            errorBuilder: (context, error, stackTrace) => _placeholder(maxHeight),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          color: const Color(0xFFE6E6E6),
+          child: InkWell(
+            onTap: () => _openFullScreen(context, assetPath),
+            child: Image.asset(
+              assetPath,
+              fit: BoxFit.fitWidth,
+              alignment: Alignment.topCenter,
+              errorBuilder: (context, error, stackTrace) => _placeholder(maxHeight),
+            ),
           ),
         ),
       ),
@@ -141,7 +149,7 @@ class InstructionStepCard extends StatelessWidget {
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.grey.shade200,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Center(
         child: Text(
