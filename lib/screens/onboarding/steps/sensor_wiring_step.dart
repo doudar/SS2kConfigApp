@@ -32,7 +32,7 @@ class SensorWiringStep extends StatelessWidget {
               stepNumber: 1,
               title: 'Release the sensor cable',
               body:
-                  'Unlatch the cable retention clip on the back of your Peloton tablet, '
+                  'Unlatch the cable retention clip on the back of your Peloton tablet (use a small flat head screwdriver if needed), '
                   'then unplug the sensor wire from the tablet.',
               imageAsset: 'assets/images/sensor_wiring_tablet_back.svg',
               imagePlaceholderLabel: 'Photo: back of tablet\n(sensor cable & retention clip circled)',
@@ -45,7 +45,7 @@ class SensorWiringStep extends StatelessWidget {
                   'Connect the sensor wire to the "Peloton Sensor" connector on the '
                   'SmartSpin2k wiring harness.',
               imageAsset: 'assets/images/sensor_wiring_harness_connecting.svg',
-              imagePlaceholderLabel: 'Photo: sensor wire connected\nto SmartSpin2k harness',
+              imagePlaceholderLabel: 'Photo: sensor wire connected to SmartSpin2k harness',
             ),
             SizedBox(height: 16),
             InstructionStepCard(
