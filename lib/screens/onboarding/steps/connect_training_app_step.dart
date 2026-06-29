@@ -128,7 +128,7 @@ class _ConnectTrainingAppStepState extends State<ConnectTrainingAppStep> {
           children: [
             const Text("Here's how to start your ride", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Text(_subtitleFor(branch), style: const TextStyle(fontSize: 16, height: 1.4, color: Colors.black87)),
+            Text(_subtitleFor(branch), style: const TextStyle(fontSize: 16, height: 1.4, color: Colors.white)),
             const SizedBox(height: 20),
 
             if (_showPelotonTabletToggle) ...[

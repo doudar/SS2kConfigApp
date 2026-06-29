@@ -52,6 +52,7 @@ class InstructionStepCard extends StatelessWidget {
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
+                        height: 1.0,
                       ),
                     ),
                   ),
