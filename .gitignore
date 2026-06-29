@@ -118,3 +118,5 @@ android/build/reports/problems/problems-report.html
 CLAUDE.md
 specs/
 graphify-out/
+.hermes/
+agents.md

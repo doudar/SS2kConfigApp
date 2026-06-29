@@ -10,6 +10,7 @@ import '../../../utils/extra.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../utils/snackbar.dart';
+import '../../../utils/demo.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../widgets/scan_result_tile.dart';
 
@@ -31,6 +32,13 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
   @override
   void initState() {
     super.initState();
+    // In demo mode there is no real device to scan for: inject the simulated
+    // SmartSpin2k and skip the BLE subscriptions (a real scan would emit empty
+    // results and wipe the demo tile).
+    if (demoModeBypass.value) {
+      _scanResults = [DemoDevice().simulateSmartSpin2kScan()];
+      return;
+    }
     _scanResultsSubscription = FlutterBluePlus.scanResults.listen((results) {
       if (mounted) setState(() => _scanResults = results);
     }, onError: (e) {
@@ -70,16 +78,23 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
   }
 
   void _onConnectPressed(BluetoothDevice device, WizardSession session) {
-    if (FlutterBluePlus.isScanningNow) FlutterBluePlus.stopScan();
-    if (BLEDataManager.forDevice(device).isUserDisconnect) {
-      BLEDataManager.forDevice(device).isUserDisconnect = false;
-    }
+    // In demo mode, seed the simulated device instead of attempting a real BLE
+    // connection. Downstream steps read this device's BLEData and behave like
+    // the main app's demo mode.
+    if (demoModeBypass.value) {
+      BLEDataManager.forDevice(device).setupDemoData();
+    } else {
+      if (FlutterBluePlus.isScanningNow) FlutterBluePlus.stopScan();
+      if (BLEDataManager.forDevice(device).isUserDisconnect) {
+        BLEDataManager.forDevice(device).isUserDisconnect = false;
+      }
 
-    device.connectAndUpdateStream().then((_) {
-      BLEDataManager.forDevice(device).setupConnection(device);
-    }).catchError((e) {
-      Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
-    });
+      device.connectAndUpdateStream().then((_) {
+        BLEDataManager.forDevice(device).setupConnection(device);
+      }).catchError((e) {
+        Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
+      });
+    }
 
     session.connectedDevice = device;
     final machine = WizardStepMachine();
@@ -127,16 +142,18 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
                 ],
               ),
             ),
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: ElevatedButton.icon(
-                  onPressed: _isScanning ? () => FlutterBluePlus.stopScan() : _startScan,
-                  icon: Icon(_isScanning ? Icons.stop : Icons.search),
-                  label: Text(_isScanning ? 'Stop Scan' : 'Scan Again'),
+            // Scanning is meaningless in demo mode and would clear the demo tile.
+            if (!demoModeBypass.value)
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: ElevatedButton.icon(
+                    onPressed: _isScanning ? () => FlutterBluePlus.stopScan() : _startScan,
+                    icon: Icon(_isScanning ? Icons.stop : Icons.search),
+                    label: Text(_isScanning ? 'Stop Scan' : 'Scan Again'),
+                  ),
                 ),
               ),
-            ),
           ],
         ),
     );

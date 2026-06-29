@@ -113,14 +113,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   }
 
   void _demoDeviceSetup() {
-    bleData.isSimulated = true;
-
-    bleData.customCharacteristic.forEach((key) {
-      key["value"] = key["defaultData"] ?? "Default Value";
-    });
-    bleData.charReceived.value = true;
-    bleData.firmwareVersion.value = "24.1.3";
-    bleData.configAppCompatibleFirmware = true;
+    bleData.setupDemoData();
   }
 
   void _openScreen(Widget screen) {
