@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../../utils/onboarding/wizard_step_machine.dart';
 import '../../utils/onboarding/wizard_session.dart';
 import '../../utils/onboarding/onboarding_state.dart';
-import '../../screens/scan_screen.dart';
 
 class WizardScaffold extends StatelessWidget {
   final String title;
@@ -33,11 +32,17 @@ class WizardScaffold extends StatelessWidget {
 
   Future<void> _skipSetup(BuildContext context) async {
     await OnboardingState.markCompleted();
-    if (context.mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const ScanScreen()),
-        (route) => false,
-      );
+    if (!context.mounted) return;
+    // markCompleted() fires OnboardingState.completedNotifier, which main.dart
+    // listens to and rebuilds its home route to ScanScreen. So we must NOT push
+    // a fresh ScanScreen here: when the wizard was opened via "Guided Setup" the
+    // app already has a ScanScreen mounted as home, and a second one would share
+    // the static Snackbar.snackBarKeyB GlobalKey, crashing finalizeTree.
+    // Instead, if the wizard was pushed on top of an existing screen, pop back to
+    // it; on first launch (wizard is the home route) the reactive rebuild handles it.
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
     }
   }
 
