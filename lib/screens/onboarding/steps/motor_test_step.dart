@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 import '../../../utils/constants.dart';
 import '../../../utils/bledata.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
@@ -93,10 +94,7 @@ class _MotorTestStepState extends State<MotorTestStep> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Watch for the knob to rotate',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
+            const Text('Watch for the knob to rotate', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             const Text(
               'Tap "Run Test" below. The SmartSpin2k will send two shift-up commands '
@@ -106,9 +104,7 @@ class _MotorTestStepState extends State<MotorTestStep> {
             ),
             const SizedBox(height: 20),
 
-            // Video/animation placeholder — replace imageAsset with the real asset when ready
-            // Target: assets/images/motor_test_loop.webp — 720×720, 24 fps, ≤ 4 s, ≤ 400 KB
-            _MediaPlaceholder(),
+            _MotorVideo(),
 
             const SizedBox(height: 24),
 
@@ -117,11 +113,7 @@ class _MotorTestStepState extends State<MotorTestStep> {
               child: ElevatedButton.icon(
                 onPressed: _testRunning ? null : () => _runTest(session),
                 icon: _testRunning
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.play_arrow),
                 label: Text(_testRunning ? 'Running…' : 'Run Test'),
               ),
@@ -140,13 +132,9 @@ class _MotorTestStepState extends State<MotorTestStep> {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.check_circle_outline,
-                            color: theme.colorScheme.primary, size: 22),
+                        Icon(Icons.check_circle_outline, color: theme.colorScheme.primary, size: 22),
                         const SizedBox(width: 8),
-                        const Text(
-                          'Test complete',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                        ),
+                        const Text('Test complete', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -173,39 +161,51 @@ class _MotorTestStepState extends State<MotorTestStep> {
   }
 }
 
-class _MediaPlaceholder extends StatelessWidget {
+class _MotorVideo extends StatefulWidget {
+  @override
+  State<_MotorVideo> createState() => _MotorVideoState();
+}
+
+class _MotorVideoState extends State<_MotorVideo> {
+  late VideoPlayerController _controller;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.asset('assets/images/motor_test.mp4')
+      ..setLooping(true)
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() => _initialized = true);
+          _controller.play();
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: Container(
+      child: SizedBox(
         height: 220,
         width: double.infinity,
-        color: theme.colorScheme.surfaceContainerHighest,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.rotate_right,
-                    size: 48, color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
-                const SizedBox(height: 12),
-                Text(
-                  'Animation: SmartSpin2k knob rotating\n'
-                  '(replace with motor_test_loop.webp)',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-                  ),
+        child: _initialized
+            ? FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _controller.value.size.width,
+                  height: _controller.value.size.height,
+                  child: VideoPlayer(_controller),
                 ),
-              ],
-            ),
-          ],
-        ),
+              )
+            : const Center(child: CircularProgressIndicator()),
       ),
     );
   }

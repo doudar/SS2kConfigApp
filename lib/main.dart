@@ -19,6 +19,7 @@ import 'services/intervals_service.dart';
 import 'screens/bluetooth_off_screen.dart';
 import 'screens/scan_screen.dart';
 import 'screens/onboarding/onboarding_wizard.dart';
+import 'package:fvp/fvp.dart' as fvp;
 import 'utils/onboarding/onboarding_state.dart';
 import 'utils/onboarding/wizard_session.dart';
 import 'utils/theme_provider.dart';
@@ -27,6 +28,7 @@ import 'utils/demo.dart' show demoModeBypass;
 void main() async {
   FlutterBluePlus.setLogLevel(LogLevel.verbose, color: true);
   WidgetsFlutterBinding.ensureInitialized();
+  fvp.registerWith();
 
   runApp(
     ChangeNotifierProvider(
