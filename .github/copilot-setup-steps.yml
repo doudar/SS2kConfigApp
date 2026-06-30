@@ -4,7 +4,7 @@ description: Automated setup steps for initializing the Flutter development envi
 
 steps:
   - name: Check Flutter Version
-    description: Verify that Flutter is installed and accessible in the PATH.
+    description: Verify that Flutter 3.44.0 or newer is installed and accessible in the PATH.
     command: flutter --version
     required: true
 

@@ -249,6 +249,7 @@ class BLEData {
     _cachedCharacteristicMap = null;
     lastFtmsUpdate = null;
     _ftmsRecoveryInProgress = false;
+    _lastFtmsRecoveryAttempt = null;
   }
 
   /// Stop the auto-reconnect monitor.
@@ -396,9 +397,11 @@ class BLEData {
     ftmsData.onTargetPowerChanged = (int newPower) async {
       if (ftmsControlPointCharacteristic != null) {
         try {
-          await FTMSControlPoint.writeTargetPower(
-            ftmsControlPointCharacteristic!,
-            newPower,
+          await writeFtmsControlPoint(
+            (characteristic) => FTMSControlPoint.writeTargetPower(
+              characteristic,
+              newPower,
+            ),
           );
         } catch (e) {
           print('Error writing target power to FTMS: $e');
@@ -412,12 +415,14 @@ class BLEData {
         try {
           if (toSimulation) {
             // Switch to simulation mode with 0 incline
-            await FTMSControlPoint.writeIndoorBikeSimulation(
-              ftmsControlPointCharacteristic!,
-              windSpeed: 0,
-              grade: 0,
-              crr: 0,
-              cw: 0,
+            await writeFtmsControlPoint(
+              (characteristic) => FTMSControlPoint.writeIndoorBikeSimulation(
+                characteristic,
+                windSpeed: 0,
+                grade: 0,
+                crr: 0,
+                cw: 0,
+              ),
             );
           }
         } catch (e) {
@@ -427,22 +432,23 @@ class BLEData {
     };
   }
 
-  BluetoothCharacteristic getMyCharacteristic(BluetoothDevice device) {
-    late BluetoothCharacteristic _char;
+  Future<BluetoothCharacteristic?> getMyCharacteristic(
+      BluetoothDevice device) async {
+    if (this.isSimulated) return null;
+    if (!device.isConnected) {
+      charReceived.value = false;
+      return null;
+    }
 
-    if (device.isConnected) {
-      _discoverServices(device);
+    if (_myCharacteristic == null) {
+      await _discoverServices(device);
       if (services.length > 1) {
-        _findChar();
+        await _findChar();
       }
     }
-    if (_myCharacteristic != null) {
-      charReceived.value = true;
-      _char = _myCharacteristic!;
-    } else {
-      charReceived.value = false;
-    }
-    return _char;
+
+    charReceived.value = _myCharacteristic != null;
+    return _myCharacteristic;
   }
 
   Future _discoverServices(BluetoothDevice device,
@@ -486,7 +492,9 @@ class BLEData {
         if (c.uuid == Guid(ccUUID)) {
           _myCharacteristic = c;
           if (!_myCharacteristic!.isNotifying) {
-            await _myCharacteristic!.setNotifyValue(true);
+            await _queueBleOperation(
+              () => _myCharacteristic!.setNotifyValue(true),
+            );
           }
         }
       }
@@ -526,16 +534,14 @@ class BLEData {
         if (c.uuid == Guid(ftmsIndoorBikeDataUUID)) {
           indoorBikeCharacteristic = c;
           if (!indoorBikeCharacteristic!.isNotifying) {
-            await indoorBikeCharacteristic!.setNotifyValue(true);
+            await _queueBleOperation(
+              () => indoorBikeCharacteristic!.setNotifyValue(true),
+            );
             print("subscribed to indoor bike characteristic");
           }
         }
         if (c.uuid == Guid(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID)) {
           ftmsControlPointCharacteristic = c;
-          if (!ftmsControlPointCharacteristic!.isNotifying) {
-            await ftmsControlPointCharacteristic!.setNotifyValue(true);
-            print("subscribed to ftms control point characteristic");
-          }
         }
       }
 
@@ -575,7 +581,7 @@ class BLEData {
         await updateIndoorBikeData(device);
       }
       if (_myCharacteristic != null && !_myCharacteristic!.isNotifying) {
-        await _myCharacteristic!.setNotifyValue(true);
+        await _queueBleOperation(() => _myCharacteristic!.setNotifyValue(true));
       }
       if (!_lastRequestStopwatch.isRunning) {
         await requestSettings(device);
@@ -586,6 +592,28 @@ class BLEData {
       }
     } finally {
       _inUpdateLoop = false;
+    }
+  }
+
+  Future<void> ensureCustomCharacteristicStream(BluetoothDevice device) async {
+    if (this.isSimulated || !device.isConnected) return;
+
+    if (_myCharacteristic == null) {
+      await _discoverServices(device);
+      if (services.length > 1) {
+        await _findChar();
+      }
+    }
+
+    final characteristic = _myCharacteristic;
+    if (characteristic == null) return;
+
+    if (!subscribed) {
+      decode(device);
+    }
+
+    if (!characteristic.isNotifying) {
+      await _queueBleOperation(() => characteristic.setNotifyValue(true));
     }
   }
 
@@ -605,7 +633,7 @@ class BLEData {
 
     try {
       if (!ftmsCharacteristic.isNotifying) {
-        await ftmsCharacteristic.setNotifyValue(true);
+        await _queueBleOperation(() => ftmsCharacteristic.setNotifyValue(true));
       }
     } catch (e) {
       print("failed to enable FTMS notify: $e");
@@ -627,10 +655,6 @@ class BLEData {
 
         int flags = byteData.getUint16(0, Endian.little);
         int index = 2;
-
-        // Print flags in binary format for debugging
-        String binaryFlags = flags.toRadixString(2).padLeft(16, '0');
-        print('Flags (binary): $binaryFlags');
 
         bool hasBytes(int requiredBytes) =>
             (index + requiredBytes) <= byteData.lengthInBytes;
@@ -715,6 +739,9 @@ class BLEData {
   }
 
   bool _ftmsRecoveryInProgress = false;
+  DateTime? _lastFtmsRecoveryAttempt;
+  static const Duration _ftmsWatchdogTimeout = Duration(seconds: 15);
+  static const Duration _ftmsRecoveryCooldown = Duration(seconds: 30);
 
   /// Checks the health of the FTMS data stream and attempts to recover if stalled.
   /// Skips if a recovery is already in progress.
@@ -723,19 +750,47 @@ class BLEData {
     if (_ftmsRecoveryInProgress) return;
 
     final now = DateTime.now();
-    const watchdogTimeout = Duration(seconds: 3);
+    final recentlyTriedRecovery = _lastFtmsRecoveryAttempt != null &&
+        now.difference(_lastFtmsRecoveryAttempt!) < _ftmsRecoveryCooldown;
 
-    // If we have received data before, and it's been more than watchdogTimeout
-    if (lastFtmsUpdate != null &&
-        now.difference(lastFtmsUpdate!) > watchdogTimeout) {
+    // Before the first FTMS packet, subscribed may already be true because the
+    // custom characteristic decode path is active. Keep retrying the FTMS notify
+    // setup on the watchdog cooldown so a failed initial setNotifyValue(true)
+    // does not leave the stream silent until reconnect.
+    if (lastFtmsUpdate == null) {
+      if (!recentlyTriedRecovery) {
+        _ftmsRecoveryInProgress = true;
+        _lastFtmsRecoveryAttempt = now;
+        try {
+          await updateIndoorBikeData(device);
+        } catch (e) {
+          print('Error retrying FTMS notify setup: $e');
+          if (!device.isConnected) {
+            _triggerReconnect(device);
+          }
+        } finally {
+          _ftmsRecoveryInProgress = false;
+        }
+      }
+      return;
+    }
+
+    // If we have received data before, and it's been more than the watchdog
+    // timeout, try one recovery pass.  Do not toggle the CCCD every timer tick;
+    // that adds extra BLE control traffic on the same Android radio Grupetto
+    // uses for peripheral advertising/GATT serving.
+    if (now.difference(lastFtmsUpdate!) > _ftmsWatchdogTimeout &&
+        !recentlyTriedRecovery) {
       print(
           'FTMS connection appears stalled (last update: $lastFtmsUpdate). Attempting recovery...');
       _ftmsRecoveryInProgress = true;
+      _lastFtmsRecoveryAttempt = now;
 
       try {
         if (indoorBikeCharacteristic != null && device.isConnected) {
           // Toggle notifications to reset the stream
-          await indoorBikeCharacteristic!.setNotifyValue(false);
+          await _queueBleOperation(
+              () => indoorBikeCharacteristic!.setNotifyValue(false));
           await Future.delayed(const Duration(milliseconds: 200));
 
           if (!device.isConnected) {
@@ -744,7 +799,8 @@ class BLEData {
             return;
           }
 
-          await indoorBikeCharacteristic!.setNotifyValue(true);
+          await _queueBleOperation(
+              () => indoorBikeCharacteristic!.setNotifyValue(true));
 
           // Force internal tracking update
           lastFtmsUpdate = DateTime.now(); // Reset to avoid loop
@@ -757,16 +813,6 @@ class BLEData {
         }
       } finally {
         _ftmsRecoveryInProgress = false;
-      }
-    } else if (lastFtmsUpdate == null && indoorBikeCharacteristic != null) {
-      // If we have a characteristic but never received a packet, try enabling notify
-      try {
-        if (!indoorBikeCharacteristic!.isNotifying && device.isConnected) {
-          print('FTMS never received data and not notifying. enabling...');
-          await indoorBikeCharacteristic!.setNotifyValue(true);
-        }
-      } catch (e) {
-        print('Error checking FTMS notify status: $e');
       }
     }
   }
@@ -783,7 +829,7 @@ class BLEData {
     }();
   }
 
-  void findNSave(BluetoothDevice device, Map c, String find) {
+  Future<void> findNSave(BluetoothDevice device, Map c, String find) async {
     if (this.isSimulated) return;
     // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
     if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
@@ -791,7 +837,7 @@ class BLEData {
     }
     if (c["vName"] == find) {
       try {
-        write(device, [0x02, int.parse(c["reference"]), 0x01]);
+        await write(device, [0x02, int.parse(c["reference"]), 0x01]);
       } catch (e) {
         Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
             success: false);
@@ -802,31 +848,31 @@ class BLEData {
   Future saveAllSettings(BluetoothDevice device) async {
     if (this.isSimulated) return;
     for (var c in this.customCharacteristic) {
-      if (c["isSetting"] == true) writeToSS2k(device, c);
+      if (c["isSetting"] == true) await writeToSS2k(device, c);
     }
     for (var c in this.customCharacteristic) {
-      findNSave(device, c, saveVname);
+      await findNSave(device, c, saveVname);
     }
   }
 
   Future reboot(BluetoothDevice device) async {
     if (this.isSimulated) return;
     for (var c in this.customCharacteristic) {
-      findNSave(device, c, rebootVname);
+      await findNSave(device, c, rebootVname);
     }
   }
 
   Future resetToDefaults(BluetoothDevice device) async {
     if (this.isSimulated) return;
     for (var c in this.customCharacteristic) {
-      findNSave(device, c, resetVname);
+      await findNSave(device, c, resetVname);
     }
   }
 
   Future resetPowerTable(BluetoothDevice device) async {
     if (this.isSimulated) return;
     for (var c in this.customCharacteristic) {
-      findNSave(device, c, resetPowerTableVname);
+      await findNSave(device, c, resetPowerTableVname);
     }
   }
 
@@ -846,7 +892,6 @@ class BLEData {
       }
 
       try {
-        await Future.delayed(Duration(milliseconds: 50));
         await write(device, [0x01, int.parse(c["reference"])]);
       } catch (e) {
         Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
@@ -859,7 +904,7 @@ class BLEData {
   Future requestSetting(BluetoothDevice device, String name,
       {int? extraByte}) async {
     if (this.isSimulated) return;
-    _request(Map c) {
+    Future<void> _request(Map c) async {
       // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
       if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
         return;
@@ -870,7 +915,7 @@ class BLEData {
           if (extraByte != null) {
             value.add(extraByte);
           }
-          write(device, value);
+          return write(device, value);
         } catch (e) {
           Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
         }
@@ -880,7 +925,7 @@ class BLEData {
     }
 
     for (var c in this.customCharacteristic) {
-      _request(c);
+      await _request(c);
     }
   }
 
@@ -898,7 +943,8 @@ class BLEData {
     return precision;
   }
 
-  void writeToSS2k(BluetoothDevice device, Map c, {String s = ""}) {
+  Future<void> writeToSS2k(BluetoothDevice device, Map c,
+      {String s = ""}) async {
     if (this.isSimulated) return;
     //If a specific value wasn't passed, use the previously saved value
     if (s == "") {
@@ -1002,7 +1048,7 @@ class BLEData {
 
           // Write the data to the device
           try {
-            write(device, rowToSend);
+            await write(device, rowToSend);
           } catch (e) {
             Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
                 success: false);
@@ -1015,25 +1061,94 @@ class BLEData {
       //value = [0xff];
     }
     try {
-      write(device, value);
+      await write(device, value);
     } catch (e) {
       Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
   }
 
+  Future<void> _writeQueue = Future.value();
+  DateTime? _lastBleWriteCompletedAt;
+  final Object _bleOperationZoneKey = Object();
+  final Set<Object> _activeBleOperationTokens = <Object>{};
+
+  // Android does not expose an "is the BLE radio idle?" signal to app code.
+  // Treat the completion of the previous GATT write as the best available
+  // back-pressure signal, with a small guard interval on Android/Peloton so
+  // SS2kConfigApp does not monopolize the shared BLE stack while Grupetto is
+  // also advertising/serving as a peripheral.
+  Duration get _bleWriteGuardInterval =>
+      Platform.isAndroid ? const Duration(milliseconds: 35) : Duration.zero;
+
+  Future<T> _queueBleOperation<T>(Future<T> Function() operation) {
+    // Some queued operations perform discovery, and discovery may enable CCCD
+    // notifications. Running nested queue work inline avoids self-deadlocking
+    // while the outer queued operation is waiting for discovery to finish. The
+    // zone token keeps that escape hatch scoped to the current queued operation
+    // so unrelated BLE callbacks still serialize behind the queue.
+    final currentToken = Zone.current[_bleOperationZoneKey];
+    if (currentToken != null &&
+        _activeBleOperationTokens.contains(currentToken)) {
+      return operation();
+    }
+
+    final queued = _writeQueue.catchError((_) {}).then((_) async {
+      final lastWrite = _lastBleWriteCompletedAt;
+      final guard = _bleWriteGuardInterval;
+      if (lastWrite != null && guard > Duration.zero) {
+        final elapsed = DateTime.now().difference(lastWrite);
+        if (elapsed < guard) {
+          await Future.delayed(guard - elapsed);
+        }
+      }
+
+      final token = Object();
+      _activeBleOperationTokens.add(token);
+      try {
+        return await runZoned(
+          operation,
+          zoneValues: {_bleOperationZoneKey: token},
+        );
+      } finally {
+        _activeBleOperationTokens.remove(token);
+        _lastBleWriteCompletedAt = DateTime.now();
+      }
+    });
+
+    _writeQueue = queued.then<void>((_) {}, onError: (_) {});
+    return queued;
+  }
+
   Future<void> write(BluetoothDevice device, List<int> value) async {
     if (this.isSimulated) return;
-    if (this.getMyCharacteristic(device).device.isConnected) {
-      try {
-        await this.getMyCharacteristic(device).write(value);
-      } catch (e) {
-        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
+
+    return _queueBleOperation(() async {
+      final characteristic = await getMyCharacteristic(device);
+      if (characteristic != null && characteristic.device.isConnected) {
+        try {
+          await characteristic.write(value);
+        } catch (e) {
+          Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
+              success: false);
+        }
+      } else {
+        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k - Not Connected",
             success: false);
       }
-    } else {
-      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k - Net Connected",
-          success: false);
+    });
+  }
+
+  Future<void> writeFtmsControlPoint(
+    Future<void> Function(BluetoothCharacteristic characteristic) operation,
+  ) async {
+    if (this.isSimulated) return;
+    final characteristic = ftmsControlPointCharacteristic;
+    if (characteristic == null) {
+      print('FTMS Control Point characteristic not found');
+      return;
     }
+
+    return _queueBleOperation(() => operation(characteristic));
   }
 
   void decode(BluetoothDevice device) {
@@ -1043,8 +1158,15 @@ class BLEData {
     _ensureCachedMap();
 
     _notifySubscription?.cancel();
+    final characteristic = _myCharacteristic;
+    if (characteristic == null) {
+      subscribed = false;
+      charReceived.value = false;
+      return;
+    }
+
     _notifySubscription =
-        this.getMyCharacteristic(device).onValueReceived.listen((value) {
+        characteristic.onValueReceived.listen((value) {
       try {
         if (value.isEmpty) return;
 
@@ -1055,6 +1177,10 @@ class BLEData {
           var c = _cachedCharacteristicMap?[value[1]];
 
           if (c != null) {
+            if (value.length == 2 && c["type"] != "string") {
+              return;
+            }
+
             var length = value.length;
             var t = new Uint8List(length);
             for (var i = 0; i < length; i++) {
@@ -1065,11 +1191,15 @@ class BLEData {
             switch (c["type"]) {
               case "int":
                 {
-                  if (data.lengthInBytes < 4) {
-                    c["value"] = noFirmSupport;
-                  } else {
+                  if (data.lengthInBytes >= 4) {
                     c["value"] = data.getInt16(2, Endian.little).toString();
+                  } else if (data.lengthInBytes == 3) {
+                    c["value"] = value[2].toString();
+                  } else {
+                    c["value"] = noFirmSupport;
+                  }
 
+                  if (c["value"] != noFirmSupport) {
                     simulatedTargetWatts = (c["reference"] == "0x28")
                         ? c["value"]
                         : simulatedTargetWatts;
