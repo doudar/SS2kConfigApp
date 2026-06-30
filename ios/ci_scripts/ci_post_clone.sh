@@ -35,6 +35,8 @@ EOF
 git clone https://github.com/flutter/flutter.git --depth 1 -b "$FLUTTER_VERSION" $HOME/flutter
 export PATH="$PATH:$HOME/flutter/bin"
 
+flutter config --no-enable-swift-package-manager
+
 # Install Flutter artifacts for iOS (--ios), or macOS (--macos) platforms.
 flutter precache --ios
 
