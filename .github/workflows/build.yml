@@ -7,10 +7,15 @@ on:
   workflow_dispatch:
 
 env:
+  FLUTTER_VERSION: '3.44.0'
   STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
   STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
   INTERVALS_CLIENT_ID: ${{ secrets.INTERVALS_CLIENT_ID }}
   INTERVALS_CLIENT_SECRET: ${{ secrets.INTERVALS_CLIENT_SECRET }}
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   prepare:
@@ -18,7 +23,9 @@ jobs:
     outputs:
       version: ${{ steps.set_version.outputs.version }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Download and extract latest SmartSpin2k firmware.bin from GitHub release
       - name: Download and extract latest SmartSpin2k firmware
@@ -114,28 +121,26 @@ jobs:
           
       - name: Set output
         id: set_version
-        run: echo "::set-output name=version::$NEW_TAG"
+        run: echo "version=$NEW_TAG" >> "$GITHUB_OUTPUT"
 
   build-android:
     needs: prepare
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       
       - name: Setup Java
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
-      - name: Setup Dart SDK
-        uses: dart-lang/setup-dart@v1
-        with:
-          sdk: '3.11.5'
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.9'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
 
       - name: Accept Android SDK licenses
         shell: bash
@@ -166,9 +171,6 @@ jobs:
               intervalsClientId.isNotEmpty && intervalsClientSecret.isNotEmpty;
           }
           EOL
-          # Replace environment variables
-          envsubst < lib/config/env.local.dart > lib/config/env.local.dart.tmp
-          mv lib/config/env.local.dart.tmp lib/config/env.local.dart
 
       - name: Configure Android signing
         env:
@@ -205,17 +207,14 @@ jobs:
     needs: prepare
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v2
-      
-      - name: Setup Dart SDK
-        uses: dart-lang/setup-dart@v1
-        with:
-          sdk: '3.11.5'
+      - uses: actions/checkout@v4
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.9'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
 
       # Debug environment variables
       - name: Debug Environment Variables
@@ -232,7 +231,7 @@ jobs:
         run: |
           mkdir -p lib/config
           umask 077
-          cat > lib/config/env.local.dart << \EOL
+          cat > lib/config/env.local.dart <<EOL
           class Environment {
             static const String stravaClientId = '${STRAVA_CLIENT_ID}';
             static const String stravaClientSecret = '${STRAVA_CLIENT_SECRET}';
@@ -246,9 +245,6 @@ jobs:
               intervalsClientId.isNotEmpty && intervalsClientSecret.isNotEmpty;
           }
           EOL
-          # Replace environment variables
-          envsubst < lib/config/env.local.dart > lib/config/env.local.dart.tmp
-          mv lib/config/env.local.dart.tmp lib/config/env.local.dart
           
           # Verify file exists but don't show contents
           ls -l lib/config/env.local.dart
@@ -291,43 +287,28 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v2
-      - name: Setup Dart SDK
-        uses: dart-lang/setup-dart@v1
-        with:
-          sdk: '3.11.5'
+      - uses: actions/checkout@v4
 
       # Use official action for amd64
       - name: Setup Flutter (amd64)
         if: matrix.arch == 'amd64'
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.9'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
 
-      # Manual install for arm64 (action currently fails to resolve version on ubuntu-24.04-arm)
+      # Manual install for arm64 (action currently fails to resolve some versions on ubuntu-24.04-arm)
       - name: Setup Flutter (arm64 manual)
         if: matrix.arch == 'arm64'
         run: |
           set -e
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git curl unzip xz-utils zip
-          git clone https://github.com/flutter/flutter.git -b 3.41.9 --depth 1 $HOME/flutter
+          git clone https://github.com/flutter/flutter.git -b "$FLUTTER_VERSION" --depth 1 $HOME/flutter
           echo "$HOME/flutter/bin" >> $GITHUB_PATH
           $HOME/flutter/bin/flutter config --no-analytics
           $HOME/flutter/bin/flutter doctor -v || true
-
-      - name: Install Dart (arm64, stable)
-        if: matrix.arch == 'arm64'
-        run: |
-          set -e
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y apt-transport-https curl gnupg ca-certificates
-          curl -fsSL https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/dart.gpg
-          echo "deb [signed-by=/usr/share/keyrings/dart.gpg] https://storage.googleapis.com/download.dartlang.org/linux/debian stable main" | sudo tee /etc/apt/sources.list.d/dart_stable.list
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y dart
-          echo "/usr/lib/dart/bin" >> $GITHUB_PATH
 
       - name: Create env.local.dart
         env:
@@ -352,9 +333,6 @@ jobs:
               intervalsClientId.isNotEmpty && intervalsClientSecret.isNotEmpty;
           }
           EOL
-          # Replace environment variables
-          envsubst < lib/config/env.local.dart > lib/config/env.local.dart.tmp
-          mv lib/config/env.local.dart.tmp lib/config/env.local.dart
 
       - name: Install Linux dependencies
         run: |
@@ -457,18 +435,14 @@ jobs:
     needs: prepare
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v2
-
-      - name: Setup Dart SDK
-        uses: dart-lang/setup-dart@v1
-        with:
-          sdk: '3.11.5'
+      - uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.9'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
@@ -570,7 +544,7 @@ jobs:
           cp all-artifacts/windows-artifacts/ss2kconfigapp-${{ needs.prepare.outputs.version }}-windows.exe release/ss2kconfigapp-${{ needs.prepare.outputs.version }}-windows.exe
 
       - name: Create release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
