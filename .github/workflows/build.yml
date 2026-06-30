@@ -480,6 +480,49 @@ jobs:
       - name: Fetch dependencies
         run: flutter pub get
 
+      - name: Preload fvp Windows SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $deps = Get-Content '.flutter-plugins-dependencies' -Raw | ConvertFrom-Json
+          $fvp = $deps.plugins.windows | Where-Object { $_.name -eq 'fvp' } | Select-Object -First 1
+          if (-not $fvp) {
+            Write-Host 'fvp is not registered for Windows; skipping SDK preload.'
+            exit 0
+          }
+
+          $fvpWindowsDir = Join-Path $fvp.path 'windows'
+          $sdkMarker = Join-Path $fvpWindowsDir 'mdk-sdk\lib\cmake\FindMDK.cmake'
+          if (Test-Path $sdkMarker) {
+            Write-Host "fvp MDK SDK already exists at $fvpWindowsDir"
+            exit 0
+          }
+
+          $packageName = 'mdk-sdk-windows-x64.7z'
+          $baseUrl = if ($env:FVP_DEPS_URL -match '^https?://') {
+            $env:FVP_DEPS_URL.TrimEnd('/')
+          } else {
+            'https://sourceforge.net/projects/mdk-sdk/files/nightly'
+          }
+          $archivePath = Join-Path $fvpWindowsDir $packageName
+
+          Write-Host "Downloading $packageName from $baseUrl"
+          Invoke-WebRequest -Uri "$baseUrl/$packageName" -OutFile $archivePath
+
+          # fvp 0.37.2 lets CMake extract through Flutter's .plugin_symlinks path,
+          # which fails on current Windows runners. Extract in the real pub-cache path.
+          Push-Location $fvpWindowsDir
+          try {
+            cmake -E tar xvf $archivePath
+          } finally {
+            Pop-Location
+          }
+
+          if (-not (Test-Path $sdkMarker)) {
+            throw "Failed to preload fvp MDK SDK into $fvpWindowsDir"
+          }
+
       - name: Build Windows App
         run: flutter build windows --release
 
