@@ -135,7 +135,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       }
       // Check FTMS health on every tick
       if (mounted && this.widget.device.isConnected) {
-        bleData.checkFtmsHealth(this.widget.device);
+        await bleData.checkFtmsHealth(this.widget.device);
       }
     });
   }

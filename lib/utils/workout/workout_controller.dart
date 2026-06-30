@@ -264,12 +264,14 @@ class WorkoutController extends ChangeNotifier {
   Future<void> _resetSimulationParameters() async {
     if (bleData.ftmsControlPointCharacteristic != null) {
       try {
-        await FTMSControlPoint.writeIndoorBikeSimulation(
-          bleData.ftmsControlPointCharacteristic!,
-          windSpeed: 0,
-          grade: 0,
-          crr: 0,
-          cw: 0,
+        await bleData.writeFtmsControlPoint(
+          (characteristic) => FTMSControlPoint.writeIndoorBikeSimulation(
+            characteristic,
+            windSpeed: 0,
+            grade: 0,
+            crr: 0,
+            cw: 0,
+          ),
         );
       } catch (e) {
         print('Error resetting simulation parameters: $e');
