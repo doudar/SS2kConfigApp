@@ -10,9 +10,20 @@ enum WizardStepId {
   welcome,
   bikeType,
   hardwareInstall,
+  hardwareInstallArm,
+  hardwareInstallKnobInsert,
+  hardwareInstallMount,
+  hardwareInstallShifter,
+  hardwareInstallCable,
+  hardwareInstallPower,
   wiring,
   sensorWiring,
+  sensorWiringHarness,
+  sensorWiringConnected,
   sideSwitch,
+  sideSwitchPosition,
+  sideSwitchCable,
+  sideSwitchClip,
   ss2kConnection,
   dataSource,
   bikeDataTest,
@@ -49,10 +60,33 @@ class WizardSessionSnapshot {
   });
 }
 
+const _hardwareInstallSteps = [
+  WizardStepId.hardwareInstall,
+  WizardStepId.hardwareInstallArm,
+  WizardStepId.hardwareInstallKnobInsert,
+  WizardStepId.hardwareInstallMount,
+  WizardStepId.hardwareInstallShifter,
+  WizardStepId.hardwareInstallCable,
+  WizardStepId.hardwareInstallPower,
+];
+
+const _sensorWiringSteps = [
+  WizardStepId.sensorWiring,
+  WizardStepId.sensorWiringHarness,
+  WizardStepId.sensorWiringConnected,
+];
+
+const _sideSwitchSteps = [
+  WizardStepId.sideSwitch,
+  WizardStepId.sideSwitchPosition,
+  WizardStepId.sideSwitchCable,
+  WizardStepId.sideSwitchClip,
+];
+
 const _allStepsWithoutSideSwitch = [
   WizardStepId.welcome,
   WizardStepId.bikeType,
-  WizardStepId.hardwareInstall,
+  ..._hardwareInstallSteps,
   WizardStepId.wiring,
   WizardStepId.ss2kConnection,
   WizardStepId.dataSource,
@@ -69,10 +103,10 @@ const _allStepsWithoutSideSwitch = [
 const _pelotonOriginalSteps = [
   WizardStepId.welcome,
   WizardStepId.bikeType,
-  WizardStepId.hardwareInstall,
+  ..._hardwareInstallSteps,
   WizardStepId.wiring,
-  WizardStepId.sensorWiring,
-  WizardStepId.sideSwitch,
+  ..._sensorWiringSteps,
+  ..._sideSwitchSteps,
   WizardStepId.ss2kConnection,
   WizardStepId.bikeDataTest,
   WizardStepId.motorTest,
@@ -94,9 +128,31 @@ const _stepMetaTable = <WizardStepId, WizardStepMeta>{
   ),
   WizardStepId.bikeType: WizardStepMeta(id: WizardStepId.bikeType),
   WizardStepId.hardwareInstall: WizardStepMeta(id: WizardStepId.hardwareInstall),
+  WizardStepId.hardwareInstallArm:
+      WizardStepMeta(id: WizardStepId.hardwareInstallArm),
+  WizardStepId.hardwareInstallKnobInsert:
+      WizardStepMeta(id: WizardStepId.hardwareInstallKnobInsert),
+  WizardStepId.hardwareInstallMount:
+      WizardStepMeta(id: WizardStepId.hardwareInstallMount),
+  WizardStepId.hardwareInstallShifter:
+      WizardStepMeta(id: WizardStepId.hardwareInstallShifter),
+  WizardStepId.hardwareInstallCable:
+      WizardStepMeta(id: WizardStepId.hardwareInstallCable),
+  WizardStepId.hardwareInstallPower:
+      WizardStepMeta(id: WizardStepId.hardwareInstallPower),
   WizardStepId.wiring: WizardStepMeta(id: WizardStepId.wiring),
   WizardStepId.sensorWiring: WizardStepMeta(id: WizardStepId.sensorWiring),
+  WizardStepId.sensorWiringHarness:
+      WizardStepMeta(id: WizardStepId.sensorWiringHarness),
+  WizardStepId.sensorWiringConnected:
+      WizardStepMeta(id: WizardStepId.sensorWiringConnected),
   WizardStepId.sideSwitch: WizardStepMeta(id: WizardStepId.sideSwitch),
+  WizardStepId.sideSwitchPosition:
+      WizardStepMeta(id: WizardStepId.sideSwitchPosition),
+  WizardStepId.sideSwitchCable:
+      WizardStepMeta(id: WizardStepId.sideSwitchCable),
+  WizardStepId.sideSwitchClip:
+      WizardStepMeta(id: WizardStepId.sideSwitchClip),
   WizardStepId.ss2kConnection: WizardStepMeta(id: WizardStepId.ss2kConnection),
   WizardStepId.dataSource: WizardStepMeta(id: WizardStepId.dataSource),
   WizardStepId.bikeDataTest: WizardStepMeta(id: WizardStepId.bikeDataTest),

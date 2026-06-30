@@ -34,6 +34,8 @@
 	<string>This app requires Bluetooth to communicate with the SmartSpin2k.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>We need access in order to store and upload firmware to our device.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Camera access may be used when selecting files or media.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>In order to output sounds for workout events, we need to access the microphone. </string>
 	<key>NSDocumentsUsageDescription</key>

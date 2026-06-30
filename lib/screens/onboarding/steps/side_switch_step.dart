@@ -2,13 +2,87 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
-import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../widgets/onboarding/instruction_step_card.dart';
+import '../../../widgets/onboarding/wizard_scaffold.dart';
 
-enum _Phase { picker, instructions }
+class _SideSwitchPageData {
+  final int stepNumber;
+  final String tabletTitle;
+  final String tabletBody;
+  final String tabletImageAsset;
+  final String tabletPlaceholderLabel;
+  final String headlessTitle;
+  final String headlessBody;
+  final String headlessImageAsset;
+  final String headlessPlaceholderLabel;
+
+  const _SideSwitchPageData({
+    required this.stepNumber,
+    required this.tabletTitle,
+    required this.tabletBody,
+    required this.tabletImageAsset,
+    required this.tabletPlaceholderLabel,
+    required this.headlessTitle,
+    required this.headlessBody,
+    required this.headlessImageAsset,
+    required this.headlessPlaceholderLabel,
+  });
+}
+
+const _sideSwitchPages = <WizardStepId, _SideSwitchPageData>{
+  WizardStepId.sideSwitchPosition: _SideSwitchPageData(
+    stepNumber: 1,
+    tabletTitle: 'Flip the Side Switch UP',
+    tabletBody:
+        'On the side of your SmartSpin2k, slide the switch to the UP position.',
+    tabletImageAsset: 'assets/images/side_switch_up.svg',
+    tabletPlaceholderLabel: 'Photo: SmartSpin2k side switch in UP position',
+    headlessTitle: 'Flip the Side Switch DOWN',
+    headlessBody:
+        'On the side of your SmartSpin2k, slide the switch to the DOWN position.',
+    headlessImageAsset: 'assets/images/side_switch_down.svg',
+    headlessPlaceholderLabel:
+        'Photo: SmartSpin2k side switch in DOWN position',
+  ),
+  WizardStepId.sideSwitchCable: _SideSwitchPageData(
+    stepNumber: 2,
+    tabletTitle: 'Connect the "Peloton Tablet" Cable',
+    tabletBody:
+        'Plug the SmartSpin2k cable labeled "Peloton Tablet" into the back '
+        'of your bike\'s tablet, into the same port the original sensor wire used.',
+    tabletImageAsset: 'assets/images/side_switch_tablet_cable_connected.svg',
+    tabletPlaceholderLabel:
+        'Photo: Peloton Tablet cable plugged into back of tablet',
+    headlessTitle: 'Leave the "Peloton Tablet" Cable Disconnected',
+    headlessBody:
+        'Do not plug the SmartSpin2k\'s "Peloton Tablet" cable into your bike. '
+        'Coil it up out of the way.',
+    headlessImageAsset: 'assets/images/side_switch_tablet_cable_unused.svg',
+    headlessPlaceholderLabel:
+        'Photo: unconnected Peloton Tablet cable coiled aside',
+  ),
+  WizardStepId.sideSwitchClip: _SideSwitchPageData(
+    stepNumber: 3,
+    tabletTitle: 'Re-latch the Cable Retention Clip',
+    tabletBody:
+        'Snap the cable retention clip back into place to keep the wires secure.',
+    tabletImageAsset: 'assets/images/side_switch_tablet_clip_latched.svg',
+    tabletPlaceholderLabel: 'Photo: retention clip latched over wires',
+    headlessTitle: 'Re-latch the Cable Retention Clip',
+    headlessBody:
+        'Snap the cable retention clip back into place to keep the sensor wire secure.',
+    headlessImageAsset: 'assets/images/side_switch_clip_latched.svg',
+    headlessPlaceholderLabel: 'Photo: retention clip latched over wires',
+  ),
+};
 
 class SideSwitchStep extends StatefulWidget {
-  const SideSwitchStep({Key? key}) : super(key: key);
+  final WizardStepId stepId;
+
+  const SideSwitchStep({
+    Key? key,
+    required this.stepId,
+  }) : super(key: key);
 
   @override
   State<SideSwitchStep> createState() => _SideSwitchStepState();
@@ -16,36 +90,55 @@ class SideSwitchStep extends StatefulWidget {
 
 class _SideSwitchStepState extends State<SideSwitchStep> {
   SideSwitchMode? _selected;
-  _Phase _phase = _Phase.picker;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _selected ??= context.read<WizardSession>().sideSwitchMode;
+  }
 
   void _advanceWizard(WizardSession session) {
     final machine = WizardStepMachine();
-    final next = machine.nextStep(currentStep: WizardStepId.sideSwitch, session: session.snapshot);
+    final next = machine.nextStep(
+      currentStep: widget.stepId,
+      session: session.snapshot,
+    );
     if (next != null) {
       final steps = machine.activeSteps(bikeType: session.bikeType);
       session.setStepIndex(steps.indexOf(next));
     }
   }
 
+  void _returnToPicker(WizardSession session) {
+    session.sideSwitchMode = null;
+    final steps = WizardStepMachine().activeSteps(bikeType: session.bikeType);
+    session.setStepIndex(steps.indexOf(WizardStepId.sideSwitch));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final session = context.read<WizardSession>();
-    final isPicker = _phase == _Phase.picker;
+    final session = context.watch<WizardSession>();
+    final isPicker = widget.stepId == WizardStepId.sideSwitch;
 
     return WizardScaffold(
       title: 'Side Switch',
-      stepId: WizardStepId.sideSwitch,
-      nextEnabled: isPicker ? _selected != null : true,
-      onBack: isPicker ? null : () => setState(() => _phase = _Phase.picker),
+      stepId: widget.stepId,
+      nextEnabled:
+          isPicker ? _selected != null : session.sideSwitchMode != null,
       onNext: isPicker
           ? (_selected == null
-                ? null
-                : () {
-                    session.sideSwitchMode = _selected;
-                    setState(() => _phase = _Phase.instructions);
-                  })
+              ? null
+              : () {
+                  session.sideSwitchMode = _selected;
+                  _advanceWizard(session);
+                })
           : () => _advanceWizard(session),
-      body: isPicker ? _buildPicker() : _buildInstructions(),
+      body: isPicker
+          ? _buildPicker()
+          : _buildInstructionPage(
+              session: session,
+              page: _sideSwitchPages[widget.stepId]!,
+            ),
     );
   }
 
@@ -55,7 +148,10 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('How do you want to use your bike?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const Text(
+            'How do you want to use your bike?',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 12),
           const Text(
             'The SmartSpin2k can work alongside your Peloton tablet, or replace it '
@@ -68,9 +164,8 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
             switchPosition: 'Switch UP',
             recommended: true,
             description:
-                'Best if you (or anyone in your household) wants the '
-                'option to take a Peloton class. Required if using Grupetto'
-                'with a wired connection',
+                'Best if you (or anyone in your household) wants the option '
+                'to take a Peloton class. Required if using Grupetto with a wired connection.',
             selected: _selected == SideSwitchMode.tabletMode,
             onTap: () => setState(() => _selected = SideSwitchMode.tabletMode),
           ),
@@ -81,8 +176,8 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
             recommended: false,
             description:
                 'The SmartSpin2k talks to your bike directly. Use any training app '
-                'on the tablet — or leave the tablet off entirely. Recommended if you never '
-                'plan to take a Peloton class or use Grupetto on your tablet.',
+                'on the tablet, or leave the tablet off entirely. Recommended if '
+                'you never plan to take a Peloton class or use Grupetto on your tablet.',
             selected: _selected == SideSwitchMode.headlessMode,
             onTap: () => setState(() => _selected = SideSwitchMode.headlessMode),
           ),
@@ -91,9 +186,25 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
     );
   }
 
-  Widget _buildInstructions() {
-    final isTablet = _selected == SideSwitchMode.tabletMode;
+  Widget _buildInstructionPage({
+    required WizardSession session,
+    required _SideSwitchPageData page,
+  }) {
+    final mode = session.sideSwitchMode;
+    final isTablet = mode == SideSwitchMode.tabletMode;
     final headerLabel = isTablet ? 'Tablet Mode setup' : 'Headless Mode setup';
+
+    if (mode == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ElevatedButton(
+            onPressed: () => _returnToPicker(session),
+            child: const Text('Choose Side Switch Mode'),
+          ),
+        ),
+      );
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -105,81 +216,36 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(headerLabel, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    headerLabel,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
                 TextButton.icon(
                   icon: const Icon(Icons.edit, size: 16),
                   label: const Text('Change selection'),
-                  onPressed: () => setState(() => _phase = _Phase.picker),
+                  onPressed: () => _returnToPicker(session),
                 ),
               ],
             ),
           ),
-          if (isTablet) ..._tabletInstructions() else ..._headlessInstructions(),
+          InstructionStepCard(
+            stepNumber: page.stepNumber,
+            title: isTablet ? page.tabletTitle : page.headlessTitle,
+            body: isTablet ? page.tabletBody : page.headlessBody,
+            imageAsset:
+                isTablet ? page.tabletImageAsset : page.headlessImageAsset,
+            imagePlaceholderLabel: isTablet
+                ? page.tabletPlaceholderLabel
+                : page.headlessPlaceholderLabel,
+          ),
           const SizedBox(height: 8),
         ],
       ),
     );
-  }
-
-  List<Widget> _tabletInstructions() {
-    return const [
-      InstructionStepCard(
-        stepNumber: 1,
-        title: 'Flip the side switch UP',
-        body: 'On the side of your SmartSpin2k, slide the switch to the UP position.',
-        imageAsset: 'assets/images/side_switch_up.svg',
-        imagePlaceholderLabel: 'Photo: SmartSpin2k side switch in UP position',
-      ),
-      SizedBox(height: 16),
-      InstructionStepCard(
-        stepNumber: 2,
-        title: 'Connect the "Peloton Tablet" cable',
-        body:
-            'Plug the SmartSpin2k cable labeled "Peloton Tablet" into the back of '
-            'your bike\'s tablet — into the same port the original sensor wire used.',
-        imageAsset: 'assets/images/side_switch_tablet_cable_connected.svg',
-        imagePlaceholderLabel: 'Photo: Peloton Tablet cable plugged into back of tablet',
-      ),
-      SizedBox(height: 16),
-      InstructionStepCard(
-        stepNumber: 3,
-        title: 'Re-latch the cable retention clip',
-        body: 'Snap the cable retention clip back into place to keep the wires secure.',
-        imageAsset: 'assets/images/side_switch_tablet_clip_latched.svg',
-        imagePlaceholderLabel: 'Photo: retention clip latched over wires',
-      ),
-    ];
-  }
-
-  List<Widget> _headlessInstructions() {
-    return const [
-      InstructionStepCard(
-        stepNumber: 1,
-        title: 'Flip the side switch DOWN',
-        body: 'On the side of your SmartSpin2k, slide the switch to the DOWN position.',
-        imageAsset: 'assets/images/side_switch_down.svg',
-        imagePlaceholderLabel: 'Photo: SmartSpin2k side switch in DOWN position',
-      ),
-      SizedBox(height: 16),
-      InstructionStepCard(
-        stepNumber: 2,
-        title: 'Leave the "Peloton Tablet" cable disconnected',
-        body:
-            'Do not plug the SmartSpin2k\'s "Peloton Tablet" cable into your bike. '
-            'Coil it up out of the way.',
-        imageAsset: 'assets/images/side_switch_tablet_cable_unused.svg',
-        imagePlaceholderLabel: 'Photo: unconnected Peloton Tablet cable coiled aside',
-      ),
-      SizedBox(height: 16),
-      InstructionStepCard(
-        stepNumber: 3,
-        title: 'Re-latch the cable retention clip',
-        body: 'Snap the cable retention clip back into place to keep the sensor wire secure.',
-        imageAsset: 'assets/images/side_switch_clip_latched.svg',
-        imagePlaceholderLabel: 'Photo: retention clip latched over wires',
-      ),
-    ];
   }
 }
 
@@ -207,7 +273,10 @@ class _ModeCard extends StatelessWidget {
       elevation: selected ? 4 : 1,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: selected ? colorScheme.primary : Colors.transparent, width: 2),
+        side: BorderSide(
+          color: selected ? colorScheme.primary : Colors.transparent,
+          width: 2,
+        ),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -218,8 +287,12 @@ class _ModeCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
-                selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                color: selected ? colorScheme.primary : Theme.of(context).disabledColor,
+                selected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                color: selected
+                    ? colorScheme.primary
+                    : Theme.of(context).disabledColor,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -231,9 +304,15 @@ class _ModeCard extends StatelessWidget {
                       spacing: 8,
                       runSpacing: 4,
                       children: [
-                        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         Text(
-                          '· $switchPosition',
+                          label,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        Text(
+                          '- $switchPosition',
                           style: TextStyle(
                             fontSize: 14,
                             color: Theme.of(context).hintColor,
@@ -242,20 +321,31 @@ class _ModeCard extends StatelessWidget {
                         ),
                         if (recommended)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
-                              color: colorScheme.primary.withValues(alpha: 0.12),
+                              color:
+                                  colorScheme.primary.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
                               'Recommended',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: colorScheme.primary),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.primary,
+                              ),
                             ),
                           ),
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Text(description, style: const TextStyle(fontSize: 14, height: 1.4)),
+                    Text(
+                      description,
+                      style: const TextStyle(fontSize: 14, height: 1.4),
+                    ),
                   ],
                 ),
               ),

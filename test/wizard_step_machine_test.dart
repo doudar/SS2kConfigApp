@@ -30,15 +30,28 @@ void main() {
       expect(steps.last, WizardStepId.completion);
     });
 
-    test('pelotonOriginal includes sensorWiring then sideSwitch after wiring', () {
+    test('pelotonOriginal includes sensor wiring and side switch pages after wiring', () {
       final steps = machine.activeSteps(bikeType: BikeType.pelotonOriginal);
       expect(steps.contains(WizardStepId.sideSwitch), isTrue);
       expect(steps.contains(WizardStepId.sensorWiring), isTrue);
       final wiringIndex = steps.indexOf(WizardStepId.wiring);
       final sensorWiringIndex = steps.indexOf(WizardStepId.sensorWiring);
+      final sensorWiringHarnessIndex =
+          steps.indexOf(WizardStepId.sensorWiringHarness);
+      final sensorWiringConnectedIndex =
+          steps.indexOf(WizardStepId.sensorWiringConnected);
       final sideSwitchIndex = steps.indexOf(WizardStepId.sideSwitch);
+      final sideSwitchPositionIndex =
+          steps.indexOf(WizardStepId.sideSwitchPosition);
+      final sideSwitchCableIndex = steps.indexOf(WizardStepId.sideSwitchCable);
+      final sideSwitchClipIndex = steps.indexOf(WizardStepId.sideSwitchClip);
       expect(sensorWiringIndex, wiringIndex + 1);
-      expect(sideSwitchIndex, sensorWiringIndex + 1);
+      expect(sensorWiringHarnessIndex, sensorWiringIndex + 1);
+      expect(sensorWiringConnectedIndex, sensorWiringHarnessIndex + 1);
+      expect(sideSwitchIndex, sensorWiringConnectedIndex + 1);
+      expect(sideSwitchPositionIndex, sideSwitchIndex + 1);
+      expect(sideSwitchCableIndex, sideSwitchPositionIndex + 1);
+      expect(sideSwitchClipIndex, sideSwitchCableIndex + 1);
       expect(steps.first, WizardStepId.welcome);
       expect(steps.last, WizardStepId.completion);
     });
@@ -48,6 +61,12 @@ void main() {
         WizardStepId.welcome,
         WizardStepId.bikeType,
         WizardStepId.hardwareInstall,
+        WizardStepId.hardwareInstallArm,
+        WizardStepId.hardwareInstallKnobInsert,
+        WizardStepId.hardwareInstallMount,
+        WizardStepId.hardwareInstallShifter,
+        WizardStepId.hardwareInstallCable,
+        WizardStepId.hardwareInstallPower,
         WizardStepId.wiring,
         WizardStepId.ss2kConnection,
         WizardStepId.dataSource,
@@ -67,9 +86,20 @@ void main() {
         WizardStepId.welcome,
         WizardStepId.bikeType,
         WizardStepId.hardwareInstall,
+        WizardStepId.hardwareInstallArm,
+        WizardStepId.hardwareInstallKnobInsert,
+        WizardStepId.hardwareInstallMount,
+        WizardStepId.hardwareInstallShifter,
+        WizardStepId.hardwareInstallCable,
+        WizardStepId.hardwareInstallPower,
         WizardStepId.wiring,
         WizardStepId.sensorWiring,
+        WizardStepId.sensorWiringHarness,
+        WizardStepId.sensorWiringConnected,
         WizardStepId.sideSwitch,
+        WizardStepId.sideSwitchPosition,
+        WizardStepId.sideSwitchCable,
+        WizardStepId.sideSwitchClip,
         WizardStepId.ss2kConnection,
         WizardStepId.bikeDataTest,
         WizardStepId.motorTest,

@@ -503,12 +503,26 @@ jobs:
           $baseUrl = if ($env:FVP_DEPS_URL -match '^https?://') {
             $env:FVP_DEPS_URL.TrimEnd('/')
           } else {
-            'https://sourceforge.net/projects/mdk-sdk/files/nightly'
+            'https://downloads.sourceforge.net/project/mdk-sdk/nightly'
           }
           $archivePath = Join-Path $fvpWindowsDir $packageName
+          $downloadUrl = "$baseUrl/$packageName"
+          if ($baseUrl -like 'https://sourceforge.net/*') {
+            $downloadUrl = "$downloadUrl/download"
+          }
 
-          Write-Host "Downloading $packageName from $baseUrl"
-          Invoke-WebRequest -Uri "$baseUrl/$packageName" -OutFile $archivePath
+          Write-Host "Downloading $packageName from $downloadUrl"
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+
+          [byte[]] $signature = Get-Content -Path $archivePath -AsByteStream -TotalCount 6
+          $expectedSignature = @(0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c)
+          $is7zArchive = $signature.Length -eq $expectedSignature.Length
+          for ($i = 0; $i -lt $expectedSignature.Length -and $is7zArchive; $i++) {
+            $is7zArchive = $signature[$i] -eq $expectedSignature[$i]
+          }
+          if (-not $is7zArchive) {
+            throw "Downloaded file is not a 7z archive. SourceForge may have returned an HTML page instead of $packageName."
+          }
 
           # fvp 0.37.2 lets CMake extract through Flutter's .plugin_symlinks path,
           # which fails on current Windows runners. Extract in the real pub-cache path.

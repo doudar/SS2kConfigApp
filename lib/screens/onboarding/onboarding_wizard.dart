@@ -24,7 +24,8 @@ class OnboardingWizard extends StatefulWidget {
   State<OnboardingWizard> createState() => _OnboardingWizardState();
 }
 
-class _OnboardingWizardState extends State<OnboardingWizard> with WidgetsBindingObserver {
+class _OnboardingWizardState extends State<OnboardingWizard>
+    with WidgetsBindingObserver {
   late PageController _controller;
   late WizardSession _session;
   final WizardStepMachine _machine = WizardStepMachine();
@@ -75,13 +76,51 @@ class _OnboardingWizardState extends State<OnboardingWizard> with WidgetsBinding
       case WizardStepId.bikeType:
         return const BikeTypeStep();
       case WizardStepId.hardwareInstall:
-        return const HardwareInstallStep();
+        return const HardwareInstallStep(stepId: WizardStepId.hardwareInstall);
+      case WizardStepId.hardwareInstallArm:
+        return const HardwareInstallStep(
+          stepId: WizardStepId.hardwareInstallArm,
+        );
+      case WizardStepId.hardwareInstallKnobInsert:
+        return const HardwareInstallStep(
+          stepId: WizardStepId.hardwareInstallKnobInsert,
+        );
+      case WizardStepId.hardwareInstallMount:
+        return const HardwareInstallStep(
+          stepId: WizardStepId.hardwareInstallMount,
+        );
+      case WizardStepId.hardwareInstallShifter:
+        return const HardwareInstallStep(
+          stepId: WizardStepId.hardwareInstallShifter,
+        );
+      case WizardStepId.hardwareInstallCable:
+        return const HardwareInstallStep(
+          stepId: WizardStepId.hardwareInstallCable,
+        );
+      case WizardStepId.hardwareInstallPower:
+        return const HardwareInstallStep(
+          stepId: WizardStepId.hardwareInstallPower,
+        );
       case WizardStepId.wiring:
         return const WiringStep();
       case WizardStepId.sensorWiring:
-        return const SensorWiringStep();
+        return const SensorWiringStep(stepId: WizardStepId.sensorWiring);
+      case WizardStepId.sensorWiringHarness:
+        return const SensorWiringStep(
+          stepId: WizardStepId.sensorWiringHarness,
+        );
+      case WizardStepId.sensorWiringConnected:
+        return const SensorWiringStep(
+          stepId: WizardStepId.sensorWiringConnected,
+        );
       case WizardStepId.sideSwitch:
-        return const SideSwitchStep();
+        return const SideSwitchStep(stepId: WizardStepId.sideSwitch);
+      case WizardStepId.sideSwitchPosition:
+        return const SideSwitchStep(stepId: WizardStepId.sideSwitchPosition);
+      case WizardStepId.sideSwitchCable:
+        return const SideSwitchStep(stepId: WizardStepId.sideSwitchCable);
+      case WizardStepId.sideSwitchClip:
+        return const SideSwitchStep(stepId: WizardStepId.sideSwitchClip);
       case WizardStepId.ss2kConnection:
         return const Ss2kConnectionStep();
       case WizardStepId.dataSource:
