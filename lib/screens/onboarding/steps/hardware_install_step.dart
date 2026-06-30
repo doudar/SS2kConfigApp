@@ -80,7 +80,7 @@ class HardwareInstallStep extends StatelessWidget {
             ),
             SizedBox(height: 16),
             InstructionStepCard(
-              stepNumber: 8,
+              stepNumber: 7,
               title: 'Turn on your SmartSpin2k',
               body:
                   'Connect the Power adapter to the wire labeled "Power" on your SmartSpin2k.  To turn the SmartSpin2k on, connect the free end of the large breakout cable to your SmartSpin2k.  You should see the LED lights start to turn on.',

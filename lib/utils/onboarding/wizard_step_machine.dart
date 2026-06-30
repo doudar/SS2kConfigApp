@@ -4,6 +4,8 @@ enum DataSource { grupetto, powerMeter }
 
 enum SideSwitchMode { tabletMode, headlessMode }
 
+enum PelotonTabletApp { peloton, grupetto }
+
 enum WizardStepId {
   welcome,
   bikeType,

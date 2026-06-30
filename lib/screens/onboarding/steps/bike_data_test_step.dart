@@ -8,8 +8,6 @@ import '../../../utils/bledata.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../widgets/onboarding/instruction_step_card.dart';
 
-enum _PelotonTabletApp { peloton, grupetto }
-
 class BikeDataTestStep extends StatefulWidget {
   const BikeDataTestStep({Key? key}) : super(key: key);
 
@@ -24,7 +22,7 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
   bool _cadenceSeen = false;
   int _lastWatts = 0;
   int _lastCadence = 0;
-  _PelotonTabletApp _pelotonTabletApp = _PelotonTabletApp.peloton;
+  PelotonTabletApp _pelotonTabletApp = PelotonTabletApp.peloton;
 
   bool get _bothSeen => _powerSeen && _cadenceSeen;
 
@@ -82,7 +80,7 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
       BikeType? bikeType, SideSwitchMode? mode) {
     if (bikeType != BikeType.pelotonOriginal) return null;
     if (mode == SideSwitchMode.tabletMode) {
-      if (_pelotonTabletApp == _PelotonTabletApp.peloton) {
+      if (_pelotonTabletApp == PelotonTabletApp.peloton) {
         return (
           title: 'Start a free ride on the Peloton tablet',
           body: 'Open the Peloton app and start a Just Ride. Pedal a few seconds — '
@@ -132,10 +130,10 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (showTabletToggle) ...[
-              SegmentedButton<_PelotonTabletApp>(
+              SegmentedButton<PelotonTabletApp>(
                 segments: const [
-                  ButtonSegment(value: _PelotonTabletApp.peloton, label: Text('Peloton app')),
-                  ButtonSegment(value: _PelotonTabletApp.grupetto, label: Text('Grupetto overlay')),
+                  ButtonSegment(value: PelotonTabletApp.peloton, label: Text('Peloton app')),
+                  ButtonSegment(value: PelotonTabletApp.grupetto, label: Text('Grupetto overlay')),
                 ],
                 selected: {_pelotonTabletApp},
                 onSelectionChanged: (s) => setState(() => _pelotonTabletApp = s.first),

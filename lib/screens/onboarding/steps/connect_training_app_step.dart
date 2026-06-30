@@ -12,8 +12,6 @@ enum _Branch {
   mostBikes,
 }
 
-enum _PelotonTabletApp { peloton, grupetto }
-
 class ConnectTrainingAppStep extends StatefulWidget {
   final BikeType? bikeType;
   final DataSource? dataSource;
@@ -26,7 +24,7 @@ class ConnectTrainingAppStep extends StatefulWidget {
 }
 
 class _ConnectTrainingAppStepState extends State<ConnectTrainingAppStep> {
-  _PelotonTabletApp _pelotonTabletApp = _PelotonTabletApp.peloton;
+  PelotonTabletApp _pelotonTabletApp = PelotonTabletApp.peloton;
 
   bool get _showPelotonTabletToggle =>
       widget.bikeType == BikeType.pelotonOriginal && widget.sideSwitchMode == SideSwitchMode.tabletMode;
@@ -34,7 +32,7 @@ class _ConnectTrainingAppStepState extends State<ConnectTrainingAppStep> {
   _Branch get _branch {
     if (widget.bikeType == BikeType.pelotonOriginal) {
       if (widget.sideSwitchMode == SideSwitchMode.tabletMode) {
-        return _pelotonTabletApp == _PelotonTabletApp.grupetto
+        return _pelotonTabletApp == PelotonTabletApp.grupetto
             ? _Branch.pelotonOriginalTabletGrupetto
             : _Branch.pelotonOriginalTabletPelotonApp;
       }
@@ -132,10 +130,10 @@ class _ConnectTrainingAppStepState extends State<ConnectTrainingAppStep> {
             const SizedBox(height: 20),
 
             if (_showPelotonTabletToggle) ...[
-              SegmentedButton<_PelotonTabletApp>(
+              SegmentedButton<PelotonTabletApp>(
                 segments: const [
-                  ButtonSegment(value: _PelotonTabletApp.peloton, label: Text('Peloton app')),
-                  ButtonSegment(value: _PelotonTabletApp.grupetto, label: Text('Grupetto overlay')),
+                  ButtonSegment(value: PelotonTabletApp.peloton, label: Text('Peloton app')),
+                  ButtonSegment(value: PelotonTabletApp.grupetto, label: Text('Grupetto overlay')),
                 ],
                 selected: {_pelotonTabletApp},
                 onSelectionChanged: (s) => setState(() => _pelotonTabletApp = s.first),

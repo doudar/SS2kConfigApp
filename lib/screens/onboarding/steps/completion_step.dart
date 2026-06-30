@@ -16,10 +16,12 @@ class CompletionStep extends StatefulWidget {
 
 class _CompletionStepState extends State<CompletionStep> {
   @override
-  void initState() {
-    super.initState();
-    // Mark completed exactly once on step entry (FR-004).
+  void dispose() {
+    // Fire after navigation, not on entry — calling markCompleted() in initState
+    // triggers completedNotifier synchronously, which causes main.dart to rebuild
+    // home to ScanScreen and removes this screen before the user can act on it.
     OnboardingState.markCompleted();
+    super.dispose();
   }
 
   @override
