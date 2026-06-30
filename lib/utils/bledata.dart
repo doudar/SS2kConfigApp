@@ -249,6 +249,7 @@ class BLEData {
     _cachedCharacteristicMap = null;
     lastFtmsUpdate = null;
     _ftmsRecoveryInProgress = false;
+    _lastFtmsRecoveryAttempt = null;
   }
 
   /// Stop the auto-reconnect monitor.
@@ -712,13 +713,30 @@ class BLEData {
     if (_ftmsRecoveryInProgress) return;
 
     final now = DateTime.now();
-
-    if (lastFtmsUpdate == null) {
-      return;
-    }
-
     final recentlyTriedRecovery = _lastFtmsRecoveryAttempt != null &&
         now.difference(_lastFtmsRecoveryAttempt!) < _ftmsRecoveryCooldown;
+
+    // Before the first FTMS packet, subscribed may already be true because the
+    // custom characteristic decode path is active. Keep retrying the FTMS notify
+    // setup on the watchdog cooldown so a failed initial setNotifyValue(true)
+    // does not leave the stream silent until reconnect.
+    if (lastFtmsUpdate == null) {
+      if (!recentlyTriedRecovery) {
+        _ftmsRecoveryInProgress = true;
+        _lastFtmsRecoveryAttempt = now;
+        try {
+          await updateIndoorBikeData(device);
+        } catch (e) {
+          print('Error retrying FTMS notify setup: $e');
+          if (!device.isConnected) {
+            _triggerReconnect(device);
+          }
+        } finally {
+          _ftmsRecoveryInProgress = false;
+        }
+      }
+      return;
+    }
 
     // If we have received data before, and it's been more than the watchdog
     // timeout, try one recovery pass.  Do not toggle the CCCD every timer tick;
@@ -1014,7 +1032,8 @@ class BLEData {
 
   Future<void> _writeQueue = Future.value();
   DateTime? _lastBleWriteCompletedAt;
-  int _bleOperationDepth = 0;
+  final Object _bleOperationZoneKey = Object();
+  final Set<Object> _activeBleOperationTokens = <Object>{};
 
   // Android does not expose an "is the BLE radio idle?" signal to app code.
   // Treat the completion of the previous GATT write as the best available
@@ -1027,8 +1046,12 @@ class BLEData {
   Future<T> _queueBleOperation<T>(Future<T> Function() operation) {
     // Some queued operations perform discovery, and discovery may enable CCCD
     // notifications. Running nested queue work inline avoids self-deadlocking
-    // while the outer queued operation is waiting for discovery to finish.
-    if (_bleOperationDepth > 0) {
+    // while the outer queued operation is waiting for discovery to finish. The
+    // zone token keeps that escape hatch scoped to the current queued operation
+    // so unrelated BLE callbacks still serialize behind the queue.
+    final currentToken = Zone.current[_bleOperationZoneKey];
+    if (currentToken != null &&
+        _activeBleOperationTokens.contains(currentToken)) {
       return operation();
     }
 
@@ -1042,11 +1065,15 @@ class BLEData {
         }
       }
 
+      final token = Object();
+      _activeBleOperationTokens.add(token);
       try {
-        _bleOperationDepth++;
-        return await operation();
+        return await runZoned(
+          operation,
+          zoneValues: {_bleOperationZoneKey: token},
+        );
       } finally {
-        _bleOperationDepth--;
+        _activeBleOperationTokens.remove(token);
         _lastBleWriteCompletedAt = DateTime.now();
       }
     });
