@@ -6,8 +6,13 @@
  */
 // This is a mock demo utility to simulate SmartSpin2k device connections
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/constants.dart';
+
+// Process-local flag: set by the hidden tap-target so main.dart routes to
+// ScanScreen without writing onboarding_completed (FR-033). Not persisted.
+final ValueNotifier<bool> demoModeBypass = ValueNotifier<bool>(false);
 
 class DemoDevice {
   static final DemoDevice _singleton = DemoDevice._internal();

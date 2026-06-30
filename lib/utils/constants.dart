@@ -29,8 +29,8 @@ enum SettingType {
 
 // Constants
 const int INT32_MIN = -2147483648;
-const double MIN_POWER_RANGE = 900.0;  // Minimum watts range for power table
-const double MIN_RESISTANCE_RANGE = 2000.0;  // Minimum resistance range for power table
+const double MIN_POWER_RANGE = 900.0; // Minimum watts range for power table
+const double MIN_RESISTANCE_RANGE = 2000.0; // Minimum resistance range for power table
 
 final String csUUID = "77776277-7877-7774-4466-896665500000";
 final String ccUUID = "77776277-7877-7774-4466-896665500001";
@@ -100,9 +100,7 @@ final String BLE_logStreamVname = "BLE_BLELogging";
 /// Returns a deep copy of the characteristic framework so each BLEData
 /// instance gets its own independent mutable state.
 List<Map<String, dynamic>> createCustomCharacteristicFramework() {
-  return customCharacteristicFramework
-      .map<Map<String, dynamic>>((c) => Map<String, dynamic>.from(c as Map))
-      .toList();
+  return customCharacteristicFramework.map<Map<String, dynamic>>((c) => Map<String, dynamic>.from(c as Map)).toList();
 }
 
 // Refactored customCharacteristicFramework to directly use Dart map
@@ -117,7 +115,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "The current loaded firmware.",
-    "defaultData": "SmartSpin2k"
+    "defaultData": "SmartSpin2k",
   },
   {
     "vName": connectedPWRVname,
@@ -130,7 +128,7 @@ final dynamic customCharacteristicFramework = [
     "max": 2000,
     "textDescription":
         "Select your Power Meter from the list. \n Device Not showing up? Check that it's not connected to anything else and press scan again.",
-    "defaultData": "any"
+    "defaultData": "any",
   },
   {
     "vName": connectedHRMVname,
@@ -143,7 +141,7 @@ final dynamic customCharacteristicFramework = [
     "max": 2000,
     "textDescription":
         "Select your Heart Rate Monitor from the list. \n Device Not showing up? Check that it's not connected to anything else and press scan again.",
-    "defaultData": "any"
+    "defaultData": "any",
   },
   {
     "vName": foundDevicesVname,
@@ -156,7 +154,7 @@ final dynamic customCharacteristicFramework = [
     "max": 2000,
     "textDescription": "The following devices have been found",
     "defaultData":
-        "[{\"device 0\":{\"name\":\"Polar OH1 B9B6D624 d6\",\"UUID\":\"0x180d\"},\"device 1\":{\"name\":\"Wahoo Kicker\",\"UUID\":\"0x1818\"} }]"
+        "[{\"device 0\":{\"name\":\"Polar OH1 B9B6D624 d6\",\"UUID\":\"0x180d\"},\"device 1\":{\"name\":\"Wahoo Kicker\",\"UUID\":\"0x1818\"} }]",
   },
   {
     "vName": shiftStepVname,
@@ -169,7 +167,7 @@ final dynamic customCharacteristicFramework = [
     "max": 6000,
     "textDescription":
         "This setting controls how much each click of the shifter turns the dial. The ideal setting is different for each bike and person. Try aiming for a +/- 30 watt change when you click the shifter. Higher values will turn the knob further.",
-    "defaultData": "1500"
+    "defaultData": "1500",
   },
   {
     "vName": shiftDirVname,
@@ -182,7 +180,7 @@ final dynamic customCharacteristicFramework = [
     "max": 1,
     "textDescription":
         "This setting controls which shifter button is up and which is down. Toggle this if you need to invert the direction of the shifters.",
-    "defaultData": "true"
+    "defaultData": "true",
   },
   {
     "vName": saveVname,
@@ -194,7 +192,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Saves all of the configuration to the filesystem",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": inclineMultiplierVname,
@@ -207,7 +205,7 @@ final dynamic customCharacteristicFramework = [
     "max": 10,
     "textDescription":
         "This setting affects how much you will feel the impact of hills in sim mode rides. Pick the setting which feels most realistic to you. Higher values will make hills feel steeper while lower values will flatten out the hills.",
-    "defaultData": "5.0"
+    "defaultData": "5.0",
   },
   {
     "vName": ERGSensitivityVname,
@@ -220,7 +218,7 @@ final dynamic customCharacteristicFramework = [
     "max": 20,
     "textDescription":
         "This setting will impact the sensitivity of Erg Mode. Too low will cause the Erg to be slow at reaching target wattage. Too high will cause it to overshoot and oscillate before settling. Start with the default value of 5 and adjust if necessary.",
-    "defaultData": "5.0"
+    "defaultData": "5.0",
   },
   {
     "vName": firmwareUpdateURLVname,
@@ -232,7 +230,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 0,
     "textDescription": "URL for firmware updates.",
-    "defaultData": "https://raw.githubusercontent.com/doudar/OTAUpdates/main/"
+    "defaultData": "https://raw.githubusercontent.com/doudar/OTAUpdates/main/",
   },
   {
     "vName": inclineVname,
@@ -244,7 +242,7 @@ final dynamic customCharacteristicFramework = [
     "min": -30,
     "max": 30,
     "textDescription": "The incline requested by your training program.",
-    "defaultData": "0.0"
+    "defaultData": "0.0",
   },
   {
     "vName": simulatedWattsVname,
@@ -256,7 +254,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "Your current watts output.",
-    "defaultData": "0"
+    "defaultData": "0",
   },
   {
     "vName": simulatedHrVname,
@@ -268,7 +266,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "Your current heart rate.",
-    "defaultData": "0"
+    "defaultData": "0",
   },
   {
     "vName": simulatedTargetWattsVname,
@@ -280,7 +278,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "Your current target watts.",
-    "defaultData": "0"
+    "defaultData": "0",
   },
   {
     "vName": simulatedCadVname,
@@ -292,7 +290,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "Your current cadence.",
-    "defaultData": "0"
+    "defaultData": "0",
   },
   {
     "vName": simulatedSpeedVname,
@@ -304,7 +302,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "Your current speed.",
-    "defaultData": "0"
+    "defaultData": "0",
   },
   {
     "vName": deviceNameVname,
@@ -317,7 +315,7 @@ final dynamic customCharacteristicFramework = [
     "max": 0,
     "textDescription":
         "Set the name for your SmartSpin2k device. This will also change the URL of the device on the local network to yourName.local",
-    "defaultData": "SmartSpin2k"
+    "defaultData": "SmartSpin2k",
   },
   {
     "vName": stepperPowerVname,
@@ -330,7 +328,7 @@ final dynamic customCharacteristicFramework = [
     "max": 2000,
     "textDescription":
         "Adjust this setting if you are experiencing overheat issues or if you need additional torque for a felt resistance bike. Do not exceed your power supply's rated limits.",
-    "defaultData": "900"
+    "defaultData": "900",
   },
   {
     "vName": stealthChopVname,
@@ -343,7 +341,7 @@ final dynamic customCharacteristicFramework = [
     "max": 1,
     "textDescription":
         "This silences the stepper motor. Leave it on unless it is causing issues. Turning it off may provide some additional torque if you have a felt resistance bike.",
-    "defaultData": "true"
+    "defaultData": "true",
   },
   {
     "vName": powerCorrectionFactorVname,
@@ -356,7 +354,7 @@ final dynamic customCharacteristicFramework = [
     "max": 2.5,
     "textDescription":
         "Increase or decrease this setting to correct the power reported from your bike. This is typically only needed if your bike is over or under reporting power by a significant amount. IC4/C6 users may want to try a value around 0.7 to .8",
-    "defaultData": "1.0"
+    "defaultData": "1.0",
   },
   {
     "vName": simulateHrVname,
@@ -368,7 +366,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Enable to generate simulated heart rate monitor data.",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": simulateWattsVname,
@@ -380,7 +378,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Enable to generate simulated power meter data.",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": simulateTargetWattsVname,
@@ -392,7 +390,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Enable to generate simulated target watts meter data.",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": simulateCadVname,
@@ -404,7 +402,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Enable to generate simulated cadence sensor data.",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": FTMSModeVname,
@@ -416,7 +414,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "Current mode of the Fitness Machine Service (FTMS) profile.",
-    "defaultData": "0"
+    "defaultData": "0",
   },
   {
     "vName": autoUpdateVname,
@@ -428,7 +426,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Toggle to enable or disable automatic firmware updates.",
-    "defaultData": "true"
+    "defaultData": "true",
   },
   {
     "vName": ssidVname,
@@ -441,7 +439,7 @@ final dynamic customCharacteristicFramework = [
     "max": 2000,
     "textDescription":
         "Enter the SSID of a 2.4GHz WiFi network to access SmartSpin2k settings over WiFi. If it doesn't connect, it will start and access point with the device name.",
-    "defaultData": "SmartSpin2k"
+    "defaultData": "SmartSpin2k",
   },
   {
     "vName": passwordVname,
@@ -453,7 +451,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "Enter your WiFi password.",
-    "defaultData": "password"
+    "defaultData": "password",
   },
   {
     "vName": shifterPositionVname,
@@ -465,7 +463,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "Your current gear.",
-    "defaultData": "0"
+    "defaultData": "0",
   },
   {
     "vName": targetPositionVname,
@@ -477,7 +475,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 20000,
     "textDescription": "The target position for the stepper motor.",
-    "defaultData": "0"
+    "defaultData": "0",
   },
   {
     "vName": externalControlVname,
@@ -489,7 +487,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Indicates if the device is under external control.",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": stepperSpeedVname,
@@ -501,7 +499,7 @@ final dynamic customCharacteristicFramework = [
     "min": 100,
     "max": 3500,
     "textDescription": "Adjust the motor speed. The default setting is adequate for the majority of users.",
-    "defaultData": "1500"
+    "defaultData": "1500",
   },
   {
     "vName": syncModeVname,
@@ -513,7 +511,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Indicates if the device is in sync mode.",
-    "defaultData": "0"
+    "defaultData": "0",
   },
   {
     "vName": minBrakeWattsVname,
@@ -525,7 +523,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 200,
     "textDescription": "Minimum amount of resistance you can pedal without hitting the low limit stop on your bike.",
-    "defaultData": "50"
+    "defaultData": "50",
   },
   {
     "vName": maxBrakeWattsVname,
@@ -537,7 +535,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2500,
     "textDescription": "Maximum amount of resistance you can pedal without hitting the high limit stop on your bike.",
-    "defaultData": "1000"
+    "defaultData": "1000",
   },
   {
     "vName": restartBLEVname,
@@ -549,7 +547,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Disconnect the BLE devices (scan will then happen along with reconnect).",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": scanBLEVname,
@@ -562,7 +560,7 @@ final dynamic customCharacteristicFramework = [
     "max": 1,
     "textDescription":
         "Scan for BLE devices. Scanning is automatic (not needed to be used) unless all devices are connected.",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": rebootVname,
@@ -574,7 +572,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Reboots The SmartSpin2k",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": resetVname,
@@ -586,7 +584,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Reset the SmartSpin2k to defaults",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": resetPowerTableVname,
@@ -598,7 +596,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Delete the active and saved power table",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": powerTableDataVname,
@@ -610,7 +608,7 @@ final dynamic customCharacteristicFramework = [
     "min": -32768,
     "max": 32768,
     "textDescription": "Read or Write Data to the Power Table",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": simulatedTargetWattsVname,
@@ -622,7 +620,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "Your target watt output.",
-    "defaultData": "0"
+    "defaultData": "0",
   },
   {
     "vName": simulateTargetWattsVname,
@@ -634,7 +632,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Enable to generate simulated target watt data.",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": BLE_hMinVname,
@@ -646,7 +644,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 100000000,
     "textDescription": "The minimum value for the homing sequence.",
-    "defaultData": "0"
+    "defaultData": "0",
   },
   {
     "vName": BLE_hMaxVname,
@@ -658,7 +656,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 100000000,
     "textDescription": "The maximum value for the homing sequence.",
-    "defaultData": "100000000"
+    "defaultData": "100000000",
   },
   {
     "vName": homingSensitivityVname,
@@ -670,7 +668,7 @@ final dynamic customCharacteristicFramework = [
     "min": 10,
     "max": 100,
     "textDescription": "Adjust lower if homing hits the limit too hard/grinds, higher if it stops too soon.",
-    "defaultData": "50"
+    "defaultData": "50",
   },
   {
     "vName": pTab4pwrVname,
@@ -682,7 +680,7 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 1,
     "textDescription": "Enable to use the power table for power instead of a power meter",
-    "defaultData": "false"
+    "defaultData": "false",
   },
   {
     "vName": BLE_logStreamVname,
@@ -694,6 +692,6 @@ final dynamic customCharacteristicFramework = [
     "min": 0,
     "max": 2000,
     "textDescription": "Read last BLE log message or enable/disable BLE log streaming",
-    "defaultData": ""
-  }
+    "defaultData": "",
+  },
 ];

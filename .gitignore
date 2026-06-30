@@ -106,6 +106,18 @@ test/*.fit
 test/*.gpx
 android/build/reports/problems/problems-report.html
 android/build/reports/problems/problems-report.html
+test_output.txt
 
 # Coverage artifacts
 /coverage/
+
+#Extensions
+.claude/
+.docs/
+.specify/
+.speckit/
+CLAUDE.md
+specs/
+graphify-out/
+.hermes/
+agents.md

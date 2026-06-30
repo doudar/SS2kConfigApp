@@ -6,11 +6,12 @@
  */
 
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
-import 'dart:async';
+import '../utils/demo.dart';
 
 class DropdownCard extends StatefulWidget {
   const DropdownCard({
@@ -241,16 +242,17 @@ class _DropdownCardState extends State<DropdownCard> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: <Widget>[
-                      TextButton.icon(
-                          icon: Icon(Icons.refresh, color: Colors.white70),
-                          label: const Text('SCAN', style: TextStyle(color: Colors.white)),
-                          onPressed: () {
-                            //Find the save command and execute it
-                            this
-                                .bleData
-                                .customCharacteristic
-                                .forEach((c) => this.bleData.findNSave(this.widget.device, c, scanBLEVname));
-                          }),
+                      if (!demoModeBypass.value)
+                        TextButton.icon(
+                            icon: Icon(Icons.refresh, color: Colors.white70),
+                            label: const Text('SCAN', style: TextStyle(color: Colors.white)),
+                            onPressed: () {
+                              //Find the save command and execute it
+                              this
+                                  .bleData
+                                  .customCharacteristic
+                                  .forEach((c) => this.bleData.findNSave(this.widget.device, c, scanBLEVname));
+                            }),
                       Spacer(),
                       TextButton(
                           child: const Text('BACK', style: TextStyle(color: Colors.white)),

@@ -23,13 +23,16 @@ class ScanResultTile extends StatefulWidget {
 }
 
 class _ScanResultTileState extends State<ScanResultTile> {
-  BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
+  late BluetoothConnectionState _connectionState;
 
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
 
   @override
   void initState() {
     super.initState();
+    _connectionState = widget.result.device.isConnected
+        ? BluetoothConnectionState.connected
+        : BluetoothConnectionState.disconnected;
     _connectionStateSubscription = this.widget.result.device.connectionState.listen((state) {
       _connectionState = state;
       if (mounted) {

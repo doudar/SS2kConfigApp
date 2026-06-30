@@ -4,12 +4,31 @@ import 'package:ss2kconfigapp/utils/bledata.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'dart:io';
+import 'package:flutter/services.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
+  Directory? tempDir;
   
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await SharedPreferences.getInstance();
+    tempDir = await Directory.systemTemp.createTemp('ss2k_test');
+    pathProviderChannel.setMockMethodCallHandler((call) async {
+      if (call.method == 'getApplicationDocumentsDirectory' || call.method == 'getTemporaryDirectory') {
+        return tempDir!.path;
+      }
+      return null;
+    });
+  });
+
+  tearDown(() async {
+    pathProviderChannel.setMockMethodCallHandler(null);
+    if (tempDir != null && await tempDir!.exists()) {
+      await tempDir!.delete(recursive: true);
+    }
   });
 
   test('Workout progress tracks real time despite timer lag', () async {

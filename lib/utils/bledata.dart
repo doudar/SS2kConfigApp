@@ -330,6 +330,21 @@ class BLEData {
     }
   }
 
+  /// Seeds this BLEData as a simulated ("demo") device: marks it simulated,
+  /// fills every custom characteristic with its default value, and reports a
+  /// compatible firmware version. Used by both the main device screen and the
+  /// onboarding wizard so the demo device behaves identically in either entry
+  /// point. This is also the intended hook for a future demo data emitter.
+  void setupDemoData() {
+    isSimulated = true;
+    for (final key in customCharacteristic) {
+      key["value"] = key["defaultData"] ?? "Default Value";
+    }
+    charReceived.value = true;
+    firmwareVersion.value = "24.1.3";
+    configAppCompatibleFirmware = true;
+  }
+
   /// @brief
   /// Returns the value of a custom characteristic by its vName.
   /// If the value is not found or is [noFirmSupport] and [returnNoFirmSupport] is false, returns "0".
