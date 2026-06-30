@@ -26,7 +26,6 @@ class _ShifterScreenState extends State<ShifterScreen> {
   late BLEData bleData;
   late ValueNotifier<String> t;
   Map<String, dynamic> c = const {};
-  Timer? _refreshTimer;
   Timer? _pendingShiftTimer;
   String? _confirmedShifterValue;
   String? _pendingShifterValue;
@@ -52,21 +51,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
       return;
     }
 
-    if (t.value == "Connecting") {
-      _requestShifterPosition();
-    }
-
-    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (refreshTimer) {
-      if (!mounted) {
-        refreshTimer.cancel();
-        return;
-      }
-      // Reconnection is handled centrally by BLEData.startConnectionMonitor.
-      // This timer only needs to re-request the shifter position if still pending.
-      if (this.widget.device.isConnected && t.value == "Connecting") {
-        _requestShifterPosition();
-      }
-    });
+    unawaited(bleData.ensureCustomCharacteristicStream(widget.device));
 
     //Start Subscription
     rwSubscription();
@@ -74,7 +59,6 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
     _pendingShiftTimer?.cancel();
     _connectionStateSubscription?.cancel();
     _characteristicChangeSubscription?.cancel();
@@ -87,13 +71,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
     return value.isNotEmpty && value != "null" && value != noFirmSupport;
   }
 
-  void _syncShifterValueFromCache() {
-    c = this.bleData.customCharacteristic.firstWhere(
-      (i) => i["vName"] == shifterPositionVname,
-      orElse: () => <String, dynamic>{},
-    );
-
-    final shifterValue = c["value"]?.toString() ?? "";
+  void _applyShifterValue(String shifterValue) {
     if (_isValidShifterValue(shifterValue)) {
       _confirmedShifterValue = shifterValue;
       if (_pendingShifterValue != null) {
@@ -107,25 +85,24 @@ class _ShifterScreenState extends State<ShifterScreen> {
     }
   }
 
-  void _requestShifterPosition() {
-    if (!widget.device.isConnected || t.value != "Connecting") {
-      return;
-    }
-    bleData.requestSetting(widget.device, shifterPositionVname);
+  void _syncShifterValueFromCache() {
+    c = this.bleData.customCharacteristic.firstWhere(
+      (i) => i["vName"] == shifterPositionVname,
+      orElse: () => <String, dynamic>{},
+    );
+
+    final shifterValue = c["value"]?.toString() ?? "";
+    _applyShifterValue(shifterValue);
   }
 
   Future rwSubscription() async {
     _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
       if (state == BluetoothConnectionState.connected) {
-        // After a reconnection the cached gear value is stale.
-        // Reset to "Connecting" so _requestShifterPosition re-fetches
-        // from the device and the UI shows a loading state until the
-        // authoritative value arrives via characteristicChanges.
         _confirmedShifterValue = null;
         _pendingShifterValue = null;
         _pendingShiftTimer?.cancel();
         t.value = "Connecting";
-        _requestShifterPosition();
+        unawaited(bleData.ensureCustomCharacteristicStream(widget.device));
       }
     });
 
@@ -134,6 +111,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
       // Shifter position from device is authoritative (includes external shifter and accepted app shifts).
       if (event.vName == shifterPositionVname) {
+        _applyShifterValue(event.value);
         _syncShifterValueFromCache();
       }
 

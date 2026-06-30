@@ -580,6 +580,28 @@ class BLEData {
     }
   }
 
+  Future<void> ensureCustomCharacteristicStream(BluetoothDevice device) async {
+    if (this.isSimulated || !device.isConnected) return;
+
+    if (_myCharacteristic == null) {
+      await _discoverServices(device);
+      if (services.length > 1) {
+        await _findChar();
+      }
+    }
+
+    final characteristic = _myCharacteristic;
+    if (characteristic == null) return;
+
+    if (!subscribed) {
+      decode(device);
+    }
+
+    if (!characteristic.isNotifying) {
+      await _queueBleOperation(() => characteristic.setNotifyValue(true));
+    }
+  }
+
   Future<void> updateIndoorBikeData(BluetoothDevice device) async {
     if (indoorBikeCharacteristic == null) {
       await _discoverServices(device);
@@ -1140,6 +1162,10 @@ class BLEData {
           var c = _cachedCharacteristicMap?[value[1]];
 
           if (c != null) {
+            if (value.length == 2 && c["type"] != "string") {
+              return;
+            }
+
             var length = value.length;
             var t = new Uint8List(length);
             for (var i = 0; i < length; i++) {
@@ -1150,11 +1176,15 @@ class BLEData {
             switch (c["type"]) {
               case "int":
                 {
-                  if (data.lengthInBytes < 4) {
-                    c["value"] = noFirmSupport;
-                  } else {
+                  if (data.lengthInBytes >= 4) {
                     c["value"] = data.getInt16(2, Endian.little).toString();
+                  } else if (data.lengthInBytes == 3) {
+                    c["value"] = value[2].toString();
+                  } else {
+                    c["value"] = noFirmSupport;
+                  }
 
+                  if (c["value"] != noFirmSupport) {
                     simulatedTargetWatts = (c["reference"] == "0x28")
                         ? c["value"]
                         : simulatedTargetWatts;

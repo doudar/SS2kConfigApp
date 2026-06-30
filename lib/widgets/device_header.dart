@@ -11,7 +11,6 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 import '../utils/bledata.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../utils/constants.dart';
 
 class DeviceHeader extends StatefulWidget {
@@ -340,21 +339,21 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         PopupMenuItem<VoidCallback>(
           value: onConnectPressed,
           child: ListTile(
-            leading: Icon(FontAwesomeIcons.plug),
+            leading: Icon(Icons.electrical_services),
             title: Text('Connect'),
           ),
         ),
         PopupMenuItem<VoidCallback>(
           value: onDiscoverServicesPressed,
           child: ListTile(
-            leading: Icon(FontAwesomeIcons.rotate),
+            leading: Icon(Icons.refresh),
             title: Text('Refresh'),
           ),
         ),
         PopupMenuItem<VoidCallback>(
           value: onRebootPressed,
           child: ListTile(
-            leading: Icon(FontAwesomeIcons.arrowRotateRight),
+            leading: Icon(Icons.restart_alt),
             title: Text('Reboot SS2k'),
           ),
         ),
