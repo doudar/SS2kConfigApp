@@ -975,9 +975,14 @@ class WorkoutMenu extends StatelessWidget {
                   onPressed: () async {
                     setState(() => isCalibrating = true);
                     try {
-                      final ftmsControlPointChar = bleData.ftmsControlPointCharacteristic;
-                      if (ftmsControlPointChar != null) {
-                        await FTMSControlPoint.spinDownControl(ftmsControlPointChar, true);
+                      if (bleData.ftmsControlPointCharacteristic != null) {
+                        await bleData.writeFtmsControlPoint(
+                          (characteristic) =>
+                              FTMSControlPoint.spinDownControl(
+                            characteristic,
+                            true,
+                          ),
+                        );
                         await Future.delayed(const Duration(seconds: 30));
                         Navigator.of(ctx).pop();
                         ScaffoldMessenger.of(context).showSnackBar(
