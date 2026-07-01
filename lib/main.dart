@@ -28,7 +28,9 @@ import 'utils/demo.dart' show demoModeBypass;
 void main() async {
   FlutterBluePlus.setLogLevel(LogLevel.verbose, color: true);
   WidgetsFlutterBinding.ensureInitialized();
-  fvp.registerWith();
+  fvp.registerWith(options: {
+    'platforms': ['windows', 'macos', 'linux'],
+  });
 
   runApp(
     ChangeNotifierProvider(

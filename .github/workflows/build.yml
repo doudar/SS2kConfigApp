@@ -499,32 +499,74 @@ jobs:
             exit 0
           }
 
+          function Test-7zArchive($Path) {
+            if (-not (Test-Path $Path)) {
+              return $false
+            }
+            [byte[]] $signature = Get-Content -Path $Path -AsByteStream -TotalCount 6
+            $expectedSignature = @(0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c)
+            if ($signature.Length -ne $expectedSignature.Length) {
+              return $false
+            }
+            for ($i = 0; $i -lt $expectedSignature.Length; $i++) {
+              if ($signature[$i] -ne $expectedSignature[$i]) {
+                return $false
+              }
+            }
+            return $true
+          }
+
           $packageName = 'mdk-sdk-windows-x64.7z'
-          $baseUrl = if ($env:FVP_DEPS_URL -match '^https?://') {
-            $env:FVP_DEPS_URL.TrimEnd('/')
-          } else {
-            'https://downloads.sourceforge.net/project/mdk-sdk/nightly'
-          }
           $archivePath = Join-Path $fvpWindowsDir $packageName
-          $downloadUrl = "$baseUrl/$packageName"
-          if ($baseUrl -like 'https://sourceforge.net/*') {
-            $downloadUrl = "$downloadUrl/download"
+          $downloadUrls = @()
+          if ($env:FVP_DEPS_URL -match '^https?://') {
+            $baseUrl = $env:FVP_DEPS_URL.TrimEnd('/')
+            $downloadUrls += "$baseUrl/$packageName"
+            if ($baseUrl -like 'https://sourceforge.net/*') {
+              $downloadUrls += "$baseUrl/$packageName/download"
+            }
+          } else {
+            # Direct mirror URLs avoid occasional SourceForge HTML interstitials
+            # from downloads.sourceforge.net on GitHub-hosted Windows runners.
+            $downloadUrls += "https://master.dl.sourceforge.net/project/mdk-sdk/nightly/$packageName?viasf=1"
+            $downloadUrls += "https://cfhcable.dl.sourceforge.net/project/mdk-sdk/nightly/$packageName?viasf=1"
+            $downloadUrls += "https://downloads.sourceforge.net/project/mdk-sdk/nightly/$packageName"
+            $downloadUrls += "https://sourceforge.net/projects/mdk-sdk/files/nightly/$packageName/download"
           }
 
-          Write-Host "Downloading $packageName from $downloadUrl"
-          Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+          $headers = @{ 'User-Agent' = 'GitHubActions-SS2kConfigApp/1.0' }
+          $downloaded = $false
+          foreach ($downloadUrl in $downloadUrls) {
+            Write-Host "Downloading $packageName from $downloadUrl"
+            Remove-Item -Path $archivePath -Force -ErrorAction SilentlyContinue
+            try {
+              Invoke-WebRequest `
+                -Uri $downloadUrl `
+                -OutFile $archivePath `
+                -Headers $headers `
+                -MaximumRedirection 10
+            } catch {
+              Write-Warning "Download failed from $downloadUrl`: $($_.Exception.Message)"
+              continue
+            }
 
-          [byte[]] $signature = Get-Content -Path $archivePath -AsByteStream -TotalCount 6
-          $expectedSignature = @(0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c)
-          $is7zArchive = $signature.Length -eq $expectedSignature.Length
-          for ($i = 0; $i -lt $expectedSignature.Length -and $is7zArchive; $i++) {
-            $is7zArchive = $signature[$i] -eq $expectedSignature[$i]
-          }
-          if (-not $is7zArchive) {
-            throw "Downloaded file is not a 7z archive. SourceForge may have returned an HTML page instead of $packageName."
+            if (Test-7zArchive $archivePath) {
+              $downloaded = $true
+              break
+            }
+
+            $contentType = ''
+            try {
+              $contentType = (Get-Item $archivePath).Length
+            } catch {}
+            Write-Warning "Downloaded content from $downloadUrl was not a 7z archive. Size: $contentType bytes"
           }
 
-          # fvp 0.37.2 lets CMake extract through Flutter's .plugin_symlinks path,
+          if (-not $downloaded) {
+            throw "Failed to download a valid $packageName from all known MDK SDK URLs."
+          }
+
+          # Some fvp versions let CMake extract through Flutter's .plugin_symlinks path,
           # which fails on current Windows runners. Extract in the real pub-cache path.
           Push-Location $fvpWindowsDir
           try {
