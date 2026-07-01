@@ -155,9 +155,9 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
           ),
           const SizedBox(height: 12),
           const Text(
-            'The Peloton bike requires a device to request power information from it '
-            'This can be your SmartSpin2k or the Peloton Tablet. '
-            'Pick the option that fits how you want to ride.',
+            'The Peloton bike requires a device to request power information from it.  '
+            'This can be your SmartSpin2k or the Peloton Tablet.  '
+            '\n\nPick the option that fits how you want to ride:',
             style: TextStyle(fontSize: 16, height: 1.5),
           ),
           const SizedBox(height: 20),
@@ -166,9 +166,9 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
             metadata: '- Switch UP',
             recommended: false,
             description:
-                'SmartSpin2k will passively listen to the bike\'s power information. '
-                'Best if you (or anyone in your household) wants the option '
-                'to still use Peloton workouts.',
+                'If you still use Peloton workouts, select this option. '
+                '\n\nSmartSpin2k will passively listen to the bike\'s power information. \n\n'
+,
             selected: _selected == SideSwitchMode.tabletMode,
             onTap: () => setState(() => _selected = SideSwitchMode.tabletMode),
           ),
@@ -178,9 +178,10 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
             metadata: '- Switch DOWN',
             recommended: false,
             description:
-                'The SmartSpin2k communicates directly to your bike, and the tablet is not '
-                'needed anymore (but can be used for other apps.) Recommended if '
-                'you don\'t plan to do Peloton classes.',
+                'If you don\'t plan to do Peloton classes, select this option.'
+                '\n\nThe SmartSpin2k communicates directly to your bike, and the tablet is not '
+                'needed anymore (but can be used for other apps.)' 
+                ,
             selected: _selected == SideSwitchMode.headlessMode,
             onTap: () => setState(() => _selected = SideSwitchMode.headlessMode),
           ),
