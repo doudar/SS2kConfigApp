@@ -347,6 +347,94 @@ jobs:
       - name: Enable Linux Desktop
         run: flutter config --enable-linux-desktop
 
+      - name: Fetch Linux dependencies
+        run: flutter pub get
+
+      - name: Preload fvp Linux SDK
+        run: |
+          set -euo pipefail
+
+          fvp_path=$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          deps = json.loads(Path(".flutter-plugins-dependencies").read_text())
+          for plugin in deps.get("plugins", {}).get("linux", []):
+              if plugin.get("name") == "fvp":
+                  print(plugin["path"])
+                  break
+          PY
+          )
+
+          if [ -z "$fvp_path" ]; then
+            echo "fvp is not registered for Linux; skipping SDK preload."
+            exit 0
+          fi
+
+          fvp_linux_dir="${fvp_path}/linux"
+          sdk_marker="${fvp_linux_dir}/mdk-sdk/lib/cmake/FindMDK.cmake"
+          mdk_library=$(find "${fvp_linux_dir}/mdk-sdk" -name 'libmdk.so*' -print -quit 2>/dev/null || true)
+          if [ -f "$sdk_marker" ] && [ -n "$mdk_library" ]; then
+            echo "fvp MDK SDK already exists at $fvp_linux_dir"
+            exit 0
+          fi
+
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            package_name="mdk-sdk-linux.tar.xz"
+          else
+            package_name="mdk-sdk-linux-x64.tar.xz"
+          fi
+          archive_path="${fvp_linux_dir}/${package_name}"
+
+          download_urls=()
+          if [[ "${FVP_DEPS_URL:-}" =~ ^https?:// ]]; then
+            base_url="${FVP_DEPS_URL%/}"
+            download_urls+=("${base_url}/${package_name}")
+            if [[ "$base_url" == https://sourceforge.net/* ]]; then
+              download_urls+=("${base_url}/${package_name}/download")
+            fi
+          else
+            download_urls+=("https://master.dl.sourceforge.net/project/mdk-sdk/nightly/${package_name}?viasf=1")
+            download_urls+=("https://cfhcable.dl.sourceforge.net/project/mdk-sdk/nightly/${package_name}?viasf=1")
+            download_urls+=("https://downloads.sourceforge.net/project/mdk-sdk/nightly/${package_name}")
+            download_urls+=("https://sourceforge.net/projects/mdk-sdk/files/nightly/${package_name}/download")
+          fi
+
+          downloaded=0
+          for download_url in "${download_urls[@]}"; do
+            echo "Downloading $package_name from $download_url"
+            rm -f "$archive_path"
+            if ! curl -fL --retry 3 --retry-delay 2 \
+              -A "GitHubActions-SS2kConfigApp/1.0" \
+              -o "$archive_path" \
+              "$download_url"; then
+              echo "Download failed from $download_url"
+              continue
+            fi
+
+            if tar -tf "$archive_path" >/dev/null 2>&1; then
+              downloaded=1
+              break
+            fi
+
+            echo "Downloaded content from $download_url was not a tar archive. Size: $(wc -c < "$archive_path") bytes"
+          done
+
+          if [ "$downloaded" -ne 1 ]; then
+            echo "Failed to download a valid $package_name from all known MDK SDK URLs." >&2
+            exit 1
+          fi
+
+          rm -rf "${fvp_linux_dir}/mdk-sdk"
+          tar -xJf "$archive_path" -C "$fvp_linux_dir"
+
+          mdk_library=$(find "${fvp_linux_dir}/mdk-sdk" -name 'libmdk.so*' -print -quit 2>/dev/null || true)
+          if [ ! -f "$sdk_marker" ] || [ -z "$mdk_library" ]; then
+            echo "Failed to preload fvp MDK SDK into $fvp_linux_dir" >&2
+            find "$fvp_linux_dir" -maxdepth 3 -type f | sort | head -100
+            exit 1
+          fi
+
       - name: Build Linux App
         run: |
           # Install additional build dependencies (clang & runtime libs)
@@ -359,7 +447,6 @@ jobs:
 
           export CXX=clang++
           flutter config --no-analytics
-          flutter pub get
           # Build (native arch)
           flutter build linux --release -v
           

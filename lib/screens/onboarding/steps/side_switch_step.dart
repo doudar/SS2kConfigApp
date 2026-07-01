@@ -155,18 +155,20 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
           ),
           const SizedBox(height: 12),
           const Text(
-            'The SmartSpin2k can work alongside your Peloton tablet, or replace it '
-            'entirely. Pick the option that fits how you want to ride.',
+            'The Peloton bike requires a device to request power information from it '
+            'This can be your SmartSpin2k or the Peloton Tablet. '
+            'Pick the option that fits how you want to ride.',
             style: TextStyle(fontSize: 16, height: 1.5),
           ),
           const SizedBox(height: 20),
           OnboardingOptionCard(
             title: 'Tablet Mode',
             metadata: '- Switch UP',
-            recommended: true,
+            recommended: false,
             description:
+                'SmartSpin2k will passively listen to the bike\'s power information. '
                 'Best if you (or anyone in your household) wants the option '
-                'to take a Peloton class. Required if using Grupetto with a wired connection.',
+                'to still use Peloton workouts.',
             selected: _selected == SideSwitchMode.tabletMode,
             onTap: () => setState(() => _selected = SideSwitchMode.tabletMode),
           ),
@@ -176,9 +178,9 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
             metadata: '- Switch DOWN',
             recommended: false,
             description:
-                'The SmartSpin2k talks to your bike directly. Use any training app '
-                'on the tablet, or leave the tablet off entirely. Recommended if '
-                'you never plan to take a Peloton class or use Grupetto on your tablet.',
+                'The SmartSpin2k communicates directly to your bike, and the tablet is not '
+                'needed anymore (but can be used for other apps.) Recommended if '
+                'you don\'t plan to do Peloton classes.',
             selected: _selected == SideSwitchMode.headlessMode,
             onTap: () => setState(() => _selected = SideSwitchMode.headlessMode),
           ),
