@@ -3,8 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
-import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../widgets/onboarding/ble_device_selector.dart';
+import '../../../widgets/onboarding/onboarding_panel.dart';
+import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../utils/constants.dart';
 
 class DataSourceStep extends StatelessWidget {
@@ -148,7 +149,7 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
         const SizedBox(height: 12),
         const Text('The Peloton Bike+ supports two data source options:', style: TextStyle(fontSize: 16)),
         const SizedBox(height: 16),
-        _SourceCard(
+        OnboardingOptionCard(
           title: 'Grupetto (Recommended)',
           description:
               'Unlock native cadence and power data from your Peloton Bike+.'
@@ -187,7 +188,7 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
           ),
         ),
         const SizedBox(height: 12),
-        _SourceCard(
+        OnboardingOptionCard(
           title: 'BLE Power Meter',
           description: 'Pair a separate BLE power meter instead.',
           selected: _selected == DataSource.powerMeter,
@@ -217,61 +218,6 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
           BleDeviceSelector(device: session.connectedDevice!, vName: connectedPWRVname),
         ],
       ],
-    );
-  }
-}
-
-class _SourceCard extends StatelessWidget {
-  final String title;
-  final String description;
-  final bool selected;
-  final VoidCallback onTap;
-  final Widget? trailing;
-
-  const _SourceCard({
-    required this.title,
-    required this.description,
-    required this.selected,
-    required this.onTap,
-    this.trailing,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      elevation: selected ? 4 : 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: selected ? colorScheme.primary : Colors.transparent, width: 2),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(
-                selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                color: selected ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 4),
-                    Text(description, style: const TextStyle(fontSize: 14, height: 1.4)),
-                    if (trailing != null) ...[const SizedBox(height: 8), trailing!],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

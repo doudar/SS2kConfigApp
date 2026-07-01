@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../widgets/basic_app_bar.dart';
 import '../../../widgets/onboarding/instruction_step_card.dart';
+import '../../../widgets/onboarding/onboarding_panel.dart';
 
 enum _Branch {
   pelotonOriginalTabletPelotonApp,
@@ -17,7 +18,12 @@ class ConnectTrainingAppStep extends StatefulWidget {
   final DataSource? dataSource;
   final SideSwitchMode? sideSwitchMode;
 
-  const ConnectTrainingAppStep({Key? key, this.bikeType, this.dataSource, this.sideSwitchMode}) : super(key: key);
+  const ConnectTrainingAppStep({
+    Key? key,
+    this.bikeType,
+    this.dataSource,
+    this.sideSwitchMode,
+  }) : super(key: key);
 
   @override
   State<ConnectTrainingAppStep> createState() => _ConnectTrainingAppStepState();
@@ -27,7 +33,8 @@ class _ConnectTrainingAppStepState extends State<ConnectTrainingAppStep> {
   PelotonTabletApp _pelotonTabletApp = PelotonTabletApp.peloton;
 
   bool get _showPelotonTabletToggle =>
-      widget.bikeType == BikeType.pelotonOriginal && widget.sideSwitchMode == SideSwitchMode.tabletMode;
+      widget.bikeType == BikeType.pelotonOriginal &&
+      widget.sideSwitchMode == SideSwitchMode.tabletMode;
 
   _Branch get _branch {
     if (widget.bikeType == BikeType.pelotonOriginal) {
@@ -97,7 +104,8 @@ class _ConnectTrainingAppStepState extends State<ConnectTrainingAppStep> {
       case _Branch.pelotonBikePlusPowerMeter:
         return (
           title: 'Pedal to wake your power meter',
-          body: 'Pedal a few seconds. That wakes your power meter and your SmartSpin2k picks it up over Bluetooth.',
+          body:
+              'Pedal a few seconds. That wakes your power meter and your SmartSpin2k picks it up over Bluetooth.',
         );
       case _Branch.mostBikes:
         return (
@@ -109,12 +117,15 @@ class _ConnectTrainingAppStepState extends State<ConnectTrainingAppStep> {
     }
   }
 
-  bool get _isBikePlus => _branch == _Branch.pelotonBikePlusGrupetto || _branch == _Branch.pelotonBikePlusPowerMeter;
+  bool get _isBikePlus =>
+      _branch == _Branch.pelotonBikePlusGrupetto ||
+      _branch == _Branch.pelotonBikePlusPowerMeter;
 
   @override
   Widget build(BuildContext context) {
     final branch = _branch;
     final wake = _wakeCardFor(branch);
+    final theme = Theme.of(context);
     int n = 1;
 
     return Scaffold(
@@ -124,19 +135,36 @@ class _ConnectTrainingAppStepState extends State<ConnectTrainingAppStep> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Here's how to start your ride", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            const Text(
+              "Here's how to start your ride",
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
-            Text(_subtitleFor(branch), style: const TextStyle(fontSize: 16, height: 1.4, color: Colors.white)),
+            Text(
+              _subtitleFor(branch),
+              style: TextStyle(
+                fontSize: 16,
+                height: 1.4,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.82),
+              ),
+            ),
             const SizedBox(height: 20),
 
             if (_showPelotonTabletToggle) ...[
               SegmentedButton<PelotonTabletApp>(
                 segments: const [
-                  ButtonSegment(value: PelotonTabletApp.peloton, label: Text('Peloton app')),
-                  ButtonSegment(value: PelotonTabletApp.grupetto, label: Text('Grupetto overlay')),
+                  ButtonSegment(
+                    value: PelotonTabletApp.peloton,
+                    label: Text('Peloton app'),
+                  ),
+                  ButtonSegment(
+                    value: PelotonTabletApp.grupetto,
+                    label: Text('Grupetto overlay'),
+                  ),
                 ],
                 selected: {_pelotonTabletApp},
-                onSelectionChanged: (s) => setState(() => _pelotonTabletApp = s.first),
+                onSelectionChanged: (s) =>
+                    setState(() => _pelotonTabletApp = s.first),
               ),
               const SizedBox(height: 20),
             ],
@@ -152,12 +180,17 @@ class _ConnectTrainingAppStepState extends State<ConnectTrainingAppStep> {
             InstructionStepCard(
               stepNumber: n++,
               title: 'Plug in your SmartSpin2k',
-              body: 'If it isn\'t already, plug it in. The status light should come on.',
+              body:
+                  'If it isn\'t already, plug it in. The status light should come on.',
             ),
             const SizedBox(height: 12),
 
             // Section B — Wake Your Bike (branch-specific)
-            InstructionStepCard(stepNumber: n++, title: wake.title, body: wake.body),
+            InstructionStepCard(
+              stepNumber: n++,
+              title: wake.title,
+              body: wake.body,
+            ),
             const SizedBox(height: 12),
 
             // Section C — Pair in Your Training App
@@ -167,31 +200,32 @@ class _ConnectTrainingAppStepState extends State<ConnectTrainingAppStep> {
             // Section D — Calibration tip
             InstructionStepCard(
               stepNumber: n++,
-              title: _isBikePlus ? 'Skip "calibrate" on Bike+' : 'About calibration (optional)',
+              title: _isBikePlus
+                  ? 'Skip "calibrate" on Bike+'
+                  : 'About calibration (optional)',
               body: _isBikePlus
                   ? "The Bike+ knob spins endlessly with no endstops, so a calibration or spindown won't behave normally on your setup. "
-                        'The SmartSpin2k\'s built-in software endstops handle this fine. If your training app prompts you to calibrate, skip it.'
+                      'The SmartSpin2k\'s built-in software endstops handle this fine. If your training app prompts you to calibrate, skip it.'
                   : "Calibration is optional. The SmartSpin2k's built-in software endstops work well out of the box.\n\n"
-                        'If your training app offers "calibrate" or "spindown" for the SmartSpin2k and you want a tighter feel, '
-                        "you can run it once. After that, it auto-homes when you wake it. Only redo it if you move the SmartSpin2k to a different bike.",
+                      'If your training app offers "calibrate" or "spindown" for the SmartSpin2k and you want a tighter feel, '
+                      "you can run it once. After that, it auto-homes when you wake it. Only redo it if you move the SmartSpin2k to a different bike.",
             ),
             const SizedBox(height: 16),
 
             // Section E — Closing tip
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(10)),
-              child: const Text(
-                'Quick rule of thumb for every ride: plug in, pedal a few seconds, then open your training app. '
-                "If your app can't find the SmartSpin2k, check that no other app is already connected and that Bluetooth is on.",
-                style: TextStyle(fontSize: 14, height: 1.5, color: Colors.black87),
-              ),
+            const OnboardingCallout(
+              text:
+                  'Quick rule of thumb for every ride: plug in, pedal a few seconds, then open your training app. '
+                  "If your app can't find the SmartSpin2k, check that no other app is already connected and that Bluetooth is on.",
             ),
             const SizedBox(height: 20),
 
             SizedBox(
               width: double.infinity,
-              child: FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Got it')),
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Got it'),
+              ),
             ),
             const SizedBox(height: 8),
           ],
@@ -208,60 +242,41 @@ class _PairingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: theme.colorScheme.primary,
-                  child: Text(
-                    '$stepNumber',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Pair your SmartSpin2k in your training app',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'In Zwift, TrainerRoad, Wahoo SYSTM, IndieVelo, etc., pick your SmartSpin2k for every sensor below:',
-              style: TextStyle(fontSize: 15, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-            const _PairingRow(
-              icon: Icons.electric_bolt,
-              label: 'Power',
-              description: 'SmartSpin2k as your power source.',
-            ),
-            const SizedBox(height: 12),
-            const _PairingRow(
-              icon: Icons.fitness_center,
-              label: 'Smart Trainer / Controllable',
-              description: 'SmartSpin2k — lets the app adjust your resistance (ERG, workouts, hills).',
-            ),
-            const SizedBox(height: 12),
-            const _PairingRow(icon: Icons.rotate_right, label: 'Cadence', description: 'SmartSpin2k.'),
-            const SizedBox(height: 12),
-            const _PairingRow(
-              icon: Icons.favorite,
-              label: 'Heart rate',
-              description:
-                  'SmartSpin2k if you paired your strap through it earlier — otherwise pair the strap straight to the app.',
-            ),
-          ],
-        ),
+    return InstructionStepCard(
+      stepNumber: stepNumber,
+      title: 'Pair your SmartSpin2k in your training app',
+      body:
+          'In Zwift, TrainerRoad, Wahoo SYSTM, IndieVelo, etc., pick your SmartSpin2k for every sensor below:',
+      trailing: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          SizedBox(height: 4),
+          _PairingRow(
+            icon: Icons.electric_bolt,
+            label: 'Power',
+            description: 'SmartSpin2k as your power source.',
+          ),
+          SizedBox(height: 12),
+          _PairingRow(
+            icon: Icons.fitness_center,
+            label: 'Smart Trainer / Controllable',
+            description:
+                'SmartSpin2k — lets the app adjust your resistance (ERG, workouts, hills).',
+          ),
+          SizedBox(height: 12),
+          _PairingRow(
+            icon: Icons.rotate_right,
+            label: 'Cadence',
+            description: 'SmartSpin2k.',
+          ),
+          SizedBox(height: 12),
+          _PairingRow(
+            icon: Icons.favorite,
+            label: 'Heart rate',
+            description:
+                'SmartSpin2k if you paired your strap through it earlier — otherwise pair the strap straight to the app.',
+          ),
+        ],
       ),
     );
   }
@@ -272,7 +287,11 @@ class _PairingRow extends StatelessWidget {
   final String label;
   final String description;
 
-  const _PairingRow({required this.icon, required this.label, required this.description});
+  const _PairingRow({
+    required this.icon,
+    required this.label,
+    required this.description,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -285,7 +304,13 @@ class _PairingRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
               const SizedBox(height: 2),
               Text(description, style: const TextStyle(fontSize: 14, height: 1.4)),
             ],

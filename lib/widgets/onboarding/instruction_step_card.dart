@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'onboarding_panel.dart';
 
 Future<Uint8List?> _loadSvgBytes(String assetPath) async {
   try {
@@ -9,6 +10,37 @@ Future<Uint8List?> _loadSvgBytes(String assetPath) async {
   } catch (_) {
     return null;
   }
+}
+
+double? _svgAspectRatio(Uint8List bytes) {
+  final text = String.fromCharCodes(bytes);
+  final viewBoxMatch = RegExp(
+    r'viewBox="[^"]*?([0-9.]+)[,\s]+([0-9.]+)"',
+    caseSensitive: false,
+  ).firstMatch(text);
+
+  if (viewBoxMatch != null) {
+    final width = double.tryParse(viewBoxMatch.group(1)!);
+    final height = double.tryParse(viewBoxMatch.group(2)!);
+    if (width != null && height != null && height > 0) {
+      return width / height;
+    }
+  }
+
+  final sizeMatch = RegExp(
+    r'<svg[^>]*\swidth="([0-9.]+)[^"]*"[^>]*\sheight="([0-9.]+)',
+    caseSensitive: false,
+  ).firstMatch(text);
+
+  if (sizeMatch != null) {
+    final width = double.tryParse(sizeMatch.group(1)!);
+    final height = double.tryParse(sizeMatch.group(2)!);
+    if (width != null && height != null && height > 0) {
+      return width / height;
+    }
+  }
+
+  return null;
 }
 
 class InstructionStepCard extends StatelessWidget {
@@ -31,91 +63,114 @@ class InstructionStepCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final style = OnboardingStyle.of(context);
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final compact = screenHeight < 760;
+    final imageTopGap = compact ? 10.0 : 16.0;
+    final bodyTopGap = compact ? 8.0 : 12.0;
+    final bodyStyle = TextStyle(
+      fontSize: compact ? 14.5 : 16,
+      height: compact ? 1.35 : 1.5,
+      color: style.body,
+    );
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (stepNumber != null) ...[
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: theme.colorScheme.primary,
-                    child: Text(
-                      '$stepNumber',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        height: 1.0,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                ],
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+    return OnboardingPanel(
+      padding: EdgeInsets.all(compact ? 12 : 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (stepNumber != null) ...[
+                OnboardingBadge.number(stepNumber!),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: style.foreground,
+                    height: 1.18,
                   ),
                 ),
-              ],
-            ),
-            if (imageAsset != null) ...[
-              const SizedBox(height: 16),
-              _buildImage(context, imageAsset!),
+              ),
             ],
-            const SizedBox(height: 12),
-            Text(
-              body,
-              style: const TextStyle(fontSize: 16, height: 1.5),
+          ),
+          if (imageAsset != null) ...[
+            SizedBox(height: imageTopGap),
+            Align(
+              alignment: Alignment.center,
+              child: _buildImage(context, imageAsset!),
             ),
-            if (trailing != null) ...[
-              const SizedBox(height: 8),
-              trailing!,
-            ],
           ],
-        ),
+          SizedBox(height: bodyTopGap),
+          Align(
+            alignment: Alignment.center,
+            child: Text(
+              body,
+              textAlign: TextAlign.center,
+              style: bodyStyle,
+            ),
+          ),
+          if (trailing != null) ...[
+            const SizedBox(height: 8),
+            trailing!,
+          ],
+        ],
       ),
     );
   }
 
   Widget _buildImage(BuildContext context, String assetPath) {
     final isSvg = assetPath.toLowerCase().endsWith('.svg');
-    final maxHeight = MediaQuery.of(context).size.width * 0.75;
+    final screenSize = MediaQuery.sizeOf(context);
+    final maxHeightByWidth = screenSize.width * 0.72;
+    final maxHeightByViewport = screenSize.height < 760
+        ? screenSize.height * 0.36
+        : screenSize.height * 0.46;
+    final maxHeight = maxHeightByWidth
+        .clamp(0.0, maxHeightByViewport)
+        .toDouble();
+    final style = OnboardingStyle.of(context);
+    final imageBackground = style.imageBackground;
 
     if (isSvg) {
       return FutureBuilder<Uint8List?>(
         future: _loadSvgBytes(assetPath),
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return SizedBox(height: maxHeight);
+            return _imageShell(
+              maxHeight: maxHeight,
+              aspectRatio: 16 / 9,
+              backgroundColor: imageBackground,
+              borderColor: style.imageBorder,
+              child: const Center(child: CircularProgressIndicator()),
+            );
           }
           final bytes = snapshot.data;
           if (bytes == null) return _placeholder(maxHeight);
-          return ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: maxHeight),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                width: double.infinity,
-                color: const Color(0xFFE6E6E6),
-                child: InkWell(
-                  onTap: () => _openFullScreen(context, assetPath),
-                  child: SvgPicture.memory(
-                    bytes,
-                    fit: BoxFit.fitWidth,
-                    alignment: Alignment.topCenter,
+          final aspectRatio = _svgAspectRatio(bytes) ?? 16 / 9;
+          return _imageShell(
+            maxHeight: maxHeight,
+            aspectRatio: aspectRatio,
+            backgroundColor: imageBackground,
+            borderColor: style.imageBorder,
+            child: InkWell(
+              onTap: () => _openFullScreen(context, assetPath),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: SvgPicture.memory(
+                      bytes,
+                      fit: BoxFit.fitWidth,
+                      alignment: Alignment.topCenter,
+                    ),
                   ),
-                ),
+                  const _ZoomHintBadge(),
+                ],
               ),
             ),
           );
@@ -123,21 +178,51 @@ class InstructionStepCard extends StatelessWidget {
       );
     }
 
+    return _imageShell(
+      maxHeight: maxHeight,
+      aspectRatio: 16 / 9,
+      backgroundColor: imageBackground,
+      borderColor: style.imageBorder,
+      child: InkWell(
+        onTap: () => _openFullScreen(context, assetPath),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Image.asset(
+                assetPath,
+                fit: BoxFit.fitWidth,
+                alignment: Alignment.topCenter,
+                errorBuilder: (context, error, stackTrace) =>
+                    _placeholder(maxHeight),
+              ),
+            ),
+            const _ZoomHintBadge(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _imageShell({
+    required double maxHeight,
+    required double aspectRatio,
+    required Color backgroundColor,
+    required Color borderColor,
+    required Widget child,
+  }) {
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxHeight),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: double.infinity,
-          color: const Color(0xFFE6E6E6),
-          child: InkWell(
-            onTap: () => _openFullScreen(context, assetPath),
-            child: Image.asset(
-              assetPath,
-              fit: BoxFit.fitWidth,
-              alignment: Alignment.topCenter,
-              errorBuilder: (context, error, stackTrace) => _placeholder(maxHeight),
-            ),
+      child: AspectRatio(
+        aspectRatio: aspectRatio,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(OnboardingPanel.radius),
+            border: Border.all(color: borderColor),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(OnboardingPanel.radius),
+            child: child,
           ),
         ),
       ),
@@ -145,20 +230,27 @@ class InstructionStepCard extends StatelessWidget {
   }
 
   Widget _placeholder([double? height]) {
-    return Container(
-      height: height,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.grey.shade200,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Center(
-        child: Text(
-          imagePlaceholderLabel ?? 'Image unavailable',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-        ),
-      ),
+    return Builder(
+      builder: (context) {
+        return Container(
+          height: height,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: OnboardingStyle.of(context).placeholderBackground,
+            borderRadius: BorderRadius.circular(OnboardingPanel.radius),
+          ),
+          child: Center(
+            child: Text(
+              imagePlaceholderLabel ?? 'Image unavailable',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: OnboardingStyle.of(context).muted,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -167,6 +259,42 @@ class InstructionStepCard extends StatelessWidget {
       PageRouteBuilder(
         opaque: true,
         pageBuilder: (_, __, ___) => _FullScreenImage(assetPath: assetPath),
+      ),
+    );
+  }
+}
+
+class _ZoomHintBadge extends StatelessWidget {
+  const _ZoomHintBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      right: 10,
+      bottom: 10,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.56),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.zoom_in, size: 16, color: Colors.white),
+              SizedBox(width: 6),
+              Text(
+                'Tap',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

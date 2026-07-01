@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
+import '../../../widgets/onboarding/onboarding_panel.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../utils/demo.dart' show demoModeBypass;
 
@@ -21,7 +22,7 @@ class _WelcomeStepState extends State<WelcomeStep> {
       _tapCount++;
       if (_tapCount >= 5) {
         _showDemoButton = true;
-        demoModeBypass.value = true; // bypasses wizard in main.dart without writing onboarding_completed
+        demoModeBypass.value = true;
       }
     });
   }
@@ -30,6 +31,7 @@ class _WelcomeStepState extends State<WelcomeStep> {
   Widget build(BuildContext context) {
     final session = context.read<WizardSession>();
     final machine = WizardStepMachine();
+    final theme = Theme.of(context);
 
     return WizardScaffold(
       title: 'Welcome',
@@ -46,28 +48,49 @@ class _WelcomeStepState extends State<WelcomeStep> {
       },
       body: Stack(
         children: [
-          const Padding(
-            padding: EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Let's set up your SmartSpin2k",
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 16),
-                Text(
-                  'This guided setup will walk you through:\n\n'
-                  '• Selecting your bike type\n'
-                  '• Installing the SmartSpin2k hardware\n'
-                  '• Connecting your SmartSpin2k via Bluetooth\n'
-                  '• Pairing your data source\n'
-                  '• Verifying data flow and motor function\n'
-                  '• Optional: Heart rate monitor and WiFi setup\n\n'
-                  'Tap Continue to begin.',
-                  style: TextStyle(fontSize: 16, height: 1.5),
-                ),
-              ],
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: OnboardingPanel(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  OnboardingBadge.icon(Icons.tune),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Let's set up your SmartSpin2k",
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'This guided setup will walk you through the essentials, then hand you off to the main app ready to ride.',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: theme.brightness == Brightness.light
+                            ? 0.82
+                            : 0.86,
+                      ),
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const OnboardingChecklistItem('Select your bike type'),
+                  const OnboardingChecklistItem(
+                    'Install the SmartSpin2k hardware',
+                  ),
+                  const OnboardingChecklistItem(
+                    'Connect your SmartSpin2k via Bluetooth',
+                  ),
+                  const OnboardingChecklistItem(
+                    'Pair and verify your data source',
+                  ),
+                  const OnboardingChecklistItem(
+                    'Optionally add heart rate and WiFi',
+                  ),
+                ],
+              ),
             ),
           ),
           // Hidden tap-target in bottom-left corner: 5 taps activates demo mode.
@@ -94,7 +117,9 @@ class _WelcomeStepState extends State<WelcomeStep> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.withValues(alpha: 0.82),
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 child: const Text(
                   'Tap Here to Enter\n Demo Mode',

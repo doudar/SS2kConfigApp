@@ -159,6 +159,17 @@ class _ScanScreenState extends State<ScanScreen> {
     return Future.delayed(Duration(milliseconds: 500));
   }
 
+  void _openGuidedSetup() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChangeNotifierProvider(
+          create: (_) => WizardSession(),
+          child: const OnboardingWizard(),
+        ),
+      ),
+    );
+  }
+
   Widget buildScanButton(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final bool scanning = FlutterBluePlus.isScanningNow;
@@ -207,6 +218,30 @@ class _ScanScreenState extends State<ScanScreen> {
                 "SCAN",
                 style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
               ),
+      ),
+    );
+  }
+
+  Widget _buildGuidedSetupButton(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: OutlinedButton.icon(
+        onPressed: _openGuidedSetup,
+        icon: const Icon(Icons.route_outlined),
+        label: const Text('Guided Setup'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          backgroundColor:
+              const Color.fromARGB(255, 54, 27, 26).withValues(alpha: 0.24),
+          side: BorderSide(
+            color: Colors.red.withValues(alpha: 0.35),
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
       ),
     );
   }
@@ -427,22 +462,6 @@ class _ScanScreenState extends State<ScanScreen> {
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ChangeNotifierProvider(
-                      create: (_) => WizardSession(),
-                      child: const OnboardingWizard(),
-                    ),
-                  ),
-                );
-              },
-              child: const Text(
-                'Guided Setup',
-                style: TextStyle(color: Colors.white70),
-              ),
-            ),
             const ThemeCycleButton(),
           ],
         ),
@@ -450,27 +469,36 @@ class _ScanScreenState extends State<ScanScreen> {
           children: [
             RefreshIndicator(
               onRefresh: onRefresh,
-              child: ListView(
-                children: <Widget>[
-                  ..._buildScanResultTiles(context),
-                  if (_scanResults.isEmpty) // This line checks if there are no scan results
-                    _buildEmptyStatePanel(context),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final buttonWidth = (constraints.maxWidth * 0.55).clamp(170.0, 320.0).toDouble();
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 15),
-                        child: Align(
-                          alignment: Alignment.center,
-                          child: SizedBox(
-                            width: buttonWidth,
-                            child: buildScanButton(context),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final guidedSetupTopGap =
+                      constraints.maxHeight * (_scanResults.isEmpty ? 0.10 : 0.18);
+
+                  return ListView(
+                    children: <Widget>[
+                      ..._buildScanResultTiles(context),
+                      if (_scanResults.isEmpty) // This line checks if there are no scan results
+                        _buildEmptyStatePanel(context),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final buttonWidth = (constraints.maxWidth * 0.55).clamp(170.0, 320.0).toDouble();
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 15),
+                            child: Align(
+                              alignment: Alignment.center,
+                              child: SizedBox(
+                                width: buttonWidth,
+                                child: buildScanButton(context),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      SizedBox(height: guidedSetupTopGap),
+                      _buildGuidedSetupButton(context),
+                    ],
+                  );
+                },
               ),
             ),
             if (_scanResults.isEmpty)

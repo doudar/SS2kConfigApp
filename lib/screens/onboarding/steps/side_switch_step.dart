@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../widgets/onboarding/instruction_step_card.dart';
+import '../../../widgets/onboarding/onboarding_panel.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 
 class _SideSwitchPageData {
@@ -159,9 +160,9 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
             style: TextStyle(fontSize: 16, height: 1.5),
           ),
           const SizedBox(height: 20),
-          _ModeCard(
-            label: 'Tablet Mode',
-            switchPosition: 'Switch UP',
+          OnboardingOptionCard(
+            title: 'Tablet Mode',
+            metadata: '- Switch UP',
             recommended: true,
             description:
                 'Best if you (or anyone in your household) wants the option '
@@ -170,9 +171,9 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
             onTap: () => setState(() => _selected = SideSwitchMode.tabletMode),
           ),
           const SizedBox(height: 12),
-          _ModeCard(
-            label: 'Headless Mode',
-            switchPosition: 'Switch DOWN',
+          OnboardingOptionCard(
+            title: 'Headless Mode',
+            metadata: '- Switch DOWN',
             recommended: false,
             description:
                 'The SmartSpin2k talks to your bike directly. Use any training app '
@@ -244,114 +245,6 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
           ),
           const SizedBox(height: 8),
         ],
-      ),
-    );
-  }
-}
-
-class _ModeCard extends StatelessWidget {
-  final String label;
-  final String switchPosition;
-  final String description;
-  final bool selected;
-  final bool recommended;
-  final VoidCallback onTap;
-
-  const _ModeCard({
-    required this.label,
-    required this.switchPosition,
-    required this.description,
-    required this.selected,
-    required this.recommended,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      elevation: selected ? 4 : 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: selected ? colorScheme.primary : Colors.transparent,
-          width: 2,
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                selected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
-                color: selected
-                    ? colorScheme.primary
-                    : Theme.of(context).disabledColor,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        Text(
-                          label,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        Text(
-                          '- $switchPosition',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(context).hintColor,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                        if (recommended)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  colorScheme.primary.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              'Recommended',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      description,
-                      style: const TextStyle(fontSize: 14, height: 1.4),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

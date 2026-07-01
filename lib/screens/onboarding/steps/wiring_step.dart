@@ -4,6 +4,7 @@ import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../widgets/onboarding/instruction_step_card.dart';
+import '../../../widgets/onboarding/onboarding_panel.dart';
 
 class WiringStep extends StatelessWidget {
   const WiringStep({Key? key}) : super(key: key);
@@ -40,7 +41,9 @@ class WiringStep extends StatelessWidget {
             ),
             if (bikeType == BikeType.pelotonBikePlus) ...[
               const SizedBox(height: 16),
-              const _WarningCallout(
+              OnboardingCallout(
+                icon: Icons.warning_amber_rounded,
+                color: Theme.of(context).colorScheme.error,
                 text:
                     'Do not connect the cables labeled "Peloton Bike" or "Peloton Tablet" to your bike. '
                     'Bike+ uses a wireless connection, which we will set up on the next page.',
@@ -69,39 +72,5 @@ class WiringStep extends StatelessWidget {
       default:
         return 'Connect the power cable and the shifter cable to the SmartSpin2k.';
     }
-  }
-}
-
-class _WarningCallout extends StatelessWidget {
-  final String text;
-
-  const _WarningCallout({required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final warningColor = theme.colorScheme.error;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: warningColor.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: warningColor.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.warning_amber_rounded, color: warningColor),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontSize: 15, height: 1.5),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
