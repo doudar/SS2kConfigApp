@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../utils/bike_profile.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
@@ -30,6 +31,9 @@ class BikeTypeStep extends StatelessWidget {
         onChanged: (val) {
           if (val != null) {
             session.bikeType = val;
+            // Persist it so features outside the wizard (calibration) can tell
+            // whether this bike has physical end stops on the resistance knob.
+            BikeProfile.save(val);
             session.setStepIndex(session.currentStepIndex);
           }
         },

@@ -454,6 +454,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
           WorkoutMenu(
             workoutController: _workoutController,
             bleData: bleData,
+            device: widget.device,
             ttsSettings: _ttsSettings,
             workoutGraphKey: _workoutGraphKey,
             onWorkoutLoaded: (content, {String? name}) {
