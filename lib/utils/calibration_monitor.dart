@@ -200,9 +200,17 @@ class CalibrationPhaseTracker {
   /// which drops messages when it overflows. `hMax` is written the moment the
   /// maximum end stop is found (Stepper.cpp:497), so a change on it is a second
   /// route to the same conclusion.
-  bool onHomingValueChanged({required bool isMax}) {
+  ///
+  /// The firmware also resets `hMax` to the `INT32_MIN` "not homed" sentinel
+  /// at the very start of every run (Power_Table.cpp:371), and its BLE layer
+  /// notifies on that reset just like a real completion. That sentinel is the
+  /// only value this app ever sees decode to zero or below, so `value` must
+  /// be a plausible positive step count before this counts as a real find —
+  /// otherwise this fires on the reset, before either end stop is touched.
+  bool onHomingValueChanged({required bool isMax, required int? value}) {
     if (!_phase.isRunning) return false;
     if (!isMax) return false;
+    if (value == null || value <= 0) return false;
     if (_maxFound) return false;
     _minFound = true;
     _maxFound = true;
@@ -325,7 +333,8 @@ class CalibrationMonitor extends ChangeNotifier {
     _logSubscription = bleData.logStream.listen(_handleLogMessage);
     _characteristicSubscription = bleData.characteristicChanges.listen((event) {
       if (event.vName != BLE_hMaxVname) return;
-      if (_tracker.onHomingValueChanged(isMax: true)) _safeNotify();
+      final value = int.tryParse(event.value);
+      if (_tracker.onHomingValueChanged(isMax: true, value: value)) _safeNotify();
     });
   }
 

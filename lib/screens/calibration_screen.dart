@@ -15,7 +15,6 @@ import '../utils/bledata.dart';
 import '../utils/calibration_monitor.dart';
 import '../utils/constants.dart';
 import '../utils/onboarding/wizard_step_machine.dart';
-import '../widgets/onboarding/instruction_step_card.dart';
 import '../widgets/setting_tile.dart';
 import '../widgets/ss2k_app_bar.dart';
 import 'power_table_screen.dart';
@@ -27,11 +26,11 @@ enum _Symptom { grinding, stoppedShort }
 
 /// One source of truth for the bike picker rows and the selection summary.
 /// Mirrors the wording used by the onboarding wizard's bike type step.
-const Map<BikeType, ({String label, String detail})> _bikeTypeCopy = {
+const Map<BikeType, ({String label, String? detail})> _bikeTypeCopy = {
   BikeType.mostSpinBikes: (label: 'Most spin bikes', detail: 'Bowflex C6, Schwinn IC4, Yesoul S3, etc.'),
   BikeType.powerMeterBike: (label: 'Power meter bike', detail: 'Power meter pedals or a crank power meter'),
-  BikeType.pelotonOriginal: (label: 'Peloton Bike (Original)', detail: 'Has end stops on the knob'),
-  BikeType.pelotonBikePlus: (label: 'Peloton Bike+', detail: 'No end stops on the knob'),
+  BikeType.pelotonOriginal: (label: 'Peloton Bike (Original)', detail: null),
+  BikeType.pelotonBikePlus: (label: 'Peloton Bike+', detail: null),
 };
 
 String _bikeTypeLabel(BikeType type) => _bikeTypeCopy[type]?.label ?? type.name;
@@ -52,7 +51,7 @@ class CalibrationScreen extends StatefulWidget {
 }
 
 class _CalibrationScreenState extends State<CalibrationScreen> {
-  static const int _pageCount = 5;
+  static const int _pageCount = 4;
 
   late final BLEData bleData;
   late final CalibrationMonitor _monitor;
@@ -104,11 +103,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     if (!mounted) return;
     setState(() {});
     // A verdict from the device moves the user on without them having to act.
-    if (_monitor.phase.isTerminal && _pageIndex == 2) {
+    if (_monitor.phase.isTerminal && _pageIndex == 1) {
       if (_monitor.phase.isFailure) {
         _symptom ??= _symptomFor(_monitor.phase);
       }
-      _goTo(3);
+      _goTo(2);
     }
   }
 
@@ -138,7 +137,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 
   Future<void> _startRun() async {
-    _goTo(2);
+    _goTo(1);
     await _monitor.start();
   }
 
@@ -164,7 +163,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: SS2KAppBar(device: widget.device, title: "Calibrate Knob"),
+      appBar: SS2KAppBar(device: widget.device, title: "Calibrate Trainer"),
       body: Column(
         children: [
           LinearProgressIndicator(value: (_pageIndex + 1) / _pageCount),
@@ -173,7 +172,6 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
               controller: _pageController,
               physics: const NeverScrollableScrollPhysics(),
               children: [
-                _buildExplainerPage(),
                 _buildBeforeYouStartPage(),
                 _buildRunningPage(),
                 _buildResultPage(),
@@ -186,85 +184,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     );
   }
 
-  // ===== Page 1: what calibration actually does =====
-
-  Widget _buildExplainerPage() {
-    return _CalibrationPage(
-      primaryLabel: 'Continue',
-      onPrimary: () => _goTo(1),
-      children: [
-        const InstructionStepCard(
-          stepNumber: 1,
-          title: 'It finds the minimum',
-          body: 'The knob rotates counter-clockwise until it reaches the minimum resistance stop. '
-              'It then backs off slightly and rotates into the stop again to confirm it found the '
-              'same spot twice.',
-        ),
-        const SizedBox(height: 12),
-        const InstructionStepCard(
-          stepNumber: 2,
-          title: 'Then it finds the maximum',
-          body: 'The same two-pass search runs in the other direction to find the maximum '
-              'resistance stop.',
-        ),
-        const SizedBox(height: 16),
-        _Callout(
-          icon: Icons.visibility,
-          color: Theme.of(context).colorScheme.primary,
-          title: 'Watch the knob while this runs',
-          body: 'You need to see it reach a stop at BOTH ends. If it misses an end, or you hear '
-              'grinding, the homing force needs adjusting — this screen will walk you through it.',
-        ),
-        const SizedBox(height: 16),
-        _ExpansionSection(
-          title: 'When should I calibrate?',
-          children: [
-            const _Bullet(
-              'You should only need to do this once. After that the SmartSpin2k homes itself '
-              'every time you turn it on, and again when it wakes after about half an hour of '
-              'inactivity.',
-            ),
-            const _Bullet(
-              'Recalibrate if the dot on the Power Table screen does not sit close to the graph '
-              "lines, or is not the same colour as the line it's nearest.",
-            ),
-            const _Bullet(
-              'Recalibrate if a previous calibration did not reach both end stops. Raise the '
-              'homing force and try again.',
-            ),
-            _Bullet(
-              _powerTableWillReset
-                  ? 'Calibrating resets the power table, so plan on riding a few minutes '
-                      'afterwards to rebuild the baseline values. Nothing breaks — the '
-                      'SmartSpin2k is good at finding its own set points — but it is worth '
-                      'knowing before you start.'
-                  : "You have Power Table for Power enabled, so calibrating leaves your power "
-                      'table intact.',
-            ),
-            const _Bullet(
-              'You can safely ignore the "calibrate" option in your training app. It triggers '
-              'this same procedure.',
-            ),
-            const SizedBox(height: 4),
-            TextButton.icon(
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                alignment: Alignment.centerLeft,
-                minimumSize: const Size(48, 48),
-              ),
-              icon: const Icon(Icons.show_chart, size: 18),
-              label: const Text('Open the Power Table to check'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => PowerTableScreen(device: widget.device)),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // ===== Page 2: the caveats, plus the bike question =====
+  // ===== Page 1: the caveats, plus the bike question =====
 
   Widget _buildBeforeYouStartPage() {
     final needsBikeType = _bikeTypeLoaded && _bikeType == null;
@@ -288,12 +208,6 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         const SizedBox(height: 16),
         if (showPicker) ...[
           Text('Which bike is this?', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text(
-            'The Peloton Bike+ has no physical end stops on its resistance knob, so it calibrates '
-            'differently.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
           const SizedBox(height: 8),
           _BikeTypeChoice(
             selected: _bikeType,
@@ -324,17 +238,46 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           ),
           const SizedBox(height: 16),
         ],
-        const InstructionStepCard(
-          title: 'Start pedaling',
-          body: 'Calibration will not begin until the SmartSpin2k sees you pedaling for a couple '
-              'of seconds. Start pedaling now, press Start Calibration, and keep pedaling until '
-              'the knob begins to turn — then you can stop and watch.',
+        _ExpansionSection(
+          title: 'When should I calibrate?',
+          children: [
+            const _Bullet(
+              'You should only need to do this once. After that the SmartSpin2k homes itself '
+              'every time you turn it on, and again when it wakes after about half an hour of '
+              'inactivity.',
+            ),
+            const _Bullet(
+              'Recalibrate if the dot on the Power Table screen does not sit close to the graph '
+              "lines, or is not the same colour as the line it's nearest.",
+            ),
+            const _Bullet(
+              'Recalibrate if a previous calibration did not reach both end stops. Raise the '
+              'homing force and try again.',
+            ),
+            const _Bullet(
+              'You can safely ignore the "calibrate" option in your training app. It triggers '
+              'this same procedure.',
+            ),
+            const SizedBox(height: 4),
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                alignment: Alignment.centerLeft,
+                minimumSize: const Size(48, 48),
+              ),
+              icon: const Icon(Icons.show_chart, size: 18),
+              label: const Text('Open the Power Table to check'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => PowerTableScreen(device: widget.device)),
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
 
-  // ===== Page 3: the run itself =====
+  // ===== Page 2: the run itself =====
 
   Widget _buildRunningPage() {
     final phase = _monitor.phase;
@@ -352,7 +295,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           icon: Icons.visibility,
           color: Theme.of(context).colorScheme.primary,
           title: 'Watch the knob',
-          body: 'It should rotate into a stop at each end, back off, and go in again to confirm.',
+          body: 'It rotates counter-clockwise into the minimum resistance stop, backs off '
+              'slightly, and goes in again to confirm the same spot twice. Then the same '
+              'two-pass search runs the other way to find the maximum stop.\n\n'
+              'You need to see it reach a stop at BOTH ends. If it misses an end, or you hear '
+              'grinding, the homing force needs adjusting — this screen will walk you through it.',
         ),
         const SizedBox(height: 16),
         _PhaseChecklist(
@@ -385,7 +332,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     );
   }
 
-  // ===== Page 4: what happened =====
+  // ===== Page 3: what happened =====
 
   Widget _buildResultPage() {
     final phase = _monitor.phase;
@@ -393,14 +340,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
     return _CalibrationPage(
       primaryLabel: succeeded ? 'Yes, it reached both ends' : 'Show me how to fix it',
-      onPrimary: succeeded ? _finish : () => _goTo(4),
+      onPrimary: succeeded ? _finish : () => _goTo(3),
       secondaryLabel: succeeded ? 'No, something looked wrong' : null,
       onSecondary: succeeded
           ? () {
               // The device believed it found both stops, so if the user saw
               // otherwise the search almost certainly triggered early.
               _symptom ??= _Symptom.stoppedShort;
-              _goTo(4);
+              _goTo(3);
             }
           : null,
       children: [
@@ -474,7 +421,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     }
   }
 
-  // ===== Page 5: fix it and retry =====
+  // ===== Page 4: fix it and retry =====
 
   Widget _buildTroubleshootPage() {
     if (!_endStopsApply) {
@@ -503,7 +450,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
               label: _bikeType == null ? 'Not set' : _bikeTypeLabel(_bikeType!),
               onChange: () {
                 setState(() => _editingBikeType = true);
-                _goTo(1);
+                _goTo(0);
               },
             ),
           ],
@@ -894,7 +841,7 @@ class _BikeTypeChoice extends StatelessWidget {
     );
   }
 
-  Widget _tile(BuildContext context, BikeType value, String title, String subtitle) {
+  Widget _tile(BuildContext context, BikeType value, String title, String? subtitle) {
     final colorScheme = Theme.of(context).colorScheme;
     final isSelected = selected == value;
 
@@ -922,7 +869,7 @@ class _BikeTypeChoice extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    Text(subtitle, style: const TextStyle(fontSize: 13)),
+                    if (subtitle != null) Text(subtitle, style: const TextStyle(fontSize: 13)),
                   ],
                 ),
               ),

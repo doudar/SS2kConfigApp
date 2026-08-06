@@ -192,7 +192,7 @@ void main() {
       tracker.start();
       tracker.onLogMessage('Starting homing procedure...');
 
-      final changed = tracker.onHomingValueChanged(isMax: true);
+      final changed = tracker.onHomingValueChanged(isMax: true, value: 24800);
 
       expect(changed, isTrue);
       expect(tracker.minFound, isTrue, reason: 'max is only written after min was found');
@@ -203,12 +203,32 @@ void main() {
       tracker.start();
       feed(['Starting homing procedure...', 'Min position found and set to 0.', 'Max Position found: 24800']);
 
-      expect(tracker.onHomingValueChanged(isMax: true), isFalse);
+      expect(tracker.onHomingValueChanged(isMax: true, value: 24800), isFalse);
     });
 
     test('ignored when no run is in flight', () {
-      expect(tracker.onHomingValueChanged(isMax: true), isFalse);
+      expect(tracker.onHomingValueChanged(isMax: true, value: 24800), isFalse);
       expect(tracker.phase, CalibrationPhase.idle);
+    });
+
+    test('ignored when the value is the not-homed sentinel, not a real find', () {
+      tracker.start();
+      tracker.onLogMessage('Starting homing procedure...');
+
+      // The firmware resets hMax to INT32_MIN (decodes here as 0) at the very
+      // start of every run, before either end stop is touched.
+      final changed = tracker.onHomingValueChanged(isMax: true, value: 0);
+
+      expect(changed, isFalse);
+      expect(tracker.minFound, isFalse);
+      expect(tracker.maxFound, isFalse);
+    });
+
+    test('ignored when no value could be decoded', () {
+      tracker.start();
+      tracker.onLogMessage('Starting homing procedure...');
+
+      expect(tracker.onHomingValueChanged(isMax: true, value: null), isFalse);
     });
   });
 

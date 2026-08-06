@@ -359,7 +359,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                 size: 40,
                 color: Theme.of(context).colorScheme.primary,
               ),
-              title: "Calibrate Knob",
+              title: "Calibrate Trainer",
               destination: CalibrationScreen(device: widget.device),
             ),
             const Divider(height: 1),
