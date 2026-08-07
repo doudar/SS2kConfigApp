@@ -1004,20 +1004,14 @@ class BLEData {
         ];
         break;
       case "long":
-        int t = double.parse(s).round();
-        final list = new Uint64List.fromList([t]);
-        final bytes = new Uint8List.view(list.buffer);
-        final out =
-            bytes.map((b) => '0x${b.toRadixString(32).padLeft(2, '0')}');
-        print('bytes: ${out}');
-        value = [
-          0x02,
-          int.parse(c["reference"]),
-          int.parse(out.elementAt(0)),
-          int.parse(out.elementAt(1)),
-          int.parse(out.elementAt(2)),
-          int.parse(out.elementAt(3))
-        ];
+        // Four little-endian bytes, which is what the firmware reassembles
+        // from rxValue[2..5]. toSigned keeps an out-of-range value from
+        // throwing here rather than being rejected by the device.
+        int t = double.parse(s).round().toSigned(32);
+        final bytes = Uint8List(4)
+          ..buffer.asByteData().setInt32(0, t, Endian.little);
+        print('bytes: ${bytes}');
+        value = [0x02, int.parse(c["reference"]), ...bytes];
         break;
       case "powerTableData":
         // Define the INT_MIN value for uint16_t in little endian format
@@ -1240,7 +1234,13 @@ class BLEData {
                 }
               case "long":
                 {
-                  c["value"] = data.getInt32(2, Endian.little).toString();
+                  // Two header bytes plus an int32. Firmware without support
+                  // for this characteristic answers with the header alone.
+                  if (data.lengthInBytes >= 6) {
+                    c["value"] = data.getInt32(2, Endian.little).toString();
+                  } else {
+                    c["value"] = noFirmSupport;
+                  }
                   // Emit characteristic change event
                   _emitCharacteristicChange(c);
                   break;

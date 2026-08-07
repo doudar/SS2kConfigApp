@@ -188,8 +188,46 @@ void main() {
   });
 
   group('homing characteristic fallback', () {
-    test('a change on hMax promotes the run when log lines were dropped', () {
+    // The app cannot tell a real notification from the device's answer to a
+    // routine settings poll, and something polls every characteristic every few
+    // seconds while this screen is open. So the stored hMax from the *previous*
+    // calibration arrives mid-run looking exactly like a fresh end stop.
+    test('a poll echoing the stored hMax while waiting for cadence proves nothing', () {
+      tracker.start(hMaxBaseline: 27000);
+
+      final changed = tracker.onHomingValueChanged(isMax: true, value: 27000);
+
+      expect(changed, isFalse);
+      expect(tracker.minFound, isFalse);
+      expect(tracker.maxFound, isFalse);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence,
+          reason: 'the firmware has not started homing until the rider pedals');
+    });
+
+    test('a poll echoing the stored hMax after homing started proves nothing', () {
+      tracker.start(hMaxBaseline: 27000);
+      tracker.onLogMessage('Starting homing procedure...');
+
+      expect(tracker.onHomingValueChanged(isMax: true, value: 27000), isFalse);
+      expect(tracker.maxFound, isFalse);
+      expect(tracker.phase, CalibrationPhase.searchingMin);
+    });
+
+    test('an hMax seen while waiting becomes the baseline', () {
+      // The app may not have read hMax before the run, so the first thing it
+      // sees during the wait is what the later find has to differ from.
       tracker.start();
+      expect(tracker.onHomingValueChanged(isMax: true, value: 27000), isFalse);
+
+      tracker.onLogMessage('Starting homing procedure...');
+
+      expect(tracker.onHomingValueChanged(isMax: true, value: 27000), isFalse,
+          reason: 'still the same value that was there before the run');
+      expect(tracker.onHomingValueChanged(isMax: true, value: 24800), isTrue);
+    });
+
+    test('a new hMax promotes the run when log lines were dropped', () {
+      tracker.start(hMaxBaseline: 27000);
       tracker.onLogMessage('Starting homing procedure...');
 
       final changed = tracker.onHomingValueChanged(isMax: true, value: 24800);
@@ -200,7 +238,7 @@ void main() {
     });
 
     test('ignored once the max is already known', () {
-      tracker.start();
+      tracker.start(hMaxBaseline: 27000);
       feed(['Starting homing procedure...', 'Min position found and set to 0.', 'Max Position found: 24800']);
 
       expect(tracker.onHomingValueChanged(isMax: true, value: 24800), isFalse);
@@ -211,13 +249,21 @@ void main() {
       expect(tracker.phase, CalibrationPhase.idle);
     });
 
+    test('ignored after the run has already reached a verdict', () {
+      tracker.start(hMaxBaseline: 27000);
+      feed(['Starting homing procedure...', 'Homing aborted by user.']);
+
+      expect(tracker.onHomingValueChanged(isMax: true, value: 24800), isFalse);
+      expect(tracker.phase, CalibrationPhase.failedAborted);
+    });
+
     test('ignored when the value is the not-homed sentinel, not a real find', () {
-      tracker.start();
+      tracker.start(hMaxBaseline: 27000);
       tracker.onLogMessage('Starting homing procedure...');
 
-      // The firmware resets hMax to INT32_MIN (decodes here as 0) at the very
-      // start of every run, before either end stop is touched.
-      final changed = tracker.onHomingValueChanged(isMax: true, value: 0);
+      // The firmware resets hMax to INT32_MIN at the very start of every run,
+      // before either end stop is touched, and notifies on that reset.
+      final changed = tracker.onHomingValueChanged(isMax: true, value: -2147483648);
 
       expect(changed, isFalse);
       expect(tracker.minFound, isFalse);
@@ -225,26 +271,45 @@ void main() {
     });
 
     test('ignored when no value could be decoded', () {
-      tracker.start();
+      tracker.start(hMaxBaseline: 27000);
       tracker.onLogMessage('Starting homing procedure...');
 
       expect(tracker.onHomingValueChanged(isMax: true, value: null), isFalse);
+    });
+
+    test('ignored for hMin, which is always set to a flat zero', () {
+      tracker.start(hMaxBaseline: 27000);
+      tracker.onLogMessage('Starting homing procedure...');
+
+      expect(tracker.onHomingValueChanged(isMax: false, value: 24800), isFalse);
     });
   });
 
   group('restart', () {
     test('start clears the previous run', () {
-      tracker.start();
+      tracker.start(hMaxBaseline: 27000);
       feed(['Starting homing procedure...', 'Min position found and set to 0.', 'Homing procedure complete.']);
       expect(tracker.phase, CalibrationPhase.complete);
 
-      tracker.start();
+      tracker.start(hMaxBaseline: 24800);
 
       expect(tracker.phase, CalibrationPhase.waitingForCadence);
       expect(tracker.minFound, isFalse);
       expect(tracker.maxFound, isFalse);
       expect(tracker.usedFtmsPath, isFalse);
       expect(tracker.sweepTimedOut, isFalse);
+    });
+
+    test('start adopts the new baseline', () {
+      tracker.start(hMaxBaseline: 27000);
+      feed(['Starting homing procedure...', 'Max Position found: 24800', 'Homing procedure complete.']);
+
+      tracker.start(hMaxBaseline: 24800);
+      tracker.onLogMessage('Starting homing procedure...');
+
+      expect(tracker.onHomingValueChanged(isMax: true, value: 24800), isFalse,
+          reason: 'that is now the stored value, not a new find');
+      expect(tracker.onHomingValueChanged(isMax: true, value: 27000), isTrue);
     });
   });
 

@@ -141,6 +141,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     await _monitor.start();
   }
 
+  /// Stops following the run and returns to the start. The knob itself cannot
+  /// be stopped from here — only the shifter aborts homing — so this is worded
+  /// as leaving the watch, not cancelling the calibration.
+  void _stopWatching() {
+    _monitor.stopWatching();
+    _goTo(0);
+  }
+
   void _finish() {
     // Grab the messenger before popping so the confirmation outlives the route.
     final messenger = ScaffoldMessenger.of(context);
@@ -286,9 +294,22 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     return _CalibrationPage(
       primaryLabel: null,
       onPrimary: null,
+      secondaryLabel: 'Stop Watching',
+      onSecondary: _stopWatching,
       children: [
         if (waiting) ...[
           _CadenceIndicator(cadence: _cadence, showHint: _monitor.showPedalHint),
+          const SizedBox(height: 16),
+        ],
+        if (_monitor.logStreamSilent) ...[
+          _Callout(
+            icon: Icons.hearing_disabled,
+            color: Colors.amber.shade700,
+            title: 'The SmartSpin2k is not reporting',
+            body: 'This screen follows the run using the device log, and nothing has come '
+                'through. Watch the knob directly: it should reach a stop at both ends. If it '
+                'never moves, check that the SmartSpin2k is connected and on current firmware.',
+          ),
           const SizedBox(height: 16),
         ],
         _Callout(

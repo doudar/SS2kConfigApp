@@ -70,6 +70,10 @@ class CalibrationPhaseTracker {
   bool _usedFtmsPath = false;
   bool _sweepTimedOut = false;
 
+  /// The hMax the device already had before this run. Anything equal to it is
+  /// an echo of the old value, not a new end stop. See [onHomingValueChanged].
+  int? _hMaxBaseline;
+
   CalibrationPhase get phase => _phase;
 
   bool get minFound => _minFound;
@@ -85,12 +89,17 @@ class CalibrationPhaseTracker {
   bool get sweepTimedOut => _sweepTimedOut;
 
   /// Returns true when [start] actually changed anything.
-  bool start() {
+  ///
+  /// [hMaxBaseline] is the hMax the app last read from the device. It is what
+  /// a routine settings poll will echo back during the run, so it is the one
+  /// value that must not be mistaken for a fresh end stop.
+  bool start({int? hMaxBaseline}) {
     _phase = CalibrationPhase.waitingForCadence;
     _minFound = false;
     _maxFound = false;
     _usedFtmsPath = false;
     _sweepTimedOut = false;
+    _hMaxBaseline = hMaxBaseline;
     return true;
   }
 
@@ -201,17 +210,39 @@ class CalibrationPhaseTracker {
   /// maximum end stop is found (Stepper.cpp:497), so a change on it is a second
   /// route to the same conclusion.
   ///
-  /// The firmware also resets `hMax` to the `INT32_MIN` "not homed" sentinel
-  /// at the very start of every run (Power_Table.cpp:371), and its BLE layer
-  /// notifies on that reset just like a real completion. That sentinel is the
-  /// only value this app ever sees decode to zero or below, so `value` must
-  /// be a plausible positive step count before this counts as a real find —
-  /// otherwise this fires on the reset, before either end stop is touched.
+  /// It is only ever a *corroborating* signal, and it needs three guards to be
+  /// worth anything:
+  ///
+  /// * The app cannot tell a real notification from the device's answer to a
+  ///   routine settings poll — `BLEData` emits both identically, and something
+  ///   polls every characteristic every few seconds. So the value has to have
+  ///   actually moved off [_hMaxBaseline] to mean anything.
+  /// * It only counts once the device's own log says homing began. Before that
+  ///   the firmware is still waiting for cadence and has touched nothing, so
+  ///   any hMax traffic is by definition an echo — and it refreshes the
+  ///   baseline instead.
+  /// * The firmware resets `hMax` to the `INT32_MIN` "not homed" sentinel at
+  ///   the start of every run (Power_Table.cpp:371) and notifies on that reset
+  ///   just like a real completion. A step count is always positive, so
+  ///   anything at or below zero is that sentinel rather than a find.
   bool onHomingValueChanged({required bool isMax, required int? value}) {
-    if (!_phase.isRunning) return false;
     if (!isMax) return false;
     if (value == null || value <= 0) return false;
+
+    // Still waiting for the rider: nothing has homed yet, so this is the old
+    // value coming back. Remember it so the real find can be told apart.
+    if (_phase == CalibrationPhase.waitingForCadence) {
+      _hMaxBaseline = value;
+      return false;
+    }
+
+    if (_phase != CalibrationPhase.searchingMin && _phase != CalibrationPhase.searchingMax) {
+      return false;
+    }
+    if (value == _hMaxBaseline) return false;
     if (_maxFound) return false;
+
+    // The firmware only writes hMax after the min end stop was found.
     _minFound = true;
     _maxFound = true;
     _phase = CalibrationPhase.searchingMax;
@@ -247,6 +278,7 @@ class CalibrationMonitor extends ChangeNotifier {
     this.overallTimeout = const Duration(minutes: 8),
     this.stallTimeout = const Duration(seconds: 45),
     this.pedalHintDelay = const Duration(seconds: 20),
+    this.logSilenceTimeout = const Duration(seconds: 15),
   });
 
   final BLEData bleData;
@@ -264,6 +296,12 @@ class CalibrationMonitor extends ChangeNotifier {
   /// they pedal.
   final Duration pedalHintDelay;
 
+  /// How long to wait for the first log line before assuming the device is not
+  /// streaming its log at all. The firmware chatters well inside this, so
+  /// silence means log streaming is off or unsupported and this screen cannot
+  /// follow the run.
+  final Duration logSilenceTimeout;
+
   static const int _maxRecentMessages = 6;
 
   final CalibrationPhaseTracker _tracker = CalibrationPhaseTracker();
@@ -274,9 +312,11 @@ class CalibrationMonitor extends ChangeNotifier {
   Timer? _overallTimer;
   Timer? _stallTimer;
   Timer? _pedalHintTimer;
+  Timer? _logSilenceTimer;
   final List<Timer> _demoTimers = [];
 
   bool _showPedalHint = false;
+  bool _logStreamSilent = false;
   bool _disposed = false;
 
   CalibrationPhase get phase => _tracker.phase;
@@ -286,6 +326,11 @@ class CalibrationMonitor extends ChangeNotifier {
   bool get sweepTimedOut => _tracker.sweepTimedOut;
   bool get showPedalHint => _showPedalHint;
 
+  /// True once the device has gone [logSilenceTimeout] without saying anything
+  /// at all. Progress here is read from the device log, so silence means this
+  /// screen is blind and the user has to watch the knob themselves.
+  bool get logStreamSilent => _logStreamSilent;
+
   /// The tail of the device log, so a user chasing a problem has something
   /// concrete to read or screenshot.
   List<String> get recentMessages => List.unmodifiable(_recentMessages);
@@ -294,7 +339,8 @@ class CalibrationMonitor extends ChangeNotifier {
     _cancelTimers();
     _recentMessages.clear();
     _showPedalHint = false;
-    _tracker.start();
+    _logStreamSilent = false;
+    _tracker.start(hMaxBaseline: int.tryParse(bleData.getVnameValue(BLE_hMaxVname)));
     notifyListeners();
 
     _listen();
@@ -305,6 +351,11 @@ class CalibrationMonitor extends ChangeNotifier {
     _pedalHintTimer = Timer(pedalHintDelay, () {
       if (_tracker.phase != CalibrationPhase.waitingForCadence) return;
       _showPedalHint = true;
+      _safeNotify();
+    });
+    _logSilenceTimer = Timer(logSilenceTimeout, () {
+      if (_recentMessages.isNotEmpty) return;
+      _logStreamSilent = true;
       _safeNotify();
     });
 
@@ -340,6 +391,11 @@ class CalibrationMonitor extends ChangeNotifier {
 
   void _handleLogMessage(String message) {
     if (message.isEmpty || message == "1") return;
+
+    // The device is talking after all.
+    _logSilenceTimer?.cancel();
+    _logSilenceTimer = null;
+    _logStreamSilent = false;
 
     _recentMessages.add(message);
     while (_recentMessages.length > _maxRecentMessages) {
@@ -396,9 +452,11 @@ class CalibrationMonitor extends ChangeNotifier {
     _overallTimer?.cancel();
     _stallTimer?.cancel();
     _pedalHintTimer?.cancel();
+    _logSilenceTimer?.cancel();
     _overallTimer = null;
     _stallTimer = null;
     _pedalHintTimer = null;
+    _logSilenceTimer = null;
     for (final timer in _demoTimers) {
       timer.cancel();
     }
