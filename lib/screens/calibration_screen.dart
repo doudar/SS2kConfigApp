@@ -18,15 +18,13 @@ import '../utils/constants.dart';
 import '../utils/onboarding/wizard_step_machine.dart';
 import '../widgets/setting_tile.dart';
 import '../widgets/ss2k_app_bar.dart';
-import 'power_table_screen.dart';
 
 const String _troubleshootingUrl = 'https://docs.smartspin2k.com/documentation/troubleshooting';
 
 /// What the user saw go wrong, which decides the homing force advice.
 enum _Symptom { grinding, stoppedShort }
 
-/// One source of truth for the bike picker rows and the selection summary.
-/// Mirrors the wording used by the onboarding wizard's bike type step.
+/// Bike labels used in the copied diagnostic report.
 const Map<BikeType, ({String label, String? detail})> _bikeTypeCopy = {
   BikeType.mostSpinBikes: (label: 'Most spin bikes', detail: 'Bowflex C6, Schwinn IC4, Yesoul S3, etc.'),
   BikeType.powerMeterBike: (label: 'Power meter bike', detail: 'Power meter pedals or a crank power meter'),
@@ -44,8 +42,13 @@ String _bikeTypeLabel(BikeType type) => _bikeTypeCopy[type]?.label ?? type.name;
 /// search fails.
 class CalibrationScreen extends StatefulWidget {
   final BluetoothDevice device;
+  final bool showDeviceHeader;
 
-  const CalibrationScreen({Key? key, required this.device}) : super(key: key);
+  const CalibrationScreen({
+    Key? key,
+    required this.device,
+    this.showDeviceHeader = true,
+  }) : super(key: key);
 
   @override
   State<CalibrationScreen> createState() => _CalibrationScreenState();
@@ -73,15 +76,16 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   int _pageIndex = 0;
   int _cadence = 0;
   BikeType? _bikeType;
-  bool _bikeTypeLoaded = false;
+  CalibrationSetup? _calibrationSetup;
+  bool _setupLoaded = false;
   _Symptom? _symptom;
 
   /// True once [_verdictDelay] has elapsed since the run reached a verdict.
   bool _showVerdict = false;
 
-  /// Lets the user reopen the bike picker after it has been answered — the
+  /// Lets the user reopen the setup question after it has been answered — the
   /// choice is a single tap and easy to get wrong.
-  bool _editingBikeType = false;
+  bool _editingSetup = false;
 
   @override
   void initState() {
@@ -95,12 +99,17 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       if (cadence != _cadence) setState(() => _cadence = cadence);
     });
 
-    BikeProfile.load().then((bikeType) {
-      if (!mounted) return;
-      setState(() {
-        _bikeType = bikeType;
-        _bikeTypeLoaded = true;
-      });
+    _loadSetup();
+  }
+
+  Future<void> _loadSetup() async {
+    final bikeType = await BikeProfile.load();
+    final calibrationSetup = await BikeProfile.loadCalibrationSetup();
+    if (!mounted) return;
+    setState(() {
+      _bikeType = bikeType;
+      _calibrationSetup = calibrationSetup;
+      _setupLoaded = true;
     });
   }
 
@@ -121,9 +130,6 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     // A verdict does not move the user anywhere — it appears under the finished
     // checklist, a beat later so the last checkmark is seen to land.
     if (!_monitor.phase.isTerminal || _showVerdict || _verdictTimer != null) return;
-    if (_monitor.phase.isFailure) {
-      _symptom ??= _symptomFor(_monitor.phase);
-    }
     _verdictTimer = Timer(_verdictDelay, () {
       _verdictTimer = null;
       if (!mounted) return;
@@ -131,18 +137,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     });
   }
 
-  /// Maps a failure onto the symptom the user most likely observed, so the
-  /// troubleshooting page opens on the right advice.
-  _Symptom _symptomFor(CalibrationPhase phase) {
-    // A search that never registered a stop was loading up against it without
-    // detecting the stall — too much homing force.
-    // Taps that never agreed were triggering early — too little.
-    return phase == CalibrationPhase.failedUnstable ? _Symptom.stoppedShort : _Symptom.grinding;
-  }
-
   /// False when homing force is irrelevant: bikes that report their own
   /// resistance are homed to that reported range instead of to physical stops.
-  bool get _endStopsApply => BikeProfile.hasPhysicalEndStops(_bikeType) && !_monitor.usedFtmsPath;
+  bool get _endStopsApply => _calibrationSetup == CalibrationSetup.physicalStops && !_monitor.usedFtmsPath;
+
+  bool get _isBikePlus => _calibrationSetup == CalibrationSetup.pelotonBikePlus;
 
   bool get _powerTableWillReset => bleData.getVnameValue(pTab4pwrVname) != "true";
 
@@ -158,17 +157,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   Future<void> _startRun() async {
     _clearVerdict();
+    _symptom = null;
     _goTo(1);
     await _monitor.start();
-  }
-
-  /// Stops following the run and returns to the start. The knob itself cannot
-  /// be stopped from here — only the shifter aborts homing — so this is worded
-  /// as leaving the watch, not cancelling the calibration.
-  void _stopWatching() {
-    _monitor.stopWatching();
-    _clearVerdict();
-    _goTo(0);
   }
 
   /// Drops the previous run's verdict, so a retry comes back to a clean run
@@ -267,7 +258,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     final progress = _pageIndex == 1 && _showVerdict ? 1.0 : (_pageIndex + 1) / _pageCount;
 
     return Scaffold(
-      appBar: SS2KAppBar(device: widget.device, title: "Calibrate Trainer"),
+      appBar: SS2KAppBar(
+        device: widget.device,
+        title: "Calibrate Trainer",
+        showDeviceHeader: widget.showDeviceHeader,
+      ),
       body: Column(
         children: [
           LinearProgressIndicator(value: progress),
@@ -287,95 +282,68 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     );
   }
 
-  // ===== Page 1: the caveats, plus the bike question =====
+  // ===== Page 1: the one-time guidance, plus the Bike+ question =====
 
   Widget _buildBeforeYouStartPage() {
-    final needsBikeType = _bikeTypeLoaded && _bikeType == null;
-    final showPicker = needsBikeType || _editingBikeType;
+    final needsSetup = !_setupLoaded || _calibrationSetup == null;
+    final showPicker = _setupLoaded && (_calibrationSetup == null || _editingSetup);
 
     return _CalibrationPage(
-      primaryLabel: 'Start Calibration',
-      onPrimary: needsBikeType ? null : _startRun,
+      primaryLabel: _isBikePlus ? 'Start with resistance data' : 'Start Calibration',
+      onPrimary: needsSetup ? null : _startRun,
       children: [
         _Callout(
           icon: Icons.info_outline,
           color: Colors.amber.shade700,
-          title: 'You should only need to do this once',
-          body: _powerTableWillReset
-              ? 'Calibrating resets the power table. Ride for a few minutes afterwards to '
-                  'rebuild your baseline values. Only recalibrate if your power table does not '
-                  'match your power, or if a previous run missed an end stop.'
-              : 'Only recalibrate if your power table does not match your power, or if a '
-                  'previous run missed an end stop.',
+          title: 'Calibrate once after installation',
+          body: 'SmartSpin2k uses calibration to learn your bike\'s resistance range. After that, '
+              'it automatically finds its home position whenever it starts, so you do not need '
+              'to calibrate again after a reboot.\n\n'
+              'Run calibration again only if you move SmartSpin2k to another bike, change how it '
+              'is mounted, or it no longer reaches the full resistance range.',
         ),
+        if (_powerTableWillReset) ...[
+          const SizedBox(height: 16),
+          _Callout(
+            icon: Icons.show_chart,
+            color: Colors.amber.shade700,
+            title: 'Your Power Table will reset',
+            body: 'Calibration clears the learned Power Table. It will rebuild automatically while you ride.',
+          ),
+        ],
         const SizedBox(height: 16),
         if (showPicker) ...[
-          Text('Which bike is this?', style: Theme.of(context).textTheme.titleMedium),
+          Text('Are you using a Peloton Bike+?', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          _BikeTypeChoice(
-            selected: _bikeType,
+          _CalibrationSetupChoice(
+            selected: _calibrationSetup,
             onChanged: (value) {
               setState(() {
-                _bikeType = value;
-                _editingBikeType = false;
+                _calibrationSetup = value;
+                _editingSetup = false;
               });
-              BikeProfile.save(value);
+              BikeProfile.saveCalibrationSetup(value);
             },
           ),
           const SizedBox(height: 16),
-        ] else if (_bikeType != null) ...[
-          _SelectedBikeRow(
-            label: _bikeTypeLabel(_bikeType!),
-            onChange: () => setState(() => _editingBikeType = true),
+        ] else if (_calibrationSetup != null) ...[
+          _SelectedSetupRow(
+            label: _isBikePlus ? 'Peloton Bike+' : 'Bike with physical knob stops',
+            onChange: () => setState(() => _editingSetup = true),
           ),
           const SizedBox(height: 16),
         ],
-        if (_bikeType == BikeType.pelotonBikePlus) ...[
+        if (_isBikePlus) ...[
           _Callout(
             icon: Icons.pedal_bike,
             color: Theme.of(context).colorScheme.primary,
-            title: 'Peloton Bike+',
-            body: 'Your knob has no physical end stops. The SmartSpin2k calibrates to the '
-                'resistance range your bike reports instead, so you will not see it hit hard '
-                'stops and the homing force troubleshooting does not apply to you.',
+            title: 'Bike+ needs resistance data',
+            body: 'The Bike+ knob turns continuously; it has no physical stops. Continue only if '
+                'SmartSpin2k is receiving resistance from the Bike+—for example, through Grupetto '
+                'with BLE TX on. If you\'re using only a power meter, skip calibration. Homing '
+                'Force does not apply to Bike+.',
           ),
-          const SizedBox(height: 16),
         ],
-        _ExpansionSection(
-          title: 'When should I calibrate?',
-          children: [
-            const _Bullet(
-              'You should only need to do this once. After that the SmartSpin2k homes itself '
-              'every time you turn it on, and again when it wakes after about half an hour of '
-              'inactivity.',
-            ),
-            const _Bullet(
-              'Recalibrate if the dot on the Power Table screen does not sit close to the graph '
-              "lines, or is not the same colour as the line it's nearest.",
-            ),
-            const _Bullet(
-              'Recalibrate if a previous calibration did not reach both end stops. Raise the '
-              'homing force and try again.',
-            ),
-            const _Bullet(
-              'You can safely ignore the "calibrate" option in your training app. It triggers '
-              'this same procedure.',
-            ),
-            const SizedBox(height: 4),
-            TextButton.icon(
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                alignment: Alignment.centerLeft,
-                minimumSize: const Size(48, 48),
-              ),
-              icon: const Icon(Icons.show_chart, size: 18),
-              label: const Text('Open the Power Table to check'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => PowerTableScreen(device: widget.device)),
-              ),
-            ),
-          ],
-        ),
       ],
     );
   }
@@ -386,31 +354,19 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     final phase = _monitor.phase;
     final waiting = phase == CalibrationPhase.waitingForCadence;
     final succeeded = phase == CalibrationPhase.complete;
+    final needsVisualConfirmation = succeeded && _endStopsApply;
 
     return _CalibrationPage(
-      // Until the verdict is revealed this is still a run in progress, so the
-      // only offer is to stop watching it.
       primaryLabel: !_showVerdict
           ? null
           : succeeded
-              ? 'Yes, it reached both ends'
+              ? needsVisualConfirmation
+                  ? 'Yes, done'
+                  : 'Done'
               : 'Show me how to fix it',
       onPrimary: !_showVerdict ? null : (succeeded ? _finish : () => _goTo(2)),
-      secondaryLabel: !_showVerdict
-          ? 'Stop Watching'
-          : succeeded
-              ? 'No, something looked wrong'
-              : null,
-      onSecondary: !_showVerdict
-          ? _stopWatching
-          : succeeded
-              ? () {
-                  // The device believed it found both stops, so if the user saw
-                  // otherwise the search almost certainly triggered early.
-                  _symptom ??= _Symptom.stoppedShort;
-                  _goTo(2);
-                }
-              : null,
+      secondaryLabel: _showVerdict && needsVisualConfirmation ? 'No, something looked wrong' : null,
+      onSecondary: _showVerdict && needsVisualConfirmation ? () => _goTo(2) : null,
       children: [
         if (waiting) ...[
           _CadenceIndicator(cadence: _cadence, showHint: _monitor.showPedalHint),
@@ -421,9 +377,13 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             icon: Icons.hearing_disabled,
             color: Colors.amber.shade700,
             title: 'The SmartSpin2k is not reporting',
-            body: 'This screen follows the run using the device log, and nothing has come '
-                'through. Watch the knob directly: it should reach a stop at both ends. If it '
-                'never moves, check that the SmartSpin2k is connected and on current firmware.',
+            body: _isBikePlus
+                ? 'This screen is not receiving the device log. Watch the resistance value '
+                    'directly. If it does not change, check that Bike+ resistance is reaching '
+                    'SmartSpin2k and that your firmware is current.'
+                : 'This screen is not receiving the device log. Watch the knob directly: it '
+                    'should reach low and high resistance. If it never moves, check that '
+                    'SmartSpin2k is connected and that your firmware is current.',
           ),
           const SizedBox(height: 16),
         ],
@@ -434,12 +394,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           _Callout(
             icon: Icons.visibility,
             color: Theme.of(context).colorScheme.primary,
-            title: 'Watch the knob',
-            body: 'It rotates counter-clockwise into the minimum resistance stop, backs off '
-                'slightly, and goes in again to confirm the same spot twice. Then the same '
-                'two-pass search runs the other way to find the maximum stop.\n\n'
-                'You need to see it reach a stop at BOTH ends. If it misses an end, or you hear '
-                'grinding, the homing force needs adjusting — this screen will walk you through it.',
+            title: _isBikePlus ? 'Watch the resistance' : 'Watch the knob',
+            body: _isBikePlus
+                ? 'SmartSpin2k will use the resistance reported by your Bike+ to learn its low '
+                    'and high limits. The knob may keep turning; it will not hit a physical stop. '
+                    'Press either shifter button if you need to cancel.'
+                : 'SmartSpin2k will turn the knob to low resistance, then high resistance. Brief '
+                    'contact with each stop is normal. Press either shifter button if the motor '
+                    'keeps pushing or you need to cancel.',
           ),
           const SizedBox(height: 16),
         ],
@@ -466,9 +428,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                         _Callout(
                           icon: succeeded ? Icons.check_circle_outline : Icons.error_outline,
                           color: succeeded ? Colors.green : Theme.of(context).colorScheme.error,
-                          title: succeeded ? 'The SmartSpin2k reported success' : _failureTitle(phase),
+                          title: succeeded ? 'Calibration saved' : _failureTitle(phase),
                           body: succeeded
-                              ? 'It found both end stops. You saw the knob reach a stop at each end — did it?'
+                              ? needsVisualConfirmation
+                                  ? 'Did the knob reach both ends without continuing to push?'
+                                  : 'SmartSpin2k learned the resistance range reported by your bike.'
                               : _failureBody(phase),
                         ),
                         if (succeeded && _monitor.sweepTimedOut) ...[
@@ -477,9 +441,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                             icon: Icons.warning_amber_outlined,
                             color: Colors.amber.shade700,
                             title: 'One sweep timed out',
-                            body: 'The device finished, but a resistance sweep ran out of time along '
-                                'the way. The calibrated range may be short. Check the Power Table '
-                                'before trusting it.',
+                            body: 'The device finished, but one resistance sweep ran out of time. '
+                                'The saved range may be shorter than expected.',
                           ),
                         ],
                       ],
@@ -493,8 +456,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         if (!_showVerdict) ...[
           const SizedBox(height: 8),
           Text(
-            'Homing can only be stopped at the bike, by moving the shifter. Leaving this screen '
-            'just stops watching.',
+            'Calibration keeps running if you leave this screen. To cancel, press either shifter button.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -509,7 +471,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       case CalibrationPhase.failedUnsupported:
         return 'This device cannot calibrate';
       case CalibrationPhase.failedUnstable:
-        return 'The end stop was never pinned down';
+        return _endStopsApply ? 'The resistance limit was inconsistent' : 'Calibration did not finish';
       default:
         return 'Calibration did not finish';
     }
@@ -524,20 +486,23 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         return 'The SmartSpin2k reported that it has no stepper to home, so there is nothing '
             'this screen can fix. Check your wiring and firmware version.';
       case CalibrationPhase.failedUnstable:
-        return 'The knob stopped in a different place each time it approached the end, so the '
-            'SmartSpin2k could not agree on where the stop is. That usually means the homing '
-            'force is too low and it is stopping before it reaches the real end.';
+        return _endStopsApply
+            ? 'SmartSpin2k found a different limit on repeated attempts. Choose what you saw to '
+                'adjust Homing Force before trying again.'
+            : 'SmartSpin2k could not learn a consistent resistance range from your bike.';
       default:
-        return 'The SmartSpin2k never registered an end stop before it gave up. That usually '
-            'means the homing force is too high — the knob loads up against the stop without the '
-            'stall being detected.';
+        return _endStopsApply
+            ? 'SmartSpin2k could not learn the full resistance range. Choose what you saw to '
+                'adjust Homing Force before trying again.'
+            : 'SmartSpin2k could not learn a usable resistance range from your bike.';
     }
   }
 
-  // ===== Page 4: fix it and retry =====
+  // ===== Page 3: fix it and retry =====
 
   Widget _buildTroubleshootPage() {
     if (!_endStopsApply) {
+      final isBikePlus = _isBikePlus;
       return _CalibrationPage(
         primaryLabel: 'Done',
         onPrimary: () => Navigator.of(context).pop(),
@@ -547,22 +512,23 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           _Callout(
             icon: Icons.pedal_bike,
             color: Theme.of(context).colorScheme.primary,
-            title: 'No end stops on this bike',
-            body: 'Your bike reports its own resistance, so the SmartSpin2k calibrates to that '
-                'reported range rather than to physical stops on the knob. The homing force '
-                'setting plays no part, and there is nothing to adjust here.\n\n'
-                'If the calibration still looks wrong, check that your bike is reporting '
-                'resistance correctly and take a look at the troubleshooting guide.',
+            title: isBikePlus ? 'Don\'t adjust Homing Force' : 'This bike reports its resistance',
+            body: isBikePlus
+                ? 'Bike+ has no physical stops. If calibration timed out or the resistance range '
+                    'looks wrong, check that Bike+ resistance is reaching SmartSpin2k. If you\'re '
+                    'using only a power meter, you can skip calibration.'
+                : 'SmartSpin2k calibrates to the resistance range reported by this bike. Homing '
+                    'Force does not affect this type of calibration. Check that resistance is '
+                    'being reported correctly before trying again.',
           ),
-          // This page is where a mis-tapped bike type shows itself, so offer the
-          // way back. Only when the bike type is what suppressed the advice —
-          // if the device itself reported the resistance path, it is not a guess.
-          if (!_monitor.usedFtmsPath) ...[
+          // The Bike+ answer is user-selected, so keep it easy to correct. A
+          // live reported-resistance path came from the device and is not a guess.
+          if (isBikePlus && !_monitor.usedFtmsPath) ...[
             const SizedBox(height: 8),
-            _SelectedBikeRow(
-              label: _bikeType == null ? 'Not set' : _bikeTypeLabel(_bikeType!),
+            _SelectedSetupRow(
+              label: 'Peloton Bike+',
               onChange: () {
-                setState(() => _editingBikeType = true);
+                setState(() => _editingSetup = true);
                 _goTo(0);
               },
             ),
@@ -593,17 +559,15 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         const SizedBox(height: 8),
         _SymptomCard(
           selected: _symptom == _Symptom.grinding,
-          title: 'It ground against the stop',
-          body: 'A grinding noise, or the knob slamming hard into the end. The homing force is '
-              'too high — lower it.',
+          title: 'The motor kept pushing at the end',
+          body: 'Lower Homing Force by about 10, save, then try again.',
           onTap: () => setState(() => _symptom = _Symptom.grinding),
         ),
         const SizedBox(height: 8),
         _SymptomCard(
           selected: _symptom == _Symptom.stoppedShort,
-          title: 'It missed the end stop',
-          body: 'The knob stopped short of the end, or never got there at all. The homing force '
-              'is too low — raise it.',
+          title: 'The knob stopped before the end',
+          body: 'Raise Homing Force by about 10, save, then try again.',
           onTap: () => setState(() => _symptom = _Symptom.stoppedShort),
         ),
         if (_symptom != null) ...[
@@ -611,10 +575,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           _Callout(
             icon: _symptom == _Symptom.grinding ? Icons.arrow_downward : Icons.arrow_upward,
             color: Theme.of(context).colorScheme.primary,
-            title: _symptom == _Symptom.grinding ? 'Lower the homing force' : 'Raise the homing force',
-            body: 'Tap the setting below, move the slider, then press SAVE. Saving matters — '
-                'without it the change is lost the next time the SmartSpin2k restarts. '
-                'Adjust in steps of about 10 and run calibration again.',
+            title: _symptom == _Symptom.grinding ? 'Lower Homing Force' : 'Raise Homing Force',
+            body: 'Tap the setting below, adjust it by about 10, then press SAVE before trying again.',
           ),
         ],
         const SizedBox(height: 16),
@@ -736,11 +698,11 @@ class _PhaseChecklist extends StatelessWidget {
           state: stateFor(done: started, isCurrent: !started),
         ),
         _ChecklistRow(
-          label: 'Finding the minimum end stop',
+          label: 'Finding low resistance',
           state: stateFor(done: minFound, isCurrent: started && !minFound),
         ),
         _ChecklistRow(
-          label: 'Finding the maximum end stop',
+          label: 'Finding high resistance',
           state: stateFor(done: maxFound, isCurrent: minFound && !maxFound),
         ),
         // Only while the closing signal is genuinely outstanding — the
@@ -749,7 +711,7 @@ class _PhaseChecklist extends StatelessWidget {
         // ever flipped to a checkmark and vanished is what made the old
         // "Calibration complete" step worth removing.
         if (maxFound && !phase.isTerminal)
-          const _ChecklistRow(label: 'Finishing up', state: _RowState.active),
+          const _ChecklistRow(label: 'Saving calibration', state: _RowState.active),
       ],
     );
   }
@@ -934,30 +896,34 @@ class _SymptomCard extends StatelessWidget {
   }
 }
 
-class _BikeTypeChoice extends StatelessWidget {
-  final BikeType? selected;
-  final ValueChanged<BikeType> onChanged;
+class _CalibrationSetupChoice extends StatelessWidget {
+  final CalibrationSetup? selected;
+  final ValueChanged<CalibrationSetup> onChanged;
 
-  const _BikeTypeChoice({required this.selected, required this.onChanged});
+  const _CalibrationSetupChoice({required this.selected, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    // The same options the onboarding wizard offers. This writes to the shared
-    // BikeProfile key, so it must not coerce an unlisted bike into a near-miss
-    // — a Peloton Original has end stops and is nothing like a Bike+.
-    final entries = _bikeTypeCopy.entries.toList();
-
     return Column(
       children: [
-        for (var i = 0; i < entries.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
-          _tile(context, entries[i].key, entries[i].value.label, entries[i].value.detail),
-        ],
+        _tile(
+          context,
+          CalibrationSetup.physicalStops,
+          'No',
+          'The resistance knob stops at low and high resistance.',
+        ),
+        const SizedBox(height: 8),
+        _tile(
+          context,
+          CalibrationSetup.pelotonBikePlus,
+          'Yes, Bike+',
+          'The resistance knob turns continuously.',
+        ),
       ],
     );
   }
 
-  Widget _tile(BuildContext context, BikeType value, String title, String? subtitle) {
+  Widget _tile(BuildContext context, CalibrationSetup value, String title, String subtitle) {
     final colorScheme = Theme.of(context).colorScheme;
     final isSelected = selected == value;
 
@@ -983,9 +949,9 @@ class _BikeTypeChoice extends StatelessWidget {
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    if (subtitle != null) Text(subtitle, style: const TextStyle(fontSize: 13)),
+                    children: [
+                      Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Text(subtitle, style: const TextStyle(fontSize: 13)),
                   ],
                 ),
               ),
@@ -997,13 +963,13 @@ class _BikeTypeChoice extends StatelessWidget {
   }
 }
 
-/// The bike currently on file, with a way back into the picker. The choice is a
+/// The calibration setup currently on file, with a way back into the picker. The choice is a
 /// single tap, so a mis-tap has to be recoverable without reinstalling.
-class _SelectedBikeRow extends StatelessWidget {
+class _SelectedSetupRow extends StatelessWidget {
   final String label;
   final VoidCallback onChange;
 
-  const _SelectedBikeRow({required this.label, required this.onChange});
+  const _SelectedSetupRow({required this.label, required this.onChange});
 
   @override
   Widget build(BuildContext context) {
@@ -1017,7 +983,7 @@ class _SelectedBikeRow extends StatelessWidget {
           child: Text.rich(
             TextSpan(
               children: [
-                const TextSpan(text: 'Bike: '),
+                const TextSpan(text: 'Calibration setup: '),
                 TextSpan(text: label, style: const TextStyle(fontWeight: FontWeight.w600)),
               ],
             ),
@@ -1100,26 +1066,6 @@ class _ExpansionSection extends StatelessWidget {
                 ],
               ),
         children: children,
-      ),
-    );
-  }
-}
-
-class _Bullet extends StatelessWidget {
-  final String text;
-
-  const _Bullet(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('• ', style: TextStyle(fontSize: 15)),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 15, height: 1.4))),
-        ],
       ),
     );
   }

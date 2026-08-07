@@ -18,6 +18,7 @@ void main() {
     for (final bikeType in BikeType.values) {
       await BikeProfile.save(bikeType);
       expect(await BikeProfile.load(), bikeType);
+      expect(await BikeProfile.loadCalibrationSetup(), BikeProfile.calibrationSetupFor(bikeType));
     }
   });
 
@@ -49,17 +50,34 @@ void main() {
     expect(await BikeProfile.load(), isNull);
   });
 
-  group('hasPhysicalEndStops', () {
-    test('is false only for the Bike+', () async {
-      expect(BikeProfile.hasPhysicalEndStops(BikeType.pelotonBikePlus), isFalse);
-
-      for (final bikeType in BikeType.values.where((b) => b != BikeType.pelotonBikePlus)) {
-        expect(BikeProfile.hasPhysicalEndStops(bikeType), isTrue, reason: '$bikeType');
-      }
+  group('calibration setup', () {
+    test('is null when neither calibration nor onboarding has identified the bike', () async {
+      expect(await BikeProfile.loadCalibrationSetup(), isNull);
     });
 
-    test('assumes end stops when the bike is unknown', () async {
-      expect(BikeProfile.hasPhysicalEndStops(null), isTrue);
+    test('maps legacy Bike+ profiles to the continuous-knob setup', () async {
+      SharedPreferences.setMockInitialValues({'bike_type': 'pelotonBikePlus'});
+
+      expect(await BikeProfile.loadCalibrationSetup(), CalibrationSetup.pelotonBikePlus);
+    });
+
+    test('maps other legacy bike profiles to physical stops', () async {
+      SharedPreferences.setMockInitialValues({'bike_type': 'pelotonOriginal'});
+
+      expect(await BikeProfile.loadCalibrationSetup(), CalibrationSetup.physicalStops);
+    });
+
+    test('stores a calibration answer without inventing a bike type', () async {
+      await BikeProfile.saveCalibrationSetup(CalibrationSetup.physicalStops);
+
+      expect(await BikeProfile.loadCalibrationSetup(), CalibrationSetup.physicalStops);
+      expect(await BikeProfile.load(), isNull);
+    });
+
+    test('an explicit calibration answer takes precedence over the onboarding profile', () async {
+      SharedPreferences.setMockInitialValues({'bike_type': 'pelotonBikePlus', 'calibration_setup': 'physicalStops'});
+
+      expect(await BikeProfile.loadCalibrationSetup(), CalibrationSetup.physicalStops);
     });
   });
 }
