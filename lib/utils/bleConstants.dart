@@ -45,6 +45,37 @@ class FTMSSpinDownParams {
 
 // FTMS Characteristic UUIDs
 const String FTMS_CONTROL_POINT_CHARACTERISTIC_UUID = '00002AD9-0000-1000-8000-00805F9B34FB';
+const String FTMS_MACHINE_STATUS_CHARACTERISTIC_UUID = '00002ADA-0000-1000-8000-00805F9B34FB';
+
+// FTMS Machine Status Op Codes (first byte of a 0x2ADA notification)
+class FTMSStatusOpCodes {
+  static const int SPIN_DOWN_STATUS = 0x14;
+}
+
+/// Parameter byte of a [FTMSStatusOpCodes.SPIN_DOWN_STATUS] notification.
+///
+/// These names come from the FTMS specification and describe nothing the
+/// SmartSpin2k actually does — the firmware reuses the codes as homing progress
+/// markers. [MAX_SEARCH_STARTED] in particular does not ask the rider to stop;
+/// pedalling has no effect on homing once the cadence gate has opened. What
+/// carries the information is where in `Stepper.cpp` `goHome()` each byte is
+/// emitted, so they are named for that position rather than for the spec label.
+class FTMSSpinDownStatus {
+  /// Spec name `SpinDownRequested`. Stepper.cpp:381, at the top of `goHome()`.
+  static const int HOMING_STARTED = 0x01;
+
+  /// Spec name `Success`. Stepper.cpp:506, and :392 on the resistance path.
+  static const int SUCCESS = 0x02;
+
+  /// Spec name `Error`. Stepper.cpp:399, :478 and :493 — every failure return.
+  static const int ERROR = 0x03;
+
+  /// Spec name `StopPedaling`. Stepper.cpp:489, the statement immediately after
+  /// the min end stop is set, then repeated through the max search (:272 on the
+  /// stepper path, :330 on the resistance sweep). The firmware only ever emits
+  /// it from inside the max search, so receiving it proves min is behind us.
+  static const int MAX_SEARCH_STARTED = 0x04;
+}
 
 // FTMS Data Lengths and Resolutions
 class FTMSDataConfig {

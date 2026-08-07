@@ -239,11 +239,14 @@ class BLEData {
     _myCharacteristic = null;
     indoorBikeCharacteristic = null;
     ftmsControlPointCharacteristic = null;
+    machineStatusCharacteristic = null;
     services = [];
     _notifySubscription?.cancel();
     _notifySubscription = null;
     _ftmsSubscription?.cancel();
     _ftmsSubscription = null;
+    _machineStatusSubscription?.cancel();
+    _machineStatusSubscription = null;
     _inUpdateLoop = false;
     _lastRequestStopwatch.reset();
     _cachedCharacteristicMap = null;
@@ -277,6 +280,8 @@ class BLEData {
   BluetoothCharacteristic? _myCharacteristic;
   BluetoothCharacteristic? ftmsControlPointCharacteristic;
   BluetoothCharacteristic? indoorBikeCharacteristic;
+  BluetoothCharacteristic? machineStatusCharacteristic;
+  StreamSubscription<List<int>>? _machineStatusSubscription;
   Completer<void>? _discoverServicesCompleter;
   BluetoothConnectionState connectionState =
       BluetoothConnectionState.disconnected;
@@ -292,6 +297,13 @@ class BLEData {
   final StreamController<String> _logStreamController =
       StreamController<String>.broadcast();
   Stream<String> get logStream => _logStreamController.stream;
+
+  // Raw FTMS Fitness Machine Status (0x2ADA) notifications. The SmartSpin2k
+  // reports homing progress here, and unlike the log stream these cannot be
+  // dropped by a full firmware log buffer.
+  final StreamController<List<int>> _machineStatusController =
+      StreamController<List<int>>.broadcast();
+  Stream<List<int>> get machineStatusStream => _machineStatusController.stream;
 
   String simulatedTargetWatts = "";
   String simulatedFTMSmode = "";
@@ -383,6 +395,9 @@ class BLEData {
         _myCharacteristic = null;
         indoorBikeCharacteristic = null;
         ftmsControlPointCharacteristic = null;
+        machineStatusCharacteristic = null;
+        _machineStatusSubscription?.cancel();
+        _machineStatusSubscription = null;
       }
 
       await _discoverServices(device, forceRefresh: forceRefresh);
@@ -542,6 +557,16 @@ class BLEData {
         }
         if (c.uuid == Guid(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID)) {
           ftmsControlPointCharacteristic = c;
+        }
+        if (c.uuid == Guid(FTMS_MACHINE_STATUS_CHARACTERISTIC_UUID)) {
+          machineStatusCharacteristic = c;
+          await _machineStatusSubscription?.cancel();
+          _machineStatusSubscription =
+              c.onValueReceived.listen(_machineStatusController.add);
+          if (!c.isNotifying) {
+            await _queueBleOperation(() => c.setNotifyValue(true));
+            print("subscribed to FTMS machine status characteristic");
+          }
         }
       }
 
@@ -1356,5 +1381,8 @@ class BLEData {
   /// Dispose of resources
   void dispose() {
     _characteristicChangeController.close();
+    _machineStatusSubscription?.cancel();
+    _machineStatusSubscription = null;
+    _machineStatusController.close();
   }
 }

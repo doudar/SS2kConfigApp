@@ -9,9 +9,15 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import 'bleConstants.dart';
 import 'bledata.dart';
 import 'constants.dart';
 import 'ftmsControlPoint.dart';
+
+/// One captured log line, stamped with how far into the run it arrived. The
+/// firmware sends no timestamps of its own, so the gaps between lines are the
+/// only way to see a stall after the fact.
+typedef CalibrationLogEntry = ({Duration at, String message});
 
 /// Where the SmartSpin2k is in its homing procedure.
 enum CalibrationPhase {
@@ -172,9 +178,14 @@ class CalibrationPhaseTracker {
       return changed;
     }
 
-    // Stepper.cpp:247 ("Homing forward (max)") and :362.
+    // Stepper.cpp:247 ("Homing forward (max)") and :362. The firmware never
+    // searches the max end stop until the min search has succeeded, so this
+    // proves min was found even when its own log line was dropped.
     if (m.contains('homing forward (max)') || m.contains('homing to max resistance')) {
-      return _advanceTo(CalibrationPhase.searchingMax);
+      final changed = !_minFound || _phase != CalibrationPhase.searchingMax;
+      _minFound = true;
+      _phase = CalibrationPhase.searchingMax;
+      return changed;
     }
 
     // Stepper.cpp:366 — the resistance path's last word. It returns to the
@@ -186,11 +197,15 @@ class CalibrationPhaseTracker {
       return true;
     }
 
-    // Stepper.cpp:498.
+    // Stepper.cpp:498. Reached only after the min search succeeded, so it
+    // carries min and the phase too — "Min position found and set to 0." is one
+    // of the lines the firmware drops most often.
     if (m.contains('max position found')) {
-      if (_maxFound) return false;
+      final changed = !_maxFound || !_minFound || _phase != CalibrationPhase.searchingMax;
+      _minFound = true;
       _maxFound = true;
-      return true;
+      _phase = CalibrationPhase.searchingMax;
+      return changed;
     }
 
     // Stepper.cpp:520. Only reached when both end stops were found; every
@@ -249,7 +264,63 @@ class CalibrationPhaseTracker {
     return true;
   }
 
+  /// The firmware's own progress report, from the FTMS Fitness Machine Status
+  /// characteristic (0x2ADA). This is the signal to trust: the notification and
+  /// the log are independent paths, so it still arrives when the firmware's log
+  /// buffer overflows and silently discards the matching line — which is
+  /// routinely what happens to "Min position found and set to 0." and "Homing
+  /// procedure complete." under homing load.
+  ///
+  /// [param] is the second byte of a `SpinDownStatus` notification. See
+  /// [FTMSSpinDownStatus] for why the codes mean what they do here; in short,
+  /// the spec names are boilerplate and the position of each `spinDown()` call
+  /// in `Stepper.cpp` `goHome()` is what carries the information.
+  bool onSpinDownStatus(int param) {
+    // Same guard as the log path: once there is a verdict, this run is over.
+    // It also covers the one stray-signal case — `SpinDown_Error` at
+    // Stepper.cpp:399/478/493 is not gated on `bothDirections`, so a failing
+    // startup home could emit one while this screen happens to be open.
+    if (_phase.isTerminal || _phase == CalibrationPhase.idle) return false;
+
+    switch (param) {
+      case FTMSSpinDownStatus.HOMING_STARTED:
+        return _advanceTo(CalibrationPhase.searchingMin);
+
+      case FTMSSpinDownStatus.MAX_SEARCH_STARTED:
+        // Repeated about once a second for the whole max search, so this has
+        // to report "nothing changed" after the first one.
+        final changed = !_minFound || _phase != CalibrationPhase.searchingMax;
+        _minFound = true;
+        _phase = CalibrationPhase.searchingMax;
+        return changed;
+
+      case FTMSSpinDownStatus.SUCCESS:
+        _minFound = true;
+        _maxFound = true;
+        _phase = CalibrationPhase.complete;
+        return true;
+
+      case FTMSSpinDownStatus.ERROR:
+        // No detail in the status byte. A log line that got through has a
+        // specific verdict, and _fail leaves a terminal phase alone, so this
+        // only ever fills in for a failure the log did not describe.
+        return _fail(CalibrationPhase.failedTimeout);
+
+      default:
+        return false;
+    }
+  }
+
   bool markTimedOut() => _fail(CalibrationPhase.failedTimeout);
+
+  /// Calls the run finished on the strength of the maximum end stop alone, for
+  /// when the closing word never arrives. See [CalibrationMonitor.completionGrace].
+  bool markComplete() {
+    if (_phase.isTerminal || !_maxFound) return false;
+    _minFound = true;
+    _phase = CalibrationPhase.complete;
+    return true;
+  }
 
   bool _advanceTo(CalibrationPhase next) {
     if (_phase == next) return false;
@@ -262,6 +333,56 @@ class CalibrationPhaseTracker {
     _phase = failure;
     return true;
   }
+}
+
+/// `mm:ss.s` since the run began. Elapsed only — an absolute date says nothing
+/// about a run and makes reports harder to scan.
+String _elapsed(Duration at) {
+  final minutes = at.inMinutes.toString().padLeft(2, '0');
+  final seconds = (at.inSeconds % 60).toString().padLeft(2, '0');
+  final tenths = (at.inMilliseconds % 1000) ~/ 100;
+  return '$minutes:$seconds.$tenths';
+}
+
+/// Formats a run into the text the Copy button puts on the clipboard.
+///
+/// Kept pure and free of any BLE or widget dependency so it can be tested
+/// directly, and so the caller decides what it knows. Fields with no value are
+/// rendered as `unknown` rather than dropped — every report has the same shape,
+/// which matters when someone is skimming a pasted one.
+String buildCalibrationReport({
+  required List<CalibrationLogEntry> transcript,
+  required int droppedLines,
+  required CalibrationPhase phase,
+  required bool minFound,
+  required bool maxFound,
+  required bool usedFtmsPath,
+  required bool sweepTimedOut,
+  required bool logStreamSilent,
+  String? firmwareVersion,
+  String? bikeType,
+  String? homingForce,
+}) {
+  String orUnknown(String? value) => (value == null || value.isEmpty) ? 'unknown' : value;
+
+  final buffer = StringBuffer()
+    ..writeln('SmartSpin2k calibration report')
+    ..writeln('firmware: ${orUnknown(firmwareVersion)}   bike: ${orUnknown(bikeType)}')
+    ..writeln('phase: ${phase.name}  min: $minFound  max: $maxFound')
+    ..writeln('ftmsPath: $usedFtmsPath  sweepTimedOut: $sweepTimedOut  logSilent: $logStreamSilent')
+    ..writeln('homingForce: ${orUnknown(homingForce)}');
+
+  if (transcript.isEmpty) {
+    // Worth reporting in its own right: a run where the device never spoke.
+    buffer.writeln('--- device log (no lines received) ---');
+    return buffer.toString();
+  }
+
+  buffer.writeln('--- device log (${transcript.length} lines, $droppedLines dropped) ---');
+  for (final entry in transcript) {
+    buffer.writeln('[${_elapsed(entry.at)}] ${entry.message}');
+  }
+  return buffer.toString();
 }
 
 /// Drives a calibration run and exposes its progress.
@@ -279,6 +400,7 @@ class CalibrationMonitor extends ChangeNotifier {
     this.stallTimeout = const Duration(seconds: 45),
     this.pedalHintDelay = const Duration(seconds: 20),
     this.logSilenceTimeout = const Duration(seconds: 15),
+    this.completionGrace = const Duration(seconds: 10),
   });
 
   final BLEData bleData;
@@ -302,17 +424,38 @@ class CalibrationMonitor extends ChangeNotifier {
   /// follow the run.
   final Duration logSilenceTimeout;
 
+  /// How long to wait for a verdict after the maximum end stop is known.
+  ///
+  /// Past that point every remaining path in the firmware's both-directions
+  /// branch ends in success — the "Homing failed. Positions were reversed."
+  /// branch is the `else` of `if (bothDirections)` and cannot run for a run
+  /// this screen starts. So if neither the closing log line nor the spin-down
+  /// success status arrives, the run finished and the app simply missed the
+  /// word. Without this the last row spins for ever.
+  final Duration completionGrace;
+
+  /// How many lines the on-screen tail shows. The full run is kept separately
+  /// in [_transcript] for [buildCalibrationReport].
   static const int _maxRecentMessages = 6;
 
+  /// A worst-case run is [overallTimeout] of roughly one line a second, so this
+  /// holds a whole run with headroom. Overflow drops the oldest lines and is
+  /// counted in [_droppedLines] rather than passing silently.
+  static const int _maxTranscriptLines = 1000;
+
   final CalibrationPhaseTracker _tracker = CalibrationPhaseTracker();
-  final List<String> _recentMessages = [];
+  final List<CalibrationLogEntry> _transcript = [];
+  DateTime? _runStartedAt;
+  int _droppedLines = 0;
 
   StreamSubscription<String>? _logSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicSubscription;
+  StreamSubscription<List<int>>? _machineStatusSubscription;
   Timer? _overallTimer;
   Timer? _stallTimer;
   Timer? _pedalHintTimer;
   Timer? _logSilenceTimer;
+  Timer? _completionTimer;
   final List<Timer> _demoTimers = [];
 
   bool _showPedalHint = false;
@@ -332,12 +475,26 @@ class CalibrationMonitor extends ChangeNotifier {
   bool get logStreamSilent => _logStreamSilent;
 
   /// The tail of the device log, so a user chasing a problem has something
-  /// concrete to read or screenshot.
-  List<String> get recentMessages => List.unmodifiable(_recentMessages);
+  /// concrete to read on screen. The whole run is in [transcript].
+  List<String> get recentMessages => List.unmodifiable(
+        _transcript
+            .skip(_transcript.length > _maxRecentMessages ? _transcript.length - _maxRecentMessages : 0)
+            .map((entry) => entry.message),
+      );
+
+  /// Every line of the run, stamped with when it arrived. Kept in full — the
+  /// six-line tail on screen is never enough to diagnose a failure from.
+  List<CalibrationLogEntry> get transcript => List.unmodifiable(_transcript);
+
+  /// How many of the oldest lines fell out of [transcript] at
+  /// [_maxTranscriptLines]. Reported rather than truncating silently.
+  int get droppedLines => _droppedLines;
 
   Future<void> start() async {
     _cancelTimers();
-    _recentMessages.clear();
+    _transcript.clear();
+    _droppedLines = 0;
+    _runStartedAt = DateTime.now();
     _showPedalHint = false;
     _logStreamSilent = false;
     _tracker.start(hMaxBaseline: int.tryParse(bleData.getVnameValue(BLE_hMaxVname)));
@@ -354,7 +511,7 @@ class CalibrationMonitor extends ChangeNotifier {
       _safeNotify();
     });
     _logSilenceTimer = Timer(logSilenceTimeout, () {
-      if (_recentMessages.isNotEmpty) return;
+      if (_transcript.isNotEmpty) return;
       _logStreamSilent = true;
       _safeNotify();
     });
@@ -380,12 +537,24 @@ class CalibrationMonitor extends ChangeNotifier {
   void _listen() {
     _logSubscription?.cancel();
     _characteristicSubscription?.cancel();
+    _machineStatusSubscription?.cancel();
 
     _logSubscription = bleData.logStream.listen(_handleLogMessage);
     _characteristicSubscription = bleData.characteristicChanges.listen((event) {
       if (event.vName != BLE_hMaxVname) return;
       final value = int.tryParse(event.value);
-      if (_tracker.onHomingValueChanged(isMax: true, value: value)) _safeNotify();
+      if (_tracker.onHomingValueChanged(isMax: true, value: value)) {
+        _afterProgress();
+        _safeNotify();
+      }
+    });
+    _machineStatusSubscription = bleData.machineStatusStream.listen((value) {
+      if (value.length < 2) return;
+      if (value[0] != FTMSStatusOpCodes.SPIN_DOWN_STATUS) return;
+      if (_tracker.onSpinDownStatus(value[1])) {
+        _afterProgress();
+        _safeNotify();
+      }
     });
   }
 
@@ -397,24 +566,58 @@ class CalibrationMonitor extends ChangeNotifier {
     _logSilenceTimer = null;
     _logStreamSilent = false;
 
-    _recentMessages.add(message);
-    while (_recentMessages.length > _maxRecentMessages) {
-      _recentMessages.removeAt(0);
+    final startedAt = _runStartedAt;
+    _transcript.add((
+      at: startedAt == null ? Duration.zero : DateTime.now().difference(startedAt),
+      message: message,
+    ));
+    while (_transcript.length > _maxTranscriptLines) {
+      _transcript.removeAt(0);
+      _droppedLines++;
     }
 
-    // Any message at all proves the run is alive, including the once-a-second
-    // progress chatter that does not move the phase along.
-    _restartStallTimer();
+    final changed = _tracker.onLogMessage(message);
 
-    _tracker.onLogMessage(message);
-    if (_showPedalHint && _tracker.phase != CalibrationPhase.waitingForCadence) {
-      _showPedalHint = false;
-    }
-    if (_tracker.phase.isTerminal) _cancelTimers();
+    // Proof the run is alive, which includes the progress chatter that moves no
+    // phase along. Deliberately not "any line at all": the device streams
+    // BLE_Client scan output the whole time, and letting that hold the timer
+    // open means a run that died is never timed out.
+    if (changed || _homingSubsystem.hasMatch(message)) _restartStallTimer();
+
+    _afterProgress();
 
     // Unconditional: the message tail is itself part of the visible state, so
     // every line is worth a rebuild even when the phase did not move.
     _safeNotify();
+  }
+
+  /// Log tags belonging to the homing run. Everything else the firmware streams
+  /// — scans, config writes, power table loads — carries on regardless of
+  /// whether homing is still going.
+  static final RegExp _homingSubsystem = RegExp(r'\((?:Main|FTMS_SERVER)\)');
+
+  /// Shared bookkeeping after any signal — log line, `hMax`, or spin-down
+  /// status — moved the run along.
+  void _afterProgress() {
+    if (_showPedalHint && _tracker.phase != CalibrationPhase.waitingForCadence) {
+      _showPedalHint = false;
+    }
+    if (_tracker.phase.isTerminal) {
+      _cancelTimers();
+    } else if (_tracker.maxFound) {
+      _startCompletionGrace();
+    }
+  }
+
+  /// Both end stops are known but no verdict has landed. See [completionGrace].
+  void _startCompletionGrace() {
+    if (_completionTimer != null) return;
+    _completionTimer = Timer(completionGrace, () {
+      _completionTimer = null;
+      if (!_tracker.markComplete()) return;
+      _cancelTimers();
+      _safeNotify();
+    });
   }
 
   void _restartStallTimer() {
@@ -453,10 +656,12 @@ class CalibrationMonitor extends ChangeNotifier {
     _stallTimer?.cancel();
     _pedalHintTimer?.cancel();
     _logSilenceTimer?.cancel();
+    _completionTimer?.cancel();
     _overallTimer = null;
     _stallTimer = null;
     _pedalHintTimer = null;
     _logSilenceTimer = null;
+    _completionTimer = null;
     for (final timer in _demoTimers) {
       timer.cancel();
     }
@@ -477,6 +682,8 @@ class CalibrationMonitor extends ChangeNotifier {
     _logSubscription = null;
     _characteristicSubscription?.cancel();
     _characteristicSubscription = null;
+    _machineStatusSubscription?.cancel();
+    _machineStatusSubscription = null;
 
     if (bleData.isSimulated) return;
     final logCharacteristic = bleData.customCharacteristic.firstWhere(

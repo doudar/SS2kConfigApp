@@ -7,6 +7,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -158,6 +159,67 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         content: Text('Calibration complete'),
         backgroundColor: Colors.green,
       ),
+    );
+  }
+
+  /// Puts the whole run on the clipboard — every log line, not the six on
+  /// screen — under a header of everything this screen knows about the device.
+  Future<void> _copyLog() async {
+    final messenger = ScaffoldMessenger.of(context);
+    await Clipboard.setData(ClipboardData(
+      text: buildCalibrationReport(
+        transcript: _monitor.transcript,
+        droppedLines: _monitor.droppedLines,
+        phase: _monitor.phase,
+        minFound: _monitor.minFound,
+        maxFound: _monitor.maxFound,
+        usedFtmsPath: _monitor.usedFtmsPath,
+        sweepTimedOut: _monitor.sweepTimedOut,
+        logStreamSilent: _monitor.logStreamSilent,
+        firmwareVersion: bleData.firmwareVersion.value,
+        bikeType: _bikeType == null ? null : _bikeTypeLabel(_bikeType!),
+        homingForce: bleData.getVnameValue(homingSensitivityVname),
+      ),
+    ));
+    if (!mounted) return;
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Calibration log copied'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// The device log, shared by the run page and the result page. Shown while
+  /// the device is silent too — a run where nothing came through is exactly
+  /// what is worth copying and reporting.
+  Widget? _buildDeviceLogSection() {
+    if (_monitor.recentMessages.isEmpty && !_monitor.logStreamSilent) return null;
+
+    return _ExpansionSection(
+      title: 'Device log',
+      // In the title row so the whole run can be copied without expanding.
+      action: IconButton(
+        icon: const Icon(Icons.copy_all, size: 20),
+        tooltip: 'Copy log',
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        onPressed: _copyLog,
+      ),
+      children: [
+        if (_monitor.recentMessages.isEmpty)
+          Text(
+            'Nothing received from the device. Copying still reports the run state.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        for (final message in _monitor.recentMessages)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: SelectableText(
+              message,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+      ],
     );
   }
 
@@ -329,20 +391,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           maxFound: _monitor.maxFound,
         ),
         const SizedBox(height: 16),
-        if (_monitor.recentMessages.isNotEmpty)
-          _ExpansionSection(
-            title: 'Device log',
-            children: [
-              for (final message in _monitor.recentMessages)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: SelectableText(
-                    message,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                  ),
-                ),
-            ],
-          ),
+        ?_buildDeviceLogSection(),
         const SizedBox(height: 8),
         Text(
           'Homing can only be stopped at the bike, by moving the shifter. Leaving this screen '
@@ -358,6 +407,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   Widget _buildResultPage() {
     final phase = _monitor.phase;
     final succeeded = phase == CalibrationPhase.complete;
+    final logSection = _buildDeviceLogSection();
 
     return _CalibrationPage(
       primaryLabel: succeeded ? 'Yes, it reached both ends' : 'Show me how to fix it',
@@ -390,21 +440,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                 'The calibrated range may be short. Check the Power Table before trusting it.',
           ),
         ],
-        if (_monitor.recentMessages.isNotEmpty) ...[
+        if (logSection != null) ...[
           const SizedBox(height: 16),
-          _ExpansionSection(
-            title: 'Device log',
-            children: [
-              for (final message in _monitor.recentMessages)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: SelectableText(
-                    message,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                  ),
-                ),
-            ],
-          ),
+          logSection,
         ],
       ],
     );
@@ -980,17 +1018,30 @@ class _ExpansionSection extends StatelessWidget {
   final String title;
   final List<Widget> children;
 
-  const _ExpansionSection({required this.title, required this.children});
+  /// Sits beside the title, inside the header row. Deliberately not
+  /// `ExpansionTile.trailing`, which would replace the rotating chevron.
+  final Widget? action;
+
+  const _ExpansionSection({required this.title, required this.children, this.action});
 
   @override
   Widget build(BuildContext context) {
+    const titleStyle = TextStyle(fontSize: 15, fontWeight: FontWeight.w600);
+
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
         tilePadding: EdgeInsets.zero,
         childrenPadding: const EdgeInsets.only(bottom: 8),
         expandedCrossAxisAlignment: CrossAxisAlignment.start,
-        title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+        title: action == null
+            ? Text(title, style: titleStyle)
+            : Row(
+                children: [
+                  Expanded(child: Text(title, style: titleStyle)),
+                  action!,
+                ],
+              ),
         children: children,
       ),
     );
