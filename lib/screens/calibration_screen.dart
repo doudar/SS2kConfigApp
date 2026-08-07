@@ -52,19 +52,32 @@ class CalibrationScreen extends StatefulWidget {
 }
 
 class _CalibrationScreenState extends State<CalibrationScreen> {
-  static const int _pageCount = 4;
+  static const int _pageCount = 3;
+
+  /// How long the finished checklist is left alone before the verdict appears.
+  ///
+  /// The firmware sets `hMax` and sends its spin-down success within
+  /// milliseconds of each other, so the last checkmark and the verdict would
+  /// otherwise land in the same frame and the user would never see the run
+  /// finish. Long enough to read as "that just happened", short enough not to
+  /// feel like waiting.
+  static const Duration _verdictDelay = Duration(milliseconds: 600);
 
   late final BLEData bleData;
   late final CalibrationMonitor _monitor;
   final PageController _pageController = PageController();
 
   StreamSubscription<CharacteristicChangeEvent>? _cadenceSubscription;
+  Timer? _verdictTimer;
 
   int _pageIndex = 0;
   int _cadence = 0;
   BikeType? _bikeType;
   bool _bikeTypeLoaded = false;
   _Symptom? _symptom;
+
+  /// True once [_verdictDelay] has elapsed since the run reached a verdict.
+  bool _showVerdict = false;
 
   /// Lets the user reopen the bike picker after it has been answered — the
   /// choice is a single tap and easy to get wrong.
@@ -96,6 +109,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _monitor.removeListener(_onMonitorChanged);
     _monitor.dispose();
     _cadenceSubscription?.cancel();
+    _verdictTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
@@ -103,13 +117,18 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   void _onMonitorChanged() {
     if (!mounted) return;
     setState(() {});
-    // A verdict from the device moves the user on without them having to act.
-    if (_monitor.phase.isTerminal && _pageIndex == 1) {
-      if (_monitor.phase.isFailure) {
-        _symptom ??= _symptomFor(_monitor.phase);
-      }
-      _goTo(2);
+
+    // A verdict does not move the user anywhere — it appears under the finished
+    // checklist, a beat later so the last checkmark is seen to land.
+    if (!_monitor.phase.isTerminal || _showVerdict || _verdictTimer != null) return;
+    if (_monitor.phase.isFailure) {
+      _symptom ??= _symptomFor(_monitor.phase);
     }
+    _verdictTimer = Timer(_verdictDelay, () {
+      _verdictTimer = null;
+      if (!mounted) return;
+      setState(() => _showVerdict = true);
+    });
   }
 
   /// Maps a failure onto the symptom the user most likely observed, so the
@@ -138,6 +157,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 
   Future<void> _startRun() async {
+    _clearVerdict();
     _goTo(1);
     await _monitor.start();
   }
@@ -147,7 +167,16 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   /// as leaving the watch, not cancelling the calibration.
   void _stopWatching() {
     _monitor.stopWatching();
+    _clearVerdict();
     _goTo(0);
+  }
+
+  /// Drops the previous run's verdict, so a retry comes back to a clean run
+  /// page instead of the last result.
+  void _clearVerdict() {
+    _verdictTimer?.cancel();
+    _verdictTimer = null;
+    _showVerdict = false;
   }
 
   void _finish() {
@@ -232,11 +261,16 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // A verdict on the run page is the end of the road for a run that worked,
+    // so the bar reads full rather than stopping two thirds of the way under a
+    // green success callout.
+    final progress = _pageIndex == 1 && _showVerdict ? 1.0 : (_pageIndex + 1) / _pageCount;
+
     return Scaffold(
       appBar: SS2KAppBar(device: widget.device, title: "Calibrate Trainer"),
       body: Column(
         children: [
-          LinearProgressIndicator(value: (_pageIndex + 1) / _pageCount),
+          LinearProgressIndicator(value: progress),
           Expanded(
             child: PageView(
               controller: _pageController,
@@ -244,7 +278,6 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
               children: [
                 _buildBeforeYouStartPage(),
                 _buildRunningPage(),
-                _buildResultPage(),
                 _buildTroubleshootPage(),
               ],
             ),
@@ -347,17 +380,37 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     );
   }
 
-  // ===== Page 2: the run itself =====
+  // ===== Page 2: the run, and the verdict it ends on =====
 
   Widget _buildRunningPage() {
     final phase = _monitor.phase;
     final waiting = phase == CalibrationPhase.waitingForCadence;
+    final succeeded = phase == CalibrationPhase.complete;
 
     return _CalibrationPage(
-      primaryLabel: null,
-      onPrimary: null,
-      secondaryLabel: 'Stop Watching',
-      onSecondary: _stopWatching,
+      // Until the verdict is revealed this is still a run in progress, so the
+      // only offer is to stop watching it.
+      primaryLabel: !_showVerdict
+          ? null
+          : succeeded
+              ? 'Yes, it reached both ends'
+              : 'Show me how to fix it',
+      onPrimary: !_showVerdict ? null : (succeeded ? _finish : () => _goTo(2)),
+      secondaryLabel: !_showVerdict
+          ? 'Stop Watching'
+          : succeeded
+              ? 'No, something looked wrong'
+              : null,
+      onSecondary: !_showVerdict
+          ? _stopWatching
+          : succeeded
+              ? () {
+                  // The device believed it found both stops, so if the user saw
+                  // otherwise the search almost certainly triggered early.
+                  _symptom ??= _Symptom.stoppedShort;
+                  _goTo(2);
+                }
+              : null,
       children: [
         if (waiting) ...[
           _CadenceIndicator(cadence: _cadence, showHint: _monitor.showPedalHint),
@@ -374,75 +427,76 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           ),
           const SizedBox(height: 16),
         ],
-        _Callout(
-          icon: Icons.visibility,
-          color: Theme.of(context).colorScheme.primary,
-          title: 'Watch the knob',
-          body: 'It rotates counter-clockwise into the minimum resistance stop, backs off '
-              'slightly, and goes in again to confirm the same spot twice. Then the same '
-              'two-pass search runs the other way to find the maximum stop.\n\n'
-              'You need to see it reach a stop at BOTH ends. If it misses an end, or you hear '
-              'grinding, the homing force needs adjusting — this screen will walk you through it.',
-        ),
-        const SizedBox(height: 16),
+        // Held until the verdict is actually on screen rather than dropped the
+        // moment the phase turns terminal — the last checkmark should be the
+        // only thing moving at that instant.
+        if (!_showVerdict) ...[
+          _Callout(
+            icon: Icons.visibility,
+            color: Theme.of(context).colorScheme.primary,
+            title: 'Watch the knob',
+            body: 'It rotates counter-clockwise into the minimum resistance stop, backs off '
+                'slightly, and goes in again to confirm the same spot twice. Then the same '
+                'two-pass search runs the other way to find the maximum stop.\n\n'
+                'You need to see it reach a stop at BOTH ends. If it misses an end, or you hear '
+                'grinding, the homing force needs adjusting — this screen will walk you through it.',
+          ),
+          const SizedBox(height: 16),
+        ],
         _PhaseChecklist(
           phase: phase,
           minFound: _monitor.minFound,
           maxFound: _monitor.maxFound,
         ),
+        // The verdict is the checklist's last step, so it grows in below the
+        // rows rather than replacing them or moving the user elsewhere.
+        AnimatedSize(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 300),
+            opacity: _showVerdict ? 1 : 0,
+            child: _showVerdict
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _Callout(
+                          icon: succeeded ? Icons.check_circle_outline : Icons.error_outline,
+                          color: succeeded ? Colors.green : Theme.of(context).colorScheme.error,
+                          title: succeeded ? 'The SmartSpin2k reported success' : _failureTitle(phase),
+                          body: succeeded
+                              ? 'It found both end stops. You saw the knob reach a stop at each end — did it?'
+                              : _failureBody(phase),
+                        ),
+                        if (succeeded && _monitor.sweepTimedOut) ...[
+                          const SizedBox(height: 16),
+                          _Callout(
+                            icon: Icons.warning_amber_outlined,
+                            color: Colors.amber.shade700,
+                            title: 'One sweep timed out',
+                            body: 'The device finished, but a resistance sweep ran out of time along '
+                                'the way. The calibrated range may be short. Check the Power Table '
+                                'before trusting it.',
+                          ),
+                        ],
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ),
         const SizedBox(height: 16),
         ?_buildDeviceLogSection(),
-        const SizedBox(height: 8),
-        Text(
-          'Homing can only be stopped at the bike, by moving the shifter. Leaving this screen '
-          'just stops watching.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
-    );
-  }
-
-  // ===== Page 3: what happened =====
-
-  Widget _buildResultPage() {
-    final phase = _monitor.phase;
-    final succeeded = phase == CalibrationPhase.complete;
-    final logSection = _buildDeviceLogSection();
-
-    return _CalibrationPage(
-      primaryLabel: succeeded ? 'Yes, it reached both ends' : 'Show me how to fix it',
-      onPrimary: succeeded ? _finish : () => _goTo(3),
-      secondaryLabel: succeeded ? 'No, something looked wrong' : null,
-      onSecondary: succeeded
-          ? () {
-              // The device believed it found both stops, so if the user saw
-              // otherwise the search almost certainly triggered early.
-              _symptom ??= _Symptom.stoppedShort;
-              _goTo(3);
-            }
-          : null,
-      children: [
-        _Callout(
-          icon: succeeded ? Icons.check_circle_outline : Icons.error_outline,
-          color: succeeded ? Colors.green : Theme.of(context).colorScheme.error,
-          title: succeeded ? 'The SmartSpin2k reported success' : _failureTitle(phase),
-          body: succeeded
-              ? 'It found both end stops. You saw the knob reach a stop at each end — did it?'
-              : _failureBody(phase),
-        ),
-        if (succeeded && _monitor.sweepTimedOut) ...[
-          const SizedBox(height: 16),
-          _Callout(
-            icon: Icons.warning_amber_outlined,
-            color: Colors.amber.shade700,
-            title: 'One sweep timed out',
-            body: 'The device finished, but a resistance sweep ran out of time along the way. '
-                'The calibrated range may be short. Check the Power Table before trusting it.',
+        if (!_showVerdict) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Homing can only be stopped at the bike, by moving the shifter. Leaving this screen '
+            'just stops watching.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
-        ],
-        if (logSection != null) ...[
-          const SizedBox(height: 16),
-          logSection,
         ],
       ],
     );
@@ -689,10 +743,13 @@ class _PhaseChecklist extends StatelessWidget {
           label: 'Finding the maximum end stop',
           state: stateFor(done: maxFound, isCurrent: minFound && !maxFound),
         ),
-        _ChecklistRow(
-          label: 'Calibration complete',
-          state: stateFor(done: complete, isCurrent: maxFound && !complete),
-        ),
+        // Only while the closing signal is genuinely outstanding — the
+        // completion grace window, which can run to ten seconds. There is no
+        // "done" state for it: the verdict takes its place. A row that only
+        // ever flipped to a checkmark and vanished is what made the old
+        // "Calibration complete" step worth removing.
+        if (maxFound && !phase.isTerminal)
+          const _ChecklistRow(label: 'Finishing up', state: _RowState.active),
       ],
     );
   }
