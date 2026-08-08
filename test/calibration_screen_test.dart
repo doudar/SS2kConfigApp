@@ -78,6 +78,23 @@ void main() {
     expect(find.byTooltip('Copy log'), findsOneWidget);
   });
 
+  testWidgets('the saved box reports the travel range the run found', (tester) async {
+    SharedPreferences.setMockInitialValues({'calibration_setup': 'physicalStops'});
+
+    await pumpScreen(tester);
+    await tester.tap(find.text('Start Calibration'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(seconds: 12));
+    await tester.pump(const Duration(milliseconds: 601));
+
+    // The demo device homes to 'Max Position found: 24800'.
+    expect(find.text('Calibration saved'), findsOneWidget);
+    expect(find.textContaining('Travel range of 0 → 24,800 steps found.'), findsOneWidget);
+    expect(find.textContaining('Did the knob reach both ends'), findsOneWidget,
+        reason: 'the range leads the callout, it does not replace the question');
+  });
+
   testWidgets('request acknowledgement keeps cadence visible until homing starts', (tester) async {
     SharedPreferences.setMockInitialValues({'calibration_setup': 'physicalStops'});
 

@@ -563,6 +563,193 @@ void main() {
     });
   });
 
+  // The range on the success screen has one rule: every number shown has to have
+  // come from *this* run. The device's stored hMin/hMax describe the previous
+  // calibration until this one overwrites them, so anything read before that
+  // moment is last week's answer wearing this run's clothes.
+  group('travel range', () {
+    test('a stepper run reads both ends off the log', () {
+      startRequest(hMaxBaseline: 27000);
+      feed(['Starting homing procedure...', 'Min position found and set to 0.', 'Max Position found: 24800']);
+
+      expect(tracker.foundMin, 0);
+      expect(tracker.foundMax, 24800);
+    });
+
+    test('nothing is known before the run produces it', () {
+      startRequest(hMaxBaseline: 27000);
+      tracker.onLogMessage('Starting homing procedure...');
+
+      expect(tracker.foundMin, isNull);
+      expect(tracker.foundMax, isNull);
+    });
+
+    // Stepper.cpp:355 and :366 report the resistance they settled on, not a
+    // stepper position — reading them as step counts would put a number like 4
+    // on screen next to the word "steps".
+    test('the resistance path reports resistance, which is not a position', () {
+      startRequest(hMaxBaseline: 27000);
+      feed([
+        'Starting homing procedure...',
+        'Starting FTMS Homing...',
+        'Found Min Resistance Position: 4',
+        'Found Max Resistance Position: 100',
+      ]);
+
+      expect(tracker.phase, CalibrationPhase.complete, reason: 'the run still finished');
+      expect(tracker.foundMin, isNull);
+      expect(tracker.foundMax, isNull);
+    });
+
+    test('a mangled max line still finishes the search but records nothing', () {
+      startRequest(hMaxBaseline: 27000);
+      feed(['Starting homing procedure...', 'Max Position found:']);
+
+      expect(tracker.maxFound, isTrue);
+      expect(tracker.foundMax, isNull);
+    });
+
+    test('a negative logged position is not a step count', () {
+      startRequest(hMaxBaseline: 27000);
+      feed(['Starting homing procedure...', 'Max Position found: -24800']);
+
+      expect(tracker.foundMax, isNull);
+    });
+
+    test('a mid-run notification that moved off the stored value is kept', () {
+      startRequest(hMaxBaseline: 27000);
+      tracker.onLogMessage('Starting homing procedure...');
+
+      tracker.onHomingValueChanged(isMax: true, value: 24800);
+
+      expect(tracker.foundMax, 24800);
+    });
+
+    test('a mid-run poll echoing the stored value is not', () {
+      startRequest(hMaxBaseline: 27000);
+      tracker.onLogMessage('Starting homing procedure...');
+
+      tracker.onHomingValueChanged(isMax: true, value: 27000);
+
+      expect(tracker.foundMax, isNull);
+    });
+
+    test('mid-run hMin is the previous run\'s, since the firmware writes it last', () {
+      startRequest(hMaxBaseline: 27000);
+      tracker.onLogMessage('Starting homing procedure...');
+
+      tracker.onHomingValueChanged(isMax: false, value: 0);
+
+      expect(tracker.foundMin, isNull);
+    });
+
+    test('the sentinel and the never-homed default are not positions', () {
+      startRequest(hMaxBaseline: 27000);
+      tracker.onLogMessage('Starting homing procedure...');
+
+      tracker.onHomingValueChanged(isMax: true, value: -2147483648);
+      tracker.onHomingValueChanged(isMax: true, value: 100000000);
+
+      expect(tracker.foundMax, isNull);
+    });
+
+    // The resistance path never logs a step position, so the read taken after
+    // the run is the only place its range can come from.
+    group('after the completion read is requested', () {
+      setUp(() {
+        startRequest(hMaxBaseline: 27000);
+        feed(['Starting homing procedure...', 'Starting FTMS Homing...', 'Found Max Resistance Position: 100']);
+        expect(tracker.phase, CalibrationPhase.complete);
+        tracker.markRefreshRequested();
+      });
+
+      test('both ends are taken from the answer', () {
+        tracker.onHomingValueChanged(isMax: false, value: 0);
+        tracker.onHomingValueChanged(isMax: true, value: 18400);
+
+        expect(tracker.foundMin, 0);
+        expect(tracker.foundMax, 18400);
+      });
+
+      // Nothing is left to write these characteristics now, so a value matching
+      // the old one is a second calibration landing in the same place — not the
+      // poll echo the mid-run rule has to guard against.
+      test('a value equal to the previous range is this run\'s answer', () {
+        tracker.onHomingValueChanged(isMax: true, value: 27000);
+
+        expect(tracker.foundMax, 27000);
+      });
+
+      test('the sentinel is still refused, and leaves the read outstanding', () {
+        tracker.onHomingValueChanged(isMax: true, value: -2147483648);
+        expect(tracker.foundMax, isNull);
+
+        tracker.onHomingValueChanged(isMax: true, value: 27000);
+        expect(tracker.foundMax, 27000, reason: 'the real answer can still arrive later');
+      });
+    });
+
+    test('a new run starts with no range and no outstanding read', () {
+      startRequest(hMaxBaseline: 27000);
+      feed(['Starting homing procedure...', 'Min position found and set to 0.', 'Max Position found: 24800']);
+      tracker.markRefreshRequested();
+
+      startRequest(hMaxBaseline: 24800);
+
+      expect(tracker.foundMin, isNull);
+      expect(tracker.foundMax, isNull);
+
+      // If the pending read had survived, this echo of the stored value would
+      // be taken for a find before the new run has homed anything.
+      tracker.onLogMessage('Starting homing procedure...');
+      tracker.onHomingValueChanged(isMax: true, value: 24800);
+      expect(tracker.foundMax, isNull);
+    });
+  });
+
+  group('success copy', () {
+    test('leads with the range and keeps the question underneath', () {
+      final body = buildCalibrationSuccessBody(
+        needsVisualConfirmation: true,
+        homingMin: 0,
+        homingMax: 24800,
+      );
+
+      expect(body, startsWith('Travel range of 0 → 24,800 steps found.'));
+      expect(body, endsWith('Did the knob reach both ends without continuing to push?'));
+    });
+
+    test('the resistance path keeps its own explanation', () {
+      final body = buildCalibrationSuccessBody(
+        needsVisualConfirmation: false,
+        homingMin: 0,
+        homingMax: 18400,
+      );
+
+      expect(body, contains('0 → 18,400 steps'));
+      expect(body, endsWith('SmartSpin2k learned the resistance range reported by your bike.'));
+    });
+
+    // Half a range invites the reader to guess the other end.
+    test('an unproven end drops the range rather than half-stating it', () {
+      for (final range in [(null, null), (0, null), (null, 24800)]) {
+        final body = buildCalibrationSuccessBody(
+          needsVisualConfirmation: true,
+          homingMin: range.$1,
+          homingMax: range.$2,
+        );
+
+        expect(body, 'Did the knob reach both ends without continuing to push?');
+      }
+    });
+
+    test('grouping holds either side of a thousands boundary', () {
+      expect(formatHomingRange(0, 999), '0 → 999 steps');
+      expect(formatHomingRange(0, 1000), '0 → 1,000 steps');
+      expect(formatHomingRange(1200, 1234567), '1,200 → 1,234,567 steps');
+    });
+  });
+
   group('restart', () {
     test('start clears the previous run', () {
       startRequest(hMaxBaseline: 27000);
@@ -609,6 +796,8 @@ void main() {
       String? firmwareVersion = '24.1.3',
       String? bikeType = 'Most spin bikes',
       String? homingForce = '55',
+      int? homingMin,
+      int? homingMax,
     }) =>
         buildCalibrationReport(
           transcript: transcript ?? const [],
@@ -622,6 +811,8 @@ void main() {
           firmwareVersion: firmwareVersion,
           bikeType: bikeType,
           homingForce: homingForce,
+          homingMin: homingMin,
+          homingMax: homingMax,
         );
 
     test('a completed run carries the header and every line in order', () {
@@ -649,6 +840,13 @@ void main() {
         lessThan(text.indexOf('Homing procedure complete')),
         reason: 'lines keep the order the device sent them',
       );
+    });
+
+    test('the travel range is carried, and named as unknown when it is', () {
+      expect(report(homingMin: 0, homingMax: 24800), contains('range: 0 -> 24800'));
+      expect(report(), contains('range: unknown'));
+      expect(report(homingMax: 24800), contains('range: unknown'),
+          reason: 'half a range is no more reportable than none');
     });
 
     test('a run where the device never spoke is still reportable', () {

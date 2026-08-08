@@ -84,11 +84,28 @@ class CalibrationPhaseTracker {
   /// an echo of the old value, not a new end stop. See [onHomingValueChanged].
   int? _hMaxBaseline;
 
+  /// The travel this run actually found, in stepper steps. Only ever set from
+  /// evidence that belongs to *this* run — see [_captureCharacteristicValue].
+  int? _foundMin;
+  int? _foundMax;
+
+  /// An explicit read of the homing characteristics is outstanding. See
+  /// [markRefreshRequested].
+  bool _refreshPendingMin = false;
+  bool _refreshPendingMax = false;
+
   CalibrationPhase get phase => _phase;
 
   bool get minFound => _minFound;
   bool get maxFound => _maxFound;
   bool get homingStarted => _homingStarted;
+
+  /// The ends of the travel this run found, or null while either is unproven.
+  /// Deliberately never filled in from the device's stored settings on their
+  /// own: until the run has written them, those still describe the *previous*
+  /// calibration and would report a range this run never produced.
+  int? get foundMin => _foundMin;
+  int? get foundMax => _foundMax;
 
   /// True once the firmware reports it is homing to the resistance range the
   /// bike itself reports rather than to physical end stops. Homing force plays
@@ -115,6 +132,10 @@ class CalibrationPhaseTracker {
     _spinDownRequestedCount = 0;
     _homingStarted = false;
     _hMaxBaseline = hMaxBaseline;
+    _foundMin = null;
+    _foundMax = null;
+    _refreshPendingMin = false;
+    _refreshPendingMax = false;
     return true;
   }
 
@@ -122,6 +143,16 @@ class CalibrationPhaseTracker {
   /// Call immediately before writing the FTMS calibration command.
   void markRequestSent() {
     if (_phase == CalibrationPhase.waitingForCadence) _requestSent = true;
+  }
+
+  /// Marks an explicit read of both homing characteristics as outstanding, to
+  /// be called immediately before requesting them. The run is over by then and
+  /// the device has nothing left to write, so the next plausible value for each
+  /// is this run's result — including one that happens to match what the
+  /// previous calibration left behind, which the mid-run rules have to reject.
+  void markRefreshRequested() {
+    _refreshPendingMin = true;
+    _refreshPendingMax = true;
   }
 
   /// Feeds one log line in. Returns true when the observable state changed, so
@@ -203,6 +234,10 @@ class CalibrationPhaseTracker {
 
     // Stepper.cpp:485 and :355.
     if (m.contains('min position found') || m.contains('found min resistance position')) {
+      // Only the end-stop line reports a stepper position. The resistance
+      // path's line carries the resistance it settled on, which is not a step
+      // count — but it sets `minStep` to a flat zero all the same (:360).
+      if (m.contains('min position found')) _foundMin = 0;
       final changed = !_minFound || _phase != CalibrationPhase.searchingMax;
       _minFound = true;
       _phase = CalibrationPhase.searchingMax;
@@ -232,6 +267,7 @@ class CalibrationPhaseTracker {
     // carries min and the phase too — "Min position found and set to 0." is one
     // of the lines the firmware drops most often.
     if (m.contains('max position found')) {
+      _captureLoggedMax(m);
       final changed = !_maxFound || !_minFound || _phase != CalibrationPhase.searchingMax;
       _minFound = true;
       _maxFound = true;
@@ -271,10 +307,17 @@ class CalibrationPhaseTracker {
   ///   the start of every run (Power_Table.cpp:371) and notifies on that reset
   ///   just like a real completion. A step count is always positive, so
   ///   anything at or below zero is that sentinel rather than a find.
+  ///
+  /// Returns whether the *run* moved on, which is a narrower question than
+  /// whether the value was worth keeping — [_captureCharacteristicValue] answers
+  /// that one, and a recorded position on its own is not progress.
   bool onHomingValueChanged({required bool isMax, required int? value}) {
-    if (!isMax) return false;
-    if (value == null || value <= 0) return false;
     if (!_requestSent) return false;
+
+    _captureCharacteristicValue(isMax: isMax, value: value);
+
+    if (!isMax) return false;
+    if (!_isPlausibleHomingValue(value, allowZero: false)) return false;
 
     // Still waiting for the rider: nothing has homed yet, so this is the old
     // value coming back. Remember it so the real find can be told apart.
@@ -361,6 +404,53 @@ class CalibrationPhaseTracker {
     return true;
   }
 
+  /// `Max Position found: 24800` (Stepper.cpp:498), on the already-lowercased
+  /// message. Unsigned: a negative step count is not a position, and the
+  /// characteristic would refuse to carry one either.
+  static final RegExp _loggedMaxPosition = RegExp(r'max position found:\s*(\d+)');
+
+  /// Records the position out of the max end-stop line, leaving the phase alone
+  /// — a line too mangled to parse still proves the search finished.
+  void _captureLoggedMax(String lowercased) {
+    final match = _loggedMaxPosition.firstMatch(lowercased);
+    if (match == null) return;
+    final value = int.tryParse(match.group(1)!);
+    if (!_isPlausibleHomingValue(value, allowZero: false)) return;
+    _foundMax = value;
+  }
+
+  /// Records a position out of a characteristic notification.
+  ///
+  /// Separate from [onHomingValueChanged]'s verdict because the two questions
+  /// diverge at both ends of the run: a value can be worth recording after the
+  /// phase has gone terminal, and one that proves nothing about progress can
+  /// still be the number to show.
+  void _captureCharacteristicValue({required bool isMax, required int? value}) {
+    if (!_isPlausibleHomingValue(value, allowZero: !isMax)) return;
+
+    // The answer to the read taken after the run finished. Nothing else is
+    // going to write these characteristics now, so this is this run's result
+    // even when it matches what the last calibration left behind.
+    if (isMax ? _refreshPendingMax : _refreshPendingMin) {
+      if (isMax) {
+        _refreshPendingMax = false;
+        _foundMax = value;
+      } else {
+        _refreshPendingMin = false;
+        _foundMin = value;
+      }
+      return;
+    }
+
+    // Mid-run only hMax is worth reading. The firmware writes hMin at the very
+    // end of the run (Stepper.cpp:511 and :364), so anything arriving before
+    // then describes the previous calibration; and an hMax still equal to the
+    // stored one cannot be told apart from a settings poll echoing it back.
+    if (!isMax || !_homingStarted) return;
+    if (value == _hMaxBaseline) return;
+    _foundMax = value;
+  }
+
   bool _advanceTo(CalibrationPhase next) {
     if (_phase == next) return false;
     _phase = next;
@@ -378,6 +468,46 @@ class CalibrationPhaseTracker {
     _phase = failure;
     return true;
   }
+}
+
+/// Whether a homing position could have come from a real calibration.
+///
+/// Both characteristics are declared `0..100000000` (`constants.dart`), and
+/// hMax *defaults* to that ceiling on a device that has never homed, so the
+/// ceiling itself is not a position. Rejecting it rather than picking a lower
+/// bound of our own means no genuinely long travel is ever thrown away.
+/// Negatives cover the `INT32_MIN` "not homed" sentinel the firmware notifies
+/// at the start of every run.
+bool _isPlausibleHomingValue(int? value, {required bool allowZero}) =>
+    value != null && value < 100000000 && (allowZero ? value >= 0 : value > 0);
+
+/// `0 → 24,800 steps`.
+///
+/// Grouped by hand rather than through `intl` so the string does not depend on
+/// an initialised locale, and reads the same wherever it is pasted.
+String formatHomingRange(int min, int max) => '${_grouped(min)} → ${_grouped(max)} steps';
+
+String _grouped(int value) =>
+    value.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (match) => '${match[1]},');
+
+/// The body of the "Calibration saved" callout.
+///
+/// The travel range is only added when both ends are known: a half-stated range
+/// invites the reader to fill in the other end, and the sentence beneath it
+/// stands perfectly well on its own. [needsVisualConfirmation] marks a run homed
+/// to physical end stops, where only the user can say whether the knob behaved —
+/// the buttons under this callout are that question's answers.
+String buildCalibrationSuccessBody({
+  required bool needsVisualConfirmation,
+  int? homingMin,
+  int? homingMax,
+}) {
+  final explanation = needsVisualConfirmation
+      ? 'Did the knob reach both ends without continuing to push?'
+      : 'SmartSpin2k learned the resistance range reported by your bike.';
+
+  if (homingMin == null || homingMax == null) return explanation;
+  return 'Travel range of ${formatHomingRange(homingMin, homingMax)} found.\n\n$explanation';
 }
 
 /// `mm:ss.s` since the run began. Elapsed only — an absolute date says nothing
@@ -407,13 +537,17 @@ String buildCalibrationReport({
   String? firmwareVersion,
   String? bikeType,
   String? homingForce,
+  int? homingMin,
+  int? homingMax,
 }) {
   String orUnknown(String? value) => (value == null || value.isEmpty) ? 'unknown' : value;
+
+  final range = (homingMin == null || homingMax == null) ? 'unknown' : '$homingMin -> $homingMax';
 
   final buffer = StringBuffer()
     ..writeln('SmartSpin2k calibration report')
     ..writeln('firmware: ${orUnknown(firmwareVersion)}   bike: ${orUnknown(bikeType)}')
-    ..writeln('phase: ${phase.name}  min: $minFound  max: $maxFound')
+    ..writeln('phase: ${phase.name}  min: $minFound  max: $maxFound  range: $range')
     ..writeln('ftmsPath: $usedFtmsPath  sweepTimedOut: $sweepTimedOut  logSilent: $logStreamSilent')
     ..writeln('homingForce: ${orUnknown(homingForce)}');
 
@@ -506,6 +640,7 @@ class CalibrationMonitor extends ChangeNotifier {
   bool _showPedalHint = false;
   bool _logStreamSilent = false;
   bool _disposed = false;
+  bool _refreshSent = false;
 
   CalibrationPhase get phase => _tracker.phase;
   bool get minFound => _tracker.minFound;
@@ -513,6 +648,11 @@ class CalibrationMonitor extends ChangeNotifier {
   bool get usedFtmsPath => _tracker.usedFtmsPath;
   bool get sweepTimedOut => _tracker.sweepTimedOut;
   bool get showPedalHint => _showPedalHint;
+
+  /// The travel this run found, in stepper steps, or null while either end is
+  /// still unproven. See [CalibrationPhaseTracker.foundMin].
+  int? get homingMin => _tracker.foundMin;
+  int? get homingMax => _tracker.foundMax;
 
   /// True once the device has gone [logSilenceTimeout] without saying anything
   /// at all. Progress here is read from the device log, so silence means this
@@ -542,6 +682,7 @@ class CalibrationMonitor extends ChangeNotifier {
     _runStartedAt = DateTime.now();
     _showPedalHint = false;
     _logStreamSilent = false;
+    _refreshSent = false;
     _tracker.start(hMaxBaseline: int.tryParse(bleData.getVnameValue(BLE_hMaxVname)));
     notifyListeners();
 
@@ -588,12 +729,15 @@ class CalibrationMonitor extends ChangeNotifier {
 
     _logSubscription = bleData.logStream.listen(_handleLogMessage);
     _characteristicSubscription = bleData.characteristicChanges.listen((event) {
-      if (event.vName != BLE_hMaxVname) return;
-      final value = int.tryParse(event.value);
-      if (_tracker.onHomingValueChanged(isMax: true, value: value)) {
-        _afterProgress();
-        _safeNotify();
-      }
+      final isMax = event.vName == BLE_hMaxVname;
+      if (!isMax && event.vName != BLE_hMinVname) return;
+
+      // A recorded position is not progress, so the tracker will not report it.
+      // It is still on screen, which is reason enough to repaint.
+      final before = (_tracker.foundMin, _tracker.foundMax);
+      final progressed = _tracker.onHomingValueChanged(isMax: isMax, value: int.tryParse(event.value));
+      if (progressed) _afterProgress();
+      if (progressed || (_tracker.foundMin, _tracker.foundMax) != before) _safeNotify();
     });
     _machineStatusSubscription = bleData.machineStatusStream.listen((value) {
       if (value.length < 2) return;
@@ -653,9 +797,28 @@ class CalibrationMonitor extends ChangeNotifier {
     }
     if (_tracker.phase.isTerminal) {
       _cancelTimers();
+      _refreshHomingValues();
     } else if (_tracker.maxFound) {
       _startCompletionGrace();
     }
+  }
+
+  /// Reads both homing characteristics back once the run has succeeded.
+  ///
+  /// The resistance-reporting path never logs a step position — its "Found Max
+  /// Resistance Position" line carries the resistance it settled on — so this
+  /// read is the only way to learn the travel that path produced. The pending
+  /// marks it leaves stay set until an answer arrives, which lets the routine
+  /// settings poll stand in if this explicit read is lost.
+  void _refreshHomingValues() {
+    if (_refreshSent || _tracker.phase != CalibrationPhase.complete) return;
+    _refreshSent = true;
+    _tracker.markRefreshRequested();
+
+    unawaited(() async {
+      await bleData.requestSetting(device, BLE_hMinVname);
+      await bleData.requestSetting(device, BLE_hMaxVname);
+    }());
   }
 
   /// Both end stops are known but no verdict has landed. See [completionGrace].
@@ -665,6 +828,8 @@ class CalibrationMonitor extends ChangeNotifier {
       _completionTimer = null;
       if (!_tracker.markComplete()) return;
       _cancelTimers();
+      // This route into `complete` bypasses _afterProgress entirely.
+      _refreshHomingValues();
       _safeNotify();
     });
   }

@@ -199,6 +199,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         firmwareVersion: bleData.firmwareVersion.value,
         bikeType: _bikeType == null ? null : _bikeTypeLabel(_bikeType!),
         homingForce: bleData.getVnameValue(homingSensitivityVname),
+        homingMin: _monitor.homingMin,
+        homingMax: _monitor.homingMax,
       ),
     ));
     if (!mounted) return;
@@ -430,9 +432,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                           color: succeeded ? Colors.green : Theme.of(context).colorScheme.error,
                           title: succeeded ? 'Calibration saved' : _failureTitle(phase),
                           body: succeeded
-                              ? needsVisualConfirmation
-                                  ? 'Did the knob reach both ends without continuing to push?'
-                                  : 'SmartSpin2k learned the resistance range reported by your bike.'
+                              ? buildCalibrationSuccessBody(
+                                  needsVisualConfirmation: needsVisualConfirmation,
+                                  homingMin: _monitor.homingMin,
+                                  homingMax: _monitor.homingMax,
+                                )
                               : _failureBody(phase),
                         ),
                         if (succeeded && _monitor.sweepTimedOut) ...[
