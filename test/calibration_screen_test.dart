@@ -78,7 +78,7 @@ void main() {
     expect(find.byTooltip('Copy log'), findsOneWidget);
   });
 
-  testWidgets('active calibration has no Stop Watching action', (tester) async {
+  testWidgets('request acknowledgement keeps cadence visible until homing starts', (tester) async {
     SharedPreferences.setMockInitialValues({'calibration_setup': 'physicalStops'});
 
     await pumpScreen(tester);
@@ -88,6 +88,13 @@ void main() {
 
     expect(find.text('Stop Watching'), findsNothing);
     expect(find.text('Waiting for you to pedal'), findsOneWidget);
+    expect(find.text('CADENCE'), findsOneWidget,
+        reason: 'the simulated 0x01 acknowledgement has already arrived');
     expect(find.textContaining('To cancel, press either shifter button'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1300));
+
+    expect(find.text('CADENCE'), findsNothing,
+        reason: 'the correlated homing-start log now confirms progress');
   });
 }

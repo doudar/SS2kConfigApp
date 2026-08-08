@@ -61,8 +61,8 @@ class FTMSStatusOpCodes {
 /// carries the information is where in `Stepper.cpp` `goHome()` each byte is
 /// emitted, so they are named for that position rather than for the spec label.
 class FTMSSpinDownStatus {
-  /// Spec name `SpinDownRequested`. Stepper.cpp:381, at the top of `goHome()`.
-  static const int HOMING_STARTED = 0x01;
+  /// Emitted both when the command is accepted and at the top of `goHome()`.
+  static const int SPIN_DOWN_REQUESTED = 0x01;
 
   /// Spec name `Success`. Stepper.cpp:506, and :392 on the resistance path.
   static const int SUCCESS = 0x02;

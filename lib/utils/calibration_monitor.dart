@@ -75,6 +75,10 @@ class CalibrationPhaseTracker {
   bool _maxFound = false;
   bool _usedFtmsPath = false;
   bool _sweepTimedOut = false;
+  bool _requestSent = false;
+  bool _requestLogSeen = false;
+  int _spinDownRequestedCount = 0;
+  bool _homingStarted = false;
 
   /// The hMax the device already had before this run. Anything equal to it is
   /// an echo of the old value, not a new end stop. See [onHomingValueChanged].
@@ -84,6 +88,7 @@ class CalibrationPhaseTracker {
 
   bool get minFound => _minFound;
   bool get maxFound => _maxFound;
+  bool get homingStarted => _homingStarted;
 
   /// True once the firmware reports it is homing to the resistance range the
   /// bike itself reports rather than to physical end stops. Homing force plays
@@ -105,8 +110,18 @@ class CalibrationPhaseTracker {
     _maxFound = false;
     _usedFtmsPath = false;
     _sweepTimedOut = false;
+    _requestSent = false;
+    _requestLogSeen = false;
+    _spinDownRequestedCount = 0;
+    _homingStarted = false;
     _hMaxBaseline = hMaxBaseline;
     return true;
+  }
+
+  /// Marks the boundary after which device traffic can belong to this run.
+  /// Call immediately before writing the FTMS calibration command.
+  void markRequestSent() {
+    if (_phase == CalibrationPhase.waitingForCadence) _requestSent = true;
   }
 
   /// Feeds one log line in. Returns true when the observable state changed, so
@@ -117,6 +132,28 @@ class CalibrationPhaseTracker {
     if (_phase.isTerminal || _phase == CalibrationPhase.idle) return false;
 
     final m = message.toLowerCase();
+
+    // The firmware logs this from the request handler. A later start line can
+    // only be correlated to this run after this marker has arrived.
+    if (m.contains('spin down requested')) {
+      if (!_requestSent) return false;
+      _requestLogSeen = true;
+      return false;
+    }
+
+    if (!_requestSent) return false;
+
+    // Stepper.cpp:379 is also emitted by ordinary startup homing. Requiring the
+    // current request's handler marker prevents that unrelated run from
+    // advancing this screen.
+    if (m.contains('starting homing procedure')) {
+      if (!_requestLogSeen) return false;
+      return _confirmHomingStarted();
+    }
+
+    // Success, failure, end-stop, and fallback evidence are meaningful only
+    // after this run has actually begun.
+    if (!_homingStarted) return false;
 
     // Failures first — they are the most specific, and several of them share
     // wording with the progress lines.
@@ -157,12 +194,6 @@ class CalibrationPhaseTracker {
       _usedFtmsPath = true;
       _phase = CalibrationPhase.searchingMin;
       return true;
-    }
-
-    // Stepper.cpp:379 — logged for both homing paths, right after the cadence
-    // gate opens.
-    if (m.contains('starting homing procedure')) {
-      return _advanceTo(CalibrationPhase.searchingMin);
     }
 
     // Stepper.cpp:247 ("Homing backward (min)") and :351.
@@ -243,6 +274,7 @@ class CalibrationPhaseTracker {
   bool onHomingValueChanged({required bool isMax, required int? value}) {
     if (!isMax) return false;
     if (value == null || value <= 0) return false;
+    if (!_requestSent) return false;
 
     // Still waiting for the rider: nothing has homed yet, so this is the old
     // value coming back. Remember it so the real find can be told apart.
@@ -280,27 +312,34 @@ class CalibrationPhaseTracker {
     // It also covers the one stray-signal case — `SpinDown_Error` at
     // Stepper.cpp:399/478/493 is not gated on `bothDirections`, so a failing
     // startup home could emit one while this screen happens to be open.
-    if (_phase.isTerminal || _phase == CalibrationPhase.idle) return false;
+    if (_phase.isTerminal || _phase == CalibrationPhase.idle || !_requestSent) {
+      return false;
+    }
 
     switch (param) {
-      case FTMSSpinDownStatus.HOMING_STARTED:
-        return _advanceTo(CalibrationPhase.searchingMin);
+      case FTMSSpinDownStatus.SPIN_DOWN_REQUESTED:
+        _spinDownRequestedCount++;
+        if (_spinDownRequestedCount < 2) return false;
+        return _confirmHomingStarted();
 
       case FTMSSpinDownStatus.MAX_SEARCH_STARTED:
         // Repeated about once a second for the whole max search, so this has
         // to report "nothing changed" after the first one.
-        final changed = !_minFound || _phase != CalibrationPhase.searchingMax;
+        final changed = !_homingStarted || !_minFound || _phase != CalibrationPhase.searchingMax;
+        _homingStarted = true;
         _minFound = true;
         _phase = CalibrationPhase.searchingMax;
         return changed;
 
       case FTMSSpinDownStatus.SUCCESS:
+        if (!_homingStarted) return false;
         _minFound = true;
         _maxFound = true;
         _phase = CalibrationPhase.complete;
         return true;
 
       case FTMSSpinDownStatus.ERROR:
+        if (!_homingStarted) return false;
         // No detail in the status byte. A log line that got through has a
         // specific verdict, and _fail leaves a terminal phase alone, so this
         // only ever fills in for a failure the log did not describe.
@@ -326,6 +365,12 @@ class CalibrationPhaseTracker {
     if (_phase == next) return false;
     _phase = next;
     return true;
+  }
+
+  bool _confirmHomingStarted() {
+    if (_homingStarted) return false;
+    _homingStarted = true;
+    return _advanceTo(CalibrationPhase.searchingMin);
   }
 
   bool _fail(CalibrationPhase failure) {
@@ -517,6 +562,7 @@ class CalibrationMonitor extends ChangeNotifier {
     });
 
     if (bleData.isSimulated) {
+      _tracker.markRequestSent();
       _runDemoScript();
       return;
     }
@@ -529,6 +575,7 @@ class CalibrationMonitor extends ChangeNotifier {
     logCharacteristic["value"] = "1";
     await bleData.writeToSS2k(device, logCharacteristic, s: "1");
 
+    _tracker.markRequestSent();
     await bleData.writeFtmsControlPoint(
       (characteristic) => FTMSControlPoint.spinDownControl(characteristic, true),
     );
@@ -582,7 +629,9 @@ class CalibrationMonitor extends ChangeNotifier {
     // phase along. Deliberately not "any line at all": the device streams
     // BLE_Client scan output the whole time, and letting that hold the timer
     // open means a run that died is never timed out.
-    if (changed || _homingSubsystem.hasMatch(message)) _restartStallTimer();
+    if (changed || (_tracker.homingStarted && _homingSubsystem.hasMatch(message))) {
+      _restartStallTimer();
+    }
 
     _afterProgress();
 
@@ -632,6 +681,7 @@ class CalibrationMonitor extends ChangeNotifier {
   /// wording, so the flow can be exercised without hardware.
   void _runDemoScript() {
     const script = <({int ms, String message})>[
+      (ms: 500, message: '(FTMS_SERVER): Spin Down Requested'),
       (ms: 1500, message: 'Starting homing procedure...'),
       (ms: 2500, message: 'Homing backward (min). Stable Threshold: 120, Sensitivity: 55'),
       (ms: 4000, message: 'Homing... Current SG: 118, Baseline: 120, Target: < 65'),
@@ -642,6 +692,13 @@ class CalibrationMonitor extends ChangeNotifier {
       (ms: 10000, message: 'Max Position found: 24800'),
       (ms: 11500, message: 'Homing procedure complete.'),
     ];
+
+    // Real firmware acknowledges the command before cadence opens the gate.
+    _demoTimers.add(Timer(const Duration(milliseconds: 250), () {
+      if (_disposed) return;
+      _tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      _safeNotify();
+    }));
 
     for (final step in script) {
       _demoTimers.add(Timer(Duration(milliseconds: step.ms), () {

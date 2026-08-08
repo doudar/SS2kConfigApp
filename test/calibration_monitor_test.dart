@@ -19,11 +19,17 @@ void main() {
     }
   }
 
+  void startRequest({int? hMaxBaseline}) {
+    tracker.start(hMaxBaseline: hMaxBaseline);
+    tracker.markRequestSent();
+    tracker.onLogMessage('(FTMS_SERVER): Spin Down Requested');
+  }
+
   group('happy path — stepper homing', () {
     test('walks min then max then complete', () {
       expect(tracker.phase, CalibrationPhase.idle);
 
-      tracker.start();
+      startRequest();
       expect(tracker.phase, CalibrationPhase.waitingForCadence);
 
       tracker.onLogMessage('Starting homing procedure...');
@@ -50,7 +56,7 @@ void main() {
     // drops most readily, so the lines that can only follow it have to carry
     // it. See the spin-down status group for the same problem solved properly.
     test('the max search implies the min end stop was found', () {
-      tracker.start();
+      startRequest();
       tracker.onLogMessage('Starting homing procedure...');
 
       tracker.onLogMessage('Homing forward (max). Stable Threshold: 122, Sensitivity: 55');
@@ -60,7 +66,7 @@ void main() {
     });
 
     test('the max position line implies the min end stop was found', () {
-      tracker.start();
+      startRequest();
       tracker.onLogMessage('Starting homing procedure...');
 
       tracker.onLogMessage('Max Position found: 24800');
@@ -70,7 +76,7 @@ void main() {
     });
 
     test('per-second progress chatter does not change state', () {
-      tracker.start();
+      startRequest();
       tracker.onLogMessage('Starting homing procedure...');
 
       final changed = tracker.onLogMessage(
@@ -82,7 +88,7 @@ void main() {
     });
 
     test('ignores anything logged after the verdict', () {
-      tracker.start();
+      startRequest();
       feed(['Starting homing procedure...', 'Min position found and set to 0.', 'Homing procedure complete.']);
 
       tracker.onLogMessage('Homing backward (min). Stable Threshold: 120, Sensitivity: 55');
@@ -98,7 +104,7 @@ void main() {
 
   group('happy path — resistance-reporting bikes', () {
     test('flags the FTMS path and completes on the max resistance line', () {
-      tracker.start();
+      startRequest();
 
       tracker.onLogMessage('Starting homing procedure...');
       tracker.onLogMessage('Starting FTMS Homing...');
@@ -120,7 +126,8 @@ void main() {
     });
 
     test('a timed-out sweep is a warning, not a verdict', () {
-      tracker.start();
+      startRequest();
+      tracker.onLogMessage('Starting homing procedure...');
       tracker.onLogMessage('Starting FTMS Homing...');
 
       tracker.onLogMessage('FTMS Homing timed out!');
@@ -133,7 +140,7 @@ void main() {
 
   group('failures', () {
     test('a tap timeout ends the run', () {
-      tracker.start();
+      startRequest();
       tracker.onLogMessage('Starting homing procedure...');
 
       tracker.onLogMessage('Homing timed out!');
@@ -142,7 +149,7 @@ void main() {
     });
 
     test('a failed tap search ends the run', () {
-      tracker.start();
+      startRequest();
       tracker.onLogMessage('Starting homing procedure...');
 
       tracker.onLogMessage('Min end stop search failed on tap 1/7.');
@@ -151,7 +158,7 @@ void main() {
     });
 
     test('taps that never agree report as unstable', () {
-      tracker.start();
+      startRequest();
       feed([
         'Starting homing procedure...',
         'Min end stop tap 1/7 found -4200',
@@ -164,7 +171,7 @@ void main() {
     });
 
     test('moving the shifter reports as an abort, not a timeout', () {
-      tracker.start();
+      startRequest();
       tracker.onLogMessage('Starting homing procedure...');
 
       tracker.onLogMessage('Homing aborted by user.');
@@ -173,7 +180,8 @@ void main() {
     });
 
     test('the FTMS abort wording maps to the same abort', () {
-      tracker.start();
+      startRequest();
+      tracker.onLogMessage('Starting homing procedure...');
       tracker.onLogMessage('Starting FTMS Homing...');
 
       tracker.onLogMessage('FTMS Homing aborted by user.');
@@ -182,7 +190,7 @@ void main() {
     });
 
     test('a board that cannot home says so', () {
-      tracker.start();
+      startRequest();
       tracker.onLogMessage('Starting homing procedure...');
 
       tracker.onLogMessage('Homing not supported or stepper not initialized.');
@@ -191,7 +199,7 @@ void main() {
     });
 
     test('the first failure wins', () {
-      tracker.start();
+      startRequest();
       tracker.onLogMessage('Starting homing procedure...');
       tracker.onLogMessage('Homing aborted by user.');
 
@@ -202,7 +210,7 @@ void main() {
     });
 
     test('markTimedOut only applies while a run is live', () {
-      tracker.start();
+      startRequest();
       tracker.onLogMessage('Starting homing procedure...');
       expect(tracker.markTimedOut(), isTrue);
       expect(tracker.phase, CalibrationPhase.failedTimeout);
@@ -219,8 +227,12 @@ void main() {
   group('spin-down status', () {
     test('drives a whole run with no log lines at all', () {
       tracker.start(hMaxBaseline: 27000);
+      tracker.markRequestSent();
 
-      expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.HOMING_STARTED), isTrue);
+      expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED), isFalse);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+
+      expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED), isTrue);
       expect(tracker.phase, CalibrationPhase.searchingMin);
       expect(tracker.minFound, isFalse);
 
@@ -235,10 +247,73 @@ void main() {
       expect(tracker.maxFound, isTrue);
     });
 
+    test('the first requested status is only an acknowledgement', () {
+      startRequest();
+
+      expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED), isFalse);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+      expect(tracker.homingStarted, isFalse);
+    });
+
+    test('request log and first status may arrive in either order', () {
+      tracker.start();
+      tracker.markRequestSent();
+
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      tracker.onLogMessage('(FTMS_SERVER): Spin Down Requested');
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+
+      tracker.start();
+      tracker.markRequestSent();
+      tracker.onLogMessage('(FTMS_SERVER): Spin Down Requested');
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+    });
+
+    test('a correlated start log confirms homing', () {
+      startRequest();
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+
+      expect(tracker.onLogMessage('Starting homing procedure...'), isTrue);
+      expect(tracker.phase, CalibrationPhase.searchingMin);
+      expect(tracker.homingStarted, isTrue);
+    });
+
+    test('pre-request and overlapping startup homing traffic is ignored', () {
+      tracker.start();
+
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      tracker.onLogMessage('(FTMS_SERVER): Spin Down Requested');
+      tracker.onLogMessage('Starting homing procedure...');
+      tracker.onLogMessage('Max Position found: 30266');
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+
+      tracker.markRequestSent();
+      tracker.onLogMessage('Starting homing procedure...');
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence,
+          reason: 'startup homing did not have this request marker');
+
+      tracker.onLogMessage('(FTMS_SERVER): Spin Down Requested');
+      tracker.onLogMessage('Starting homing procedure...');
+      expect(tracker.phase, CalibrationPhase.searchingMin);
+    });
+
+    test('max-search status catches up when the acknowledgement was dropped', () {
+      tracker.start();
+      tracker.markRequestSent();
+
+      expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.MAX_SEARCH_STARTED), isTrue);
+      expect(tracker.homingStarted, isTrue);
+      expect(tracker.minFound, isTrue);
+      expect(tracker.phase, CalibrationPhase.searchingMax);
+    });
+
     // Stepper.cpp:272 re-sends it about once a second for the whole max search.
     test('the repeats through the max search report no further change', () {
-      tracker.start();
-      tracker.onSpinDownStatus(FTMSSpinDownStatus.HOMING_STARTED);
+      startRequest();
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
       expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.MAX_SEARCH_STARTED), isTrue);
 
       for (var i = 0; i < 12; i++) {
@@ -249,15 +324,44 @@ void main() {
     });
 
     test('an error status ends a run the log said nothing about', () {
-      tracker.start();
-      tracker.onSpinDownStatus(FTMSSpinDownStatus.HOMING_STARTED);
+      startRequest();
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
 
       expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.ERROR), isTrue);
       expect(tracker.phase, CalibrationPhase.failedTimeout);
     });
 
+    test('success and error are ignored until homing is confirmed', () {
+      startRequest();
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+
+      expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.SUCCESS), isFalse);
+      expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.ERROR), isFalse);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.SUCCESS), isTrue);
+      expect(tracker.phase, CalibrationPhase.complete);
+    });
+
+    test('completion and failure logs are ignored before confirmed start', () {
+      startRequest();
+
+      feed([
+        'Max Position found: 30266',
+        'Homing procedure complete.',
+        'Homing aborted by user.',
+        'Homing timed out!',
+      ]);
+
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+      expect(tracker.minFound, isFalse);
+      expect(tracker.maxFound, isFalse);
+    });
+
     test('an error status does not overwrite a verdict the log already gave', () {
-      tracker.start();
+      startRequest();
       feed(['Starting homing procedure...', 'Homing aborted by user.']);
 
       expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.ERROR), isFalse);
@@ -273,7 +377,7 @@ void main() {
     // A failing startup home emits SpinDown_Error too — Stepper.cpp:399/478/493
     // are not gated on bothDirections — so a stray one must not reopen the run.
     test('ignored once the run has a verdict', () {
-      tracker.start();
+      startRequest();
       feed(['Starting homing procedure...', 'Homing procedure complete.']);
 
       expect(tracker.onSpinDownStatus(FTMSSpinDownStatus.ERROR), isFalse);
@@ -281,8 +385,9 @@ void main() {
     });
 
     test('an unrecognised parameter is ignored', () {
-      tracker.start();
-      tracker.onSpinDownStatus(FTMSSpinDownStatus.HOMING_STARTED);
+      startRequest();
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
 
       expect(tracker.onSpinDownStatus(0x7f), isFalse);
       expect(tracker.phase, CalibrationPhase.searchingMin);
@@ -292,10 +397,9 @@ void main() {
     // "Min position found and set to 0." and "Homing procedure complete.", and
     // the log-only tracker was left on searchingMax with the last row spinning.
     test('a run missing both of the lines the firmware dropped still completes', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
 
       feed(['[ 53909][E](Main): Starting homing procedure...']);
-      tracker.onSpinDownStatus(FTMSSpinDownStatus.HOMING_STARTED);
       feed([
         '[ 57005][E](Main): Homing backward (min). Stable Threshold: 380, Sensitivity: 56',
         '[ 58684][E](Main): Min end stop tap 1/7 found -1259',
@@ -326,7 +430,7 @@ void main() {
   // BLEData and BluetoothDevice; the decision it makes is all here.
   group('completing without a closing word', () {
     test('the max end stop alone is enough once nothing else is coming', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
       feed(['Starting homing procedure...', 'Max Position found: 30266']);
       expect(tracker.phase, CalibrationPhase.searchingMax);
 
@@ -336,7 +440,7 @@ void main() {
     });
 
     test('rescues the hMax fallback, which otherwise has no way to finish', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
       tracker.onLogMessage('Starting homing procedure...');
       tracker.onHomingValueChanged(isMax: true, value: 30266);
 
@@ -345,7 +449,7 @@ void main() {
     });
 
     test('refuses while the max end stop is still unknown', () {
-      tracker.start();
+      startRequest();
       tracker.onLogMessage('Starting homing procedure...');
 
       expect(tracker.markComplete(), isFalse);
@@ -353,7 +457,7 @@ void main() {
     });
 
     test('never overturns a failure', () {
-      tracker.start();
+      startRequest();
       feed(['Starting homing procedure...', 'Max Position found: 30266', 'Homing aborted by user.']);
 
       expect(tracker.markComplete(), isFalse);
@@ -367,7 +471,7 @@ void main() {
     // seconds while this screen is open. So the stored hMax from the *previous*
     // calibration arrives mid-run looking exactly like a fresh end stop.
     test('a poll echoing the stored hMax while waiting for cadence proves nothing', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
 
       final changed = tracker.onHomingValueChanged(isMax: true, value: 27000);
 
@@ -379,7 +483,7 @@ void main() {
     });
 
     test('a poll echoing the stored hMax after homing started proves nothing', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
       tracker.onLogMessage('Starting homing procedure...');
 
       expect(tracker.onHomingValueChanged(isMax: true, value: 27000), isFalse);
@@ -390,7 +494,7 @@ void main() {
     test('an hMax seen while waiting becomes the baseline', () {
       // The app may not have read hMax before the run, so the first thing it
       // sees during the wait is what the later find has to differ from.
-      tracker.start();
+      startRequest();
       expect(tracker.onHomingValueChanged(isMax: true, value: 27000), isFalse);
 
       tracker.onLogMessage('Starting homing procedure...');
@@ -401,7 +505,7 @@ void main() {
     });
 
     test('a new hMax promotes the run when log lines were dropped', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
       tracker.onLogMessage('Starting homing procedure...');
 
       final changed = tracker.onHomingValueChanged(isMax: true, value: 24800);
@@ -412,7 +516,7 @@ void main() {
     });
 
     test('ignored once the max is already known', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
       feed(['Starting homing procedure...', 'Min position found and set to 0.', 'Max Position found: 24800']);
 
       expect(tracker.onHomingValueChanged(isMax: true, value: 24800), isFalse);
@@ -424,7 +528,7 @@ void main() {
     });
 
     test('ignored after the run has already reached a verdict', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
       feed(['Starting homing procedure...', 'Homing aborted by user.']);
 
       expect(tracker.onHomingValueChanged(isMax: true, value: 24800), isFalse);
@@ -432,7 +536,7 @@ void main() {
     });
 
     test('ignored when the value is the not-homed sentinel, not a real find', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
       tracker.onLogMessage('Starting homing procedure...');
 
       // The firmware resets hMax to INT32_MIN at the very start of every run,
@@ -445,14 +549,14 @@ void main() {
     });
 
     test('ignored when no value could be decoded', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
       tracker.onLogMessage('Starting homing procedure...');
 
       expect(tracker.onHomingValueChanged(isMax: true, value: null), isFalse);
     });
 
     test('ignored for hMin, which is always set to a flat zero', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
       tracker.onLogMessage('Starting homing procedure...');
 
       expect(tracker.onHomingValueChanged(isMax: false, value: 24800), isFalse);
@@ -461,11 +565,11 @@ void main() {
 
   group('restart', () {
     test('start clears the previous run', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
       feed(['Starting homing procedure...', 'Min position found and set to 0.', 'Homing procedure complete.']);
       expect(tracker.phase, CalibrationPhase.complete);
 
-      tracker.start(hMaxBaseline: 24800);
+      startRequest(hMaxBaseline: 24800);
 
       expect(tracker.phase, CalibrationPhase.waitingForCadence);
       expect(tracker.minFound, isFalse);
@@ -475,10 +579,10 @@ void main() {
     });
 
     test('start adopts the new baseline', () {
-      tracker.start(hMaxBaseline: 27000);
+      startRequest(hMaxBaseline: 27000);
       feed(['Starting homing procedure...', 'Max Position found: 24800', 'Homing procedure complete.']);
 
-      tracker.start(hMaxBaseline: 24800);
+      startRequest(hMaxBaseline: 24800);
       tracker.onLogMessage('Starting homing procedure...');
 
       expect(tracker.onHomingValueChanged(isMax: true, value: 24800), isFalse,
