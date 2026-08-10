@@ -11,18 +11,15 @@ import 'package:flutter_test/flutter_test.dart';
 class FirmwareRelease {
   final String version;
   final String downloadUrl;
-  final bool isBuiltin;
   final bool isMostRecent;
 
   FirmwareRelease({
     required this.version,
     required this.downloadUrl,
-    this.isBuiltin = false,
     this.isMostRecent = false,
   });
 
   String get displayName {
-    if (isBuiltin) return 'Built-in Firmware ($version)';
     if (isMostRecent) return 'Most Recent Release ($version)';
     return version;
   }
@@ -30,16 +27,6 @@ class FirmwareRelease {
 
 void main() {
   group('FirmwareRelease', () {
-    test('displayName returns correct format for built-in firmware', () {
-      final release = FirmwareRelease(
-        version: '25.9.22',
-        downloadUrl: 'assets/firmware.bin',
-        isBuiltin: true,
-      );
-
-      expect(release.displayName, equals('Built-in Firmware (25.9.22)'));
-    });
-
     test('displayName returns correct format for most recent release', () {
       final release = FirmwareRelease(
         version: '25.9.22',
@@ -59,15 +46,6 @@ void main() {
       expect(release.displayName, equals('25.5.31'));
     });
 
-    test('isBuiltin defaults to false', () {
-      final release = FirmwareRelease(
-        version: '25.9.22',
-        downloadUrl: 'https://example.com/firmware.zip',
-      );
-
-      expect(release.isBuiltin, isFalse);
-    });
-
     test('isMostRecent defaults to false', () {
       final release = FirmwareRelease(
         version: '25.9.22',
@@ -79,11 +57,6 @@ void main() {
 
     test('can create list of releases with proper ordering', () {
       final releases = [
-        FirmwareRelease(
-          version: '25.9.22',
-          downloadUrl: 'assets/firmware.bin',
-          isBuiltin: true,
-        ),
         FirmwareRelease(
           version: '25.9.22',
           downloadUrl: 'https://example.com/25.9.22.zip',
@@ -99,11 +72,10 @@ void main() {
         ),
       ];
 
-      expect(releases.length, equals(4));
-      expect(releases[0].isBuiltin, isTrue);
-      expect(releases[1].isMostRecent, isTrue);
-      expect(releases[2].displayName, equals('25.5.31'));
-      expect(releases[3].displayName, equals('24.8.30'));
+      expect(releases.length, equals(3));
+      expect(releases[0].isMostRecent, isTrue);
+      expect(releases[1].displayName, equals('25.5.31'));
+      expect(releases[2].displayName, equals('24.8.30'));
     });
   });
 }

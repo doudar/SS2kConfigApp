@@ -10,17 +10,21 @@
 // Import necessary libraries
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/services.dart';
+import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:file_picker/file_picker.dart';
-
 
 // Abstract class defining the structure of an OTA package
 abstract class OtaPackage {
   // Method to update firmware
-  Future<void> updateFirmware(BluetoothDevice device, int firmwareType, BluetoothService service,
-      BluetoothCharacteristic dataUUID, BluetoothCharacteristic controlUUID,
-      {String? binFilePath, String? url});
+  Future<void> updateFirmware(
+    BluetoothDevice device,
+    int firmwareType,
+    BluetoothService service,
+    BluetoothCharacteristic dataUUID,
+    BluetoothCharacteristic controlUUID, {
+    String? binFilePath,
+    String? url,
+  });
 
   // Property to track firmware update status
   bool firmwareupdate = false;
@@ -32,12 +36,17 @@ abstract class OtaPackage {
 // Class responsible for handling BLE repository operations
 class BleRepository {
   // Write data to a Bluetooth characteristic
-  Future<void> writeDataCharacteristic(BluetoothCharacteristic characteristic, Uint8List data) async {
+  Future<void> writeDataCharacteristic(
+    BluetoothCharacteristic characteristic,
+    Uint8List data,
+  ) async {
     await characteristic.write(data);
   }
 
   // Read data from a Bluetooth characteristic
-  Future<List<int>> readCharacteristic(BluetoothCharacteristic characteristic) async {
+  Future<List<int>> readCharacteristic(
+    BluetoothCharacteristic characteristic,
+  ) async {
     return await characteristic.read();
   }
 
@@ -52,22 +61,34 @@ class Esp32OtaPackage implements OtaPackage {
   final BluetoothCharacteristic dataCharacteristic;
   final BluetoothCharacteristic controlCharacteristic;
   bool firmwareupdate = false;
-  final StreamController<int> _percentageController = StreamController<int>.broadcast();
+  final StreamController<int> _percentageController =
+      StreamController<int>.broadcast();
   @override
   Stream<int> get percentageStream => _percentageController.stream;
 
   Esp32OtaPackage(this.dataCharacteristic, this.controlCharacteristic);
 
   @override
-  Future<void> updateFirmware(BluetoothDevice device, int firmwareType, BluetoothService service,
-      BluetoothCharacteristic dataUUID, BluetoothCharacteristic controlUUID,
-      {String? binFilePath, String? url}) async {
+  Future<void> updateFirmware(
+    BluetoothDevice device,
+    int firmwareType,
+    BluetoothService service,
+    BluetoothCharacteristic dataUUID,
+    BluetoothCharacteristic controlUUID, {
+    String? binFilePath,
+    String? url,
+  }) async {
     final bleRepo = BleRepository();
 
     // Get MTU size from the device
-    const int mtuOffsetForChunkSize = 3;
     int mtuSize = await device.mtu.first;
-    int chunkSize = mtuSize - mtuOffsetForChunkSize;
+    const int chunkSize = 512;
+
+    if (mtuSize < chunkSize + 3) {
+      throw Exception(
+        'BLE MTU $mtuSize is too small for the required 512-byte OTA chunks.',
+      );
+    }
 
     print("MTU size for current device $mtuSize");
 
@@ -78,18 +99,10 @@ class Esp32OtaPackage implements OtaPackage {
 
     List<Uint8List> binaryChunks;
 
-    // Get firmware chunks based on the type and provided file path
+    // Architecture validation and file selection happen before this transport
+    // is invoked, so BLE OTA only accepts the prepared local firmware file.
     if (binFilePath != null && binFilePath.isNotEmpty) {
-      if (firmwareType == 1) {
-        // Built-in firmware
-        binaryChunks = await _readBinaryFile(binFilePath, chunkSize);
-      } else if (firmwareType == 2) {
-        // File picker
-        binaryChunks = await _getFirmwareFromPicker(chunkSize);
-      } else {
-        // URL or Beta firmware - read from the downloaded file
-        binaryChunks = await _readLocalFile(binFilePath, chunkSize);
-      }
+      binaryChunks = await _readLocalFile(binFilePath, chunkSize);
     } else {
       throw Exception('No firmware file path provided');
     }
@@ -97,33 +110,59 @@ class Esp32OtaPackage implements OtaPackage {
     if (binaryChunks.isEmpty) {
       throw Exception('No firmware data available');
     }
+    if (binaryChunks.last.length >= chunkSize) {
+      throw Exception(
+        'Firmware length must produce a final OTA chunk shorter than 512 bytes.',
+      );
+    }
 
     // Write x01 to the controlCharacteristic and check if it returns value of 0x02
-    await bleRepo.writeDataCharacteristic(controlCharacteristic, Uint8List.fromList([1]));
+    await bleRepo.writeDataCharacteristic(
+      controlCharacteristic,
+      Uint8List.fromList([1]),
+    );
 
     // Read value from controlCharacteristic
-    List<int> value = await bleRepo.readCharacteristic(controlCharacteristic).timeout(Duration(seconds: 10));
+    List<int> value = await bleRepo
+        .readCharacteristic(controlCharacteristic)
+        .timeout(Duration(seconds: 10));
+    if (value.isEmpty || value[0] != 0x02) {
+      throw Exception('Device did not acknowledge the start of the BLE OTA.');
+    }
     print('value returned is this ------- ${value[0]}');
 
     int packageNumber = 0;
     for (Uint8List chunk in binaryChunks) {
-      await bleRepo.writeDataCharacteristic(dataCharacteristic, chunk).timeout(Duration(seconds: 10), onTimeout: () {
-        // If a timeout occurs, throw a custom exception to be caught by the catch block
-         firmwareupdate = false;
-        _percentageController.close();
-        throw TimeoutException('Failed to write data chunk #$packageNumber');
-      });
+      // A write-with-response is the TX acknowledgement. Never queue the next
+      // chunk until it completes.
+      await dataCharacteristic
+          .write(chunk, withoutResponse: false)
+          .timeout(
+            Duration(seconds: 10),
+            onTimeout: () {
+              // If a timeout occurs, throw a custom exception to be caught by the catch block
+              firmwareupdate = false;
+              _percentageController.close();
+              throw TimeoutException(
+                'Failed to write data chunk #$packageNumber',
+              );
+            },
+          );
       packageNumber++;
 
       double progress = (packageNumber / binaryChunks.length) * 100;
       int roundedProgress = progress.round(); // Rounded off progress value
-      print('Writing package number $packageNumber of ${binaryChunks.length} to ESP32');
+      print(
+        'Writing package number $packageNumber of ${binaryChunks.length} to ESP32',
+      );
       print('Progress: $roundedProgress%');
       _percentageController.add(roundedProgress);
     }
 
     // Check if controlCharacteristic reads 0x05, indicating OTA update finished
-    value = await bleRepo.readCharacteristic(controlCharacteristic).timeout(Duration(seconds: 600));
+    value = await bleRepo
+        .readCharacteristic(controlCharacteristic)
+        .timeout(Duration(seconds: 600));
     print('value returned is this ------- ${value[0]}');
 
     if (value[0] == 5) {
@@ -139,13 +178,6 @@ class Esp32OtaPackage implements OtaPackage {
   // Convert Uint8List to List<int>
   List<int> uint8ListToIntList(Uint8List uint8List) {
     return uint8List.toList();
-  }
-
-  // Read binary file from assets and split it into chunks
-  Future<List<Uint8List>> _readBinaryFile(String filePath, int chunkSize) async {
-    final ByteData data = await rootBundle.load(filePath);
-    final List<int> bytes = data.buffer.asUint8List();
-    return _splitIntoChunks(bytes, chunkSize);
   }
 
   // Read binary file from local filesystem and split it into chunks
@@ -167,50 +199,16 @@ class Esp32OtaPackage implements OtaPackage {
     return chunks;
   }
 
-  // Get firmware based on firmwareType
-  Future<List<Uint8List>> getFirmware(int firmwareType, int chunkSize, {String? binFilePath}) {
-    if (firmwareType == 2) {
-      print("in package MTU size is ${chunkSize}");
-      return _getFirmwareFromPicker(chunkSize);
-    } else if (firmwareType == 1 && binFilePath != null && binFilePath.isNotEmpty) {
-      return _readBinaryFile(binFilePath, chunkSize);
-    } else if (binFilePath != null && binFilePath.isNotEmpty) {
+  // Get firmware from an already selected and validated local file.
+  Future<List<Uint8List>> getFirmware(
+    int firmwareType,
+    int chunkSize, {
+    String? binFilePath,
+  }) {
+    if (binFilePath != null && binFilePath.isNotEmpty) {
       return _readLocalFile(binFilePath, chunkSize);
     } else {
       return Future.value([]);
     }
-  }
-
-  // Get firmware chunks from file picker
-  Future<List<Uint8List>> _getFirmwareFromPicker(int chunkSize) async {
-    print("MTU size in fie picker is ${chunkSize}");
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['bin'],
-    );
-
-    if (result == null || result.files.isEmpty) {
-      return []; // Return an empty list when no file is picked
-    }
-
-    final file = result.files.first;
-
-    try {
-      final firmwareData = await _openFileAndGetFirmwareData(file, chunkSize);
-
-      if (firmwareData.isEmpty) {
-        throw 'Empty firmware data. Please select a valid firmware file.';
-      }
-
-      return firmwareData;
-    } catch (e) {
-      throw 'Error getting firmware data: $e';
-    }
-  }
-
-  // Open file, read bytes, and split into chunks
-  Future<List<Uint8List>> _openFileAndGetFirmwareData(PlatformFile file, int chunkSize) async {
-    final bytes = await File(file.path!).readAsBytes();
-    return _splitIntoChunks(bytes, chunkSize);
   }
 }

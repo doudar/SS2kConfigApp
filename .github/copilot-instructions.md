@@ -59,7 +59,6 @@ Always reference these instructions first and fallback to search or bash command
   - `ss2kconfigapp-{version}-amd64.deb` (Linux AMD64 package)
   - `ss2kconfigapp-{version}-arm64.deb` (Linux ARM64 package)
 - **Pre-build Steps**:
-  - Downloads latest SmartSpin2K firmware.bin from GitHub releases
   - Creates Strava environment configuration
   - Extracts version from pubspec.yaml and handles tag conflicts
 - **Build Times**: Each platform takes 5-15 minutes to build completely

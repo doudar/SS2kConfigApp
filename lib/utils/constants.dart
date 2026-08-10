@@ -30,7 +30,8 @@ enum SettingType {
 // Constants
 const int INT32_MIN = -2147483648;
 const double MIN_POWER_RANGE = 900.0; // Minimum watts range for power table
-const double MIN_RESISTANCE_RANGE = 2000.0; // Minimum resistance range for power table
+const double MIN_RESISTANCE_RANGE =
+    2000.0; // Minimum resistance range for power table
 
 final String csUUID = "77776277-7877-7774-4466-896665500000";
 final String ccUUID = "77776277-7877-7774-4466-896665500001";
@@ -58,6 +59,7 @@ final String connectedPWRVname = "BLE_connectedPowerMeter";
 final String rebootVname = "BLE_reboot";
 final String resetVname = "BLE_resetToDefaults";
 final String fwVname = "BLE_firmwareVer";
+final String hardwareVersionVname = "BLE_hardwareVersion";
 final String restartBLEVname = "BLE_restartBLE";
 final String shiftStepVname = "BLE_shiftStep";
 final String shiftDirVname = "BLE_shiftDir";
@@ -100,11 +102,26 @@ final String BLE_logStreamVname = "BLE_BLELogging";
 /// Returns a deep copy of the characteristic framework so each BLEData
 /// instance gets its own independent mutable state.
 List<Map<String, dynamic>> createCustomCharacteristicFramework() {
-  return customCharacteristicFramework.map<Map<String, dynamic>>((c) => Map<String, dynamic>.from(c as Map)).toList();
+  return customCharacteristicFramework
+      .map<Map<String, dynamic>>((c) => Map<String, dynamic>.from(c as Map))
+      .toList();
 }
 
 // Refactored customCharacteristicFramework to directly use Dart map
 final dynamic customCharacteristicFramework = [
+  {
+    "vName": hardwareVersionVname,
+    "reference": "0x2F",
+    "isSetting": false,
+    "settingType": SettingType.basic,
+    "type": "string",
+    "humanReadableName": "Hardware Version",
+    "min": 0,
+    "max": 2000,
+    "textDescription":
+        "The device hardware revision used for firmware selection.",
+    "defaultData": "Revision Two",
+  },
   {
     "vName": fwVname,
     "reference": "0x25",
@@ -413,7 +430,8 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Current FTMS Mode",
     "min": 0,
     "max": 2000,
-    "textDescription": "Current mode of the Fitness Machine Service (FTMS) profile.",
+    "textDescription":
+        "Current mode of the Fitness Machine Service (FTMS) profile.",
     "defaultData": "0",
   },
   {
@@ -425,7 +443,8 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Auto Updates",
     "min": 0,
     "max": 1,
-    "textDescription": "Toggle to enable or disable automatic firmware updates.",
+    "textDescription":
+        "Toggle to enable or disable automatic firmware updates.",
     "defaultData": "true",
   },
   {
@@ -498,7 +517,8 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Stepper Motor Speed",
     "min": 100,
     "max": 3500,
-    "textDescription": "Adjust the motor speed. The default setting is adequate for the majority of users.",
+    "textDescription":
+        "Adjust the motor speed. The default setting is adequate for the majority of users.",
     "defaultData": "1500",
   },
   {
@@ -522,7 +542,8 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Min Brake Watts",
     "min": 0,
     "max": 200,
-    "textDescription": "Minimum amount of resistance you can pedal without hitting the low limit stop on your bike.",
+    "textDescription":
+        "Minimum amount of resistance you can pedal without hitting the low limit stop on your bike.",
     "defaultData": "50",
   },
   {
@@ -534,7 +555,8 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Max Brake Watts",
     "min": 0,
     "max": 2500,
-    "textDescription": "Maximum amount of resistance you can pedal without hitting the high limit stop on your bike.",
+    "textDescription":
+        "Maximum amount of resistance you can pedal without hitting the high limit stop on your bike.",
     "defaultData": "1000",
   },
   {
@@ -546,7 +568,8 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Reconnect Devices",
     "min": 0,
     "max": 1,
-    "textDescription": "Disconnect the BLE devices (scan will then happen along with reconnect).",
+    "textDescription":
+        "Disconnect the BLE devices (scan will then happen along with reconnect).",
     "defaultData": "false",
   },
   {
@@ -670,7 +693,8 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Homing Force",
     "min": 10,
     "max": 100,
-    "textDescription": "Adjust lower if homing hits the limit too hard/grinds, higher if it stops too soon.",
+    "textDescription":
+        "Adjust lower if homing hits the limit too hard/grinds, higher if it stops too soon.",
     "defaultData": "50",
   },
   {
@@ -682,7 +706,8 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "Power Table for Power",
     "min": 0,
     "max": 1,
-    "textDescription": "Enable to use the power table for power instead of a power meter",
+    "textDescription":
+        "Enable to use the power table for power instead of a power meter",
     "defaultData": "false",
   },
   {
@@ -694,7 +719,8 @@ final dynamic customCharacteristicFramework = [
     "humanReadableName": "BLE Log Stream",
     "min": 0,
     "max": 2000,
-    "textDescription": "Read last BLE log message or enable/disable BLE log streaming",
+    "textDescription":
+        "Read last BLE log message or enable/disable BLE log streaming",
     "defaultData": "",
   },
 ];

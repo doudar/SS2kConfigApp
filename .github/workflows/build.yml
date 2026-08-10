@@ -15,7 +15,6 @@ env:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   prepare:
@@ -27,76 +26,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Download and extract latest SmartSpin2k firmware.bin from GitHub release
-      - name: Download and extract latest SmartSpin2k firmware
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-          mkdir -p assets
-          # Get latest release info
-          release_json=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            https://api.github.com/repos/doudar/SmartSpin2k/releases/latest)
-          # Find .bin.zip asset URL
-          asset_url=$(echo "$release_json" | grep 'browser_download_url' | grep '.bin.zip' | head -n1 | cut -d '"' -f4)
-          if [ -z "$asset_url" ]; then
-            echo "No .bin.zip asset found in latest release!" >&2
-            exit 1
-          fi
-          echo "Downloading: $asset_url"
-          curl -L -o /tmp/firmware.zip "$asset_url"
-          unzip -o /tmp/firmware.zip -d /tmp/firmware_extracted
-          if [ ! -f /tmp/firmware_extracted/firmware.bin ]; then
-            echo "firmware.bin not found in zip!" >&2
-            exit 1
-          fi
-          mv /tmp/firmware_extracted/firmware.bin assets/firmware.bin
-          echo "Firmware placed at assets/firmware.bin"
-          # Extract version tag and write to assets/version.txt
-          version_tag=$(echo "$release_json" | grep '"tag_name"' | head -n1 | cut -d '"' -f4)
-          if [ -z "$version_tag" ]; then
-            echo "No version tag found in release!" >&2
-            exit 1
-          fi
-          echo "$version_tag" > assets/version.txt
-          echo "Version written to assets/version.txt: $version_tag"
-
-      # Commit and push firmware.bin and version.txt to the repository
-
-      - name: Commit, push, and open PR for updated firmware and version
-        if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin
-          git checkout ${{ github.ref_name }}
-          git add assets/firmware.bin assets/version.txt
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
-          git commit -m "chore: update firmware.bin and version.txt from latest SmartSpin2k release"
-          # Try to push to the current branch (will fail if protected)
-          if git push origin HEAD:${{ github.ref_name }}; then
-            echo "Pushed directly to ${{ github.ref_name }}."
-            exit 0
-          fi
-          # If push fails, create a new branch and open a PR
-          update_branch="auto/firmware-update-$(date +%Y%m%d%H%M%S)"
-          git checkout -b "$update_branch"
-          git push origin "$update_branch"
-          echo "Creating pull request to ${{ github.ref_name }}..."
-          # Install GitHub CLI if not present
-          if ! command -v gh >/dev/null 2>&1; then
-            echo "Installing GitHub CLI..."
-            sudo apt-get update && sudo apt-get install -y gh
-          fi
-          # Use GH_TOKEN for authentication (no gh auth login needed in CI)
-          gh pr create --base "${{ github.ref_name }}" --head "$update_branch" --title "chore: update firmware.bin and version.txt from latest SmartSpin2k release" --body "Automated update of firmware.bin and version.txt from the latest SmartSpin2k release."
-      
       - name: Extract version from pubspec.yaml
         id: extract_version
         run: |
