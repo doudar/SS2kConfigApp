@@ -209,12 +209,12 @@ class _sliderCardState extends State<sliderCard> {
                 const SizedBox(width: 8),
                 TextButton(
                     child: const Text('SAVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    onPressed: () {
+                    onPressed: () async {
                       //Find the save command and execute it
-                      this
+                      await this
                           .bleData
-                          .customCharacteristic
-                          .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                          .writeCommand(this.widget.device, saveVname);
+                      if (!mounted) return;
                       Navigator.pop(context);
                     }),
                 const SizedBox(width: 8),

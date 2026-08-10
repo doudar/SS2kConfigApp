@@ -123,15 +123,15 @@ class _PhysicalShifterStepState extends State<PhysicalShifterStep> {
     }
   }
 
-  void _onContinue() {
+  Future<void> _onContinue() async {
     final session = context.read<WizardSession>();
     final device = session.connectedDevice;
     if (device == null) return;
 
     final bleData = BLEDataManager.forDevice(device);
     final updated = Map<String, dynamic>.from(_shiftDirChar)..["value"] = _swapDirection.toString();
-    bleData.writeToSS2k(device, updated);
-    bleData.customCharacteristic.forEach((c) => bleData.findNSave(device, c, saveVname));
+    await bleData.writeToSS2k(device, updated);
+    await bleData.writeCommand(device, saveVname);
 
     session.physicalShifterSeen = true;
     final machine = WizardStepMachine();

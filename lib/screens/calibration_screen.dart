@@ -1,0 +1,1078 @@
+/*
+ * Copyright (C) 2020  Anthony Doud
+ * All rights reserved
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../utils/bike_profile.dart';
+import '../utils/bledata.dart';
+import '../utils/calibration_monitor.dart';
+import '../utils/constants.dart';
+import '../utils/onboarding/wizard_step_machine.dart';
+import '../widgets/setting_tile.dart';
+import '../widgets/ss2k_app_bar.dart';
+
+const String _troubleshootingUrl = 'https://docs.smartspin2k.com/documentation/troubleshooting';
+
+/// What the user saw go wrong, which decides the homing force advice.
+enum _Symptom { grinding, stoppedShort }
+
+/// Bike labels used in the copied diagnostic report.
+const Map<BikeType, ({String label, String? detail})> _bikeTypeCopy = {
+  BikeType.mostSpinBikes: (label: 'Most spin bikes', detail: 'Bowflex C6, Schwinn IC4, Yesoul S3, etc.'),
+  BikeType.powerMeterBike: (label: 'Power meter bike', detail: 'Power meter pedals or a crank power meter'),
+  BikeType.pelotonOriginal: (label: 'Peloton Bike (Original)', detail: null),
+  BikeType.pelotonBikePlus: (label: 'Peloton Bike+', detail: null),
+};
+
+String _bikeTypeLabel(BikeType type) => _bikeTypeCopy[type]?.label ?? type.name;
+
+/// Guided knob calibration.
+///
+/// Replaces the old fixed-30-second calibration dialog. It explains the two
+/// end-stop searches before they happen, follows the run using the device's own
+/// log stream, and hands the user the Homing Force setting with a retry when a
+/// search fails.
+class CalibrationScreen extends StatefulWidget {
+  final BluetoothDevice device;
+  final bool showDeviceHeader;
+
+  const CalibrationScreen({
+    Key? key,
+    required this.device,
+    this.showDeviceHeader = true,
+  }) : super(key: key);
+
+  @override
+  State<CalibrationScreen> createState() => _CalibrationScreenState();
+}
+
+class _CalibrationScreenState extends State<CalibrationScreen> {
+  static const int _pageCount = 3;
+
+  /// How long the finished checklist is left alone before the verdict appears.
+  ///
+  /// The firmware sets `hMax` and sends its spin-down success within
+  /// milliseconds of each other, so the last checkmark and the verdict would
+  /// otherwise land in the same frame and the user would never see the run
+  /// finish. Long enough to read as "that just happened", short enough not to
+  /// feel like waiting.
+  static const Duration _verdictDelay = Duration(milliseconds: 600);
+
+  late final BLEData bleData;
+  late final CalibrationMonitor _monitor;
+  final PageController _pageController = PageController();
+
+  StreamSubscription<CharacteristicChangeEvent>? _cadenceSubscription;
+  Timer? _verdictTimer;
+
+  int _pageIndex = 0;
+  int _cadence = 0;
+  BikeType? _bikeType;
+  CalibrationSetup? _calibrationSetup;
+  bool _setupLoaded = false;
+  _Symptom? _symptom;
+
+  /// True once [_verdictDelay] has elapsed since the run reached a verdict.
+  bool _showVerdict = false;
+
+  /// Lets the user reopen the setup question after it has been answered — the
+  /// choice is a single tap and easy to get wrong.
+  bool _editingSetup = false;
+
+  @override
+  void initState() {
+    super.initState();
+    bleData = BLEDataManager.forDevice(widget.device);
+    unawaited(bleData.updateIndoorBikeData(widget.device));
+    _monitor = CalibrationMonitor(bleData: bleData, device: widget.device)..addListener(_onMonitorChanged);
+
+    _cadenceSubscription = bleData.characteristicChanges.listen((_) {
+      if (!mounted) return;
+      final cadence = bleData.ftmsData.cadence;
+      if (cadence != _cadence) setState(() => _cadence = cadence);
+    });
+
+    _loadSetup();
+  }
+
+  Future<void> _loadSetup() async {
+    final bikeType = await BikeProfile.load();
+    final calibrationSetup = await BikeProfile.loadCalibrationSetup();
+    if (!mounted) return;
+    setState(() {
+      _bikeType = bikeType;
+      _calibrationSetup = calibrationSetup;
+      _setupLoaded = true;
+    });
+  }
+
+  @override
+  void dispose() {
+    _monitor.removeListener(_onMonitorChanged);
+    _monitor.dispose();
+    _cadenceSubscription?.cancel();
+    _verdictTimer?.cancel();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _onMonitorChanged() {
+    if (!mounted) return;
+    setState(() {});
+
+    // A verdict does not move the user anywhere — it appears under the finished
+    // checklist, a beat later so the last checkmark is seen to land.
+    if (!_monitor.phase.isTerminal || _showVerdict || _verdictTimer != null) return;
+    _verdictTimer = Timer(_verdictDelay, () {
+      _verdictTimer = null;
+      if (!mounted) return;
+      setState(() => _showVerdict = true);
+    });
+  }
+
+  /// False when homing force is irrelevant: bikes that report their own
+  /// resistance are homed to that reported range instead of to physical stops.
+  bool get _endStopsApply => _calibrationSetup == CalibrationSetup.physicalStops && !_monitor.usedFtmsPath;
+
+  bool get _isBikePlus => _calibrationSetup == CalibrationSetup.pelotonBikePlus;
+
+  bool get _powerTableWillReset => bleData.getVnameValue(pTab4pwrVname) != "true";
+
+  void _goTo(int index) {
+    if (!mounted) return;
+    setState(() => _pageIndex = index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  Future<void> _startRun() async {
+    _clearVerdict();
+    _symptom = null;
+    _goTo(1);
+    await _monitor.start();
+  }
+
+  /// Drops the previous run's verdict, so a retry comes back to a clean run
+  /// page instead of the last result.
+  void _clearVerdict() {
+    _verdictTimer?.cancel();
+    _verdictTimer = null;
+    _showVerdict = false;
+  }
+
+  void _finish() {
+    // Grab the messenger before popping so the confirmation outlives the route.
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pop();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Calibration complete'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  /// Puts the whole run on the clipboard — every log line, not the six on
+  /// screen — under a header of everything this screen knows about the device.
+  Future<void> _copyLog() async {
+    final messenger = ScaffoldMessenger.of(context);
+    await Clipboard.setData(ClipboardData(
+      text: buildCalibrationReport(
+        transcript: _monitor.transcript,
+        droppedLines: _monitor.droppedLines,
+        phase: _monitor.phase,
+        minFound: _monitor.minFound,
+        maxFound: _monitor.maxFound,
+        usedFtmsPath: _monitor.usedFtmsPath,
+        sweepTimedOut: _monitor.sweepTimedOut,
+        logStreamSilent: _monitor.logStreamSilent,
+        firmwareVersion: bleData.firmwareVersion.value,
+        bikeType: _bikeType == null ? null : _bikeTypeLabel(_bikeType!),
+        homingForce: bleData.getVnameValue(homingSensitivityVname),
+        homingMin: _monitor.homingMin,
+        homingMax: _monitor.homingMax,
+      ),
+    ));
+    if (!mounted) return;
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Calibration log copied'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// The device log, shared by the run page and the result page. Shown while
+  /// the device is silent too — a run where nothing came through is exactly
+  /// what is worth copying and reporting.
+  Widget? _buildDeviceLogSection() {
+    if (_monitor.recentMessages.isEmpty && !_monitor.logStreamSilent) return null;
+
+    return _ExpansionSection(
+      title: 'Device log',
+      // In the title row so the whole run can be copied without expanding.
+      action: IconButton(
+        icon: const Icon(Icons.copy_all, size: 20),
+        tooltip: 'Copy log',
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        onPressed: _copyLog,
+      ),
+      children: [
+        if (_monitor.recentMessages.isEmpty)
+          Text(
+            'Nothing received from the device. Copying still reports the run state.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        for (final message in _monitor.recentMessages)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: SelectableText(
+              message,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _openTroubleshooting() async {
+    final url = Uri.parse(_troubleshootingUrl);
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // A verdict on the run page is the end of the road for a run that worked,
+    // so the bar reads full rather than stopping two thirds of the way under a
+    // green success callout.
+    final progress = _pageIndex == 1 && _showVerdict ? 1.0 : (_pageIndex + 1) / _pageCount;
+
+    return Scaffold(
+      appBar: SS2KAppBar(
+        device: widget.device,
+        title: "Calibrate Trainer",
+        showDeviceHeader: widget.showDeviceHeader,
+        deviceHeaderCustomRefreshEnabled: false,
+      ),
+      body: Column(
+        children: [
+          LinearProgressIndicator(value: progress),
+          Expanded(
+            child: PageView(
+              controller: _pageController,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _buildBeforeYouStartPage(),
+                _buildRunningPage(),
+                _buildTroubleshootPage(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===== Page 1: the one-time guidance, plus the Bike+ question =====
+
+  Widget _buildBeforeYouStartPage() {
+    final needsSetup = !_setupLoaded || _calibrationSetup == null;
+    final showPicker = _setupLoaded && (_calibrationSetup == null || _editingSetup);
+
+    return _CalibrationPage(
+      primaryLabel: _isBikePlus ? 'Start with resistance data' : 'Start Calibration',
+      onPrimary: needsSetup ? null : _startRun,
+      children: [
+        _Callout(
+          icon: Icons.info_outline,
+          color: Colors.amber.shade700,
+          title: 'Calibrate once after installation',
+          body: 'SmartSpin2k uses calibration to learn your bike\'s resistance range. After that, '
+              'it automatically finds its home position whenever it starts, so you do not need '
+              'to calibrate again after a reboot.\n\n'
+              'Run calibration again only if you move SmartSpin2k to another bike, change how it '
+              'is mounted, or it no longer reaches the full resistance range.',
+        ),
+        if (_powerTableWillReset) ...[
+          const SizedBox(height: 16),
+          _Callout(
+            icon: Icons.show_chart,
+            color: Colors.amber.shade700,
+            title: 'Your Power Table will reset',
+            body: 'Calibration clears the learned Power Table. It will rebuild automatically while you ride.',
+          ),
+        ],
+        const SizedBox(height: 16),
+        if (showPicker) ...[
+          Text('Are you using a Peloton Bike+?', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          _CalibrationSetupChoice(
+            selected: _calibrationSetup,
+            onChanged: (value) {
+              setState(() {
+                _calibrationSetup = value;
+                _editingSetup = false;
+              });
+              BikeProfile.saveCalibrationSetup(value);
+            },
+          ),
+          const SizedBox(height: 16),
+        ] else if (_calibrationSetup != null) ...[
+          _SelectedSetupRow(
+            label: _isBikePlus ? 'Peloton Bike+' : 'Bike with physical knob stops',
+            onChange: () => setState(() => _editingSetup = true),
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (_isBikePlus) ...[
+          _Callout(
+            icon: Icons.pedal_bike,
+            color: Theme.of(context).colorScheme.primary,
+            title: 'Bike+ needs resistance data',
+            body: 'The Bike+ knob turns continuously; it has no physical stops. Continue only if '
+                'SmartSpin2k is receiving resistance from the Bike+—for example, through Grupetto '
+                'with BLE TX on. If you\'re using only a power meter, skip calibration. Homing '
+                'Force does not apply to Bike+.',
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ===== Page 2: the run, and the verdict it ends on =====
+
+  Widget _buildRunningPage() {
+    final phase = _monitor.phase;
+    final waiting = phase == CalibrationPhase.waitingForCadence;
+    final succeeded = phase == CalibrationPhase.complete;
+    final needsVisualConfirmation = succeeded && _endStopsApply;
+
+    return _CalibrationPage(
+      primaryLabel: !_showVerdict
+          ? null
+          : succeeded
+              ? needsVisualConfirmation
+                  ? 'Yes, done'
+                  : 'Done'
+              : 'Show me how to fix it',
+      onPrimary: !_showVerdict ? null : (succeeded ? _finish : () => _goTo(2)),
+      secondaryLabel: _showVerdict && needsVisualConfirmation ? 'No, something looked wrong' : null,
+      onSecondary: _showVerdict && needsVisualConfirmation ? () => _goTo(2) : null,
+      children: [
+        if (waiting) ...[
+          _CadenceIndicator(cadence: _cadence, showHint: _monitor.showPedalHint),
+          const SizedBox(height: 16),
+        ],
+        if (_monitor.logStreamSilent) ...[
+          _Callout(
+            icon: Icons.hearing_disabled,
+            color: Colors.amber.shade700,
+            title: 'The SmartSpin2k is not reporting',
+            body: _isBikePlus
+                ? 'This screen is not receiving the device log. Watch the resistance value '
+                    'directly. If it does not change, check that Bike+ resistance is reaching '
+                    'SmartSpin2k and that your firmware is current.'
+                : 'This screen is not receiving the device log. Watch the knob directly: it '
+                    'should reach low and high resistance. If it never moves, check that '
+                    'SmartSpin2k is connected and that your firmware is current.',
+          ),
+          const SizedBox(height: 16),
+        ],
+        // Held until the verdict is actually on screen rather than dropped the
+        // moment the phase turns terminal — the last checkmark should be the
+        // only thing moving at that instant.
+        if (!_showVerdict) ...[
+          _Callout(
+            icon: Icons.visibility,
+            color: Theme.of(context).colorScheme.primary,
+            title: _isBikePlus ? 'Watch the resistance' : 'Watch the knob',
+            body: _isBikePlus
+                ? 'SmartSpin2k will use the resistance reported by your Bike+ to learn its low '
+                    'and high limits. The knob may keep turning; it will not hit a physical stop. '
+                    'Press either shifter button if you need to cancel.'
+                : 'SmartSpin2k will turn the knob to low resistance, then high resistance. Brief '
+                    'contact with each stop is normal. Press either shifter button if the motor '
+                    'keeps pushing or you need to cancel.',
+          ),
+          const SizedBox(height: 16),
+        ],
+        _PhaseChecklist(
+          phase: phase,
+          minFound: _monitor.minFound,
+          maxFound: _monitor.maxFound,
+        ),
+        // The verdict is the checklist's last step, so it grows in below the
+        // rows rather than replacing them or moving the user elsewhere.
+        AnimatedSize(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 300),
+            opacity: _showVerdict ? 1 : 0,
+            child: _showVerdict
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _Callout(
+                          icon: succeeded ? Icons.check_circle_outline : Icons.error_outline,
+                          color: succeeded ? Colors.green : Theme.of(context).colorScheme.error,
+                          title: succeeded ? 'Calibration saved' : _failureTitle(phase),
+                          body: succeeded
+                              ? buildCalibrationSuccessBody(
+                                  needsVisualConfirmation: needsVisualConfirmation,
+                                  homingMin: _monitor.homingMin,
+                                  homingMax: _monitor.homingMax,
+                                )
+                              : _failureBody(phase),
+                        ),
+                        if (succeeded && _monitor.sweepTimedOut) ...[
+                          const SizedBox(height: 16),
+                          _Callout(
+                            icon: Icons.warning_amber_outlined,
+                            color: Colors.amber.shade700,
+                            title: 'One sweep timed out',
+                            body: 'The device finished, but one resistance sweep ran out of time. '
+                                'The saved range may be shorter than expected.',
+                          ),
+                        ],
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ),
+        const SizedBox(height: 16),
+        ?_buildDeviceLogSection(),
+        if (!_showVerdict) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Calibration keeps running if you leave this screen. To cancel, press either shifter button.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _failureTitle(CalibrationPhase phase) {
+    switch (phase) {
+      case CalibrationPhase.failedAborted:
+        return 'Calibration was aborted';
+      case CalibrationPhase.failedUnsupported:
+        return 'This device cannot calibrate';
+      case CalibrationPhase.failedUnstable:
+        return _endStopsApply ? 'The resistance limit was inconsistent' : 'Calibration did not finish';
+      default:
+        return 'Calibration did not finish';
+    }
+  }
+
+  String _failureBody(CalibrationPhase phase) {
+    switch (phase) {
+      case CalibrationPhase.failedAborted:
+        return 'The shifter moved during homing, which the SmartSpin2k treats as a cancel. '
+            'Leave the shifter alone and try again.';
+      case CalibrationPhase.failedUnsupported:
+        return 'The SmartSpin2k reported that it has no stepper to home, so there is nothing '
+            'this screen can fix. Check your wiring and firmware version.';
+      case CalibrationPhase.failedUnstable:
+        return _endStopsApply
+            ? 'SmartSpin2k found a different limit on repeated attempts. Choose what you saw to '
+                'adjust Homing Force before trying again.'
+            : 'SmartSpin2k could not learn a consistent resistance range from your bike.';
+      default:
+        return _endStopsApply
+            ? 'SmartSpin2k could not learn the full resistance range. Choose what you saw to '
+                'adjust Homing Force before trying again.'
+            : 'SmartSpin2k could not learn a usable resistance range from your bike.';
+    }
+  }
+
+  // ===== Page 3: fix it and retry =====
+
+  Widget _buildTroubleshootPage() {
+    if (!_endStopsApply) {
+      final isBikePlus = _isBikePlus;
+      return _CalibrationPage(
+        primaryLabel: 'Done',
+        onPrimary: () => Navigator.of(context).pop(),
+        secondaryLabel: 'Try Again',
+        onSecondary: _startRun,
+        children: [
+          _Callout(
+            icon: Icons.pedal_bike,
+            color: Theme.of(context).colorScheme.primary,
+            title: isBikePlus ? 'Don\'t adjust Homing Force' : 'This bike reports its resistance',
+            body: isBikePlus
+                ? 'Bike+ has no physical stops. If calibration timed out or the resistance range '
+                    'looks wrong, check that Bike+ resistance is reaching SmartSpin2k. If you\'re '
+                    'using only a power meter, you can skip calibration.'
+                : 'SmartSpin2k calibrates to the resistance range reported by this bike. Homing '
+                    'Force does not affect this type of calibration. Check that resistance is '
+                    'being reported correctly before trying again.',
+          ),
+          // The Bike+ answer is user-selected, so keep it easy to correct. A
+          // live reported-resistance path came from the device and is not a guess.
+          if (isBikePlus && !_monitor.usedFtmsPath) ...[
+            const SizedBox(height: 8),
+            _SelectedSetupRow(
+              label: 'Peloton Bike+',
+              onChange: () {
+                setState(() => _editingSetup = true);
+                _goTo(0);
+              },
+            ),
+          ],
+          const SizedBox(height: 16),
+          TextButton.icon(
+            style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+            onPressed: _openTroubleshooting,
+            icon: const Icon(Icons.open_in_new, size: 18),
+            label: const Text('Troubleshooting guide'),
+          ),
+        ],
+      );
+    }
+
+    final homingSetting = bleData.customCharacteristic.firstWhere(
+      (c) => c["vName"] == homingSensitivityVname,
+      orElse: () => <String, dynamic>{},
+    );
+
+    return _CalibrationPage(
+      primaryLabel: 'Try Again',
+      onPrimary: _startRun,
+      secondaryLabel: 'Done',
+      onSecondary: () => Navigator.of(context).pop(),
+      children: [
+        Text('What did you see?', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        _SymptomCard(
+          selected: _symptom == _Symptom.grinding,
+          title: 'The motor kept pushing at the end',
+          body: 'Lower Homing Force by about 10, save, then try again.',
+          onTap: () => setState(() => _symptom = _Symptom.grinding),
+        ),
+        const SizedBox(height: 8),
+        _SymptomCard(
+          selected: _symptom == _Symptom.stoppedShort,
+          title: 'The knob stopped before the end',
+          body: 'Raise Homing Force by about 10, save, then try again.',
+          onTap: () => setState(() => _symptom = _Symptom.stoppedShort),
+        ),
+        if (_symptom != null) ...[
+          const SizedBox(height: 16),
+          _Callout(
+            icon: _symptom == _Symptom.grinding ? Icons.arrow_downward : Icons.arrow_upward,
+            color: Theme.of(context).colorScheme.primary,
+            title: _symptom == _Symptom.grinding ? 'Lower Homing Force' : 'Raise Homing Force',
+            body: 'Tap the setting below, adjust it by about 10, then press SAVE before trying again.',
+          ),
+        ],
+        const SizedBox(height: 16),
+        if (homingSetting.isNotEmpty)
+          SettingTile(device: widget.device, c: homingSetting)
+        else
+          _Callout(
+            icon: Icons.help_outline,
+            color: Theme.of(context).colorScheme.error,
+            title: 'Homing Force is unavailable',
+            body: 'This firmware version does not expose the homing force setting. Update your '
+                'firmware to adjust it.',
+          ),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+          onPressed: _openTroubleshooting,
+          icon: const Icon(Icons.open_in_new, size: 18),
+          label: const Text('Troubleshooting guide'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Shared page chrome: a scrolling body with up to two pinned actions. Mirrors
+/// the onboarding wizard's layout without its dependency on WizardSession.
+class _CalibrationPage extends StatelessWidget {
+  final List<Widget> children;
+  final String? primaryLabel;
+  final VoidCallback? onPrimary;
+  final String? secondaryLabel;
+  final VoidCallback? onSecondary;
+
+  const _CalibrationPage({
+    required this.children,
+    required this.primaryLabel,
+    required this.onPrimary,
+    this.secondaryLabel,
+    this.onSecondary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children,
+            ),
+          ),
+        ),
+        if (primaryLabel != null || secondaryLabel != null)
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (primaryLabel != null)
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                      onPressed: onPrimary,
+                      child: Text(primaryLabel!),
+                    ),
+                  if (secondaryLabel != null) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                      onPressed: onSecondary,
+                      child: Text(secondaryLabel!),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// The step-by-step progress of a run.
+class _PhaseChecklist extends StatelessWidget {
+  final CalibrationPhase phase;
+  final bool minFound;
+  final bool maxFound;
+
+  const _PhaseChecklist({required this.phase, required this.minFound, required this.maxFound});
+
+  @override
+  Widget build(BuildContext context) {
+    final failed = phase.isFailure;
+    final complete = phase == CalibrationPhase.complete;
+
+    // A failure has no phase of its own, so the first unfinished step is the
+    // one that broke. Everything before it stands, everything after stays idle.
+    _RowState stateFor({required bool done, required bool isCurrent}) {
+      if (done) return _RowState.done;
+      if (failed) return isCurrent ? _RowState.failed : _RowState.pending;
+      return isCurrent ? _RowState.active : _RowState.pending;
+    }
+
+    // The device only logs anything once the cadence gate opens, so any sign of
+    // a search means the rider got it moving.
+    final started = minFound ||
+        complete ||
+        phase == CalibrationPhase.searchingMin ||
+        phase == CalibrationPhase.searchingMax;
+
+    return Column(
+      children: [
+        _ChecklistRow(
+          label: 'Waiting for you to pedal',
+          state: stateFor(done: started, isCurrent: !started),
+        ),
+        _ChecklistRow(
+          label: 'Finding low resistance',
+          state: stateFor(done: minFound, isCurrent: started && !minFound),
+        ),
+        _ChecklistRow(
+          label: 'Finding high resistance',
+          state: stateFor(done: maxFound, isCurrent: minFound && !maxFound),
+        ),
+        // Only while the closing signal is genuinely outstanding — the
+        // completion grace window, which can run to ten seconds. There is no
+        // "done" state for it: the verdict takes its place. A row that only
+        // ever flipped to a checkmark and vanished is what made the old
+        // "Calibration complete" step worth removing.
+        if (maxFound && !phase.isTerminal)
+          const _ChecklistRow(label: 'Saving calibration', state: _RowState.active),
+      ],
+    );
+  }
+}
+
+enum _RowState { pending, active, done, failed }
+
+class _ChecklistRow extends StatelessWidget {
+  final String label;
+  final _RowState state;
+
+  const _ChecklistRow({required this.label, required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final Color color;
+    final Widget leading;
+
+    switch (state) {
+      case _RowState.done:
+        color = Colors.green;
+        leading = const Icon(Icons.check_circle, color: Colors.green, size: 24);
+        break;
+      case _RowState.active:
+        color = theme.colorScheme.onSurface;
+        leading = const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2.5),
+        );
+        break;
+      case _RowState.failed:
+        color = theme.colorScheme.error;
+        leading = Icon(Icons.cancel, color: theme.colorScheme.error, size: 24);
+        break;
+      case _RowState.pending:
+        color = theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5);
+        leading = Icon(Icons.circle_outlined, color: color, size: 24);
+        break;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          SizedBox(width: 24, height: 24, child: Center(child: leading)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 16,
+                color: color,
+                fontWeight: state == _RowState.active ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Live cadence while the firmware waits for the rider to spin up.
+class _CadenceIndicator extends StatelessWidget {
+  final int cadence;
+  final bool showHint;
+
+  const _CadenceIndicator({required this.cadence, required this.showHint});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final pedaling = cadence > 0;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: pedaling ? Colors.green.withValues(alpha: 0.12) : theme.colorScheme.surfaceContainerHighest,
+        border: Border.all(
+          color: pedaling
+              ? Colors.green.withValues(alpha: 0.6)
+              : theme.colorScheme.outline.withValues(alpha: 0.25),
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Text(
+            'CADENCE',
+            style: TextStyle(
+              fontSize: 11,
+              letterSpacing: 1.5,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$cadence',
+            style: TextStyle(
+              fontSize: 44,
+              height: 1.0,
+              fontWeight: FontWeight.bold,
+              color: pedaling ? Colors.green.shade700 : theme.colorScheme.onSurface,
+            ),
+          ),
+          Text('rpm', style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 12),
+          Text(
+            pedaling ? 'Keep pedaling until the knob starts to turn' : 'Start pedaling to begin',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 14),
+          ),
+          if (showHint) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Nothing will happen until the SmartSpin2k sees a couple of seconds of pedaling.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SymptomCard extends StatelessWidget {
+  final bool selected;
+  final String title;
+  final String body;
+  final VoidCallback onTap;
+
+  const _SymptomCard({
+    required this.selected,
+    required this.title,
+    required this.body,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      elevation: selected ? 4 : 1,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: selected ? colorScheme.primary : Colors.transparent, width: 2),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    Text(body, style: const TextStyle(fontSize: 14, height: 1.4)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CalibrationSetupChoice extends StatelessWidget {
+  final CalibrationSetup? selected;
+  final ValueChanged<CalibrationSetup> onChanged;
+
+  const _CalibrationSetupChoice({required this.selected, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _tile(
+          context,
+          CalibrationSetup.physicalStops,
+          'No',
+          'The resistance knob stops at low and high resistance.',
+        ),
+        const SizedBox(height: 8),
+        _tile(
+          context,
+          CalibrationSetup.pelotonBikePlus,
+          'Yes, Bike+',
+          'The resistance knob turns continuously.',
+        ),
+      ],
+    );
+  }
+
+  Widget _tile(BuildContext context, CalibrationSetup value, String title, String subtitle) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isSelected = selected == value;
+
+    return Card(
+      elevation: isSelected ? 4 : 1,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: isSelected ? colorScheme.primary : Colors.transparent, width: 2),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => onChanged(value),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Text(subtitle, style: const TextStyle(fontSize: 13)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The calibration setup currently on file, with a way back into the picker. The choice is a
+/// single tap, so a mis-tap has to be recoverable without reinstalling.
+class _SelectedSetupRow extends StatelessWidget {
+  final String label;
+  final VoidCallback onChange;
+
+  const _SelectedSetupRow({required this.label, required this.onChange});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Row(
+      children: [
+        Icon(Icons.pedal_bike, size: 20, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(text: 'Calibration setup: '),
+                TextSpan(text: label, style: const TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+            style: theme.textTheme.bodyMedium,
+          ),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
+          onPressed: onChange,
+          child: const Text('Change'),
+        ),
+      ],
+    );
+  }
+}
+
+class _Callout extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String body;
+
+  const _Callout({required this.icon, required this.color, required this.title, required this.body});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(body, style: const TextStyle(fontSize: 15, height: 1.45)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExpansionSection extends StatelessWidget {
+  final String title;
+  final List<Widget> children;
+
+  /// Sits beside the title, inside the header row. Deliberately not
+  /// `ExpansionTile.trailing`, which would replace the rotating chevron.
+  final Widget? action;
+
+  const _ExpansionSection({required this.title, required this.children, this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    const titleStyle = TextStyle(fontSize: 15, fontWeight: FontWeight.w600);
+
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 8),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        title: action == null
+            ? Text(title, style: titleStyle)
+            : Row(
+                children: [
+                  Expanded(child: Text(title, style: titleStyle)),
+                  action!,
+                ],
+              ),
+        children: children,
+      ),
+    );
+  }
+}

@@ -639,7 +639,9 @@ final dynamic customCharacteristicFramework = [
     "reference": "0x2A",
     "isSetting": false,
     "settingType": SettingType.advanced,
-    "type": "int",
+    // int32 on the wire (BLE_Custom_Characteristic.cpp:755-769). "int" would
+    // read only the low 16 bits and truncate any real step count over 32767.
+    "type": "long",
     "humanReadableName": "Homing Min",
     "min": 0,
     "max": 100000000,
@@ -651,7 +653,8 @@ final dynamic customCharacteristicFramework = [
     "reference": "0x2B",
     "isSetting": false,
     "settingType": SettingType.advanced,
-    "type": "int",
+    // int32 on the wire (BLE_Custom_Characteristic.cpp:772-789), as hMin above.
+    "type": "long",
     "humanReadableName": "Homing Max",
     "min": 0,
     "max": 100000000,

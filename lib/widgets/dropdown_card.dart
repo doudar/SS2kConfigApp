@@ -246,12 +246,11 @@ class _DropdownCardState extends State<DropdownCard> {
                         TextButton.icon(
                             icon: Icon(Icons.refresh, color: Colors.white70),
                             label: const Text('SCAN', style: TextStyle(color: Colors.white)),
-                            onPressed: () {
+                            onPressed: () async {
                               //Find the save command and execute it
-                              this
+                              await this
                                   .bleData
-                                  .customCharacteristic
-                                  .forEach((c) => this.bleData.findNSave(this.widget.device, c, scanBLEVname));
+                                  .writeCommand(this.widget.device, scanBLEVname);
                             }),
                       Spacer(),
                       TextButton(
@@ -263,12 +262,12 @@ class _DropdownCardState extends State<DropdownCard> {
                       FilledButton(
                           style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: baseColor),
                           child: const Text('SAVE', style: TextStyle(fontWeight: FontWeight.bold)),
-                          onPressed: () {
+                          onPressed: () async {
                             //Find the save command and execute it
-                            this
+                            await this
                                 .bleData
-                                .customCharacteristic
-                                .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                                .writeCommand(this.widget.device, saveVname);
+                            if (!mounted) return;
                             Navigator.pop(context);
                           }),
                     ],

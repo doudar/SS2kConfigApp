@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import '../screens/calibration_screen.dart';
 import '../services/intervals_service.dart';
 import '../services/intervals_workout_converter.dart';
 import '../utils/workout/workout_controller.dart';
@@ -10,7 +12,6 @@ import '../utils/workout/workout_tts_settings.dart';
 import '../utils/workout/workout_text_event_overlay.dart';
 import '../utils/workout/workout_parser.dart';
 import '../utils/bledata.dart';
-import '../utils/ftmsControlPoint.dart';
 import '../utils/workout/workout_connected_accounts.dart';
 import 'workout_library.dart';
 import 'audio_coach_dialog.dart';
@@ -28,6 +29,7 @@ class WorkoutMenu extends StatelessWidget {
     super.key,
     required this.workoutController,
     required this.bleData,
+    required this.device,
     required this.ttsSettings,
     required this.workoutGraphKey,
     required this.onWorkoutLoaded,
@@ -35,6 +37,7 @@ class WorkoutMenu extends StatelessWidget {
 
   final WorkoutController workoutController;
   final BLEData bleData;
+  final BluetoothDevice device;
   final WorkoutTTSSettings ttsSettings;
   final GlobalKey workoutGraphKey;
   final void Function(String content, {String? name}) onWorkoutLoaded;
@@ -949,67 +952,8 @@ class WorkoutMenu extends StatelessWidget {
   }
 
   void _showCalibrationDialog(BuildContext context) {
-    bool isCalibrating = false;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return StatefulBuilder(builder: (ctx2, setState) {
-          return AlertDialog(
-            title: const Text('Calibration'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (!isCalibrating)
-                  const Text('Start pedaling until the SmartSpin2k knob starts to turn.\n\nPress Start when ready.'),
-                if (isCalibrating)
-                  const Text(
-                      'Stop pedaling and wait for the calibration to complete.\n\nThis may take a few moments...'),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('CANCEL')),
-              if (!isCalibrating)
-                TextButton(
-                  onPressed: () async {
-                    setState(() => isCalibrating = true);
-                    try {
-                      if (bleData.ftmsControlPointCharacteristic != null) {
-                        await bleData.writeFtmsControlPoint(
-                          (characteristic) =>
-                              FTMSControlPoint.spinDownControl(
-                            characteristic,
-                            true,
-                          ),
-                        );
-                        await Future.delayed(const Duration(seconds: 30));
-                        Navigator.of(ctx).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Calibration completed'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      } else {
-                        throw Exception('FTMS Control Point characteristic not found');
-                      }
-                    } catch (e) {
-                      Navigator.of(ctx).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Calibration failed: $e'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                  },
-                  child: const Text('START'),
-                ),
-            ],
-          );
-        });
-      },
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => CalibrationScreen(device: device)),
     );
   }
 

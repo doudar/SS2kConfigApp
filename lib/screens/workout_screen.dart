@@ -114,6 +114,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     super.initState();
     WakelockPlus.enable();
     bleData = BLEDataManager.forDevice(widget.device);
+    unawaited(bleData.updateIndoorBikeData(widget.device));
     _workoutController = WorkoutController(bleData, widget.device);
     _initTTSSettings();
     _initializeAnimationControllers();
@@ -438,6 +439,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
       appBar: SS2KAppBar(
         device: widget.device,
         title: _workoutName ?? '',
+        firmwareOnlyDeviceHeader: true,
         actions: [
           if (MediaQuery.of(context).orientation == Orientation.landscape)
             IconButton(
@@ -454,6 +456,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
           WorkoutMenu(
             workoutController: _workoutController,
             bleData: bleData,
+            device: widget.device,
             ttsSettings: _ttsSettings,
             workoutGraphKey: _workoutGraphKey,
             onWorkoutLoaded: (content, {String? name}) {

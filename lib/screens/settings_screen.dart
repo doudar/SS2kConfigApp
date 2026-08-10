@@ -121,6 +121,7 @@ class _SettingsScreenState extends State<SettingsScreen>{
         appBar: SS2KAppBar(
           device: widget.device,
           title: "Settings",
+          firmwareOnlyDeviceHeader: true,
         ),
         body: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -145,7 +146,14 @@ class _SettingsScreenState extends State<SettingsScreen>{
                     'Load, Save, Import & Export Configuration',
                     style: TextStyle(color: Colors.white70),
                   ),
-                  onTap: () => PresetManager.showPresetsMenu(context, bleData, widget.device),
+                  onTap: () async {
+                    // Preset operations are the one settings workflow that
+                    // needs an authoritative snapshot of every setting.
+                    await bleData.requestAllEditableSettings(widget.device);
+                    if (!context.mounted) return;
+                    await PresetManager.showPresetsMenu(
+                        context, bleData, widget.device);
+                  },
                   trailing: Icon(Icons.chevron_right, color: Colors.white),
                 ),
               ),

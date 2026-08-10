@@ -9,6 +9,8 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final List<Widget>? actions;
   final bool showDeviceHeader;
+  final bool firmwareOnlyDeviceHeader;
+  final bool deviceHeaderCustomRefreshEnabled;
 
   const SS2KAppBar({
     Key? key,
@@ -16,6 +18,8 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.title,
     this.actions,
     this.showDeviceHeader = true,
+    this.firmwareOnlyDeviceHeader = false,
+    this.deviceHeaderCustomRefreshEnabled = true,
   }) : super(key: key);
 
   double _computeAdaptiveHeight({
@@ -159,7 +163,12 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
                 if (showDeviceHeader)
                   const SizedBox(height: 2),
                 if (showDeviceHeader)
-                  DeviceHeader(device: device, connectOnly: true),
+                  DeviceHeader(
+                    device: device,
+                    connectOnly: true,
+                    firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
+                    customRefreshEnabled: deviceHeaderCustomRefreshEnabled,
+                  ),
               ],
             )
           : Stack(
@@ -169,7 +178,13 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
                   child: showDeviceHeader
                       ? Padding(
                           padding: const EdgeInsets.only(left: 4),
-                          child: DeviceHeader(device: device, connectOnly: true),
+                          child: DeviceHeader(
+                            device: device,
+                            connectOnly: true,
+                            firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
+                            customRefreshEnabled:
+                                deviceHeaderCustomRefreshEnabled,
+                          ),
                         )
                       : null,
                 ),

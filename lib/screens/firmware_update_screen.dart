@@ -58,9 +58,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   late BLEData bleData;
   final BleRepository bleRepo = BleRepository();
   String _builtinFirmwareVersion = '';
-
-  Timer _loadingTimer =
-      Timer.periodic(Duration(seconds: 30), (_loadingTimer) {});
+  VoidCallback? _firmwareVersionListener;
+  Future<void>? _initializationFuture;
 
   List<FirmwareRelease> _availableReleases = [];
   FirmwareRelease? _selectedRelease;
@@ -75,7 +74,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   String timeRemaining = 'Calculating...';
   bool _usingWifi = false;
 
-  bool firmwareCharReceived = false;
   bool _uploadCompleteDialogShown = false;
   bool updatingFirmware = false;
 
@@ -87,20 +85,24 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+
+    _loaded = bleData.firmwareVersion.value.isNotEmpty;
+    _firmwareVersionListener = () {
+      if (!mounted || bleData.firmwareVersion.value.isEmpty) return;
+      if (!_loaded) {
+        setState(() => _loaded = true);
+      } else {
+        setState(() {});
+      }
+    };
+    bleData.firmwareVersion.addListener(_firmwareVersionListener!);
+
     if (this.bleData.charReceived.value == true) {
-      _initialize();
+      unawaited(_initializeOnce());
     } else {
       this.bleData.charReceived.addListener(_charListener);
     }
-    _loadingTimer = Timer.periodic(Duration(microseconds: 100), (_fwCheck) {
-      if (this.bleData.firmwareVersion.value == "") {
-        return;
-      } else {
-        _loaded = true;
-        setState(() {});
-        _fwCheck.cancel();
-      }
-    });
+    unawaited(_bootstrapFirmwareData());
     // Listen for firmware update progress and handle completion
     progressSubscription?.onDone(() {
       // Do not show dialog here, let the main control flow handle it
@@ -123,7 +125,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     progressSubscription?.cancel();
     charSubscription?.cancel();
     this.bleData.charReceived.removeListener(_charListener);
-    _loadingTimer.cancel();
+    if (_firmwareVersionListener != null) {
+      bleData.firmwareVersion.removeListener(_firmwareVersionListener!);
+    }
     WakelockPlus.disable();
     super.dispose();
   }
@@ -196,7 +200,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   Future<void> _initialize() async {
     //check for demo mode
-    if (!bleData.isSimulated) {
+    if (!bleData.isSimulated && bleData.configAppCompatibleFirmware) {
       otaPackage = Esp32OtaPackage(this.bleData.firmwareDataCharacteristic,
           this.bleData.firmwareControlCharacteristic);
       await _progressStreamSubscription();
@@ -205,9 +209,25 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     await _fetchAllFirmwareReleases();
   }
 
+  Future<void> _initializeOnce() {
+    return _initializationFuture ??= _initialize();
+  }
+
+  Future<void> _bootstrapFirmwareData() async {
+    await bleData.ensureCustomCharacteristicStream(widget.device);
+    if (!mounted) return;
+
+    if (bleData.charReceived.value) {
+      await _initializeOnce();
+    }
+    if (widget.device.isConnected) {
+      await bleData.requestSetting(widget.device, fwVname);
+    }
+  }
+
   Future<void> _charListener() async {
     if (this.bleData.charReceived.value) {
-      _initialize();
+      await _initializeOnce();
       if (mounted) {
         setState(() {});
       }
@@ -1043,7 +1063,11 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: SS2KAppBar(device: widget.device, title: 'Firmware Update'),
+      appBar: SS2KAppBar(
+        device: widget.device,
+        title: 'Firmware Update',
+        firmwareOnlyDeviceHeader: true,
+      ),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {

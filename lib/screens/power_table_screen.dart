@@ -49,6 +49,10 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
       });
     }
     rwSubscription();
+    unawaited(bleData.updateIndoorBikeData(widget.device));
+    unawaited(
+      bleData.requestSetting(widget.device, shifterPositionVname),
+    );
   }
 
   @override
@@ -100,6 +104,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
       appBar: SS2KAppBar(
         device: widget.device,
         title: 'Resistance Chart',
+        firmwareOnlyDeviceHeader: true,
         actions: [
           IconButton(
             icon: Icon(Icons.table_chart),

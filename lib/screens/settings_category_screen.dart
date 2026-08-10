@@ -35,11 +35,18 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   VoidCallback? _charReceivedListener;
   late BLEData bleData;
+  late Set<String> _categorySettingNames;
 
   @override
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
+    _categorySettingNames = bleData.customCharacteristic
+        .where((c) =>
+            c["isSetting"] == true &&
+            c["settingType"] == widget.settingType)
+        .map((c) => c["vName"].toString())
+        .toSet();
 
     _charReceivedListener = () {
       if (mounted) {
@@ -55,10 +62,14 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
     });
 
     _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
-      if (mounted) {
+      if (mounted && _categorySettingNames.contains(event.vName)) {
         setState(() {});
       }
     });
+
+    unawaited(
+      bleData.requestSettingsForType(widget.device, widget.settingType),
+    );
   }
 
   @override
@@ -96,6 +107,7 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
       appBar: SS2KAppBar(
         device: widget.device,
         title: widget.title,
+        firmwareOnlyDeviceHeader: true,
       ),
       body: Center(
         child: Builder(builder: (context) {

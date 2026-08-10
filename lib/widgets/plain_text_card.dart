@@ -198,17 +198,18 @@ class _plainTextCardState extends State<plainTextCard> {
                 const SizedBox(width: 8),
                 TextButton(
                     child: const Text('SAVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    onPressed: () {
+                    onPressed: () async {
                       // Use the controller's text for validation
                       bool inputIsValid = verifyInput(controller.text);
                       print("**********************************" + controller.text);
                       if (inputIsValid) {
                         // Proceed with saving if input is valid
-                        this.bleData.writeToSS2k(this.widget.device, this.widget.c);
-                        this
+                        await this.bleData.writeToSS2k(
+                            this.widget.device, this.widget.c);
+                        await this
                             .bleData
-                            .customCharacteristic
-                            .forEach((c) => this.bleData.findNSave(this.widget.device, c, saveVname));
+                            .writeCommand(this.widget.device, saveVname);
+                        if (!mounted) return;
                         Navigator.pop(context);
                       } else {
                         // Handle invalid input, e.g., show an error message

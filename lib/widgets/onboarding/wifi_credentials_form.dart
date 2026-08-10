@@ -64,20 +64,20 @@ class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
       .cast<Map?>()
       .firstWhere((c) => c?['vName'] == vName, orElse: () => null);
 
-  void _save() {
+  Future<void> _save() async {
     final ssidMap = _charFor(ssidVname);
     final pwMap = _charFor(passwordVname);
     if (ssidMap != null) {
       ssidMap['value'] = _ssidController.text.trim();
-      _bleData.writeToSS2k(widget.device, ssidMap);
+      await _bleData.writeToSS2k(widget.device, ssidMap);
     }
     if (pwMap != null) {
       pwMap['value'] = _passwordController.text;
-      _bleData.writeToSS2k(widget.device, pwMap);
+      await _bleData.writeToSS2k(widget.device, pwMap);
     }
     // Persist to LittleFS.
-    _bleData.customCharacteristic
-        .forEach((c) => _bleData.findNSave(widget.device, c, saveVname));
+    await _bleData.writeCommand(widget.device, saveVname);
+    if (!mounted) return;
     setState(() => _saved = true);
   }
 
