@@ -16,7 +16,10 @@ import '../utils/constants.dart';
 class DeviceHeader extends StatefulWidget {
   final BluetoothDevice device;
   final bool connectOnly;
-  const DeviceHeader({Key? key, required this.device, this.connectOnly = false})
+  final bool firmwareOnlyRefresh;
+  final bool customRefreshEnabled;
+  const DeviceHeader({Key? key, required this.device, this.connectOnly = false,
+      this.firmwareOnlyRefresh = false, this.customRefreshEnabled = true})
       : super(key: key);
 
   @override
@@ -66,9 +69,17 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         this.widget.device.connectionState.listen((state) async {
       if (state == BluetoothConnectionState.connected) {
         this.bleData.rssi.value = await this.widget.device.readRssi();
-        await this.bleData.setupConnection(this.widget.device);
-        if (!_isRefreshing) {
-          await _refreshDeviceInfo();
+        if (widget.customRefreshEnabled) {
+          if (widget.firmwareOnlyRefresh) {
+            await this
+                .bleData
+                .ensureCustomCharacteristicStream(this.widget.device);
+          } else {
+            await this.bleData.setupConnection(this.widget.device);
+          }
+          if (!_isRefreshing) {
+            await _refreshDeviceInfo();
+          }
         }
       } else {
         this.bleData.rssi.value = 0;
@@ -89,9 +100,13 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       // Wait a bit for the device to stabilize after connection
       await Future.delayed(Duration(seconds: 1));
 
-      // Discover services to get new firmware version
-      this.bleData.services = await this.widget.device.discoverServices();
-      bleData.requestSetting(this.widget.device, fwVname);
+      if (widget.firmwareOnlyRefresh) {
+        await bleData.ensureCustomCharacteristicStream(widget.device);
+      } else {
+        // A manual/full refresh also refreshes the service cache.
+        this.bleData.services = await this.widget.device.discoverServices();
+      }
+      await bleData.requestSetting(this.widget.device, fwVname);
     } catch (e) {
       print('Error refreshing device info: $e');
     } finally {
@@ -115,7 +130,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Future<void> _handleReconnected() async {
     if (!mounted) return;
     this.bleData.rssi.value = await this.widget.device.readRssi();
-    if (!_isRefreshing) {
+    if (widget.customRefreshEnabled && !_isRefreshing) {
       await _refreshDeviceInfo();
     }
     if (mounted) setState(() {});
@@ -129,7 +144,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     //This timer checks to see if data has been read from the device
     setupTimer = Timer.periodic(Duration(seconds: 5), (timer) async {
       String testValue = bleData.getVnameValue(connectedPWRVname);
-      if (testValue == "null" && this.widget.device.isConnected) {
+      if (widget.customRefreshEnabled &&
+          !widget.firmwareOnlyRefresh &&
+          testValue == "null" &&
+          this.widget.device.isConnected) {
         await this.bleData.setupConnection(this.widget.device);
       }
       // Check FTMS health on every tick
@@ -143,7 +161,9 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     if (this.widget.device.isConnected) {
       try {
         this.bleData.rssi.value = await this.widget.device.readRssi();
-        bleData.requestSetting(this.widget.device, fwVname);
+        if (widget.customRefreshEnabled) {
+          bleData.requestSetting(this.widget.device, fwVname);
+        }
         // No need for manual setState here anymore - the listener will handle firmware version updates
       } catch (e) {
         this.bleData.rssi.value = 0;

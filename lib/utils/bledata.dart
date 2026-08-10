@@ -14,6 +14,7 @@ import 'constants.dart';
 import 'extra.dart';
 import 'ftmsControlPoint.dart';
 import 'bleConstants.dart';
+import 'ble_request_coalescer.dart';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
@@ -234,6 +235,15 @@ class BLEData {
   /// Reset BLE state that is tied to a specific connection so that the next
   /// [setupConnection] call performs a full re-bootstrap.
   void _resetConnectionState() {
+    final pendingResponse = _pendingCustomResponse;
+    if (pendingResponse != null && !pendingResponse.isCompleted) {
+      // Release the serialized BLE queue immediately. The next operation will
+      // observe the disconnected device instead of waiting for the timeout.
+      pendingResponse.complete();
+    }
+    _pendingCustomResponse = null;
+    _pendingCustomResponseReference = null;
+    _customReadRequestCoalescer.clear();
     subscribed = false;
     charReceived.value = false;
     _myCharacteristic = null;
@@ -447,7 +457,7 @@ class BLEData {
     };
   }
 
-  Future<BluetoothCharacteristic?> getMyCharacteristic(
+  Future<BluetoothCharacteristic?> _getMyCharacteristic(
       BluetoothDevice device) async {
     if (this.isSimulated) return null;
     if (!device.isConnected) {
@@ -854,19 +864,28 @@ class BLEData {
     }();
   }
 
-  Future<void> findNSave(BluetoothDevice device, Map c, String find) async {
+  Future<void> writeCommand(BluetoothDevice device, String name) async {
     if (this.isSimulated) return;
     // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
-    if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
+    if (!this.configAppCompatibleFirmware && name == saveVname) {
       return;
     }
-    if (c["vName"] == find) {
-      try {
-        await write(device, [0x02, int.parse(c["reference"]), 0x01]);
-      } catch (e) {
-        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
-            success: false);
+
+    Map<String, dynamic>? command;
+    for (final c in customCharacteristic) {
+      if (c["vName"] == name) {
+        command = c;
+        break;
       }
+    }
+    if (command == null) return;
+
+    try {
+      await writeCustomCharacteristic(
+          device, [0x02, int.parse(command["reference"]), 0x01]);
+    } catch (e) {
+      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
+          success: false);
     }
   }
 
@@ -875,30 +894,22 @@ class BLEData {
     for (var c in this.customCharacteristic) {
       if (c["isSetting"] == true) await writeToSS2k(device, c);
     }
-    for (var c in this.customCharacteristic) {
-      await findNSave(device, c, saveVname);
-    }
+    await writeCommand(device, saveVname);
   }
 
   Future reboot(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    for (var c in this.customCharacteristic) {
-      await findNSave(device, c, rebootVname);
-    }
+    await writeCommand(device, rebootVname);
   }
 
   Future resetToDefaults(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    for (var c in this.customCharacteristic) {
-      await findNSave(device, c, resetVname);
-    }
+    await writeCommand(device, resetVname);
   }
 
   Future resetPowerTable(BluetoothDevice device) async {
     if (this.isSimulated) return;
-    for (var c in this.customCharacteristic) {
-      await findNSave(device, c, resetPowerTableVname);
-    }
+    await writeCommand(device, resetPowerTableVname);
   }
 
 //request all settings
@@ -917,7 +928,8 @@ class BLEData {
       }
 
       try {
-        await write(device, [0x01, int.parse(c["reference"])]);
+        await writeCustomCharacteristic(
+            device, [0x01, int.parse(c["reference"])]);
       } catch (e) {
         Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
             success: false);
@@ -925,32 +937,60 @@ class BLEData {
     }
   }
 
-//request single setting
-  Future requestSetting(BluetoothDevice device, String name,
-      {int? extraByte}) async {
-    if (this.isSimulated) return;
-    Future<void> _request(Map c) async {
-      // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
-      if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
-        return;
+  /// Requests only editable settings belonging to [settingType]. Cached values
+  /// remain available while the authoritative values arrive from the device.
+  Future<void> requestSettingsForType(
+      BluetoothDevice device, SettingType settingType) async {
+    if (isSimulated) return;
+
+    for (final c in customCharacteristic) {
+      if (c["isSetting"] != true || c["settingType"] != settingType) {
+        continue;
       }
-      if (c["vName"] == name) {
-        try {
-          List<int> value = [0x01, int.parse(c["reference"])];
-          if (extraByte != null) {
-            value.add(extraByte);
-          }
-          return write(device, value);
-        } catch (e) {
-          Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
-        }
-      } else {
-        // skipped
+
+      try {
+        await writeCustomCharacteristic(
+            device, [0x01, int.parse(c["reference"])]);
+      } catch (e) {
+        Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
       }
     }
+  }
 
-    for (var c in this.customCharacteristic) {
-      await _request(c);
+  Future<void> requestAllEditableSettings(BluetoothDevice device) async {
+    for (final settingType in SettingType.values) {
+      await requestSettingsForType(device, settingType);
+    }
+  }
+
+//request single setting
+  Future<void> requestSetting(BluetoothDevice device, String name,
+      {int? extraByte}) async {
+    if (this.isSimulated) return;
+
+    Map<String, dynamic>? setting;
+    for (final c in customCharacteristic) {
+      if (c["vName"] == name) {
+        setting = c;
+        break;
+      }
+    }
+    if (setting == null) return;
+
+    // Firmware that wasn't compatible with the app would reboot whenever this
+    // command was read.
+    if (!configAppCompatibleFirmware && setting["vName"] == saveVname) {
+      return;
+    }
+
+    try {
+      final value = <int>[0x01, int.parse(setting["reference"])];
+      if (extraByte != null) {
+        value.add(extraByte);
+      }
+      await writeCustomCharacteristic(device, value);
+    } catch (e) {
+      Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
     }
   }
 
@@ -1067,7 +1107,7 @@ class BLEData {
 
           // Write the data to the device
           try {
-            await write(device, rowToSend);
+            await writeCustomCharacteristic(device, rowToSend);
           } catch (e) {
             Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
                 success: false);
@@ -1080,7 +1120,7 @@ class BLEData {
       //value = [0xff];
     }
     try {
-      await write(device, value);
+      await writeCustomCharacteristic(device, value);
     } catch (e) {
       Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
@@ -1088,6 +1128,11 @@ class BLEData {
 
   Future<void> _writeQueue = Future.value();
   DateTime? _lastBleWriteCompletedAt;
+  Completer<void>? _pendingCustomResponse;
+  int? _pendingCustomResponseReference;
+  final CustomReadRequestCoalescer _customReadRequestCoalescer =
+      CustomReadRequestCoalescer();
+  static const Duration _customResponseTimeout = Duration(seconds: 2);
   final Object _bleOperationZoneKey = Object();
   final Set<Object> _activeBleOperationTokens = <Object>{};
 
@@ -1138,17 +1183,53 @@ class BLEData {
     return queued;
   }
 
-  Future<void> write(BluetoothDevice device, List<int> value) async {
-    if (this.isSimulated) return;
+  /// Writes to the SmartSpin2k custom characteristic and does not complete
+  /// until the server returns the matching response (or the response times out).
+  Future<void> writeCustomCharacteristic(
+      BluetoothDevice device, List<int> value) {
+    if (isSimulated) return Future<void>.value();
+    return _customReadRequestCoalescer.schedule(
+      value,
+      (packet) => _writeCustomCharacteristic(device, packet),
+    );
+  }
+
+  Future<void> _writeCustomCharacteristic(
+      BluetoothDevice device, List<int> value) async {
 
     return _queueBleOperation(() async {
-      final characteristic = await getMyCharacteristic(device);
+      final characteristic = await _getMyCharacteristic(device);
       if (characteristic != null && characteristic.device.isConnected) {
+        // Subscribe before writing so even a very fast server response cannot be
+        // missed. Custom-characteristic writes are kept in the queue until the
+        // response bearing the same characteristic reference arrives.
+        if (!subscribed) {
+          decode(device);
+        }
+        if (!characteristic.isNotifying) {
+          await characteristic.setNotifyValue(true);
+        }
+
+        final response = Completer<void>();
+        final expectedReference = value.length > 1 ? value[1] : null;
+        if (expectedReference != null) {
+          _pendingCustomResponse = response;
+          _pendingCustomResponseReference = expectedReference;
+        }
+
         try {
           await characteristic.write(value);
+          if (expectedReference != null) {
+            await response.future.timeout(_customResponseTimeout);
+          }
         } catch (e) {
           Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
               success: false);
+        } finally {
+          if (identical(_pendingCustomResponse, response)) {
+            _pendingCustomResponse = null;
+            _pendingCustomResponseReference = null;
+          }
         }
       } else {
         Snackbar.show(ABC.c, "Failed to write to SmartSpin2k - Not Connected",
@@ -1188,6 +1269,18 @@ class BLEData {
         characteristic.onValueReceived.listen((value) {
       try {
         if (value.isEmpty) return;
+
+        // Both a normal response (0x80) and an unsupported-setting response
+        // (0xff) finish the in-flight request. Complete this before decoding so
+        // even a short or otherwise unsupported payload releases the next write.
+        if (value.length > 1 && (value[0] == 0x80 || value[0] == 0xff)) {
+          final pendingResponse = _pendingCustomResponse;
+          if (pendingResponse != null &&
+              !pendingResponse.isCompleted &&
+              value[1] == _pendingCustomResponseReference) {
+            pendingResponse.complete();
+          }
+        }
 
         if (value[0] == 0x80) {
           if (value.length < 2) return;

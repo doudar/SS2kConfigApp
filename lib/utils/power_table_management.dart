@@ -70,8 +70,8 @@ class PowerTableManager {
           if (!device.isConnected) {
             throw Exception("Device not connected");
           }
-          bleData.write(device, command);
-          // Add a small delay between rows
+          await bleData.writeCustomCharacteristic(device, command);
+          // Preserve the existing pacing after the acknowledged response.
           await Future.delayed(Duration(milliseconds: 500));
         } catch (e) {
           if (context.mounted) {
@@ -154,8 +154,8 @@ class PowerTableManager {
           if (!device.isConnected) {
             throw Exception("Device not connected");
           }
-          bleData.write(device, command);
-          // Add a small delay between rows to prevent overwhelming the device
+          await bleData.writeCustomCharacteristic(device, command);
+          // Preserve the existing pacing after the acknowledged response.
           await Future.delayed(Duration(milliseconds: 100));
         } catch (e) {
           if (context.mounted) {
@@ -171,7 +171,7 @@ class PowerTableManager {
           // Find HMax in custom characteristic framework and write to device
           for (var c in bleData.customCharacteristic) {
             if (c["vName"] == BLE_hMaxVname) {
-              bleData.writeToSS2k(device, c, s: hMaxValue);
+              await bleData.writeToSS2k(device, c, s: hMaxValue);
               break;
             }
           }

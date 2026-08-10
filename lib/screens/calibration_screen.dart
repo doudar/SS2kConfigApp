@@ -91,6 +91,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   void initState() {
     super.initState();
     bleData = BLEDataManager.forDevice(widget.device);
+    unawaited(bleData.updateIndoorBikeData(widget.device));
     _monitor = CalibrationMonitor(bleData: bleData, device: widget.device)..addListener(_onMonitorChanged);
 
     _cadenceSubscription = bleData.characteristicChanges.listen((_) {
@@ -264,6 +265,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         device: widget.device,
         title: "Calibrate Trainer",
         showDeviceHeader: widget.showDeviceHeader,
+        deviceHeaderCustomRefreshEnabled: false,
       ),
       body: Column(
         children: [

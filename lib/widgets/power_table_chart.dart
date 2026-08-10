@@ -27,6 +27,7 @@ class PowerTableChart extends StatefulWidget {
   final BLEData bleData;
   final bool pollTargetPosition;
   final Duration pollInterval;
+  final Duration initialDataLoadDelay;
 
   const PowerTableChart({
     Key? key,
@@ -34,6 +35,7 @@ class PowerTableChart extends StatefulWidget {
     required this.bleData,
     this.pollTargetPosition = true,
     this.pollInterval = const Duration(seconds: 5),
+    this.initialDataLoadDelay = Duration.zero,
   }) : super(key: key);
 
   @override
@@ -55,6 +57,7 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   Timer? _homingValuesTimer;
   Timer? _targetPositionTimer;
   Timer? _cadenceLinesTimer;
+  Timer? _initialDataLoadTimer;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
 
   List<Color> get colors => PowerTableChart.lineColors;
@@ -71,10 +74,17 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
       vsync: this,
     )..repeat(reverse: true);
 
-    requestAllCadenceLines();
-    requestHomingValues();
     _loadAxisPreference();
-    _startTargetPositionPolling();
+
+    if (widget.initialDataLoadDelay == Duration.zero) {
+      _loadChartData();
+    } else {
+      _initialDataLoadTimer = Timer(widget.initialDataLoadDelay, () {
+        if (mounted) {
+          _loadChartData();
+        }
+      });
+    }
 
     // Set up timer to periodically check homing values
     _homingValuesTimer = Timer.periodic(const Duration(seconds: 60), (_homingValuesTimer) {
@@ -99,11 +109,23 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   @override
   void dispose() {
     _pulseController.dispose();
+    _initialDataLoadTimer?.cancel();
     _homingValuesTimer?.cancel();
     _targetPositionTimer?.cancel();
     _cadenceLinesTimer?.cancel();
     _characteristicChangeSubscription?.cancel();
     super.dispose();
+  }
+
+  void _loadChartData() {
+    if (widget.pollTargetPosition) {
+      unawaited(
+        widget.bleData.requestSetting(widget.device, targetPositionVname),
+      );
+    }
+    unawaited(requestAllCadenceLines());
+    unawaited(requestHomingValues());
+    _startTargetPositionPolling();
   }
 
   @override

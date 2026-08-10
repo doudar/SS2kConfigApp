@@ -24,11 +24,12 @@ class ShifterScreen extends StatefulWidget {
 
 class _ShifterScreenState extends State<ShifterScreen> {
   late BLEData bleData;
-  late ValueNotifier<String> t;
-  Map<String, dynamic> c = const {};
-  Timer? _pendingShiftTimer;
+  late ValueNotifier<String> _displayedShifterValue;
+  Map<String, dynamic> _shifterCharacteristic = const {};
   String? _confirmedShifterValue;
-  String? _pendingShifterValue;
+  int _pendingShiftWrites = 0;
+  int _shiftGeneration = 0;
+  late BluetoothConnectionState _lastConnectionState;
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   double _chartOpacity = 0.15;
@@ -42,27 +43,29 @@ class _ShifterScreenState extends State<ShifterScreen> {
     // Keep the shifter screen awake during use, matching workout behavior.
     WakelockPlus.enable();
     bleData = BLEDataManager.forDevice(this.widget.device);
-    t = ValueNotifier("Connecting");
+    _displayedShifterValue = ValueNotifier("Connecting");
     _syncShifterValueFromCache();
+    _lastConnectionState = widget.device.isConnected
+        ? BluetoothConnectionState.connected
+        : BluetoothConnectionState.disconnected;
 
     //special setup for demo mode
     if (bleData.isSimulated) {
-      t.value = "0";
+      _displayedShifterValue.value = "0";
       return;
     }
 
-    unawaited(bleData.ensureCustomCharacteristicStream(widget.device));
-
-    //Start Subscription
-    rwSubscription();
+    // Subscribe before requesting so a fast response cannot be missed.
+    _subscribeToDeviceUpdates();
+    unawaited(bleData.updateIndoorBikeData(widget.device));
+    unawaited(_refreshAuthoritativeShifterValue());
   }
 
   @override
   void dispose() {
-    _pendingShiftTimer?.cancel();
     _connectionStateSubscription?.cancel();
     _characteristicChangeSubscription?.cancel();
-    t.dispose();
+    _displayedShifterValue.dispose();
     WakelockPlus.disable();
     super.dispose();
   }
@@ -71,48 +74,60 @@ class _ShifterScreenState extends State<ShifterScreen> {
     return value.isNotEmpty && value != "null" && value != noFirmSupport;
   }
 
-  void _applyShifterValue(String shifterValue) {
+  void _applyAuthoritativeShifterValue(String shifterValue) {
     if (_isValidShifterValue(shifterValue)) {
       _confirmedShifterValue = shifterValue;
-      if (_pendingShifterValue != null) {
-        _pendingShiftTimer?.cancel();
-        _pendingShiftTimer = null;
-        _pendingShifterValue = null;
+      // Keep the latest optimistic value visible while app-originated shifts
+      // are queued. The last server response is applied when the queue drains.
+      if (_pendingShiftWrites == 0) {
+        _displayedShifterValue.value = shifterValue;
       }
-      t.value = shifterValue;
-    } else {
-      t.value = "Connecting";
+    } else if (_confirmedShifterValue == null && _pendingShiftWrites == 0) {
+      _displayedShifterValue.value = "Connecting";
     }
   }
 
   void _syncShifterValueFromCache() {
-    c = this.bleData.customCharacteristic.firstWhere(
+    _shifterCharacteristic = this.bleData.customCharacteristic.firstWhere(
       (i) => i["vName"] == shifterPositionVname,
       orElse: () => <String, dynamic>{},
     );
 
-    final shifterValue = c["value"]?.toString() ?? "";
-    _applyShifterValue(shifterValue);
+    final shifterValue = _shifterCharacteristic["value"]?.toString() ?? "";
+    _applyAuthoritativeShifterValue(shifterValue);
   }
 
-  Future rwSubscription() async {
-    _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
-      if (state == BluetoothConnectionState.connected) {
-        _confirmedShifterValue = null;
-        _pendingShifterValue = null;
-        _pendingShiftTimer?.cancel();
-        t.value = "Connecting";
-        unawaited(bleData.ensureCustomCharacteristicStream(widget.device));
+  Future<void> _refreshAuthoritativeShifterValue() async {
+    if (!mounted || !widget.device.isConnected) return;
+    // The write pathway ensures notifications are active before sending, so
+    // this request can enter the BLE queue immediately on screen entry.
+    await bleData.requestSetting(widget.device, shifterPositionVname);
+  }
+
+  void _subscribeToDeviceUpdates() {
+    _connectionStateSubscription =
+        this.widget.device.connectionState.listen((state) {
+      final previousState = _lastConnectionState;
+      _lastConnectionState = state;
+
+      if (state == BluetoothConnectionState.connected &&
+          previousState != BluetoothConnectionState.connected) {
+        // Retain the cached value during reconnect, but invalidate optimistic
+        // writes from the old connection and immediately confirm with SS2k.
+        _shiftGeneration++;
+        _pendingShiftWrites = 0;
+        _syncShifterValueFromCache();
+        unawaited(_refreshAuthoritativeShifterValue());
       }
     });
 
-    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
+    _characteristicChangeSubscription =
+        bleData.characteristicChanges.listen((event) {
       if (!mounted) return;
 
       // Shifter position from device is authoritative (includes external shifter and accepted app shifts).
       if (event.vName == shifterPositionVname) {
-        _applyShifterValue(event.value);
-        _syncShifterValueFromCache();
+        _applyAuthoritativeShifterValue(event.value);
       }
 
       // Keep simulated watts in sync with FTMS mode, matching the live updates used by the power table chart
@@ -122,34 +137,39 @@ class _ShifterScreenState extends State<ShifterScreen> {
     });
   }
 
-  void _startPendingShiftTimeout() {
-    _pendingShiftTimer?.cancel();
-    _pendingShiftTimer = Timer(const Duration(milliseconds: 1000), () {
-      if (!mounted || _pendingShifterValue == null) {
-        return;
+  Future<void> _sendShift(
+      Map<String, dynamic> shiftValue, int generation) async {
+    try {
+      await bleData.writeToSS2k(widget.device, shiftValue);
+    } finally {
+      if (generation != _shiftGeneration) return;
+      if (_pendingShiftWrites > 0) {
+        _pendingShiftWrites--;
       }
-
-      _pendingShifterValue = null;
-      t.value = _confirmedShifterValue ?? "Connecting";
-    });
+      if (mounted && _pendingShiftWrites == 0) {
+        // The notification handler records every authoritative value. Once all
+        // app writes have responses, the final device value wins (including a
+        // clamped or rejected shift).
+        _displayedShifterValue.value =
+            _confirmedShifterValue ?? "Connecting";
+      }
+    }
   }
 
-  shift(int amount) {
-    if (_pendingShifterValue != null) {
-      return;
-    }
-
-    if (t.value != "Connecting") {
-      final current = int.tryParse(_confirmedShifterValue ?? t.value);
+  void shift(int amount) {
+    if (_displayedShifterValue.value != "Connecting") {
+      final current = int.tryParse(_displayedShifterValue.value);
       if (current == null) {
         return;
       }
-      String _t = (current + amount).toString();
-      c = Map<String, Object>.from(c)..["value"] = _t;
-      this.bleData.writeToSS2k(this.widget.device, c);
-      _pendingShifterValue = _t;
-      t.value = _t;
-      _startPendingShiftTimeout();
+      final optimisticValue = (current + amount).toString();
+      final shiftValue = Map<String, dynamic>.from(_shifterCharacteristic)
+        ..["value"] = optimisticValue;
+
+      // Update the UI before starting any BLE work so rapid taps feel local.
+      _pendingShiftWrites++;
+      _displayedShifterValue.value = optimisticValue;
+      unawaited(_sendShift(shiftValue, _shiftGeneration));
     }
 
     WakelockPlus.enable();
@@ -197,6 +217,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
           appBar: SS2KAppBar(
             device: widget.device,
             title: "Virtual Shifter",
+            firmwareOnlyDeviceHeader: true,
           ),
           body: Stack(
             children: [
@@ -211,7 +232,8 @@ class _ShifterScreenState extends State<ShifterScreen> {
                         key: _chartKey,
                         device: widget.device,
                         bleData: bleData,
-                        pollTargetPosition: true,
+                        pollTargetPosition: false,
+                        initialDataLoadDelay: const Duration(seconds: 15),
                       ),
                     ),
                   ),
@@ -280,7 +302,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
                       }, height: buttonHeight),
                       Spacer(flex: 1),
                       ValueListenableBuilder<String>(
-                        valueListenable: t,
+                        valueListenable: _displayedShifterValue,
                         builder: (context, gearValue, child) {
                           return _buildGearDisplay(gearValue, fontSize: gearFontSize);
                         },

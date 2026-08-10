@@ -216,7 +216,8 @@ class CalibrationPhaseTracker {
     // Stepper.cpp:422 and :286. A single failed tap ends the search outright;
     // `_findEndStop` only returns false on a timeout or a user abort, and the
     // abort case is already handled above.
-    if (m.contains('end stop search failed on tap') || m.contains('homing timed out')) {
+    if (m.contains('end stop search failed on tap') ||
+        m.contains('homing timed out')) {
       return _fail(CalibrationPhase.failedTimeout);
     }
 
@@ -228,12 +229,14 @@ class CalibrationPhaseTracker {
     }
 
     // Stepper.cpp:247 ("Homing backward (min)") and :351.
-    if (m.contains('homing backward (min)') || m.contains('homing to min resistance')) {
+    if (m.contains('homing backward (min)') ||
+        m.contains('homing to min resistance')) {
       return _advanceTo(CalibrationPhase.searchingMin);
     }
 
     // Stepper.cpp:485 and :355.
-    if (m.contains('min position found') || m.contains('found min resistance position')) {
+    if (m.contains('min position found') ||
+        m.contains('found min resistance position')) {
       // Only the end-stop line reports a stepper position. The resistance
       // path's line carries the resistance it settled on, which is not a step
       // count — but it sets `minStep` to a flat zero all the same (:360).
@@ -247,7 +250,8 @@ class CalibrationPhaseTracker {
     // Stepper.cpp:247 ("Homing forward (max)") and :362. The firmware never
     // searches the max end stop until the min search has succeeded, so this
     // proves min was found even when its own log line was dropped.
-    if (m.contains('homing forward (max)') || m.contains('homing to max resistance')) {
+    if (m.contains('homing forward (max)') ||
+        m.contains('homing to max resistance')) {
       final changed = !_minFound || _phase != CalibrationPhase.searchingMax;
       _minFound = true;
       _phase = CalibrationPhase.searchingMax;
@@ -268,7 +272,8 @@ class CalibrationPhaseTracker {
     // of the lines the firmware drops most often.
     if (m.contains('max position found')) {
       _captureLoggedMax(m);
-      final changed = !_maxFound || !_minFound || _phase != CalibrationPhase.searchingMax;
+      final changed =
+          !_maxFound || !_minFound || _phase != CalibrationPhase.searchingMax;
       _minFound = true;
       _maxFound = true;
       _phase = CalibrationPhase.searchingMax;
@@ -326,7 +331,8 @@ class CalibrationPhaseTracker {
       return false;
     }
 
-    if (_phase != CalibrationPhase.searchingMin && _phase != CalibrationPhase.searchingMax) {
+    if (_phase != CalibrationPhase.searchingMin &&
+        _phase != CalibrationPhase.searchingMax) {
       return false;
     }
     if (value == _hMaxBaseline) return false;
@@ -368,7 +374,10 @@ class CalibrationPhaseTracker {
       case FTMSSpinDownStatus.MAX_SEARCH_STARTED:
         // Repeated about once a second for the whole max search, so this has
         // to report "nothing changed" after the first one.
-        final changed = !_homingStarted || !_minFound || _phase != CalibrationPhase.searchingMax;
+        final changed =
+            !_homingStarted ||
+            !_minFound ||
+            _phase != CalibrationPhase.searchingMax;
         _homingStarted = true;
         _minFound = true;
         _phase = CalibrationPhase.searchingMax;
@@ -407,7 +416,9 @@ class CalibrationPhaseTracker {
   /// `Max Position found: 24800` (Stepper.cpp:498), on the already-lowercased
   /// message. Unsigned: a negative step count is not a position, and the
   /// characteristic would refuse to carry one either.
-  static final RegExp _loggedMaxPosition = RegExp(r'max position found:\s*(\d+)');
+  static final RegExp _loggedMaxPosition = RegExp(
+    r'max position found:\s*(\d+)',
+  );
 
   /// Records the position out of the max end-stop line, leaving the phase alone
   /// — a line too mangled to parse still proves the search finished.
@@ -485,10 +496,13 @@ bool _isPlausibleHomingValue(int? value, {required bool allowZero}) =>
 ///
 /// Grouped by hand rather than through `intl` so the string does not depend on
 /// an initialised locale, and reads the same wherever it is pasted.
-String formatHomingRange(int min, int max) => '${_grouped(min)} → ${_grouped(max)} steps';
+String formatHomingRange(int min, int max) =>
+    '${_grouped(min)} → ${_grouped(max)} steps';
 
-String _grouped(int value) =>
-    value.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (match) => '${match[1]},');
+String _grouped(int value) => value.toString().replaceAllMapped(
+  RegExp(r'(\d)(?=(\d{3})+$)'),
+  (match) => '${match[1]},',
+);
 
 /// The body of the "Calibration saved" callout.
 ///
@@ -540,15 +554,24 @@ String buildCalibrationReport({
   int? homingMin,
   int? homingMax,
 }) {
-  String orUnknown(String? value) => (value == null || value.isEmpty) ? 'unknown' : value;
+  String orUnknown(String? value) =>
+      (value == null || value.isEmpty) ? 'unknown' : value;
 
-  final range = (homingMin == null || homingMax == null) ? 'unknown' : '$homingMin -> $homingMax';
+  final range = (homingMin == null || homingMax == null)
+      ? 'unknown'
+      : '$homingMin -> $homingMax';
 
   final buffer = StringBuffer()
     ..writeln('SmartSpin2k calibration report')
-    ..writeln('firmware: ${orUnknown(firmwareVersion)}   bike: ${orUnknown(bikeType)}')
-    ..writeln('phase: ${phase.name}  min: $minFound  max: $maxFound  range: $range')
-    ..writeln('ftmsPath: $usedFtmsPath  sweepTimedOut: $sweepTimedOut  logSilent: $logStreamSilent')
+    ..writeln(
+      'firmware: ${orUnknown(firmwareVersion)}   bike: ${orUnknown(bikeType)}',
+    )
+    ..writeln(
+      'phase: ${phase.name}  min: $minFound  max: $maxFound  range: $range',
+    )
+    ..writeln(
+      'ftmsPath: $usedFtmsPath  sweepTimedOut: $sweepTimedOut  logSilent: $logStreamSilent',
+    )
     ..writeln('homingForce: ${orUnknown(homingForce)}');
 
   if (transcript.isEmpty) {
@@ -557,7 +580,9 @@ String buildCalibrationReport({
     return buffer.toString();
   }
 
-  buffer.writeln('--- device log (${transcript.length} lines, $droppedLines dropped) ---');
+  buffer.writeln(
+    '--- device log (${transcript.length} lines, $droppedLines dropped) ---',
+  );
   for (final entry in transcript) {
     buffer.writeln('[${_elapsed(entry.at)}] ${entry.message}');
   }
@@ -641,6 +666,8 @@ class CalibrationMonitor extends ChangeNotifier {
   bool _logStreamSilent = false;
   bool _disposed = false;
   bool _refreshSent = false;
+  bool _logStreamingStarted = false;
+  bool _logDisableSent = false;
 
   CalibrationPhase get phase => _tracker.phase;
   bool get minFound => _tracker.minFound;
@@ -662,10 +689,14 @@ class CalibrationMonitor extends ChangeNotifier {
   /// The tail of the device log, so a user chasing a problem has something
   /// concrete to read on screen. The whole run is in [transcript].
   List<String> get recentMessages => List.unmodifiable(
-        _transcript
-            .skip(_transcript.length > _maxRecentMessages ? _transcript.length - _maxRecentMessages : 0)
-            .map((entry) => entry.message),
-      );
+    _transcript
+        .skip(
+          _transcript.length > _maxRecentMessages
+              ? _transcript.length - _maxRecentMessages
+              : 0,
+        )
+        .map((entry) => entry.message),
+  );
 
   /// Every line of the run, stamped with when it arrived. Kept in full — the
   /// six-line tail on screen is never enough to diagnose a failure from.
@@ -676,6 +707,9 @@ class CalibrationMonitor extends ChangeNotifier {
   int get droppedLines => _droppedLines;
 
   Future<void> start() async {
+    // A retry can begin before the previous run's asynchronous cleanup has
+    // reached the BLE queue. Queue its stop before enabling the new stream.
+    await _stopLogStreaming();
     _cancelTimers();
     _transcript.clear();
     _droppedLines = 0;
@@ -683,13 +717,19 @@ class CalibrationMonitor extends ChangeNotifier {
     _showPedalHint = false;
     _logStreamSilent = false;
     _refreshSent = false;
-    _tracker.start(hMaxBaseline: int.tryParse(bleData.getVnameValue(BLE_hMaxVname)));
+    _logDisableSent = false;
+    _tracker.start(
+      hMaxBaseline: int.tryParse(bleData.getVnameValue(BLE_hMaxVname)),
+    );
     notifyListeners();
 
     _listen();
 
     _overallTimer = Timer(overallTimeout, () {
-      if (_tracker.markTimedOut()) _safeNotify();
+      if (_tracker.markTimedOut()) {
+        _finishRun();
+        _safeNotify();
+      }
     });
     _pedalHintTimer = Timer(pedalHintDelay, () {
       if (_tracker.phase != CalibrationPhase.waitingForCadence) return;
@@ -713,12 +753,16 @@ class CalibrationMonitor extends ChangeNotifier {
       (c) => c["vName"] == BLE_logStreamVname,
       orElse: () => {"vName": BLE_logStreamVname, "value": ""},
     );
-    logCharacteristic["value"] = "1";
+    // Set this before awaiting so disposal during the acknowledged write still
+    // queues the matching disable behind it.
+    _logStreamingStarted = true;
     await bleData.writeToSS2k(device, logCharacteristic, s: "1");
+    if (_disposed || !_logStreamingStarted) return;
 
     _tracker.markRequestSent();
     await bleData.writeFtmsControlPoint(
-      (characteristic) => FTMSControlPoint.spinDownControl(characteristic, true),
+      (characteristic) =>
+          FTMSControlPoint.spinDownControl(characteristic, true),
     );
   }
 
@@ -735,9 +779,13 @@ class CalibrationMonitor extends ChangeNotifier {
       // A recorded position is not progress, so the tracker will not report it.
       // It is still on screen, which is reason enough to repaint.
       final before = (_tracker.foundMin, _tracker.foundMax);
-      final progressed = _tracker.onHomingValueChanged(isMax: isMax, value: int.tryParse(event.value));
+      final progressed = _tracker.onHomingValueChanged(
+        isMax: isMax,
+        value: int.tryParse(event.value),
+      );
       if (progressed) _afterProgress();
-      if (progressed || (_tracker.foundMin, _tracker.foundMax) != before) _safeNotify();
+      if (progressed || (_tracker.foundMin, _tracker.foundMax) != before)
+        _safeNotify();
     });
     _machineStatusSubscription = bleData.machineStatusStream.listen((value) {
       if (value.length < 2) return;
@@ -759,7 +807,9 @@ class CalibrationMonitor extends ChangeNotifier {
 
     final startedAt = _runStartedAt;
     _transcript.add((
-      at: startedAt == null ? Duration.zero : DateTime.now().difference(startedAt),
+      at: startedAt == null
+          ? Duration.zero
+          : DateTime.now().difference(startedAt),
       message: message,
     ));
     while (_transcript.length > _maxTranscriptLines) {
@@ -773,7 +823,8 @@ class CalibrationMonitor extends ChangeNotifier {
     // phase along. Deliberately not "any line at all": the device streams
     // BLE_Client scan output the whole time, and letting that hold the timer
     // open means a run that died is never timed out.
-    if (changed || (_tracker.homingStarted && _homingSubsystem.hasMatch(message))) {
+    if (changed ||
+        (_tracker.homingStarted && _homingSubsystem.hasMatch(message))) {
       _restartStallTimer();
     }
 
@@ -792,12 +843,12 @@ class CalibrationMonitor extends ChangeNotifier {
   /// Shared bookkeeping after any signal — log line, `hMax`, or spin-down
   /// status — moved the run along.
   void _afterProgress() {
-    if (_showPedalHint && _tracker.phase != CalibrationPhase.waitingForCadence) {
+    if (_showPedalHint &&
+        _tracker.phase != CalibrationPhase.waitingForCadence) {
       _showPedalHint = false;
     }
     if (_tracker.phase.isTerminal) {
-      _cancelTimers();
-      _refreshHomingValues();
+      _finishRun();
     } else if (_tracker.maxFound) {
       _startCompletionGrace();
     }
@@ -827,9 +878,8 @@ class CalibrationMonitor extends ChangeNotifier {
     _completionTimer = Timer(completionGrace, () {
       _completionTimer = null;
       if (!_tracker.markComplete()) return;
-      _cancelTimers();
       // This route into `complete` bypasses _afterProgress entirely.
-      _refreshHomingValues();
+      _finishRun();
       _safeNotify();
     });
   }
@@ -838,8 +888,31 @@ class CalibrationMonitor extends ChangeNotifier {
     _stallTimer?.cancel();
     if (_tracker.phase.isTerminal) return;
     _stallTimer = Timer(stallTimeout, () {
-      if (_tracker.markTimedOut()) _safeNotify();
+      if (_tracker.markTimedOut()) {
+        _finishRun();
+        _safeNotify();
+      }
     });
+  }
+
+  /// Performs the cleanup shared by every terminal path. Successful runs also
+  /// read their final limits back, but all outcomes release the log stream.
+  void _finishRun() {
+    _cancelTimers();
+    _refreshHomingValues();
+    unawaited(_stopLogStreaming());
+  }
+
+  Future<void> _stopLogStreaming() async {
+    if (bleData.isSimulated || !_logStreamingStarted || _logDisableSent) return;
+
+    _logDisableSent = true;
+    _logStreamingStarted = false;
+    final logCharacteristic = bleData.customCharacteristic.firstWhere(
+      (c) => c["vName"] == BLE_logStreamVname,
+      orElse: () => {"vName": BLE_logStreamVname, "value": ""},
+    );
+    await bleData.writeToSS2k(device, logCharacteristic, s: "0");
   }
 
   /// Walks the demo device through a plausible run using the firmware's own
@@ -848,28 +921,50 @@ class CalibrationMonitor extends ChangeNotifier {
     const script = <({int ms, String message})>[
       (ms: 500, message: '(FTMS_SERVER): Spin Down Requested'),
       (ms: 1500, message: 'Starting homing procedure...'),
-      (ms: 2500, message: 'Homing backward (min). Stable Threshold: 120, Sensitivity: 55'),
-      (ms: 4000, message: 'Homing... Current SG: 118, Baseline: 120, Target: < 65'),
-      (ms: 5500, message: 'Min end stop stable with 2 consecutive taps within 150 steps.'),
+      (
+        ms: 2500,
+        message:
+            'Homing backward (min). Stable Threshold: 120, Sensitivity: 55',
+      ),
+      (
+        ms: 4000,
+        message: 'Homing... Current SG: 118, Baseline: 120, Target: < 65',
+      ),
+      (
+        ms: 5500,
+        message:
+            'Min end stop stable with 2 consecutive taps within 150 steps.',
+      ),
       (ms: 6000, message: 'Min position found and set to 0.'),
-      (ms: 7500, message: 'Homing forward (max). Stable Threshold: 122, Sensitivity: 55'),
-      (ms: 9500, message: 'Max end stop stable with 2 consecutive taps within 150 steps.'),
+      (
+        ms: 7500,
+        message: 'Homing forward (max). Stable Threshold: 122, Sensitivity: 55',
+      ),
+      (
+        ms: 9500,
+        message:
+            'Max end stop stable with 2 consecutive taps within 150 steps.',
+      ),
       (ms: 10000, message: 'Max Position found: 24800'),
       (ms: 11500, message: 'Homing procedure complete.'),
     ];
 
     // Real firmware acknowledges the command before cadence opens the gate.
-    _demoTimers.add(Timer(const Duration(milliseconds: 250), () {
-      if (_disposed) return;
-      _tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
-      _safeNotify();
-    }));
+    _demoTimers.add(
+      Timer(const Duration(milliseconds: 250), () {
+        if (_disposed) return;
+        _tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+        _safeNotify();
+      }),
+    );
 
     for (final step in script) {
-      _demoTimers.add(Timer(Duration(milliseconds: step.ms), () {
-        if (_disposed) return;
-        _handleLogMessage(step.message);
-      }));
+      _demoTimers.add(
+        Timer(Duration(milliseconds: step.ms), () {
+          if (_disposed) return;
+          _handleLogMessage(step.message);
+        }),
+      );
     }
   }
 
@@ -907,13 +1002,7 @@ class CalibrationMonitor extends ChangeNotifier {
     _machineStatusSubscription?.cancel();
     _machineStatusSubscription = null;
 
-    if (bleData.isSimulated) return;
-    final logCharacteristic = bleData.customCharacteristic.firstWhere(
-      (c) => c["vName"] == BLE_logStreamVname,
-      orElse: () => {"vName": BLE_logStreamVname, "value": ""},
-    );
-    logCharacteristic["value"] = "0";
-    bleData.writeToSS2k(device, logCharacteristic, s: "0");
+    unawaited(_stopLogStreaming());
   }
 
   @override
