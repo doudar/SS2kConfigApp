@@ -18,6 +18,8 @@ class OnboardingStyle {
   Color get foreground => isLight ? colorScheme.onSurface : Colors.white;
   Color get body => foreground.withValues(alpha: isLight ? 0.82 : 0.86);
   Color get muted => foreground.withValues(alpha: isLight ? 0.62 : 0.74);
+  Color get emphasis =>
+      isLight ? const Color(0xFF00796B) : const Color(0xFF80CBC4);
   Color get scaffoldBackground =>
       isLight ? colorScheme.surface : Colors.black;
   Color get bottomBarBackground =>
@@ -291,9 +293,12 @@ class OnboardingRadioCard<T> extends StatelessWidget {
 class OnboardingOptionCard extends StatelessWidget {
   final String title;
   final String description;
+  final String? emphasizedDescription;
   final bool selected;
   final VoidCallback onTap;
   final String? metadata;
+  final FontWeight titleFontWeight;
+  final FontWeight metadataFontWeight;
   final bool recommended;
   final Widget? trailing;
 
@@ -301,9 +306,12 @@ class OnboardingOptionCard extends StatelessWidget {
     Key? key,
     required this.title,
     required this.description,
+    this.emphasizedDescription,
     required this.selected,
     required this.onTap,
     this.metadata,
+    this.titleFontWeight = FontWeight.w800,
+    this.metadataFontWeight = FontWeight.w600,
     this.recommended = false,
     this.trailing,
   }) : super(key: key);
@@ -336,7 +344,7 @@ class OnboardingOptionCard extends StatelessWidget {
                     Text(
                       title,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
+                        fontWeight: titleFontWeight,
                         color: style.foreground,
                       ),
                     ),
@@ -346,15 +354,27 @@ class OnboardingOptionCard extends StatelessWidget {
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: style.muted,
                           fontStyle: FontStyle.italic,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: metadataFontWeight,
                         ),
                       ),
                     if (recommended) const _RecommendedBadge(),
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  description,
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      if (emphasizedDescription != null)
+                        TextSpan(
+                          text: emphasizedDescription,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: style.emphasis,
+                          ),
+                        ),
+                      TextSpan(text: description),
+                    ],
+                  ),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: style.body,
                     height: 1.4,
@@ -463,12 +483,14 @@ class OnboardingChecklistItem extends StatelessWidget {
 
 class OnboardingCallout extends StatelessWidget {
   final String text;
+  final String? emphasizedText;
   final IconData icon;
   final Color? color;
 
   const OnboardingCallout({
     Key? key,
     required this.text,
+    this.emphasizedText,
     this.icon = Icons.info_outline,
     this.color,
   }) : super(key: key);
@@ -493,8 +515,20 @@ class OnboardingCallout extends StatelessWidget {
           Icon(icon, color: accent),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              text,
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  if (emphasizedText != null)
+                    TextSpan(
+                      text: emphasizedText,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: style.emphasis,
+                      ),
+                    ),
+                  TextSpan(text: text),
+                ],
+              ),
               style: TextStyle(
                 fontSize: 15,
                 height: 1.5,

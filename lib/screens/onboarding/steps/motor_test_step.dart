@@ -89,11 +89,15 @@ class _MotorTestStepState extends State<MotorTestStep> {
       onSkip: () => _skip(session),
       onNext: _testRan ? () => _advance(session) : null,
       nextLabel: 'Yes, I Saw It Move',
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final videoMaxHeight = constraints.maxHeight * 0.45;
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             const Text('Watch for the knob to rotate', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             const Text(
@@ -104,7 +108,7 @@ class _MotorTestStepState extends State<MotorTestStep> {
             ),
             const SizedBox(height: 20),
 
-            _MotorVideo(),
+            _MotorVideo(maxHeight: videoMaxHeight),
 
             const SizedBox(height: 24),
 
@@ -154,14 +158,20 @@ class _MotorTestStepState extends State<MotorTestStep> {
             ],
 
             const SizedBox(height: 8),
-          ],
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 }
 
 class _MotorVideo extends StatefulWidget {
+  final double maxHeight;
+
+  const _MotorVideo({required this.maxHeight});
+
   @override
   State<_MotorVideo> createState() => _MotorVideoState();
 }
@@ -192,14 +202,17 @@ class _MotorVideoState extends State<_MotorVideo> {
   @override
   Widget build(BuildContext context) {
     if (!_initialized) {
-      return const SizedBox(
-        height: 120,
-        child: Center(child: CircularProgressIndicator()),
+      return SizedBox(
+        height: widget.maxHeight,
+        child: const Center(child: CircularProgressIndicator()),
       );
     }
     return Center(
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: _controller.value.size.width),
+        constraints: BoxConstraints(
+          maxWidth: _controller.value.size.width,
+          maxHeight: widget.maxHeight,
+        ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: AspectRatio(

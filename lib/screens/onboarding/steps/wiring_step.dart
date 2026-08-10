@@ -44,9 +44,10 @@ class WiringStep extends StatelessWidget {
               OnboardingCallout(
                 icon: Icons.warning_amber_rounded,
                 color: Theme.of(context).colorScheme.error,
+                emphasizedText:
+                    'Do not connect the cables labeled "Peloton Bike" or "Peloton Tablet" to your bike.',
                 text:
-                    'Do not connect the cables labeled "Peloton Bike" or "Peloton Tablet" to your bike. '
-                    'Bike+ uses a wireless connection, which we will set up on the next page.',
+                    ' Bike+ uses a wireless connection, which we will set up on the next page.',
               ),
             ],
             const SizedBox(height: 8),

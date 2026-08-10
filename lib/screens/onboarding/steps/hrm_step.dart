@@ -44,7 +44,7 @@ class HrmStep extends StatelessWidget {
             const SizedBox(height: 12),
             const Text(
               'Pair a BLE heart rate monitor with your SmartSpin2k so heart rate '
-              'data flows through to your training app. Tap Skip if you don\'t have one.',
+              'data flows through to your training app. Tap "Continue" if you don\'t have one.',
               style: TextStyle(fontSize: 16, height: 1.5),
             ),
             const SizedBox(height: 20),

@@ -164,9 +164,12 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
           OnboardingOptionCard(
             title: 'Tablet Mode',
             metadata: '- Switch UP',
+            titleFontWeight: FontWeight.w600,
+            metadataFontWeight: FontWeight.normal,
             recommended: false,
+            emphasizedDescription: 'If you still use Peloton workouts',
             description:
-                'If you still use Peloton workouts, select this option. '
+                ', select this option. '
                 '\n\nSmartSpin2k will passively listen to the bike\'s power information. \n\n'
 ,
             selected: _selected == SideSwitchMode.tabletMode,
@@ -176,9 +179,12 @@ class _SideSwitchStepState extends State<SideSwitchStep> {
           OnboardingOptionCard(
             title: 'Headless Mode',
             metadata: '- Switch DOWN',
+            titleFontWeight: FontWeight.w600,
+            metadataFontWeight: FontWeight.normal,
             recommended: false,
+            emphasizedDescription: 'If you don\'t plan to do Peloton classes',
             description:
-                'If you don\'t plan to do Peloton classes, select this option.'
+                ', select this option.'
                 '\n\nThe SmartSpin2k communicates directly to your bike, and the tablet is not '
                 'needed anymore (but can be used for other apps.)' 
                 ,
