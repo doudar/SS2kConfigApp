@@ -517,14 +517,12 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                     progress: gauge?.progress ?? (expectsFtms ? 0 : 0.5),
                     title:
                         gauge?.title ??
-                        (expectsFtms ? 'Measuring resistance' : 'Motor Load'),
-                    currentLabel: gauge?.currentLabel ?? 'Min',
-                    targetLabel: gauge?.targetLabel ?? 'Max',
-                    detailLabel:
-                        gauge?.detailLabel ??
-                        (expectsFtms
-                            ? 'Preparing the reported resistance sweep'
-                            : ''),
+                        (expectsFtms ? 'Resistance Position' : 'Motor Load'),
+                    currentLabel:
+                        gauge?.currentLabel ?? (expectsFtms ? '0' : 'Min'),
+                    targetLabel:
+                        gauge?.targetLabel ?? (expectsFtms ? '100' : 'Max'),
+                    detailLabel: gauge?.detailLabel ?? '',
                   ),
           ),
           const SizedBox(height: 16),

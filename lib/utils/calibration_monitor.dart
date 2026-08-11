@@ -66,8 +66,9 @@ extension CalibrationPhaseX on CalibrationPhase {
 
 enum HomingGaugeMode { ftmsResistance, endStopStallGuard }
 
-/// A normalized snapshot for the live homing gauge. In both modes 0 means the
-/// beginning of the search and 1 means the firmware's target/trip point.
+/// A normalized snapshot for the live homing gauge. FTMS mode maps reported
+/// resistance directly from 0–100; end-stop mode maps load toward its trip
+/// point.
 class HomingGaugeReading {
   const HomingGaugeReading({
     required this.mode,
@@ -86,25 +87,17 @@ class HomingGaugeReading {
   final String stage;
 
   String get title => mode == HomingGaugeMode.ftmsResistance
-      ? '$stage resistance target'
+      ? 'Resistance Position'
       : 'Motor Load';
 
-  String get currentLabel => mode == HomingGaugeMode.ftmsResistance
-      ? 'Current ${_compactNumber(current)}'
-      : 'Min';
+  String get currentLabel =>
+      mode == HomingGaugeMode.ftmsResistance ? '0' : 'Min';
 
-  String get targetLabel => mode == HomingGaugeMode.ftmsResistance
-      ? 'Target ${_compactNumber(target)}'
-      : 'Max';
+  String get targetLabel =>
+      mode == HomingGaugeMode.ftmsResistance ? '100' : 'Max';
 
-  String get detailLabel => mode == HomingGaugeMode.ftmsResistance
-      ? 'Moving toward the reported resistance target'
-      : '';
+  String get detailLabel => '';
 }
-
-String _compactNumber(double value) => value == value.roundToDouble()
-    ? value.round().toString()
-    : value.toStringAsFixed(1);
 
 /// Maps end-stop SG onto a baseline-centered, non-linear gauge.
 ///
@@ -143,8 +136,6 @@ class CalibrationPhaseTracker {
   int _spinDownRequestedCount = 0;
   bool _homingStarted = false;
   HomingGaugeReading? _gaugeReading;
-  double? _ftmsSweepStart;
-  String? _ftmsSweepKey;
 
   /// The hMax the device already had before this run. Anything equal to it is
   /// an echo of the old value, not a new end stop. See [onHomingValueChanged].
@@ -199,8 +190,6 @@ class CalibrationPhaseTracker {
     _spinDownRequestedCount = 0;
     _homingStarted = false;
     _gaugeReading = null;
-    _ftmsSweepStart = null;
-    _ftmsSweepKey = null;
     _hMaxBaseline = hMaxBaseline;
     _foundMin = null;
     _foundMax = null;
@@ -265,6 +254,13 @@ class CalibrationPhaseTracker {
     // warning rather than a verdict. Must be tested before the plain
     // "homing timed out!" below, which it contains.
     if (m.contains('ftms homing timed out')) {
+      final reading = _gaugeReading;
+      final maximumEffectivelyReached =
+          reading != null &&
+          reading.mode == HomingGaugeMode.ftmsResistance &&
+          reading.stage == 'Maximum' &&
+          reading.current >= 99;
+      if (maximumEffectivelyReached) return false;
       if (_sweepTimedOut) return false;
       _sweepTimedOut = true;
       return true;
@@ -497,20 +493,9 @@ class CalibrationPhaseTracker {
           : 'Maximum';
       final current = double.parse(ftms.group(2)!);
       final target = double.parse(ftms.group(3)!);
-      final key = '$stage:$target';
-      if (_ftmsSweepKey != key) {
-        _ftmsSweepKey = key;
-        _ftmsSweepStart = current;
-      }
-      final start = _ftmsSweepStart ?? current;
-      final distance = (target - start).abs();
-      final remaining = (target - current).abs();
-      final progress = distance == 0
-          ? 1.0
-          : (1 - remaining / distance).clamp(0.0, 1.0);
       _gaugeReading = HomingGaugeReading(
         mode: HomingGaugeMode.ftmsResistance,
-        progress: progress,
+        progress: (current / 100).clamp(0.0, 1.0),
         current: current,
         target: target,
         stage: stage,

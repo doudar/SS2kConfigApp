@@ -223,31 +223,65 @@ void main() {
       );
     });
 
-    test('normalizes both FTMS sweep directions toward their target', () {
+    test('a max sweep timeout at 99 does not raise a warning', () {
+      startRequest();
+      feed([
+        'Starting homing procedure...',
+        'Starting FTMS Homing...',
+        'Found Min Resistance Position: 1',
+        'Homing to Max Resistance... Current: 99, Target: 100',
+      ]);
+
+      tracker.onLogMessage('FTMS Homing timed out!');
+
+      expect(tracker.sweepTimedOut, isFalse);
+      expect(tracker.phase, CalibrationPhase.searchingMax);
+    });
+
+    test('a max sweep timeout below 99 still raises a warning', () {
+      startRequest();
+      feed([
+        'Starting homing procedure...',
+        'Starting FTMS Homing...',
+        'Found Min Resistance Position: 1',
+        'Homing to Max Resistance... Current: 98, Target: 100',
+      ]);
+
+      tracker.onLogMessage('FTMS Homing timed out!');
+
+      expect(tracker.sweepTimedOut, isTrue);
+      expect(tracker.phase, CalibrationPhase.searchingMax);
+    });
+
+    test('maps FTMS resistance linearly from 0 to 100 in both directions', () {
       startRequest();
       feed(['Starting homing procedure...', 'Starting FTMS Homing...']);
 
       tracker.onLogMessage(
         'Homing to Min Resistance... Current: 25, Target: 1',
       );
-      expect(tracker.gaugeReading?.progress, 0);
+      expect(tracker.gaugeReading?.progress, 0.25);
       tracker.onLogMessage(
         'Homing to Min Resistance... Current: 13, Target: 1',
       );
-      expect(tracker.gaugeReading?.progress, closeTo(0.5, 0.001));
+      expect(tracker.gaugeReading?.progress, 0.13);
       tracker.onLogMessage('Homing to Min Resistance... Current: 1, Target: 1');
-      expect(tracker.gaugeReading?.progress, 1);
+      expect(tracker.gaugeReading?.progress, 0.01);
 
       tracker.onLogMessage('Found Min Resistance Position: 1');
       tracker.onLogMessage(
         'Homing to Max Resistance... Current: 1, Target: 100',
       );
-      expect(tracker.gaugeReading?.progress, 0);
+      expect(tracker.gaugeReading?.progress, 0.01);
       tracker.onLogMessage(
         'Homing to Max Resistance... Current: 100, Target: 100',
       );
       expect(tracker.gaugeReading?.progress, 1);
       expect(tracker.gaugeReading?.mode, HomingGaugeMode.ftmsResistance);
+      expect(tracker.gaugeReading?.title, 'Resistance Position');
+      expect(tracker.gaugeReading?.currentLabel, '0');
+      expect(tracker.gaugeReading?.targetLabel, '100');
+      expect(tracker.gaugeReading?.detailLabel, isEmpty);
     });
   });
 
