@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -63,6 +64,68 @@ extension CalibrationPhaseX on CalibrationPhase {
   bool get isTerminal => this == CalibrationPhase.complete || isFailure;
 }
 
+enum HomingGaugeMode { ftmsResistance, endStopStallGuard }
+
+/// A normalized snapshot for the live homing gauge. In both modes 0 means the
+/// beginning of the search and 1 means the firmware's target/trip point.
+class HomingGaugeReading {
+  const HomingGaugeReading({
+    required this.mode,
+    required this.progress,
+    required this.current,
+    required this.target,
+    required this.stage,
+    this.baseline,
+  });
+
+  final HomingGaugeMode mode;
+  final double progress;
+  final double current;
+  final double target;
+  final double? baseline;
+  final String stage;
+
+  String get title => mode == HomingGaugeMode.ftmsResistance
+      ? '$stage resistance target'
+      : 'Motor Load';
+
+  String get currentLabel => mode == HomingGaugeMode.ftmsResistance
+      ? 'Current ${_compactNumber(current)}'
+      : 'Min';
+
+  String get targetLabel => mode == HomingGaugeMode.ftmsResistance
+      ? 'Target ${_compactNumber(target)}'
+      : 'Max';
+
+  String get detailLabel => mode == HomingGaugeMode.ftmsResistance
+      ? 'Moving toward the reported resistance target'
+      : '';
+}
+
+String _compactNumber(double value) => value == value.roundToDouble()
+    ? value.round().toString()
+    : value.toStringAsFixed(1);
+
+/// Maps end-stop SG onto a baseline-centered, non-linear gauge.
+///
+/// Baseline is always 50% and the trip threshold is 100%. A signed square-root
+/// curve magnifies the small 1–10 point SG changes seen during a healthy search
+/// while preserving direction when noise briefly lifts SG above baseline.
+double endStopGaugeProgress({
+  required double current,
+  required double baseline,
+  required double target,
+}) {
+  final range = baseline - target;
+  if (range <= 0) return 0.5;
+  final normalizedDrop = (baseline - current) / range;
+  final curvedDistance = math.sqrt(normalizedDrop.abs());
+  final signedDistance = normalizedDrop.isNegative
+      ? -curvedDistance
+      : curvedDistance;
+  return (0.5 + 0.5 * signedDistance).clamp(0.0, 1.0);
+}
+
 /// Translates SmartSpin2k log lines into a [CalibrationPhase].
 ///
 /// Kept free of any BLE or widget dependency so the mapping can be tested
@@ -79,6 +142,9 @@ class CalibrationPhaseTracker {
   bool _requestLogSeen = false;
   int _spinDownRequestedCount = 0;
   bool _homingStarted = false;
+  HomingGaugeReading? _gaugeReading;
+  double? _ftmsSweepStart;
+  String? _ftmsSweepKey;
 
   /// The hMax the device already had before this run. Anything equal to it is
   /// an echo of the old value, not a new end stop. See [onHomingValueChanged].
@@ -99,6 +165,7 @@ class CalibrationPhaseTracker {
   bool get minFound => _minFound;
   bool get maxFound => _maxFound;
   bool get homingStarted => _homingStarted;
+  HomingGaugeReading? get gaugeReading => _gaugeReading;
 
   /// The ends of the travel this run found, or null while either is unproven.
   /// Deliberately never filled in from the device's stored settings on their
@@ -131,6 +198,9 @@ class CalibrationPhaseTracker {
     _requestLogSeen = false;
     _spinDownRequestedCount = 0;
     _homingStarted = false;
+    _gaugeReading = null;
+    _ftmsSweepStart = null;
+    _ftmsSweepKey = null;
     _hMaxBaseline = hMaxBaseline;
     _foundMin = null;
     _foundMax = null;
@@ -185,6 +255,8 @@ class CalibrationPhaseTracker {
     // Success, failure, end-stop, and fallback evidence are meaningful only
     // after this run has actually begun.
     if (!_homingStarted) return false;
+
+    _captureGaugeReading(message);
 
     // Failures first — they are the most specific, and several of them share
     // wording with the progress lines.
@@ -403,6 +475,85 @@ class CalibrationPhaseTracker {
   }
 
   bool markTimedOut() => _fail(CalibrationPhase.failedTimeout);
+
+  static final RegExp _ftmsGaugeLine = RegExp(
+    r'homing to (min|max) resistance.*?current:\s*(-?\d+(?:\.\d+)?).*?target:\s*(-?\d+(?:\.\d+)?)',
+    caseSensitive: false,
+  );
+  static final RegExp _endStopGaugeLine = RegExp(
+    r'homing\.\.\.\s*current sg:\s*(-?\d+(?:\.\d+)?).*?baseline:\s*(-?\d+(?:\.\d+)?).*?target:\s*<\s*(-?\d+(?:\.\d+)?)',
+    caseSensitive: false,
+  );
+  static final RegExp _stallLine = RegExp(
+    r'stall detected.*?sg dropped to\s*(-?\d+(?:\.\d+)?).*?threshold:\s*(-?\d+(?:\.\d+)?)',
+    caseSensitive: false,
+  );
+
+  void _captureGaugeReading(String message) {
+    final ftms = _ftmsGaugeLine.firstMatch(message);
+    if (ftms != null) {
+      final stage = ftms.group(1)!.toLowerCase() == 'min'
+          ? 'Minimum'
+          : 'Maximum';
+      final current = double.parse(ftms.group(2)!);
+      final target = double.parse(ftms.group(3)!);
+      final key = '$stage:$target';
+      if (_ftmsSweepKey != key) {
+        _ftmsSweepKey = key;
+        _ftmsSweepStart = current;
+      }
+      final start = _ftmsSweepStart ?? current;
+      final distance = (target - start).abs();
+      final remaining = (target - current).abs();
+      final progress = distance == 0
+          ? 1.0
+          : (1 - remaining / distance).clamp(0.0, 1.0);
+      _gaugeReading = HomingGaugeReading(
+        mode: HomingGaugeMode.ftmsResistance,
+        progress: progress,
+        current: current,
+        target: target,
+        stage: stage,
+      );
+      return;
+    }
+
+    final endStop = _endStopGaugeLine.firstMatch(message);
+    if (endStop != null) {
+      final current = double.parse(endStop.group(1)!);
+      final baseline = double.parse(endStop.group(2)!);
+      final target = double.parse(endStop.group(3)!);
+      final progress = endStopGaugeProgress(
+        current: current,
+        baseline: baseline,
+        target: target,
+      );
+      _gaugeReading = HomingGaugeReading(
+        mode: HomingGaugeMode.endStopStallGuard,
+        progress: progress,
+        current: current,
+        target: target,
+        stage: _phase == CalibrationPhase.searchingMax ? 'Maximum' : 'Minimum',
+        baseline: baseline,
+      );
+      return;
+    }
+
+    final stall = _stallLine.firstMatch(message);
+    if (stall != null &&
+        _gaugeReading?.mode == HomingGaugeMode.endStopStallGuard) {
+      final current = double.parse(stall.group(1)!);
+      final target = double.parse(stall.group(2)!);
+      _gaugeReading = HomingGaugeReading(
+        mode: HomingGaugeMode.endStopStallGuard,
+        progress: 1,
+        current: current,
+        target: target,
+        stage: _gaugeReading!.stage,
+        baseline: _gaugeReading!.baseline,
+      );
+    }
+  }
 
   /// Calls the run finished on the strength of the maximum end stop alone, for
   /// when the closing word never arrives. See [CalibrationMonitor.completionGrace].
@@ -675,6 +826,8 @@ class CalibrationMonitor extends ChangeNotifier {
   bool get usedFtmsPath => _tracker.usedFtmsPath;
   bool get sweepTimedOut => _tracker.sweepTimedOut;
   bool get showPedalHint => _showPedalHint;
+  bool get homingStarted => _tracker.homingStarted;
+  HomingGaugeReading? get gaugeReading => _tracker.gaugeReading;
 
   /// The travel this run found, in stepper steps, or null while either end is
   /// still unproven. See [CalibrationPhaseTracker.foundMin].
@@ -939,6 +1092,10 @@ class CalibrationMonitor extends ChangeNotifier {
       (
         ms: 7500,
         message: 'Homing forward (max). Stable Threshold: 122, Sensitivity: 55',
+      ),
+      (
+        ms: 8500,
+        message: 'Homing... Current SG: 92, Baseline: 122, Target: < 67',
       ),
       (
         ms: 9500,

@@ -22,10 +22,81 @@ import '../utils/stream_extensions.dart';
 class SettingTile extends StatefulWidget {
   final BluetoothDevice device;
   final Map c;
-  const SettingTile({Key? key, required this.device, required this.c}) : super(key: key);
+  const SettingTile({Key? key, required this.device, required this.c})
+    : super(key: key);
 
   @override
   State<SettingTile> createState() => _SettingTileState();
+}
+
+/// The setting editor shown after a [SettingTile] is tapped.
+///
+/// Kept public so focused workflows, such as calibration, can open the same
+/// editor without duplicating its controls or write/save behavior.
+class SettingEditor extends StatelessWidget {
+  final BluetoothDevice device;
+  final Map c;
+
+  const SettingEditor({super.key, required this.device, required this.c});
+
+  @override
+  Widget build(BuildContext context) {
+    late final Widget editor;
+    switch (c["type"]) {
+      case "int":
+      case "float":
+      case "long":
+        editor = SingleChildScrollView(
+          child: sliderCard(device: device, c: c),
+        );
+      case "string":
+        if ((c["vName"] == connectedHRMVname) ||
+            (c["vName"] == connectedPWRVname)) {
+          editor = SingleChildScrollView(
+            child: DropdownCard(device: device, c: c),
+          );
+        } else {
+          editor = SingleChildScrollView(
+            child: plainTextCard(device: device, c: c),
+          );
+        }
+      case "bool":
+        editor = SingleChildScrollView(
+          child: boolCard(device: device, c: c),
+        );
+      default:
+        editor = SingleChildScrollView(
+          child: plainTextCard(device: device, c: c),
+        );
+    }
+
+    return Card(
+      color: Colors.black12,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Text(
+            c["textDescription"],
+            style: const TextStyle(color: Colors.white),
+          ),
+          const SizedBox(height: 10),
+          Center(
+            child: Hero(
+              tag: c["vName"],
+              child: Material(type: MaterialType.transparency, child: editor),
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            "Settings are immediate for the current session.\nClick save to make them persistent.",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SettingTileState extends State<SettingTile> {
@@ -57,70 +128,17 @@ class _SettingTileState extends State<SettingTile> {
             .where((event) => event.vName == c["vName"])
             .debounce(const Duration(milliseconds: 100))
             .listen((event) {
-          if (_value != c["value"]) {
-            _value = valueFormatter();
-            if (mounted) {
-              setState(() {});
-            }
-          }
-        });
+              if (_value != c["value"]) {
+                _value = valueFormatter();
+                if (mounted) {
+                  setState(() {});
+                }
+              }
+            });
       } catch (e) {
         print("Subscription Failed, $e");
       }
     }
-  }
-
-  Widget widgetPicker() {
-    Widget ret;
-    switch (c["type"]) {
-      case "int":
-      case "float":
-      case "long":
-        ret = SingleChildScrollView(
-          child: sliderCard(device: this.widget.device, c: c),
-        );
-      case "string":
-        if ((c["vName"] == connectedHRMVname) || (c["vName"] == connectedPWRVname)) {
-          ret = SingleChildScrollView(
-            child: DropdownCard(device: this.widget.device, c: c),
-          );
-        } else {
-          ret = SingleChildScrollView(
-            child: plainTextCard(device: this.widget.device, c: c),
-          );
-        }
-      case "bool":
-        ret = SingleChildScrollView(
-          child: boolCard(device: this.widget.device, c: c),
-        );
-      default:
-        ret = SingleChildScrollView(
-          child: plainTextCard(device: this.widget.device, c: c),
-        );
-    }
-
-    return Card(
-      color: Colors.black12,
-      child: Column(
-        children: <Widget>[
-          Text(c["textDescription"], style: TextStyle(color: Colors.white)),
-          SizedBox(height: 10),
-          Center(
-            child: Hero(
-                tag: c["vName"],
-                child: Material(
-                  child: ret,
-                  type: MaterialType.transparency,
-                )),
-          ),
-          SizedBox(height: 10),
-          Text("Settings are immediate for the current session.\nClick save to make them persistent.",
-              textAlign: TextAlign.center, style: TextStyle(color: Colors.white)),
-        ],
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisAlignment: MainAxisAlignment.center,
-      ),
-    );
   }
 
   String valueFormatter() {
@@ -149,7 +167,9 @@ class _SettingTileState extends State<SettingTile> {
         child: Card(
           margin: EdgeInsets.fromLTRB(10, 5, 10, 5),
           elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(15),
@@ -163,7 +183,10 @@ class _SettingTileState extends State<SettingTile> {
               ),
             ),
             child: ListTile(
-              contentPadding: EdgeInsets.symmetric(vertical: 25.0, horizontal: 16.0),
+              contentPadding: EdgeInsets.symmetric(
+                vertical: 25.0,
+                horizontal: 16.0,
+              ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15),
               ),
@@ -173,19 +196,22 @@ class _SettingTileState extends State<SettingTile> {
                   FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
-                    child: Text((c["humanReadableName"]),
-                        textAlign: TextAlign.left,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          shadows: [
-                            Shadow(
-                              offset: Offset(1.0, 1.0),
-                              blurRadius: 15.0,
-                              color: Colors.black45,
-                            ),
-                          ],
-                        )),
+                    child: Text(
+                      (c["humanReadableName"]),
+                      textAlign: TextAlign.left,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            shadows: [
+                              Shadow(
+                                offset: Offset(1.0, 1.0),
+                                blurRadius: 15.0,
+                                color: Colors.black45,
+                              ),
+                            ],
+                          ),
+                    ),
                   ),
                   SizedBox(height: 4),
                   Row(
@@ -226,7 +252,9 @@ class _SettingTileState extends State<SettingTile> {
                     builder: (BuildContext context) {
                       return AlertDialog(
                         title: Text(c["humanReadableName"]),
-                        content: Text(c["textDescription"] ?? "No description available."),
+                        content: Text(
+                          c["textDescription"] ?? "No description available.",
+                        ),
                         actions: [
                           TextButton(
                             child: Text("Close"),
@@ -250,7 +278,7 @@ class _SettingTileState extends State<SettingTile> {
                         appBar: AppBar(title: const Text('Edit Setting')),
                         body: Center(
                           child: SingleChildScrollView(
-                            child: widgetPicker(),
+                            child: SettingEditor(device: widget.device, c: c),
                           ),
                         ),
                       ),
@@ -270,10 +298,7 @@ Route fadeRoute(Widget page) {
   return PageRouteBuilder(
     pageBuilder: (context, animation, secondaryAnimation) => page,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      return FadeTransition(
-        opacity: animation,
-        child: child,
-      );
+      return FadeTransition(opacity: animation, child: child);
     },
   );
 }
