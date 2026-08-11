@@ -51,7 +51,10 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       return;
     }
 
-    bleData.connectionStateSubscription = widget.device.connectionState.listen((state) async {
+    bleData.connectionStateSubscription = widget.device.connectionState.listen((
+      state,
+    ) async {
+      if (bleData.isDirConConnected) return;
       bleData.connectionState = state;
       if (state == BluetoothConnectionState.connected) {
         bleData.rssi.value = await widget.device.readRssi();
@@ -59,7 +62,12 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       }
     });
 
-    if (widget.device.isConnected) {
+    if (bleData.isDirConConnected) {
+      bleData.connectionState = BluetoothConnectionState.connected;
+      () async {
+        await bleData.setupConnection(widget.device);
+      }();
+    } else if (widget.device.isConnected) {
       bleData.connectionState = BluetoothConnectionState.connected;
       () async {
         bleData.rssi.value = await widget.device.readRssi();
@@ -92,7 +100,10 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   Future<String?> _loadAppVersion() async {
     try {
       final content = await rootBundle.loadString('pubspec.yaml');
-      final match = RegExp(r'^version:\s*([^\s]+)', multiLine: true).firstMatch(content);
+      final match = RegExp(
+        r'^version:\s*([^\s]+)',
+        multiLine: true,
+      ).firstMatch(content);
       return match?.group(1);
     } catch (_) {
       return null;
@@ -112,9 +123,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   }
 
   void _openScreen(Widget screen) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => screen),
-    );
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
   Widget _buildMaintenanceActionTile({
@@ -150,7 +159,9 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   Widget _buildCard(String assetPath, String title, VoidCallback onPressed) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final fontSize = (constraints.maxWidth * 0.105).clamp(16.0, 26.0).toDouble();
+        final fontSize = (constraints.maxWidth * 0.105)
+            .clamp(16.0, 26.0)
+            .toDouble();
         const double cardRadius = 28;
         return GestureDetector(
           onTap: onPressed,
@@ -226,7 +237,10 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.20), width: 1.4),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.20),
+                          width: 1.4,
+                        ),
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -245,7 +259,10 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                       padding: const EdgeInsets.all(1.2),
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.10), width: 1),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.10),
+                            width: 1,
+                          ),
                         ),
                       ),
                     ),
@@ -256,11 +273,17 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                       child: BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: 2.8, sigmaY: 2.8),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.black.withValues(alpha: 0.28),
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.16), width: 1),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.16),
+                              width: 1,
+                            ),
                           ),
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
@@ -272,8 +295,16 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                                 fontWeight: FontWeight.w700,
                                 fontSize: fontSize,
                                 shadows: const [
-                                  Shadow(color: Colors.black87, blurRadius: 10, offset: Offset(0, 0)),
-                                  Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 1)),
+                                  Shadow(
+                                    color: Colors.black87,
+                                    blurRadius: 10,
+                                    offset: Offset(0, 0),
+                                  ),
+                                  Shadow(
+                                    color: Colors.black54,
+                                    blurRadius: 4,
+                                    offset: Offset(0, 1),
+                                  ),
                                 ],
                               ),
                             ),
@@ -313,7 +344,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                 end: Alignment.bottomCenter,
                 colors: [
                   Colors.red.withValues(alpha: 0.40),
-                  Colors.black.withValues(alpha: 0.92),        
+                  Colors.black.withValues(alpha: 0.92),
                 ],
               ),
             ),
@@ -390,22 +421,35 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       appBar: SS2KAppBar(
         device: widget.device,
         title: "Main Device Screen",
-        actions: [
-          const ThemeCycleButton(),
-        ],
+        actions: [const ThemeCycleButton()],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final horizontalPadding = (constraints.maxWidth * 0.03).clamp(8.0, 20.0).toDouble();
-          final gridSpacing = (constraints.maxWidth * 0.02).clamp(8.0, 16.0).toDouble();
-          final cardHeight = (constraints.maxHeight * 0.24).clamp(130.0, 220.0).toDouble();
-          final availableGridWidth = constraints.maxWidth - (horizontalPadding * 2);
+          final horizontalPadding = (constraints.maxWidth * 0.03)
+              .clamp(8.0, 20.0)
+              .toDouble();
+          final gridSpacing = (constraints.maxWidth * 0.02)
+              .clamp(8.0, 16.0)
+              .toDouble();
+          final cardHeight = (constraints.maxHeight * 0.24)
+              .clamp(130.0, 220.0)
+              .toDouble();
+          final availableGridWidth =
+              constraints.maxWidth - (horizontalPadding * 2);
           const maxButtonWidth = 300.0;
-          final gridWidth = math.min(availableGridWidth, (maxButtonWidth * 2) + gridSpacing);
+          final gridWidth = math.min(
+            availableGridWidth,
+            (maxButtonWidth * 2) + gridSpacing,
+          );
           final tileWidth = (gridWidth - gridSpacing) / 2;
 
           return ListView(
-            padding: EdgeInsets.fromLTRB(horizontalPadding, 16, horizontalPadding, 8),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              16,
+              horizontalPadding,
+              8,
+            ),
             children: <Widget>[
               Align(
                 alignment: Alignment.topCenter,

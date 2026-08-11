@@ -32,7 +32,8 @@ class SettingsCategoryScreen extends StatefulWidget {
 
 class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
-  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
+  StreamSubscription<CharacteristicChangeEvent>?
+  _characteristicChangeSubscription;
   VoidCallback? _charReceivedListener;
   late BLEData bleData;
   late Set<String> _categorySettingNames;
@@ -42,9 +43,10 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
     super.initState();
     bleData = BLEDataManager.forDevice(this.widget.device);
     _categorySettingNames = bleData.customCharacteristic
-        .where((c) =>
-            c["isSetting"] == true &&
-            c["settingType"] == widget.settingType)
+        .where(
+          (c) =>
+              c["isSetting"] == true && c["settingType"] == widget.settingType,
+        )
         .map((c) => c["vName"].toString())
         .toSet();
 
@@ -55,13 +57,17 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
     };
     bleData.charReceived.addListener(_charReceivedListener!);
 
-    _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
+    _connectionStateSubscription = this.widget.device.connectionState.listen((
+      state,
+    ) async {
       if (mounted) {
         setState(() {});
       }
     });
 
-    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
+    _characteristicChangeSubscription = bleData.characteristicChanges.listen((
+      event,
+    ) {
       if (mounted && _categorySettingNames.contains(event.vName)) {
         setState(() {});
       }
@@ -85,7 +91,7 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
   List<Widget> buildSettingsList(BuildContext context) {
     List<Widget> settings = [];
     _newEntry(Map c) {
-      if ((!this.bleData.services.isEmpty) || this.bleData.isSimulated) {
+      if (this.bleData.charReceived.value || this.bleData.isSimulated) {
         final value = c["value"]?.toString();
         // Filter by isSetting AND the requested SettingType
         if (c["isSetting"] == true &&
@@ -96,8 +102,9 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
         }
       }
     }
+
     this.bleData.customCharacteristic.forEach((c) => _newEntry(c));
-    
+
     return settings;
   }
 
@@ -110,33 +117,38 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
         firmwareOnlyDeviceHeader: true,
       ),
       body: Center(
-        child: Builder(builder: (context) {
-          Size _size = MediaQuery.of(context).size;
-          List<Widget> settingsTiles = buildSettingsList(context);
+        child: Builder(
+          builder: (context) {
+            Size _size = MediaQuery.of(context).size;
+            List<Widget> settingsTiles = buildSettingsList(context);
 
-          return SizedBox(
-            height: _size.height * .90,
-            width: _size.width * .80,
-            child: settingsTiles.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 20),
-                        Text(
-                          "Refreshing Data",
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                        ),
-                      ],
+            return SizedBox(
+              height: _size.height * .90,
+              width: _size.width * .80,
+              child: settingsTiles.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 20),
+                          Text(
+                            "Refreshing Data",
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView(
+                      clipBehavior: Clip.antiAlias,
+                      children: settingsTiles,
                     ),
-                  )
-                : ListView(
-                    clipBehavior: Clip.antiAlias,
-                    children: settingsTiles,
-                  ),
-          );
-        }),
+            );
+          },
+        ),
       ),
     );
   }

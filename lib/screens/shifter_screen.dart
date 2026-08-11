@@ -31,11 +31,14 @@ class _ShifterScreenState extends State<ShifterScreen> {
   int _shiftGeneration = 0;
   late BluetoothConnectionState _lastConnectionState;
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
-  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
+  StreamSubscription<CharacteristicChangeEvent>?
+  _characteristicChangeSubscription;
   double _chartOpacity = 0.15;
   bool _showOpacityControl = false;
-  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
-  final GlobalKey<PowerTableChartState> _chartKey = GlobalKey<PowerTableChartState>();
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+  final GlobalKey<PowerTableChartState> _chartKey =
+      GlobalKey<PowerTableChartState>();
 
   @override
   void initState() {
@@ -45,7 +48,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
     bleData = BLEDataManager.forDevice(this.widget.device);
     _displayedShifterValue = ValueNotifier("Connecting");
     _syncShifterValueFromCache();
-    _lastConnectionState = widget.device.isConnected
+    _lastConnectionState = bleData.isTransportActive
         ? BluetoothConnectionState.connected
         : BluetoothConnectionState.disconnected;
 
@@ -98,15 +101,17 @@ class _ShifterScreenState extends State<ShifterScreen> {
   }
 
   Future<void> _refreshAuthoritativeShifterValue() async {
-    if (!mounted || !widget.device.isConnected) return;
+    if (!mounted || !bleData.isTransportActive) return;
     // The write pathway ensures notifications are active before sending, so
     // this request can enter the BLE queue immediately on screen entry.
     await bleData.requestSetting(widget.device, shifterPositionVname);
   }
 
   void _subscribeToDeviceUpdates() {
-    _connectionStateSubscription =
-        this.widget.device.connectionState.listen((state) {
+    _connectionStateSubscription = this.widget.device.connectionState.listen((
+      state,
+    ) {
+      if (bleData.isDirConConnected) return;
       final previousState = _lastConnectionState;
       _lastConnectionState = state;
 
@@ -121,8 +126,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
       }
     });
 
-    _characteristicChangeSubscription =
-        bleData.characteristicChanges.listen((event) {
+    _characteristicChangeSubscription = bleData.characteristicChanges.listen((
+      event,
+    ) {
       if (!mounted) return;
 
       // Shifter position from device is authoritative (includes external shifter and accepted app shifts).
@@ -138,7 +144,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
   }
 
   Future<void> _sendShift(
-      Map<String, dynamic> shiftValue, int generation) async {
+    Map<String, dynamic> shiftValue,
+    int generation,
+  ) async {
     try {
       await bleData.writeToSS2k(widget.device, shiftValue);
     } finally {
@@ -150,8 +158,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
         // The notification handler records every authoritative value. Once all
         // app writes have responses, the final device value wins (including a
         // clamped or rejected shift).
-        _displayedShifterValue.value =
-            _confirmedShifterValue ?? "Connecting";
+        _displayedShifterValue.value = _confirmedShifterValue ?? "Connecting";
       }
     }
   }
@@ -175,14 +182,20 @@ class _ShifterScreenState extends State<ShifterScreen> {
     WakelockPlus.enable();
   }
 
-  Widget _buildShiftButton(IconData icon, VoidCallback onPressed, {double height = 150}) {
+  Widget _buildShiftButton(
+    IconData icon,
+    VoidCallback onPressed, {
+    double height = 150,
+  }) {
     return SizedBox(
       height: height,
       width: height * 0.8,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           elevation: 5,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(height * 0.15))),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(height * 0.15)),
+          ),
           padding: EdgeInsets.zero,
         ),
         child: Icon(icon, size: height * 0.4),
@@ -193,7 +206,10 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
   Widget _buildGearDisplay(String gearNumber, {double fontSize = 48}) {
     return Container(
-      padding: EdgeInsets.symmetric(vertical: fontSize * 0.3, horizontal: fontSize * 0.6),
+      padding: EdgeInsets.symmetric(
+        vertical: fontSize * 0.3,
+        horizontal: fontSize * 0.6,
+      ),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(fontSize * 0.3),
@@ -212,36 +228,37 @@ class _ShifterScreenState extends State<ShifterScreen> {
   @override
   Widget build(BuildContext context) {
     return ScaffoldMessenger(
-        key: _scaffoldMessengerKey,
-        child: Scaffold(
-          appBar: SS2KAppBar(
-            device: widget.device,
-            title: "Virtual Shifter",
-            firmwareOnlyDeviceHeader: true,
-          ),
-          body: Stack(
-            children: [
-              // Background Chart
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32.0),
-                  child: Opacity(
-                    opacity: _chartOpacity,
-                    child: IgnorePointer(
-                      child: PowerTableChart(
-                        key: _chartKey,
-                        device: widget.device,
-                        bleData: bleData,
-                        pollTargetPosition: false,
-                        initialDataLoadDelay: const Duration(seconds: 15),
-                      ),
+      key: _scaffoldMessengerKey,
+      child: Scaffold(
+        appBar: SS2KAppBar(
+          device: widget.device,
+          title: "Virtual Shifter",
+          firmwareOnlyDeviceHeader: true,
+        ),
+        body: Stack(
+          children: [
+            // Background Chart
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 32.0),
+                child: Opacity(
+                  opacity: _chartOpacity,
+                  child: IgnorePointer(
+                    child: PowerTableChart(
+                      key: _chartKey,
+                      device: widget.device,
+                      bleData: bleData,
+                      pollTargetPosition: false,
+                      initialDataLoadDelay: const Duration(seconds: 15),
                     ),
                   ),
                 ),
               ),
-              // Foreground Content
-              Positioned.fill(
-                child: LayoutBuilder(builder: (context, constraints) {
+            ),
+            // Foreground Content
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
                   final double availH = constraints.maxHeight;
                   // Calculate dynamic sizes based on available height
                   double buttonHeight = (availH * 0.22).clamp(60.0, 160.0);
@@ -263,21 +280,28 @@ class _ShifterScreenState extends State<ShifterScreen> {
                               children: <Widget>[
                                 if (bleData.simulatedTargetWatts != "")
                                   Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8.0,
+                                    ),
                                     child: MetricBox(
-                                      value: bleData.simulatedTargetWatts.toString(),
+                                      value: bleData.simulatedTargetWatts
+                                          .toString(),
                                       label: 'Target Watts',
                                     ),
                                   ),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8.0,
+                                  ),
                                   child: MetricBox(
                                     value: bleData.ftmsData.watts.toString(),
                                     label: 'Watts',
                                   ),
                                 ),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8.0,
+                                  ),
                                   child: MetricBox(
                                     value: bleData.ftmsData.cadence.toString(),
                                     label: 'RPM',
@@ -285,12 +309,15 @@ class _ShifterScreenState extends State<ShifterScreen> {
                                 ),
                                 if (bleData.ftmsData.heartRate != 0)
                                   Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8.0,
+                                    ),
                                     child: MetricBox(
-                                      value: bleData.ftmsData.heartRate.toString(),
+                                      value: bleData.ftmsData.heartRate
+                                          .toString(),
                                       label: 'BPM',
                                     ),
-                                  )
+                                  ),
                               ],
                             ),
                           );
@@ -304,7 +331,10 @@ class _ShifterScreenState extends State<ShifterScreen> {
                       ValueListenableBuilder<String>(
                         valueListenable: _displayedShifterValue,
                         builder: (context, gearValue, child) {
-                          return _buildGearDisplay(gearValue, fontSize: gearFontSize);
+                          return _buildGearDisplay(
+                            gearValue,
+                            fontSize: gearFontSize,
+                          );
                         },
                       ),
                       Spacer(flex: 1),
@@ -314,48 +344,60 @@ class _ShifterScreenState extends State<ShifterScreen> {
                       Spacer(flex: 1),
                     ],
                   );
-                }),
+                },
               ),
-              Positioned(
-                right: 16,
-                bottom: 24,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Material(
-                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
-                      shape: const CircleBorder(),
-                      elevation: 4,
-                      child: IconButton(
-                        tooltip: _showOpacityControl ? 'Hide power table opacity' : 'Show power table opacity',
-                        icon: Icon(_showOpacityControl ? Icons.opacity : Icons.opacity_outlined),
-                        onPressed: () => setState(() => _showOpacityControl = !_showOpacityControl),
+            ),
+            Positioned(
+              right: 16,
+              bottom: 24,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Material(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surface.withValues(alpha: 0.9),
+                    shape: const CircleBorder(),
+                    elevation: 4,
+                    child: IconButton(
+                      tooltip: _showOpacityControl
+                          ? 'Hide power table opacity'
+                          : 'Show power table opacity',
+                      icon: Icon(
+                        _showOpacityControl
+                            ? Icons.opacity
+                            : Icons.opacity_outlined,
+                      ),
+                      onPressed: () => setState(
+                        () => _showOpacityControl = !_showOpacityControl,
                       ),
                     ),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 320),
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: animation,
-                          child: child,
-                        ),
-                        child: _showOpacityControl
-                            ? Padding(
-                                key: const ValueKey('opacityControl'),
-                                padding: const EdgeInsets.only(top: 8),
-                                child: _buildOpacityControl(context),
-                              )
-                            : const SizedBox.shrink(key: ValueKey('opacityControlEmpty')),
-                      ),
+                  ),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 320),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      transitionBuilder: (child, animation) =>
+                          FadeTransition(opacity: animation, child: child),
+                      child: _showOpacityControl
+                          ? Padding(
+                              key: const ValueKey('opacityControl'),
+                              padding: const EdgeInsets.only(top: 8),
+                              child: _buildOpacityControl(context),
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey('opacityControlEmpty'),
+                            ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ));
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildOpacityControl(BuildContext context) {
@@ -363,7 +405,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4))],
+        boxShadow: const [
+          BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4)),
+        ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Column(

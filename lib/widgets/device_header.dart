@@ -9,7 +9,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
-import '../utils/extra.dart';
 import '../utils/bledata.dart';
 import '../utils/constants.dart';
 
@@ -18,9 +17,13 @@ class DeviceHeader extends StatefulWidget {
   final bool connectOnly;
   final bool firmwareOnlyRefresh;
   final bool customRefreshEnabled;
-  const DeviceHeader({Key? key, required this.device, this.connectOnly = false,
-      this.firmwareOnlyRefresh = false, this.customRefreshEnabled = true})
-      : super(key: key);
+  const DeviceHeader({
+    Key? key,
+    required this.device,
+    this.connectOnly = false,
+    this.firmwareOnlyRefresh = false,
+    this.customRefreshEnabled = true,
+  }) : super(key: key);
 
   @override
   State<DeviceHeader> createState() => _DeviceHeaderState();
@@ -65,16 +68,18 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     );
 
     // Listen for connection state changes to update UI (e.g. RSSI, services)
-    _connectionStateSubscription ??=
-        this.widget.device.connectionState.listen((state) async {
+    _connectionStateSubscription ??= this.widget.device.connectionState.listen((
+      state,
+    ) async {
+      if (this.bleData.isDirConConnected) return;
       this.bleData.connectionState = state;
       if (state == BluetoothConnectionState.connected) {
         this.bleData.rssi.value = await this.widget.device.readRssi();
         if (widget.customRefreshEnabled) {
           if (widget.firmwareOnlyRefresh) {
-            await this
-                .bleData
-                .ensureCustomCharacteristicStream(this.widget.device);
+            await this.bleData.ensureCustomCharacteristicStream(
+              this.widget.device,
+            );
           } else {
             await this.bleData.setupConnection(this.widget.device);
           }
@@ -104,8 +109,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       if (widget.firmwareOnlyRefresh) {
         await bleData.ensureCustomCharacteristicStream(widget.device);
       } else {
-        await bleData.setupConnection(widget.device,
-            forceRefresh: forceRefresh);
+        await bleData.setupConnection(
+          widget.device,
+          forceRefresh: forceRefresh,
+        );
       }
       await bleData.requestSetting(this.widget.device, fwVname);
     } catch (e) {
@@ -130,7 +137,9 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
   Future<void> _handleReconnected() async {
     if (!mounted) return;
-    this.bleData.rssi.value = await this.widget.device.readRssi();
+    if (this.widget.device.isConnected) {
+      this.bleData.rssi.value = await this.widget.device.readRssi();
+    }
     if (widget.customRefreshEnabled && !_isRefreshing) {
       await _refreshDeviceInfo();
     }
@@ -144,7 +153,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     });
     // Keep monitoring FTMS health without repeatedly restarting GATT setup.
     setupTimer = Timer.periodic(Duration(seconds: 5), (timer) async {
-      if (mounted && this.widget.device.isConnected) {
+      if (mounted && bleData.isTransportActive) {
         await bleData.checkFtmsHealth(this.widget.device);
       }
     });
@@ -154,20 +163,21 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     if (this.widget.device.isConnected) {
       try {
         this.bleData.rssi.value = await this.widget.device.readRssi();
-        if (widget.customRefreshEnabled) {
-          bleData.requestSetting(this.widget.device, fwVname);
-        }
-        // No need for manual setState here anymore - the listener will handle firmware version updates
       } catch (e) {
         this.bleData.rssi.value = 0;
       }
     } else {
       this.bleData.rssi.value = 0;
     }
+    if (widget.customRefreshEnabled && bleData.isTransportActive) {
+      bleData.requestSetting(this.widget.device, fwVname);
+    }
+    // No need for manual setState here anymore - the listener handles
+    // firmware version updates on either transport.
   }
 
   bool get isConnected {
-    return this.bleData.connectionState == BluetoothConnectionState.connected;
+    return this.bleData.isTransportActive;
   }
 
   Future onConnectPressed() async {
@@ -175,27 +185,32 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     this.bleData.isUserDisconnect = false;
 
     try {
-      await this.widget.device.connectAndUpdateStream();
-      await this.bleData.setupConnection(this.widget.device);
+      await this.bleData.connectPreferred(this.widget.device);
       Snackbar.show(ABC.c, "Connect: Success", success: true);
     } catch (e) {
       if (e is FlutterBluePlusException &&
           e.code == FbpErrorCode.connectionCanceled.index) {
         // ignore connections canceled by the user
       } else {
-        Snackbar.show(ABC.c, prettyException("Connect Error:", e),
-            success: false);
+        Snackbar.show(
+          ABC.c,
+          prettyException("Connect Error:", e),
+          success: false,
+        );
       }
     }
   }
 
   Future onDisconnectPressed() async {
     try {
-      await this.widget.device.disconnectAndUpdateStream();
+      await this.bleData.disconnectPreferred(this.widget.device);
       Snackbar.show(ABC.c, "Disconnect: Success", success: true);
     } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Disconnect Error:", e),
-          success: false);
+      Snackbar.show(
+        ABC.c,
+        prettyException("Disconnect Error:", e),
+        success: false,
+      );
     }
   }
 
@@ -204,8 +219,11 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       await _refreshDeviceInfo(forceRefresh: true);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Discover Services Error:", e),
-          success: false);
+      Snackbar.show(
+        ABC.c,
+        prettyException("Discover Services Error:", e),
+        success: false,
+      );
     }
   }
 
@@ -213,11 +231,17 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     try {
       await this.bleData.reboot(this.widget.device);
       Snackbar.show(ABC.a, "SmartSpin2k is rebooting", success: true);
-      await onDisconnectPressed();
-      await onConnectPressed();
+      // Do not treat a reboot as a user-requested disconnect. In particular,
+      // closing a DIRCON socket here sets [isUserDisconnect], then reconnects
+      // while the device is still booting. That bypasses DIRCON recovery and
+      // causes connectPreferred to fall back to BLE. Let the transport-loss
+      // monitor reconnect after the device's DIRCON endpoint is ready again.
     } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Reboot Failed ", e),
-          success: false);
+      Snackbar.show(
+        ABC.c,
+        prettyException("Reboot Failed ", e),
+        success: false,
+      );
     }
   }
 
@@ -239,7 +263,13 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     IconData iconData;
     Color iconColor;
 
-    if (this.widget.device.isConnected) {
+    if (bleData.isDirConConnected) {
+      // DIRCON is a network transport and has no meaningful BLE RSSI. Use a
+      // clearly different connected-cable symbol instead of implying that the
+      // network session has no signal.
+      iconData = Icons.router;
+      iconColor = Colors.lightBlueAccent;
+    } else if (this.widget.device.isConnected) {
       if (rssi >= -60) {
         iconData = Icons.signal_cellular_4_bar_sharp;
         iconColor = Colors.green;
@@ -268,15 +298,15 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    var rssiIcon = _buildSignalStrengthIcon(this.bleData.rssi.value);
 
     return PopupMenuButton<VoidCallback>(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border:
-              Border.all(color: colorScheme.onSurface.withValues(alpha: 0.16)),
+          border: Border.all(
+            color: colorScheme.onSurface.withValues(alpha: 0.16),
+          ),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -309,7 +339,17 @@ class _DeviceHeaderState extends State<DeviceHeader> {
                 borderRadius: BorderRadius.circular(8),
               ),
               alignment: Alignment.center,
-              child: rssiIcon,
+              child: ValueListenableBuilder<int>(
+                valueListenable: bleData.transportRevision,
+                builder: (context, _, _) {
+                  return ValueListenableBuilder<int>(
+                    valueListenable: bleData.rssi,
+                    builder: (context, rssi, _) {
+                      return _buildSignalStrengthIcon(rssi);
+                    },
+                  );
+                },
+              ),
             ),
             SizedBox(width: 8),
             Column(
@@ -358,10 +398,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         ),
         PopupMenuItem<VoidCallback>(
           value: onDiscoverServicesPressed,
-          child: ListTile(
-            leading: Icon(Icons.refresh),
-            title: Text('Refresh'),
-          ),
+          child: ListTile(leading: Icon(Icons.refresh), title: Text('Refresh')),
         ),
         PopupMenuItem<VoidCallback>(
           value: onRebootPressed,

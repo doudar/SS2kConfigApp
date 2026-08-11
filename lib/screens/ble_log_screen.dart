@@ -57,6 +57,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
         onReconnected: _onReconnectedCallback,
       );
       _connectionSubscription = widget.device.connectionState.listen((state) {
+        if (bleData.isDirConConnected) return;
         if (state == BluetoothConnectionState.disconnected) {
           _loggingEnabled = false;
         } else if (state == BluetoothConnectionState.connected &&
@@ -75,14 +76,15 @@ class _BleLogScreenState extends State<BleLogScreen> {
     if (bleData.isSimulated ||
         !_wantsLogStreaming ||
         _loggingEnabled ||
-        _enableInProgress) return;
+        _enableInProgress)
+      return;
 
     _enableInProgress = true;
     try {
       await bleData.ensureCustomCharacteristicStream(widget.device);
-      if (!_wantsLogStreaming || !widget.device.isConnected) return;
+      if (!_wantsLogStreaming || !bleData.isTransportActive) return;
       await bleData.writeToSS2k(widget.device, logCharacteristic, s: "1");
-      if (_wantsLogStreaming && widget.device.isConnected) {
+      if (_wantsLogStreaming && bleData.isTransportActive) {
         _loggingEnabled = true;
         if (mounted) setState(() {});
       }
@@ -93,7 +95,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
 
   Future<void> _disableLogStreaming() async {
     _loggingEnabled = false;
-    if (bleData.isSimulated || !widget.device.isConnected) return;
+    if (bleData.isSimulated || !bleData.isTransportActive) return;
 
     await bleData.writeToSS2k(widget.device, logCharacteristic, s: "0");
   }
@@ -270,9 +272,9 @@ class _BleLogScreenState extends State<BleLogScreen> {
                         child: Text(
                           _loggingEnabled
                               ? 'Log streaming is active'
-                              : widget.device.isConnected
-                                  ? 'Activating log streaming...'
-                                  : 'Reconnecting to SmartSpin2k...',
+                              : bleData.isTransportActive
+                              ? 'Activating log streaming...'
+                              : 'Reconnecting to SmartSpin2k...',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ),
@@ -308,7 +310,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
                       ),
                     ],
                   ),
-                  if (!widget.device.isConnected && !bleData.isSimulated)
+                  if (!bleData.isTransportActive && !bleData.isSimulated)
                     Padding(
                       padding: EdgeInsets.only(top: 8),
                       child: Text(

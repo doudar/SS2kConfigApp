@@ -252,7 +252,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     if (bleData.charReceived.value) {
       await _initializeOnce();
     }
-    if (widget.device.isConnected) {
+    if (bleData.isTransportActive) {
       await bleData.requestSetting(widget.device, fwVname);
     }
   }
@@ -702,28 +702,28 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     // Clear the current version to ensure we get a fresh reading
     bleData.firmwareVersion.value = "";
 
-    await bleData.reconnectAndSetup(
-      widget.device,
-      maxAttempts: 30,
-      retryDelay: const Duration(seconds: 1),
-      settleDelay: const Duration(seconds: 2),
-    );
+    if (!bleData.isTransportActive) {
+      try {
+        await bleData.connectPreferred(widget.device, waitForSetup: true);
+      } catch (error) {
+        print('[FirmwareVerify] Initial reconnect failed: $error');
+      }
+    }
 
     while (checkCount < 60) {
       // 60 seconds (checking every 1s)
       await Future.delayed(Duration(seconds: 1));
       checkCount++;
 
-      if (!widget.device.isConnected) {
-        await bleData.reconnectAndSetup(
-          widget.device,
-          maxAttempts: 5,
-          retryDelay: const Duration(seconds: 1),
-          settleDelay: const Duration(seconds: 2),
-        );
+      if (!bleData.isTransportActive) {
+        try {
+          await bleData.connectPreferred(widget.device, waitForSetup: true);
+        } catch (_) {
+          continue;
+        }
       }
 
-      if (widget.device.isConnected) {
+      if (bleData.isTransportActive) {
         await bleData.requestSetting(widget.device, fwVname);
       }
 
@@ -769,7 +769,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     for (int i = 0; i < 4; i++) {
       await Future.delayed(const Duration(seconds: 1));
 
-      if (!widget.device.isConnected) {
+      if (!bleData.isTransportActive) {
         return false;
       }
 

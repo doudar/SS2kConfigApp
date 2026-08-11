@@ -17,12 +17,12 @@ import '../utils/constants.dart';
 import 'main_device_screen.dart';
 import '../utils/snackbar.dart';
 import '../utils/bledata.dart';
-import '../utils/extra.dart';
 import '../widgets/scan_result_tile.dart';
 import '../widgets/theme_cycle_button.dart';
 import '../utils/demo.dart';
 import 'onboarding/onboarding_wizard.dart';
 import '../utils/onboarding/wizard_session.dart';
+import '../utils/smartspin_advertisement.dart';
 import 'package:provider/provider.dart';
 
 class ScanScreen extends StatefulWidget {
@@ -44,14 +44,17 @@ class _ScanScreenState extends State<ScanScreen> {
   void initState() {
     super.initState();
 
-    _scanResultsSubscription = FlutterBluePlus.scanResults.listen((results) {
-      _scanResults = results;
-      if (mounted) {
-        setState(() {});
-      }
-    }, onError: (e) {
-      Snackbar.show(ABC.b, prettyException("Scan Error:", e), success: false);
-    });
+    _scanResultsSubscription = FlutterBluePlus.scanResults.listen(
+      (results) {
+        _scanResults = results;
+        if (mounted) {
+          setState(() {});
+        }
+      },
+      onError: (e) {
+        Snackbar.show(ABC.b, prettyException("Scan Error:", e), success: false);
+      },
+    );
 
     _isScanningSubscription = FlutterBluePlus.isScanning.listen((state) {
       _isScanning = state;
@@ -103,15 +106,24 @@ class _ScanScreenState extends State<ScanScreen> {
     try {
       FlutterBluePlus.stopScan();
     } catch (e) {
-      Snackbar.show(ABC.b, prettyException("Stop Scan Error:", e), success: false);
+      Snackbar.show(
+        ABC.b,
+        prettyException("Stop Scan Error:", e),
+        success: false,
+      );
     }
   }
 
-  Future<void> onConnectPressed(BluetoothDevice device) async {
+  Future<void> onConnectPressed(ScanResult result) async {
+    final device = result.device;
+    final bleData = BLEDataManager.forDevice(device);
+    bleData.advertisedIpAddress = SmartSpinAdvertisement.ipAddress(
+      result.advertisementData.manufacturerData,
+    );
     try {
       // Reset the user disconnect flag if triggered
-      if (BLEDataManager.forDevice(device).isUserDisconnect) {
-        BLEDataManager.forDevice(device).isUserDisconnect = false;
+      if (bleData.isUserDisconnect) {
+        bleData.isUserDisconnect = false;
       }
     } catch (e) {
       print("Device BLEData was not initialized: $e");
@@ -119,15 +131,20 @@ class _ScanScreenState extends State<ScanScreen> {
     if (FlutterBluePlus.isScanningNow) {
       await FlutterBluePlus.stopScan();
     }
-    try {
-      await device.connectAndUpdateStream();
-    } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
-      return;
-    }
+    unawaited(
+      bleData.connectPreferred(device).catchError((Object e) {
+        Snackbar.show(
+          ABC.c,
+          prettyException("Connect Error:", e),
+          success: false,
+        );
+      }),
+    );
     if (!mounted) return;
     MaterialPageRoute route = MaterialPageRoute(
-        builder: (context) => MainDeviceScreen(device: device), settings: RouteSettings(name: '/MainDeviceScreen'));
+      builder: (context) => MainDeviceScreen(device: device),
+      settings: RouteSettings(name: '/MainDeviceScreen'),
+    );
     Navigator.of(context).push(route).then((_) {
       // Clear stale scan results when returning from device screen.
       // This prevents showing a cached entry for a previous device
@@ -147,7 +164,10 @@ class _ScanScreenState extends State<ScanScreen> {
   Future onRefresh() {
     if (_isScanning == false) {
       if (kIsWeb) {
-        FlutterBluePlus.startScan(withServices: [Guid(csUUID)], timeout: const Duration(seconds: 15));
+        FlutterBluePlus.startScan(
+          withServices: [Guid(csUUID)],
+          timeout: const Duration(seconds: 15),
+        );
       } else {
         int divisor = io.Platform.isAndroid ? 8 : 1;
         FlutterBluePlus.startScan(
@@ -186,12 +206,18 @@ class _ScanScreenState extends State<ScanScreen> {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            scanning ? colorScheme.error.withValues(alpha: 0.88) : const Color(0xFF1B1B1B),
-            scanning ? colorScheme.error.withValues(alpha: 0.64) : const Color(0xFF2A2A2A),
+            scanning
+                ? colorScheme.error.withValues(alpha: 0.88)
+                : const Color(0xFF1B1B1B),
+            scanning
+                ? colorScheme.error.withValues(alpha: 0.64)
+                : const Color(0xFF2A2A2A),
           ],
         ),
         border: Border.all(
-          color: scanning ? Colors.white.withValues(alpha: 0.22) : Colors.red.withValues(alpha: 0.28),
+          color: scanning
+              ? Colors.white.withValues(alpha: 0.22)
+              : Colors.red.withValues(alpha: 0.28),
         ),
         boxShadow: [
           BoxShadow(
@@ -213,14 +239,19 @@ class _ScanScreenState extends State<ScanScreen> {
           backgroundColor: Colors.transparent,
           foregroundColor: foregroundColor,
           shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
           padding: const EdgeInsets.symmetric(vertical: 14),
         ),
         child: scanning
             ? const Icon(Icons.stop_rounded)
             : const Text(
                 "SCAN",
-                style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5),
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
               ),
       ),
     );
@@ -235,11 +266,13 @@ class _ScanScreenState extends State<ScanScreen> {
         label: const Text('Guided Setup'),
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.white,
-          backgroundColor:
-              const Color.fromARGB(255, 54, 27, 26).withValues(alpha: 0.24),
-          side: BorderSide(
-            color: Colors.red.withValues(alpha: 0.35),
-          ),
+          backgroundColor: const Color.fromARGB(
+            255,
+            54,
+            27,
+            26,
+          ).withValues(alpha: 0.24),
+          side: BorderSide(color: Colors.red.withValues(alpha: 0.35)),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -275,7 +308,10 @@ class _ScanScreenState extends State<ScanScreen> {
                 ],
                 stops: const [0.0, 0.62, 1.0],
               ),
-              border: Border.all(color: Colors.red.withValues(alpha: 0.45), width: 1.2),
+              border: Border.all(
+                color: Colors.red.withValues(alpha: 0.45),
+                width: 1.2,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.35),
@@ -291,10 +327,11 @@ class _ScanScreenState extends State<ScanScreen> {
                 OutlinedButton(
                   onPressed: () async {
                     Uri url = Uri(
-                        scheme: 'https',
-                        host: 'SmartSpin2k.com',
-                        path: '/',
-                        fragment: ''); //http://SmartSpin2k.com";
+                      scheme: 'https',
+                      host: 'SmartSpin2k.com',
+                      path: '/',
+                      fragment: '',
+                    ); //http://SmartSpin2k.com";
                     if (await canLaunchUrl(url)) {
                       await launchUrl(url);
                     }
@@ -303,13 +340,28 @@ class _ScanScreenState extends State<ScanScreen> {
                     alignment: Alignment.centerLeft,
                     minimumSize: const Size.fromHeight(0),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    backgroundColor: const Color.fromARGB(255, 54, 27, 26).withValues(alpha: 0.24),
+                    backgroundColor: const Color.fromARGB(
+                      255,
+                      54,
+                      27,
+                      26,
+                    ).withValues(alpha: 0.24),
                     foregroundColor: bodyColor,
                     side: BorderSide(
-                      color: const Color.fromARGB(255, 66, 26, 23).withValues(alpha: 0.42),
+                      color: const Color.fromARGB(
+                        255,
+                        66,
+                        26,
+                        23,
+                      ).withValues(alpha: 0.42),
                     ),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
                   ),
                   child: Text(
                     'SmartSpin2k is a device that adds automatic resistance and virtual shifting to spin bikes. Click to learn more!',
@@ -322,7 +374,9 @@ class _ScanScreenState extends State<ScanScreen> {
                 const SizedBox(height: 10),
                 OutlinedButton(
                   onPressed: () async {
-                    final Uri docsUrl = Uri.parse('https://docs.smartspin2k.com/');
+                    final Uri docsUrl = Uri.parse(
+                      'https://docs.smartspin2k.com/',
+                    );
                     if (await canLaunchUrl(docsUrl)) {
                       await launchUrl(docsUrl);
                     }
@@ -331,13 +385,28 @@ class _ScanScreenState extends State<ScanScreen> {
                     alignment: Alignment.centerLeft,
                     minimumSize: const Size(0, 0),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    backgroundColor: const Color.fromARGB(255, 54, 27, 26).withValues(alpha: 0.24),
+                    backgroundColor: const Color.fromARGB(
+                      255,
+                      54,
+                      27,
+                      26,
+                    ).withValues(alpha: 0.24),
                     foregroundColor: headingColor,
                     side: BorderSide(
-                      color: const Color.fromARGB(255, 66, 26, 23).withValues(alpha: 0.42),
+                      color: const Color.fromARGB(
+                        255,
+                        66,
+                        26,
+                        23,
+                      ).withValues(alpha: 0.42),
                     ),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                   ),
                   child: Text(
                     'Having Trouble?',
@@ -379,21 +448,19 @@ class _ScanScreenState extends State<ScanScreen> {
     final csGuid = Guid(csUUID);
     bool _isSmartSpin2kDevice(ScanResult result) {
       final adv = result.advertisementData;
-      final hasService = adv.serviceUuids.any((uuid) => uuid == csGuid || uuid.str.toLowerCase() == csUUID.toLowerCase());
+      final hasService = adv.serviceUuids.any(
+        (uuid) =>
+            uuid == csGuid || uuid.str.toLowerCase() == csUUID.toLowerCase(),
+      );
       return hasService;
     }
 
     final List<ScanResult> results = kIsWeb
-      ? _scanResults
-      : _scanResults.where(_isSmartSpin2kDevice).toList();
+        ? _scanResults
+        : _scanResults.where(_isSmartSpin2kDevice).toList();
 
     return results
-        .map(
-          (r) => ScanResultTile(
-            result: r,
-            onTap: () => onConnectPressed(r.device),
-          ),
-        )
+        .map((r) => ScanResultTile(result: r, onTap: () => onConnectPressed(r)))
         .toList();
   }
 
@@ -414,7 +481,9 @@ class _ScanScreenState extends State<ScanScreen> {
 
     // Update the UI to display the simulated scan result
     setState(() {
-      _scanResults = [simulatedScanResult]; // Replace existing scan results with the simulated one
+      _scanResults = [
+        simulatedScanResult,
+      ]; // Replace existing scan results with the simulated one
       // If you want to keep existing scan results and add the simulated one, use `_scanResults.add(simulatedScanResult);` instead
     });
   }
@@ -435,7 +504,9 @@ class _ScanScreenState extends State<ScanScreen> {
           ),
           flexibleSpace: Container(
             decoration: BoxDecoration(
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(16),
+              ),
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -462,12 +533,14 @@ class _ScanScreenState extends State<ScanScreen> {
             fontWeight: FontWeight.w700,
             color: Colors.white,
             shadows: [
-              Shadow(color: Colors.black87, blurRadius: 6, offset: Offset(0, 1)),
+              Shadow(
+                color: Colors.black87,
+                blurRadius: 6,
+                offset: Offset(0, 1),
+              ),
             ],
           ),
-          actions: [
-            const ThemeCycleButton(),
-          ],
+          actions: [const ThemeCycleButton()],
         ),
         body: Stack(
           children: [
@@ -476,16 +549,20 @@ class _ScanScreenState extends State<ScanScreen> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final guidedSetupTopGap =
-                      constraints.maxHeight * (_scanResults.isEmpty ? 0.10 : 0.18);
+                      constraints.maxHeight *
+                      (_scanResults.isEmpty ? 0.10 : 0.18);
 
                   return ListView(
                     children: <Widget>[
                       ..._buildScanResultTiles(context),
-                      if (_scanResults.isEmpty) // This line checks if there are no scan results
+                      if (_scanResults
+                          .isEmpty) // This line checks if there are no scan results
                         _buildEmptyStatePanel(context),
                       LayoutBuilder(
                         builder: (context, constraints) {
-                          final buttonWidth = (constraints.maxWidth * 0.55).clamp(170.0, 320.0).toDouble();
+                          final buttonWidth = (constraints.maxWidth * 0.55)
+                              .clamp(170.0, 320.0)
+                              .toDouble();
                           return Padding(
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 15),
                             child: Align(
@@ -524,10 +601,13 @@ class _ScanScreenState extends State<ScanScreen> {
                 onPressed: _showDemoButton
                     ? () {
                         // Enter demo mode logic here
-                        onDemoModePressed(context); // Assuming this is your method to set up demo data
+                        onDemoModePressed(
+                          context,
+                        ); // Assuming this is your method to set up demo data
 
                         setState(() {
-                          _showDemoButton = false; // Hide the button again after entering demo mode
+                          _showDemoButton =
+                              false; // Hide the button again after entering demo mode
                         });
                       }
                     : null, // Button does nothing if _showDemoButton is false
@@ -539,7 +619,9 @@ class _ScanScreenState extends State<ScanScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.withValues(alpha: 0.82),
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   side: BorderSide(color: Colors.red.withValues(alpha: 0.35)),
                 ),
               ),

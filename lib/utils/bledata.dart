@@ -16,6 +16,7 @@ import 'ftmsControlPoint.dart';
 import 'bleConstants.dart';
 import 'ble_request_coalescer.dart';
 import 'connection_setup_coordinator.dart';
+import 'dircon_client.dart';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
@@ -96,8 +97,26 @@ class FtmsData {
 }
 
 class BLEData {
+  String? advertisedIpAddress;
+  DirConClient? _dirConClient;
+  StreamSubscription<List<int>>? _dirConNotificationSubscription;
+  StreamSubscription<List<int>>? _dirConFtmsSubscription;
+  StreamSubscription<void>? _dirConDisconnectedSubscription;
+  bool _dirConSetupComplete = false;
+  bool _dirConReconnectInProgress = false;
+  bool _initialConnectionInProgress = false;
+
+  bool get isDirConConnected => _dirConClient?.isConnected ?? false;
+  bool get isTransportActive =>
+      isDirConConnected ||
+      connectionState == BluetoothConnectionState.connected;
+  String get activeTransportName => isDirConConnected ? 'DIRCON' : 'Bluetooth';
+
   bool isUserDisconnect = false;
   ValueNotifier<int> rssi = ValueNotifier(0);
+  // DIRCON state changes do not emit a Bluetooth connection-state event.
+  // Headers listen to this revision so their transport indicator stays fresh.
+  final ValueNotifier<int> transportRevision = ValueNotifier(0);
   ValueNotifier<bool> charReceived = ValueNotifier(false);
   DateTime? lastFtmsUpdate;
   StreamSubscription<BluetoothConnectionState>? connectionStateSubscription;
@@ -130,9 +149,15 @@ class BLEData {
     if (_reconnectSubscription != null) return;
 
     _reconnectSubscription = device.connectionState.listen((state) async {
+      // A DIRCON session deliberately leaves the Android BLE GATT connection
+      // disconnected. Do not let that idle BLE state overwrite the active
+      // network transport or start a competing reconnect loop.
+      if (isDirConConnected) return;
       connectionState = state;
 
       if (state == BluetoothConnectionState.disconnected) {
+        if (isUserDisconnect || _initialConnectionInProgress) return;
+
         // Reset connection-specific state so the next setupConnection
         // performs a full re-bootstrap (re-discover services, re-subscribe
         // to notifications, etc.).  Without this, stale references to the
@@ -140,11 +165,174 @@ class BLEData {
         // reconnection.
         _resetConnectionState();
 
-        if (isUserDisconnect) return;
-
         await reconnectAndSetup(device);
       }
     });
+  }
+
+  /// Connect using the IP advertised by SmartSpin2k whenever its DIRCON
+  /// endpoint is reachable. BLE remains the transparent fallback.
+  Future<void> connectPreferred(
+    BluetoothDevice device, {
+    bool waitForSetup = false,
+  }) async {
+    isUserDisconnect = false;
+    _initialConnectionInProgress = true;
+    try {
+      final ipAddress = advertisedIpAddress;
+      if (ipAddress != null && ipAddress.isNotEmpty) {
+        try {
+          await _connectDirCon(device, ipAddress, waitForSetup: waitForSetup);
+          return;
+        } catch (error) {
+          print('[DIRCON] $ipAddress unavailable, falling back to BLE: $error');
+          await _closeDirCon();
+        }
+      }
+
+      await device.connectAndUpdateStream();
+      connectionState = BluetoothConnectionState.connected;
+      if (waitForSetup) {
+        await setupConnection(device);
+      } else {
+        _setupConnectionInBackground(device);
+      }
+    } finally {
+      _initialConnectionInProgress = false;
+    }
+  }
+
+  Future<void> disconnectPreferred(BluetoothDevice device) async {
+    isUserDisconnect = true;
+    if (_dirConClient != null) {
+      await _closeDirCon();
+      connectionState = BluetoothConnectionState.disconnected;
+      _resetConnectionState();
+      return;
+    }
+    await device.disconnect();
+  }
+
+  Future<void> _connectDirCon(
+    BluetoothDevice device,
+    String ipAddress, {
+    required bool waitForSetup,
+  }) async {
+    await _closeDirCon();
+    final client = await DirConClient.connect(ipAddress);
+    try {
+      await client.initialize(serviceUuid: csUUID, characteristicUuid: ccUUID);
+    } catch (_) {
+      await client.close();
+      rethrow;
+    }
+
+    _dirConClient = client;
+    _notifyTransportChanged();
+    _dirConSetupComplete = false;
+    configAppCompatibleFirmware = true;
+    _ensureCachedMap();
+    connectionState = BluetoothConnectionState.connected;
+    _dirConNotificationSubscription = client
+        .characteristicNotifications(ccUUID)
+        .listen(_decodeCustomValue);
+    try {
+      await client.ensureCharacteristic(
+        serviceUuid: ftmsServiceUUID,
+        characteristicUuid: ftmsIndoorBikeDataUUID,
+        enableNotifications: true,
+      );
+      _dirConFtmsSubscription = client
+          .characteristicNotifications(ftmsIndoorBikeDataUUID)
+          .listen(_decodeIndoorBikeData);
+      print('[DIRCON] Subscribed to FTMS Indoor Bike Data');
+    } catch (error) {
+      // Configuration remains usable on firmware variants without FTMS.
+      print('[DIRCON] FTMS subscription unavailable: $error');
+    }
+    _dirConDisconnectedSubscription = client.disconnected.listen((_) {
+      _handleDirConDisconnect(device);
+    });
+    print('[DIRCON] Connected to $ipAddress:${DirConClient.port}');
+    if (waitForSetup) {
+      await setupConnection(device);
+    } else {
+      _setupConnectionInBackground(device);
+    }
+  }
+
+  void _setupConnectionInBackground(BluetoothDevice device) {
+    unawaited(
+      setupConnection(device).catchError((Object error, StackTrace stackTrace) {
+        print('[ConnectionSetup] Background setup failed: $error');
+      }),
+    );
+  }
+
+  Future<void> _handleDirConDisconnect(BluetoothDevice device) async {
+    if (_dirConClient?.host != advertisedIpAddress) return;
+    await _closeDirCon();
+    _dirConSetupComplete = false;
+    subscribed = false;
+    charReceived.value = false;
+    connectionState = BluetoothConnectionState.disconnected;
+    if (isUserDisconnect || _dirConReconnectInProgress) return;
+
+    _dirConReconnectInProgress = true;
+    try {
+      // A SmartSpin2k reboot routinely takes longer than the old 10 second
+      // retry window. Keep the transport choice stable while the device is
+      // starting up so an established DIRCON session is restored over the
+      // network instead of being replaced by a BLE connection.
+      const maxDirConReconnectAttempts = 45;
+      for (
+        var attempt = 1;
+        attempt <= maxDirConReconnectAttempts && !isUserDisconnect;
+        attempt++
+      ) {
+        try {
+          final ipAddress = advertisedIpAddress;
+          if (ipAddress == null) break;
+          await _connectDirCon(device, ipAddress, waitForSetup: true);
+          for (final callback in List<Future<void> Function()>.from(
+            _onReconnectedCallbacks,
+          )) {
+            await callback();
+          }
+          return;
+        } catch (error) {
+          print('[DIRCON] Reconnect attempt $attempt failed: $error');
+          if (attempt < maxDirConReconnectAttempts) {
+            await Future.delayed(const Duration(seconds: 1));
+          }
+        }
+      }
+
+      if (!isUserDisconnect) {
+        print('[DIRCON] Reconnect exhausted; trying BLE fallback.');
+        await device.connectAndUpdateStream();
+        await setupConnection(device);
+      }
+    } finally {
+      _dirConReconnectInProgress = false;
+    }
+  }
+
+  Future<void> _closeDirCon() async {
+    final client = _dirConClient;
+    _dirConClient = null;
+    if (client != null) _notifyTransportChanged();
+    await _dirConNotificationSubscription?.cancel();
+    _dirConNotificationSubscription = null;
+    await _dirConFtmsSubscription?.cancel();
+    _dirConFtmsSubscription = null;
+    await _dirConDisconnectedSubscription?.cancel();
+    _dirConDisconnectedSubscription = null;
+    if (client != null) await client.close();
+  }
+
+  void _notifyTransportChanged() {
+    transportRevision.value++;
   }
 
   /// Reconnect and rebuild all connection-scoped BLE state so all recovery
@@ -175,9 +363,40 @@ class BLEData {
         _resetConnectionState();
 
         try {
+          // Reconnection is transport-agnostic: a device that was previously
+          // using BLE may have DIRCON available by the time it returns. Probe
+          // the advertised endpoint before recreating a BLE GATT connection.
+          final ipAddress = advertisedIpAddress;
+          if (ipAddress != null && ipAddress.isNotEmpty) {
+            try {
+              print(
+                '[AutoReconnect] Attempt $attempt/$maxAttempts testing DIRCON...',
+              );
+              await _connectDirCon(device, ipAddress, waitForSetup: true);
+
+              if (onReconnected != null) {
+                await onReconnected();
+              } else {
+                for (final callback in List<Future<void> Function()>.from(
+                  _onReconnectedCallbacks,
+                )) {
+                  await callback();
+                }
+              }
+
+              success = true;
+              print('[AutoReconnect] Reconnected via DIRCON successfully.');
+              break;
+            } catch (error) {
+              print('[AutoReconnect] DIRCON unavailable: $error');
+              await _closeDirCon();
+            }
+          }
+
           if (!device.isConnected) {
             print(
-                '[AutoReconnect] Attempt $attempt/$maxAttempts connecting...');
+              '[AutoReconnect] Attempt $attempt/$maxAttempts connecting...',
+            );
             await device.connectAndUpdateStream();
           }
 
@@ -185,7 +404,8 @@ class BLEData {
 
           if (!device.isConnected) {
             throw Exception(
-                'Device disconnected during reconnect settle period.');
+              'Device disconnected during reconnect settle period.',
+            );
           }
 
           // This attempt already reset all connection-scoped state. Join the
@@ -200,7 +420,8 @@ class BLEData {
             await onReconnected();
           } else {
             for (final callback in List<Future<void> Function()>.from(
-                _onReconnectedCallbacks)) {
+              _onReconnectedCallbacks,
+            )) {
               await callback();
             }
           }
@@ -329,7 +550,7 @@ class BLEData {
 
   // Stream controller for characteristic changes
   final StreamController<CharacteristicChangeEvent>
-      _characteristicChangeController =
+  _characteristicChangeController =
       StreamController<CharacteristicChangeEvent>.broadcast();
 
   /// Stream of characteristic changes
@@ -340,6 +561,7 @@ class BLEData {
     10,
     (i) => List.generate(38, (j) => null),
   );
+  bool isPowerTableTransferInProgress = false;
 
   var customCharacteristic = createCustomCharacteristicFramework();
 
@@ -388,14 +610,46 @@ class BLEData {
     return value;
   }
 
-  Future<void> setupConnection(BluetoothDevice device,
-      {bool forceRefresh = false}) {
-    if (!device.isConnected || isSimulated) return Future.value();
+  Future<void> setupConnection(
+    BluetoothDevice device, {
+    bool forceRefresh = false,
+  }) {
+    if (isSimulated) return Future.value();
+
+    if (isDirConConnected) {
+      final setupInProgress = _setupCoordinator.inFlight;
+      if (setupInProgress != null) return setupInProgress;
+      if (_dirConSetupComplete && !forceRefresh) return Future.value();
+      return _setupCoordinator.run((generation) async {
+        if (!_setupCoordinator.isCurrent(generation) || !isDirConConnected) {
+          return;
+        }
+        subscribed = true;
+        charReceived.value = true;
+        configAppCompatibleFirmware = true;
+        // BLE initializes this lookup from decode(). DIRCON responses are
+        // delivered directly, so initialize it before the first settings
+        // request or every valid response will be ignored as an unknown
+        // characteristic reference.
+        _ensureCachedMap();
+        _lastRequestStopwatch.reset();
+        await requestSettings(device);
+        if (_setupCoordinator.isCurrent(generation) && isDirConConnected) {
+          _dirConSetupComplete = true;
+          if (!_lastRequestStopwatch.isRunning) {
+            _lastRequestStopwatch.start();
+          }
+        }
+      });
+    }
+
+    if (!device.isConnected) return Future.value();
 
     final setupInProgress = _setupCoordinator.inFlight;
     if (setupInProgress != null) return setupInProgress;
 
-    final needsBootstrap = forceRefresh ||
+    final needsBootstrap =
+        forceRefresh ||
         services.isEmpty ||
         _myCharacteristic == null ||
         indoorBikeCharacteristic == null ||
@@ -447,10 +701,8 @@ class BLEData {
       if (ftmsControlPointCharacteristic != null) {
         try {
           await writeFtmsControlPoint(
-            (characteristic) => FTMSControlPoint.writeTargetPower(
-              characteristic,
-              newPower,
-            ),
+            (characteristic) =>
+                FTMSControlPoint.writeTargetPower(characteristic, newPower),
           );
         } catch (e) {
           print('Error writing target power to FTMS: $e');
@@ -482,7 +734,8 @@ class BLEData {
   }
 
   Future<BluetoothCharacteristic?> _getMyCharacteristic(
-      BluetoothDevice device) async {
+    BluetoothDevice device,
+  ) async {
     if (this.isSimulated) return null;
     if (!device.isConnected) {
       charReceived.value = false;
@@ -500,14 +753,17 @@ class BLEData {
     return _myCharacteristic;
   }
 
-  Future _discoverServices(BluetoothDevice device,
-      {bool forceRefresh = false}) async {
+  Future _discoverServices(
+    BluetoothDevice device, {
+    bool forceRefresh = false,
+  }) async {
     if (this.isSimulated) return;
 
     // If a discovery is already in flight, just await it and return.
     if (_discoverServicesCompleter != null) {
       print(
-          '[discoverServices] Already in progress – waiting for existing call to finish.');
+        '[discoverServices] Already in progress – waiting for existing call to finish.',
+      );
       await _discoverServicesCompleter!.future;
       return;
     }
@@ -595,8 +851,9 @@ class BLEData {
         if (c.uuid == Guid(FTMS_MACHINE_STATUS_CHARACTERISTIC_UUID)) {
           machineStatusCharacteristic = c;
           await _machineStatusSubscription?.cancel();
-          _machineStatusSubscription =
-              c.onValueReceived.listen(_machineStatusController.add);
+          _machineStatusSubscription = c.onValueReceived.listen(
+            _machineStatusController.add,
+          );
           if (!c.isNotifying) {
             await _queueBleOperation(() => c.setNotifyValue(true));
             print("subscribed to FTMS machine status characteristic");
@@ -615,7 +872,7 @@ class BLEData {
   bool subscribed = false;
   bool _mtuRequestedForConnection = false;
   final _lastRequestStopwatch = Stopwatch();
-// only used as a flag to prevent multiple concurrent instances of updateCustomCharacter
+  // only used as a flag to prevent multiple concurrent instances of updateCustomCharacter
   bool _inUpdateLoop = false;
 
   Future updateCustomCharacter(BluetoothDevice device) async {
@@ -655,7 +912,13 @@ class BLEData {
   }
 
   Future<void> ensureCustomCharacteristicStream(BluetoothDevice device) async {
-    if (this.isSimulated || !device.isConnected) return;
+    if (this.isSimulated) return;
+    if (isDirConConnected) {
+      subscribed = true;
+      charReceived.value = true;
+      return;
+    }
+    if (!device.isConnected) return;
 
     if (_myCharacteristic == null) {
       await _discoverServices(device);
@@ -677,6 +940,11 @@ class BLEData {
   }
 
   Future<void> updateIndoorBikeData(BluetoothDevice device) async {
+    // The DIRCON session subscribes to FTMS during transport setup. Avoid
+    // attempting BLE service discovery merely because a screen wants to make
+    // sure the live stream is active.
+    if (!isTransportActive || isDirConConnected) return;
+
     if (indoorBikeCharacteristic == null) {
       await _discoverServices(device);
       if (services.length > 1) {
@@ -702,99 +970,115 @@ class BLEData {
     // TODO handle cancelling subscription
     _ftmsSubscription?.cancel();
 
-    _ftmsSubscription = ftmsCharacteristic.onValueReceived.listen((value) {
-      try {
-        lastFtmsUpdate = DateTime.now();
-        if (value.length < 4) {
-          return;
-        }
+    _ftmsSubscription = ftmsCharacteristic.onValueReceived.listen(
+      _decodeIndoorBikeData,
+      onError: (Object e) {
+        print('Error in FTMS subscription: $e');
+      },
+    );
+    device.cancelWhenDisconnected(_ftmsSubscription!);
+  }
 
-        Uint8List data = Uint8List.fromList(value);
-        ByteData byteData = ByteData.sublistView(data);
+  void _decodeIndoorBikeData(List<int> value) {
+    try {
+      lastFtmsUpdate = DateTime.now();
+      if (value.length < 4) {
+        return;
+      }
 
-        int flags = byteData.getUint16(0, Endian.little);
-        int index = 2;
+      Uint8List data = Uint8List.fromList(value);
+      ByteData byteData = ByteData.sublistView(data);
 
-        bool hasBytes(int requiredBytes) =>
-            (index + requiredBytes) <= byteData.lengthInBytes;
+      int flags = byteData.getUint16(0, Endian.little);
+      int index = 2;
 
-        // Reset fields
-        ftmsData.cadence = 0;
-        ftmsData.watts = 0;
-        ftmsData.heartRate = 0;
-        ftmsData.speed = 0;
+      bool hasBytes(int requiredBytes) =>
+          (index + requiredBytes) <= byteData.lengthInBytes;
 
-        if (!hasBytes(2)) {
-          return;
-        }
-        ftmsData.speed =
-            byteData.getUint16(index, Endian.little) ~/ 100; // resolution 0.01
+      // Reset fields
+      ftmsData.cadence = 0;
+      ftmsData.watts = 0;
+      ftmsData.heartRate = 0;
+      ftmsData.speed = 0;
+
+      if (!hasBytes(2)) {
+        return;
+      }
+      ftmsData.speed =
+          byteData.getUint16(index, Endian.little) ~/ 100; // resolution 0.01
+      index += 2;
+
+      if ((flags & (1 << 1)) != 0) {
+        if (!hasBytes(2)) return;
         index += 2;
+      }
 
-        if ((flags & (1 << 1)) != 0) {
-          if (!hasBytes(2)) return;
-          index += 2;
-        }
+      if ((flags & (1 << 2)) != 0) {
+        if (!hasBytes(2)) return;
+        ftmsData.cadence =
+            byteData.getUint16(index, Endian.little) ~/ 2; // resolution 0.5
+        index += 2;
+      }
 
-        if ((flags & (1 << 2)) != 0) {
-          if (!hasBytes(2)) return;
-          ftmsData.cadence =
-              byteData.getUint16(index, Endian.little) ~/ 2; // resolution 0.5
-          index += 2;
-        }
+      if ((flags & (1 << 3)) != 0) {
+        if (!hasBytes(2)) return;
+        index += 2;
+      }
+      if ((flags & (1 << 4)) != 0) {
+        if (!hasBytes(3)) return;
+        index += 3;
+      }
 
-        if ((flags & (1 << 3)) != 0) {
-          if (!hasBytes(2)) return;
-          index += 2;
-        }
-        if ((flags & (1 << 4)) != 0) {
-          if (!hasBytes(3)) return;
-          index += 3;
-        }
+      if ((flags & (1 << 5)) != 0) {
+        if (!hasBytes(2)) return;
+        ftmsData.resistance = byteData.getInt16(index, Endian.little);
+        index += 2;
+      }
 
-        if ((flags & (1 << 5)) != 0) {
-          if (!hasBytes(2)) return;
-          ftmsData.resistance = byteData.getInt16(index, Endian.little);
-          index += 2;
-        }
+      if ((flags & (1 << 6)) != 0) {
+        if (!hasBytes(2)) return;
+        ftmsData.watts = byteData.getInt16(index, Endian.little);
+        index += 2;
+      }
 
-        if ((flags & (1 << 6)) != 0) {
-          if (!hasBytes(2)) return;
-          ftmsData.watts = byteData.getInt16(index, Endian.little);
-          index += 2;
-        }
+      if ((flags & (1 << 7)) != 0) {
+        if (!hasBytes(2)) return;
+        index += 2;
+      }
+      if ((flags & (1 << 8)) != 0) {
+        if (!hasBytes(1)) return;
+        index += 1;
+      }
 
-        if ((flags & (1 << 7)) != 0) {
-          if (!hasBytes(2)) return;
-          index += 2;
-        }
-        if ((flags & (1 << 8)) != 0) {
-          if (!hasBytes(1)) return;
-          index += 1;
-        }
+      if ((flags & (1 << 9)) != 0) {
+        if (!hasBytes(1)) return;
+        ftmsData.heartRate = byteData.getUint8(index);
+        index += 1;
+      }
 
-        if ((flags & (1 << 9)) != 0) {
-          if (!hasBytes(1)) return;
-          ftmsData.heartRate = byteData.getUint8(index);
-          index += 1;
-        }
+      if (DirConClient.diagnosticsEnabled && isDirConConnected) {
+        print(
+          '[DIRCON][FTMS] raw=${_diagnosticHex(value)} '
+          'speed=${ftmsData.speed} cadence=${ftmsData.cadence} '
+          'watts=${ftmsData.watts} resistance=${ftmsData.resistance} '
+          'heartRate=${ftmsData.heartRate}',
+        );
+      }
 
-        // Emit a characteristic change event for FTMS data updates
-        if (!_characteristicChangeController.isClosed) {
-          _characteristicChangeController.add(CharacteristicChangeEvent(
+      // Emit a characteristic change event for FTMS data updates
+      if (!_characteristicChangeController.isClosed) {
+        _characteristicChangeController.add(
+          CharacteristicChangeEvent(
             vName: "FTMS_DATA",
             reference: "FTMS",
             value: "updated",
             type: "ftms",
-          ));
-        }
-      } catch (e) {
-        print('Error parsing FTMS packet: $e');
+          ),
+        );
       }
-    }, onError: (Object e) {
-      print('Error in FTMS subscription: $e');
-    });
-    device.cancelWhenDisconnected(_ftmsSubscription!);
+    } catch (e) {
+      print('Error parsing FTMS packet: $e');
+    }
   }
 
   bool _ftmsRecoveryInProgress = false;
@@ -805,11 +1089,15 @@ class BLEData {
   /// Checks the health of the FTMS data stream and attempts to recover if stalled.
   /// Skips if a recovery is already in progress.
   Future<void> checkFtmsHealth(BluetoothDevice device) async {
-    if (isSimulated || !device.isConnected) return;
+    if (isSimulated || !isTransportActive) return;
+    // DIRCON socket loss has its own reconnect path. The notification toggle
+    // below is specifically a BLE CCCD recovery operation.
+    if (isDirConConnected) return;
     if (_ftmsRecoveryInProgress) return;
 
     final now = DateTime.now();
-    final recentlyTriedRecovery = _lastFtmsRecoveryAttempt != null &&
+    final recentlyTriedRecovery =
+        _lastFtmsRecoveryAttempt != null &&
         now.difference(_lastFtmsRecoveryAttempt!) < _ftmsRecoveryCooldown;
 
     // Before the first FTMS packet, subscribed may already be true because the
@@ -841,7 +1129,8 @@ class BLEData {
     if (now.difference(lastFtmsUpdate!) > _ftmsWatchdogTimeout &&
         !recentlyTriedRecovery) {
       print(
-          'FTMS connection appears stalled (last update: $lastFtmsUpdate). Attempting recovery...');
+        'FTMS connection appears stalled (last update: $lastFtmsUpdate). Attempting recovery...',
+      );
       _ftmsRecoveryInProgress = true;
       _lastFtmsRecoveryAttempt = now;
 
@@ -849,7 +1138,8 @@ class BLEData {
         if (indoorBikeCharacteristic != null && device.isConnected) {
           // Toggle notifications to reset the stream
           await _queueBleOperation(
-              () => indoorBikeCharacteristic!.setNotifyValue(false));
+            () => indoorBikeCharacteristic!.setNotifyValue(false),
+          );
           await Future.delayed(const Duration(milliseconds: 200));
 
           if (!device.isConnected) {
@@ -859,7 +1149,8 @@ class BLEData {
           }
 
           await _queueBleOperation(
-              () => indoorBikeCharacteristic!.setNotifyValue(true));
+            () => indoorBikeCharacteristic!.setNotifyValue(true),
+          );
 
           // Force internal tracking update
           lastFtmsUpdate = DateTime.now(); // Reset to avoid loop
@@ -881,7 +1172,8 @@ class BLEData {
   void _triggerReconnect(BluetoothDevice device) {
     if (isUserDisconnect) return;
     print(
-        '[FTMS Recovery] Device appears disconnected. Triggering reconnect...');
+      '[FTMS Recovery] Device appears disconnected. Triggering reconnect...',
+    );
 
     () async {
       await reconnectAndSetup(device);
@@ -905,11 +1197,13 @@ class BLEData {
     if (command == null) return;
 
     try {
-      await writeCustomCharacteristic(
-          device, [0x02, int.parse(command["reference"]), 0x01]);
+      await writeCustomCharacteristic(device, [
+        0x02,
+        int.parse(command["reference"]),
+        0x01,
+      ]);
     } catch (e) {
-      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
-          success: false);
+      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
   }
 
@@ -936,7 +1230,7 @@ class BLEData {
     await writeCommand(device, resetPowerTableVname);
   }
 
-//request all settings
+  //request all settings
   Future requestSettings(BluetoothDevice device) async {
     if (this.isSimulated) return;
 
@@ -952,11 +1246,16 @@ class BLEData {
       }
 
       try {
-        await writeCustomCharacteristic(
-            device, [0x01, int.parse(c["reference"])]);
+        await writeCustomCharacteristic(device, [
+          0x01,
+          int.parse(c["reference"]),
+        ]);
       } catch (e) {
-        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
-            success: false);
+        Snackbar.show(
+          ABC.c,
+          "Failed to write to SmartSpin2k $e",
+          success: false,
+        );
       }
     }
   }
@@ -964,7 +1263,9 @@ class BLEData {
   /// Requests only editable settings belonging to [settingType]. Cached values
   /// remain available while the authoritative values arrive from the device.
   Future<void> requestSettingsForType(
-      BluetoothDevice device, SettingType settingType) async {
+    BluetoothDevice device,
+    SettingType settingType,
+  ) async {
     if (isSimulated) return;
 
     for (final c in customCharacteristic) {
@@ -973,8 +1274,10 @@ class BLEData {
       }
 
       try {
-        await writeCustomCharacteristic(
-            device, [0x01, int.parse(c["reference"])]);
+        await writeCustomCharacteristic(device, [
+          0x01,
+          int.parse(c["reference"]),
+        ]);
       } catch (e) {
         Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
       }
@@ -987,9 +1290,12 @@ class BLEData {
     }
   }
 
-//request single setting
-  Future<void> requestSetting(BluetoothDevice device, String name,
-      {int? extraByte}) async {
+  //request single setting
+  Future<void> requestSetting(
+    BluetoothDevice device,
+    String name, {
+    int? extraByte,
+  }) async {
     if (this.isSimulated) return;
 
     Map<String, dynamic>? setting;
@@ -1032,8 +1338,11 @@ class BLEData {
     return precision;
   }
 
-  Future<void> writeToSS2k(BluetoothDevice device, Map c,
-      {String s = ""}) async {
+  Future<void> writeToSS2k(
+    BluetoothDevice device,
+    Map c, {
+    String s = "",
+  }) async {
     if (this.isSimulated) return;
     //If a specific value wasn't passed, use the previously saved value
     if (s == "") {
@@ -1053,14 +1362,15 @@ class BLEData {
         int t = double.parse(s).round();
         final list = new Uint64List.fromList([t]);
         final bytes = new Uint8List.view(list.buffer);
-        final out =
-            bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+        final out = bytes.map(
+          (b) => '0x${b.toRadixString(16).padLeft(2, '0')}',
+        );
         print('bytes: ${out}');
         value = [
           0x02,
           int.parse(c["reference"]),
           int.parse(out.elementAt(0)),
-          int.parse(out.elementAt(1))
+          int.parse(out.elementAt(1)),
         ];
         break;
       case "bool":
@@ -1068,28 +1378,30 @@ class BLEData {
         int t = double.parse(s).round();
         final list = new Uint64List.fromList([t]);
         final bytes = new Uint8List.view(list.buffer);
-        final out =
-            bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+        final out = bytes.map(
+          (b) => '0x${b.toRadixString(16).padLeft(2, '0')}',
+        );
         print('bytes: ${out}');
         value = [
           0x02,
           int.parse(c["reference"]),
           int.parse(out.elementAt(0)),
-          int.parse(out.elementAt(1))
+          int.parse(out.elementAt(1)),
         ];
         break;
       case "float":
         int t = (double.parse(s) * 10).round();
         final list = new Uint64List.fromList([t]);
         final bytes = new Uint8List.view(list.buffer);
-        final out =
-            bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+        final out = bytes.map(
+          (b) => '0x${b.toRadixString(16).padLeft(2, '0')}',
+        );
         print('bytes: ${out}');
         value = [
           0x02,
           int.parse(c["reference"]),
           int.parse(out.elementAt(0)),
-          int.parse(out.elementAt(1))
+          int.parse(out.elementAt(1)),
         ];
         break;
       case "long":
@@ -1107,9 +1419,11 @@ class BLEData {
         const int intMinValue = -32768;
 
         // Loop through each row of the tableData
-        for (int rowIndex = 0;
-            rowIndex < this.powerTableData.length;
-            rowIndex++) {
+        for (
+          int rowIndex = 0;
+          rowIndex < this.powerTableData.length;
+          rowIndex++
+        ) {
           List<int?> row = this.powerTableData[rowIndex];
           List<int> rowValue = [];
 
@@ -1118,8 +1432,9 @@ class BLEData {
             int valueToConvert = entry ?? intMinValue;
             final list = Uint16List.fromList([valueToConvert]);
             final bytes = Uint8List.view(list.buffer);
-            final out =
-                bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}');
+            final out = bytes.map(
+              (b) => '0x${b.toRadixString(16).padLeft(2, '0')}',
+            );
             print('bytes: ${out}');
             rowValue.add(bytes[0]); // Low byte
             rowValue.add(bytes[1]); // High byte
@@ -1127,14 +1442,17 @@ class BLEData {
 
           // Combine the request, reference, and row data
           List<int> rowToSend =
-              [0x02, int.parse(c["reference"]), rowIndex + 1] + rowValue;
+              [0x02, int.parse(c["reference"]), rowIndex] + rowValue;
 
           // Write the data to the device
           try {
             await writeCustomCharacteristic(device, rowToSend);
           } catch (e) {
-            Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
-                success: false);
+            Snackbar.show(
+              ABC.c,
+              "Failed to write to SmartSpin2k $e",
+              success: false,
+            );
             return;
           }
         }
@@ -1210,7 +1528,9 @@ class BLEData {
   /// Writes to the SmartSpin2k custom characteristic and does not complete
   /// until the server returns the matching response (or the response times out).
   Future<void> writeCustomCharacteristic(
-      BluetoothDevice device, List<int> value) {
+    BluetoothDevice device,
+    List<int> value,
+  ) {
     if (isSimulated) return Future<void>.value();
     return _customReadRequestCoalescer.schedule(
       value,
@@ -1219,9 +1539,25 @@ class BLEData {
   }
 
   Future<void> _writeCustomCharacteristic(
-      BluetoothDevice device, List<int> value) async {
-
+    BluetoothDevice device,
+    List<int> value,
+  ) async {
     return _queueBleOperation(() async {
+      final dirConClient = _dirConClient;
+      if (dirConClient != null && dirConClient.isConnected) {
+        try {
+          final response = await dirConClient.writeCharacteristic(
+            ccUUID,
+            value,
+          );
+          if (response.isNotEmpty) _decodeCustomValue(response);
+        } catch (error) {
+          print('[DIRCON] Custom characteristic write failed: $error');
+          rethrow;
+        }
+        return;
+      }
+
       final characteristic = await _getMyCharacteristic(device);
       if (characteristic != null && characteristic.device.isConnected) {
         // Subscribe before writing so even a very fast server response cannot be
@@ -1247,8 +1583,11 @@ class BLEData {
             await response.future.timeout(_customResponseTimeout);
           }
         } catch (e) {
-          Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e",
-              success: false);
+          Snackbar.show(
+            ABC.c,
+            "Failed to write to SmartSpin2k $e",
+            success: false,
+          );
         } finally {
           if (identical(_pendingCustomResponse, response)) {
             _pendingCustomResponse = null;
@@ -1256,8 +1595,11 @@ class BLEData {
           }
         }
       } else {
-        Snackbar.show(ABC.c, "Failed to write to SmartSpin2k - Not Connected",
-            success: false);
+        Snackbar.show(
+          ABC.c,
+          "Failed to write to SmartSpin2k - Not Connected",
+          success: false,
+        );
       }
     });
   }
@@ -1281,6 +1623,11 @@ class BLEData {
     subscribed = true;
     _ensureCachedMap();
 
+    if (isDirConConnected) {
+      charReceived.value = true;
+      return;
+    }
+
     _notifySubscription?.cancel();
     final characteristic = _myCharacteristic;
     if (characteristic == null) {
@@ -1289,214 +1636,235 @@ class BLEData {
       return;
     }
 
-    _notifySubscription =
-        characteristic.onValueReceived.listen((value) {
-      try {
-        if (value.isEmpty) return;
+    _notifySubscription = characteristic.onValueReceived.listen(
+      _decodeCustomValue,
+    );
+    device.cancelWhenDisconnected(_notifySubscription!);
+  }
 
-        // Both a normal response (0x80) and an unsupported-setting response
-        // (0xff) finish the in-flight request. Complete this before decoding so
-        // even a short or otherwise unsupported payload releases the next write.
-        if (value.length > 1 && (value[0] == 0x80 || value[0] == 0xff)) {
-          final pendingResponse = _pendingCustomResponse;
-          if (pendingResponse != null &&
-              !pendingResponse.isCompleted &&
-              value[1] == _pendingCustomResponseReference) {
-            pendingResponse.complete();
-          }
+  void _decodeCustomValue(List<int> value) {
+    try {
+      if (value.isEmpty) return;
+
+      // Both a normal response (0x80) and an unsupported-setting response
+      // (0xff) finish the in-flight request. Complete this before decoding so
+      // even a short or otherwise unsupported payload releases the next write.
+      if (value.length > 1 && (value[0] == 0x80 || value[0] == 0xff)) {
+        final pendingResponse = _pendingCustomResponse;
+        if (pendingResponse != null &&
+            !pendingResponse.isCompleted &&
+            value[1] == _pendingCustomResponseReference) {
+          pendingResponse.complete();
         }
+      }
 
-        if (value[0] == 0x80) {
-          if (value.length < 2) return;
+      if (value[0] == 0x80) {
+        if (value.length < 2) return;
 
-          // Use cached map for O(1) lookup
-          var c = _cachedCharacteristicMap?[value[1]];
+        // Use cached map for O(1) lookup
+        var c = _cachedCharacteristicMap?[value[1]];
 
-          if (c != null) {
-            if (value.length == 2 && c["type"] != "string") {
-              return;
-            }
+        if (c != null) {
+          if (value.length == 2 && c["type"] != "string") {
+            return;
+          }
 
-            var length = value.length;
-            var t = new Uint8List(length);
-            for (var i = 0; i < length; i++) {
-              t[i] = value[i];
-            }
-            var data = t.buffer.asByteData();
+          var length = value.length;
+          var t = new Uint8List(length);
+          for (var i = 0; i < length; i++) {
+            t[i] = value[i];
+          }
+          var data = t.buffer.asByteData();
 
-            switch (c["type"]) {
-              case "int":
-                {
-                  if (data.lengthInBytes >= 4) {
-                    c["value"] = data.getInt16(2, Endian.little).toString();
-                  } else if (data.lengthInBytes == 3) {
-                    c["value"] = value[2].toString();
-                  } else {
-                    c["value"] = noFirmSupport;
-                  }
-
-                  if (c["value"] != noFirmSupport) {
-                    simulatedTargetWatts = (c["reference"] == "0x28")
-                        ? c["value"]
-                        : simulatedTargetWatts;
-                    if (c["vName"] == FTMSModeVname) {
-                      this.simulatedFTMSmode = c["value"];
-                      FTMSmode = int.parse(this.simulatedFTMSmode);
-                    }
-                  }
-                  // Emit characteristic change event
-                  _emitCharacteristicChange(c);
-                  break;
+          switch (c["type"]) {
+            case "int":
+              {
+                if (data.lengthInBytes >= 4) {
+                  c["value"] = data.getInt16(2, Endian.little).toString();
+                } else if (data.lengthInBytes == 3) {
+                  c["value"] = value[2].toString();
+                } else {
+                  c["value"] = noFirmSupport;
                 }
 
-              case "bool":
-                {
-                  String b = (value[2] == 0) ? "false" : "true";
-                  c["value"] = b;
-                  if (c["vName"] == simulateTargetWattsVname) {
-                    if (b == "true") {
-                      this.simulateTargetWatts = true;
-                      print('Simulate target watts = $simulateTargetWatts');
-                    } else if (b == "false") {
-                      this.simulateTargetWatts = false;
-                      print('Simulate target watts = $simulateTargetWatts');
-                    }
+                if (c["value"] != noFirmSupport) {
+                  simulatedTargetWatts = (c["reference"] == "0x28")
+                      ? c["value"]
+                      : simulatedTargetWatts;
+                  if (c["vName"] == FTMSModeVname) {
+                    this.simulatedFTMSmode = c["value"];
+                    FTMSmode = int.parse(this.simulatedFTMSmode);
                   }
-                  // Emit characteristic change event
-                  _emitCharacteristicChange(c);
-                  break;
-                }
-              case "float":
-                {
-                  c["value"] =
-                      (data.getInt16(2, Endian.little) / 10).toString();
-                  // Emit characteristic change event
-                  _emitCharacteristicChange(c);
-                  break;
-                }
-              case "long":
-                {
-                  // Two header bytes plus an int32. Firmware without support
-                  // for this characteristic answers with the header alone.
-                  if (data.lengthInBytes >= 6) {
-                    c["value"] = data.getInt32(2, Endian.little).toString();
-                  } else {
-                    c["value"] = noFirmSupport;
-                  }
-                  // Emit characteristic change event
-                  _emitCharacteristicChange(c);
-                  break;
-                }
-              case "string":
-                {
-                  //remove the data bytes
-                  var subT = new Uint8List(length - 2);
-                  for (int i = 0; i < length - 2; i++) {
-                    subT[i] = t[i + 2];
-                  }
-                  // Use allowMalformed to prevent crashes on split multibyte characters
-                  c["value"] = utf8.decode(subT, allowMalformed: true);
-
-                  // Push to log stream immediately after decoding
-                  if (c["vName"] == BLE_logStreamVname) {
-                    _logStreamController.add(c["value"]);
-                  }
-
-                  // Format Found Devices into a JSON String
-                  if (c["vName"] == foundDevicesVname) {
-                    String _pm = "";
-                    String _hrm = "";
-                    for (var i in this.customCharacteristic) {
-                      if (i["vName"] == connectedHRMVname) {
-                        _hrm = i["value"];
-                      }
-                      if (i["vName"] == connectedPWRVname) {
-                        _pm = i["value"];
-                      }
-                    }
-                    String t = c["value"];
-                    String tList = "";
-                    if (t == " " || t == "null") {
-                      t = "";
-                    } else {
-                      t = t.substring(1, t.length - 1);
-                      t += ",";
-                    }
-                    tList = defaultDevices +
-                        t +
-                        '"device -5":{"name":"' +
-                        _hrm +
-                        '","UUID":"0x180d"},"device -6":{"name":"' +
-                        _pm +
-                        '","UUID":"0x1818"}}]';
-                    c["value"] = tList;
-                    print(c["value"]);
-                  }
-                  //Set the firmware version
-                  if (c["vName"] == fwVname) {
-                    this.firmwareVersion.value = c["value"];
-                    print(
-                        "FW Version Was Updated!! ${c['value']} ${this.firmwareVersion.value}");
-                  }
-                  // Emit characteristic change event
-                  _emitCharacteristicChange(c);
-                  break;
-                }
-              case "powerTableData":
-                int cadenceRow = value[2];
-                if (cadenceRow >= 0 &&
-                    cadenceRow < this.powerTableData.length) {
-                  List<int?> row = [];
-                  for (int i = 3; i < value.length; i += 2) {
-                    if (data.getInt16(i, Endian.little) == -32768) {
-                      row.add(null);
-                    } else {
-                      row.add(data.getInt16(i, Endian.little));
-                    }
-                  }
-                  this.powerTableData[cadenceRow] = row;
                 }
                 // Emit characteristic change event
                 _emitCharacteristicChange(c);
                 break;
-              default:
-                {
-                  String type = c["type"];
-                  print("No decoder found for $type");
+              }
+
+            case "bool":
+              {
+                String b = (value[2] == 0) ? "false" : "true";
+                c["value"] = b;
+                if (c["vName"] == simulateTargetWattsVname) {
+                  if (b == "true") {
+                    this.simulateTargetWatts = true;
+                    print('Simulate target watts = $simulateTargetWatts');
+                  } else if (b == "false") {
+                    this.simulateTargetWatts = false;
+                    print('Simulate target watts = $simulateTargetWatts');
+                  }
                 }
-            }
-          }
-        } else if (value[0] == 0xff) {
-          if (value.length > 1) {
-            var c = _cachedCharacteristicMap?[value[1]];
-            if (c != null) {
-              c["value"] = noFirmSupport;
+                // Emit characteristic change event
+                _emitCharacteristicChange(c);
+                break;
+              }
+            case "float":
+              {
+                c["value"] = (data.getInt16(2, Endian.little) / 10).toString();
+                // Emit characteristic change event
+                _emitCharacteristicChange(c);
+                break;
+              }
+            case "long":
+              {
+                // Two header bytes plus an int32. Firmware without support
+                // for this characteristic answers with the header alone.
+                if (data.lengthInBytes >= 6) {
+                  c["value"] = data.getInt32(2, Endian.little).toString();
+                } else {
+                  c["value"] = noFirmSupport;
+                }
+                // Emit characteristic change event
+                _emitCharacteristicChange(c);
+                break;
+              }
+            case "string":
+              {
+                //remove the data bytes
+                var subT = new Uint8List(length - 2);
+                for (int i = 0; i < length - 2; i++) {
+                  subT[i] = t[i + 2];
+                }
+                // Use allowMalformed to prevent crashes on split multibyte characters
+                c["value"] = utf8.decode(subT, allowMalformed: true);
+
+                // Push to log stream immediately after decoding
+                if (c["vName"] == BLE_logStreamVname) {
+                  _logStreamController.add(c["value"]);
+                }
+
+                // Format Found Devices into a JSON String
+                if (c["vName"] == foundDevicesVname) {
+                  String _pm = "";
+                  String _hrm = "";
+                  for (var i in this.customCharacteristic) {
+                    if (i["vName"] == connectedHRMVname) {
+                      _hrm = i["value"];
+                    }
+                    if (i["vName"] == connectedPWRVname) {
+                      _pm = i["value"];
+                    }
+                  }
+                  String t = c["value"];
+                  String tList = "";
+                  if (t == " " || t == "null") {
+                    t = "";
+                  } else {
+                    t = t.substring(1, t.length - 1);
+                    t += ",";
+                  }
+                  tList =
+                      defaultDevices +
+                      t +
+                      '"device -5":{"name":"' +
+                      _hrm +
+                      '","UUID":"0x180d"},"device -6":{"name":"' +
+                      _pm +
+                      '","UUID":"0x1818"}}]';
+                  c["value"] = tList;
+                  print(c["value"]);
+                }
+                //Set the firmware version
+                if (c["vName"] == fwVname) {
+                  this.firmwareVersion.value = c["value"];
+                  print(
+                    "FW Version Was Updated!! ${c['value']} ${this.firmwareVersion.value}",
+                  );
+                }
+                // Emit characteristic change event
+                _emitCharacteristicChange(c);
+                break;
+              }
+            case "powerTableData":
+              int cadenceRow = value[2];
+              if (cadenceRow >= 0 && cadenceRow < this.powerTableData.length) {
+                List<int?> row = [];
+                for (int i = 3; i < value.length; i += 2) {
+                  if (data.getInt16(i, Endian.little) == -32768) {
+                    row.add(null);
+                  } else {
+                    row.add(data.getInt16(i, Endian.little));
+                  }
+                }
+                this.powerTableData[cadenceRow] = row;
+              }
               // Emit characteristic change event
               _emitCharacteristicChange(c);
-            }
+              break;
+            default:
+              {
+                String type = c["type"];
+                print("No decoder found for $type");
+              }
+          }
+          if (DirConClient.diagnosticsEnabled && isDirConConnected) {
+            final decodedValue = c["vName"] == passwordVname
+                ? '<redacted>'
+                : c["value"]?.toString();
+            print(
+              '[DIRCON][CUSTOM] ref=0x${value[1].toRadixString(16).padLeft(2, '0')} '
+              'name=${c["vName"]} type=${c["type"]} value=$decodedValue '
+              'raw=${c["vName"] == passwordVname ? '<redacted>' : _diagnosticHex(value)}',
+            );
           }
         }
-      } catch (e) {
-        print("Error decoding BLE data: $e");
+      } else if (value[0] == 0xff) {
+        if (value.length > 1) {
+          var c = _cachedCharacteristicMap?[value[1]];
+          if (c != null) {
+            c["value"] = noFirmSupport;
+            // Emit characteristic change event
+            _emitCharacteristicChange(c);
+          }
+        }
       }
-    }); //VV This is handled by the subscription flag.
-    device.cancelWhenDisconnected(_notifySubscription!);
+    } catch (e) {
+      print("Error decoding BLE data: $e");
+    }
   }
+
+  String _diagnosticHex(List<int> value) =>
+      value.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join(' ');
 
   /// Helper method to emit characteristic change events
   void _emitCharacteristicChange(Map c) {
     if (!_characteristicChangeController.isClosed) {
-      _characteristicChangeController.add(CharacteristicChangeEvent(
-        vName: c["vName"] ?? "",
-        reference: c["reference"] ?? "",
-        value: c["value"]?.toString() ?? "",
-        type: c["type"] ?? "",
-      ));
+      _characteristicChangeController.add(
+        CharacteristicChangeEvent(
+          vName: c["vName"] ?? "",
+          reference: c["reference"] ?? "",
+          value: c["value"]?.toString() ?? "",
+          type: c["type"] ?? "",
+        ),
+      );
     }
   }
 
   /// Dispose of resources
   void dispose() {
+    _closeDirCon();
+    _notifySubscription?.cancel();
+    _ftmsSubscription?.cancel();
     _characteristicChangeController.close();
     _machineStatusSubscription?.cancel();
     _machineStatusSubscription = null;

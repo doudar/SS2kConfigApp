@@ -26,7 +26,12 @@ class PowerTableManager {
   }
 
   // Generate test data for the power table
-  static void loadTestData(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static Future<void> loadTestData(
+    BuildContext context,
+    BLEData bleData,
+    BluetoothDevice device,
+  ) async {
+    bleData.isPowerTableTransferInProgress = true;
     try {
       // Clear existing data
       for (int i = 0; i < bleData.powerTableData.length; i++) {
@@ -59,7 +64,8 @@ class PowerTableManager {
           bleData.powerTableData[rowIndex][col] = resistance;
 
           // Convert to bytes for transmission
-          final bytes = Uint8List(2)..buffer.asByteData().setInt16(0, resistance, Endian.little);
+          final bytes = Uint8List(2)
+            ..buffer.asByteData().setInt16(0, resistance, Endian.little);
           rowValue.addAll(bytes);
         }
 
@@ -67,15 +73,19 @@ class PowerTableManager {
         List<int> command = [0x02, 0x27, rowIndex, ...rowValue];
 
         try {
-          if (!device.isConnected) {
-            throw Exception("Device not connected");
+          if (!bleData.isTransportActive) {
+            throw Exception("Device transport disconnected");
           }
           await bleData.writeCustomCharacteristic(device, command);
           // Preserve the existing pacing after the acknowledged response.
           await Future.delayed(Duration(milliseconds: 500));
         } catch (e) {
           if (context.mounted) {
-            Snackbar.show(ABC.c, "Failed to send test data row ${rowIndex + 1}: $e", success: false);
+            Snackbar.show(
+              ABC.c,
+              "Failed to send test data row ${rowIndex + 1}: $e",
+              success: false,
+            );
           }
           return;
         }
@@ -86,12 +96,22 @@ class PowerTableManager {
       }
     } catch (e) {
       if (context.mounted) {
-        Snackbar.show(ABC.c, prettyException("Load test data failed", e), success: false);
+        Snackbar.show(
+          ABC.c,
+          prettyException("Load test data failed", e),
+          success: false,
+        );
       }
+    } finally {
+      bleData.isPowerTableTransferInProgress = false;
     }
   }
 
-  static Future<void> savePowerTable(BuildContext context, BLEData bleData, String tableName) async {
+  static Future<void> savePowerTable(
+    BuildContext context,
+    BLEData bleData,
+    String tableName,
+  ) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       List<String> tablesList = prefs.getStringList(_powerTablesListKey) ?? [];
@@ -116,11 +136,19 @@ class PowerTableManager {
       }
 
       if (context.mounted) {
-        Snackbar.show(ABC.c, "Power table '$tableName' saved successfully", success: true);
+        Snackbar.show(
+          ABC.c,
+          "Power table '$tableName' saved successfully",
+          success: true,
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        Snackbar.show(ABC.c, prettyException("Save power table failed ", e), success: false);
+        Snackbar.show(
+          ABC.c,
+          prettyException("Save power table failed ", e),
+          success: false,
+        );
       }
     }
   }
@@ -132,18 +160,33 @@ class PowerTableManager {
     BluetoothDevice device, {
     String? hMaxValue,
   }) async {
+    if (!bleData.isTransportActive) {
+      if (context.mounted) {
+        Snackbar.show(ABC.c, "Device not connected", success: false);
+      }
+      return false;
+    }
+
+    // Read callbacks update powerTableData in place. Preserve the table chosen
+    // by the user so a periodic read of an as-yet-unsent firmware row cannot
+    // erase the source data halfway through this transfer.
+    final rowsToSend = bleData.powerTableData
+        .map((row) => List<int?>.from(row))
+        .toList(growable: false);
+    bleData.isPowerTableTransferInProgress = true;
     try {
       // Send each row of the power table separately
       const int intMinValue = -32768; // INT16_MIN for missing values
 
-      for (int rowIndex = 0; rowIndex < bleData.powerTableData.length; rowIndex++) {
-        List<int?> row = bleData.powerTableData[rowIndex];
+      for (int rowIndex = 0; rowIndex < rowsToSend.length; rowIndex++) {
+        List<int?> row = rowsToSend[rowIndex];
         List<int> rowValue = [];
 
         // Convert each entry in the row to its little-endian byte representation
         for (int? entry in row) {
           int valueToConvert = entry ?? intMinValue;
-          final bytes = Uint8List(2)..buffer.asByteData().setInt16(0, valueToConvert, Endian.little);
+          final bytes = Uint8List(2)
+            ..buffer.asByteData().setInt16(0, valueToConvert, Endian.little);
           rowValue.addAll(bytes);
         }
 
@@ -151,15 +194,19 @@ class PowerTableManager {
         List<int> command = [0x02, 0x27, rowIndex, ...rowValue];
 
         try {
-          if (!device.isConnected) {
-            throw Exception("Device not connected");
+          if (!bleData.isTransportActive) {
+            throw Exception("Device transport disconnected");
           }
           await bleData.writeCustomCharacteristic(device, command);
           // Preserve the existing pacing after the acknowledged response.
           await Future.delayed(Duration(milliseconds: 100));
         } catch (e) {
           if (context.mounted) {
-            Snackbar.show(ABC.c, "Failed to send row ${rowIndex + 1}: $e", success: false);
+            Snackbar.show(
+              ABC.c,
+              "Failed to send row ${rowIndex + 1}: $e",
+              success: false,
+            );
           }
           return false;
         }
@@ -183,16 +230,66 @@ class PowerTableManager {
         }
       }
 
+      // Read every row back while periodic chart polling is paused. Besides
+      // verifying the device accepted the transfer, these responses drive the
+      // normal decoder/UI notification path with authoritative table data.
+      for (int rowIndex = 0; rowIndex < rowsToSend.length; rowIndex++) {
+        await bleData.requestSetting(
+          device,
+          powerTableDataVname,
+          extraByte: rowIndex,
+        );
+      }
+
+      final mismatch = _firstMismatchedRow(rowsToSend, bleData.powerTableData);
+      if (mismatch != null) {
+        print('[PowerTable] Readback mismatch on row $mismatch after transfer');
+        if (context.mounted) {
+          Snackbar.show(
+            ABC.c,
+            'Power table verification failed on row ${mismatch + 1}',
+            success: false,
+          );
+        }
+        return false;
+      }
+
       return true;
     } catch (e) {
       if (context.mounted) {
-        Snackbar.show(ABC.c, prettyException("Failed to send power table", e), success: false);
+        Snackbar.show(
+          ABC.c,
+          prettyException("Failed to send power table", e),
+          success: false,
+        );
       }
       return false;
+    } finally {
+      bleData.isPowerTableTransferInProgress = false;
     }
   }
 
-  static Future<void> loadPowerTable(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static int? _firstMismatchedRow(
+    List<List<int?>> expected,
+    List<List<int?>> actual,
+  ) {
+    if (expected.length != actual.length) return 0;
+    for (var rowIndex = 0; rowIndex < expected.length; rowIndex++) {
+      final expectedRow = expected[rowIndex];
+      final actualRow = actual[rowIndex];
+      if (expectedRow.length != actualRow.length) return rowIndex;
+      for (var column = 0; column < expectedRow.length; column++) {
+        if (expectedRow[column] != actualRow[column]) return rowIndex;
+      }
+    }
+    return null;
+  }
+
+  static Future<void> loadPowerTable(
+    BuildContext context,
+    BLEData bleData,
+    BluetoothDevice device,
+  ) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       List<String> tablesList = prefs.getStringList(_powerTablesListKey) ?? [];
@@ -218,24 +315,31 @@ class PowerTableManager {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Select a file to load:', style: Theme.of(context).textTheme.bodyMedium),
+                  Text(
+                    'Select a file to load:',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
                   SizedBox(height: 12),
                   Flexible(
                     child: Container(
                       constraints: BoxConstraints(maxHeight: 300),
                       decoration: BoxDecoration(
-                        border: Border.all(color: Theme.of(context).dividerColor),
+                        border: Border.all(
+                          color: Theme.of(context).dividerColor,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: ListView.separated(
                         shrinkWrap: true,
                         itemCount: tablesList.length,
-                        separatorBuilder: (context, index) => Divider(height: 1),
+                        separatorBuilder: (context, index) =>
+                            Divider(height: 1),
                         itemBuilder: (context, index) {
                           return ListTile(
                             leading: Icon(Icons.file_present),
                             title: Text(tablesList[index]),
-                            onTap: () => Navigator.of(context).pop(tablesList[index]),
+                            onTap: () =>
+                                Navigator.of(context).pop(tablesList[index]),
                           );
                         },
                       ),
@@ -244,7 +348,12 @@ class PowerTableManager {
                 ],
               ),
             ),
-            actions: [TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(context).pop())],
+            actions: [
+              TextButton(
+                child: Text('Cancel'),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
           );
         },
       );
@@ -258,8 +367,14 @@ class PowerTableManager {
             title: Text('Confirm Load'),
             content: Text('This will overwrite your current power table.'),
             actions: <Widget>[
-              TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(context).pop(false)),
-              TextButton(child: Text('Okay'), onPressed: () => Navigator.of(context).pop(true)),
+              TextButton(
+                child: Text('Cancel'),
+                onPressed: () => Navigator.of(context).pop(false),
+              ),
+              TextButton(
+                child: Text('Okay'),
+                onPressed: () => Navigator.of(context).pop(true),
+              ),
             ],
           );
         },
@@ -291,18 +406,33 @@ class PowerTableManager {
 
       // Load the power table data
       bleData.powerTableData = List<List<int?>>.from(
-        jsonPowerTableData.map((row) => List<int?>.from(row.map((value) => value as int?))),
+        jsonPowerTableData.map(
+          (row) => List<int?>.from(row.map((value) => value as int?)),
+        ),
       );
 
       // Send power table data to device
-      bool success = await sendPowerTableToDevice(context, bleData, device, hMaxValue: hMaxValue);
+      bool success = await sendPowerTableToDevice(
+        context,
+        bleData,
+        device,
+        hMaxValue: hMaxValue,
+      );
 
       if (success && context.mounted) {
-        Snackbar.show(ABC.c, "Power table loaded and sent to device", success: true);
+        Snackbar.show(
+          ABC.c,
+          "Power table loaded and sent to device",
+          success: true,
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        Snackbar.show(ABC.c, prettyException("Load power table failed", e), success: false);
+        Snackbar.show(
+          ABC.c,
+          prettyException("Load power table failed", e),
+          success: false,
+        );
       }
     }
   }
@@ -335,25 +465,34 @@ class PowerTableManager {
                 children: [
                   Text(
                     'Select a file to delete:',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.error),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                   SizedBox(height: 12),
                   Flexible(
                     child: Container(
                       constraints: BoxConstraints(maxHeight: 300),
                       decoration: BoxDecoration(
-                        border: Border.all(color: Theme.of(context).dividerColor),
+                        border: Border.all(
+                          color: Theme.of(context).dividerColor,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: ListView.separated(
                         shrinkWrap: true,
                         itemCount: tablesList.length,
-                        separatorBuilder: (context, index) => Divider(height: 1),
+                        separatorBuilder: (context, index) =>
+                            Divider(height: 1),
                         itemBuilder: (context, index) {
                           return ListTile(
-                            leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                            leading: Icon(
+                              Icons.delete_outline,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
                             title: Text(tablesList[index]),
-                            onTap: () => Navigator.of(context).pop(tablesList[index]),
+                            onTap: () =>
+                                Navigator.of(context).pop(tablesList[index]),
                           );
                         },
                       ),
@@ -362,7 +501,12 @@ class PowerTableManager {
                 ],
               ),
             ),
-            actions: [TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(context).pop())],
+            actions: [
+              TextButton(
+                child: Text('Cancel'),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
           );
         },
       );
@@ -376,8 +520,14 @@ class PowerTableManager {
             title: Text('Confirm Delete'),
             content: Text('Are you sure you want to delete this power table?'),
             actions: <Widget>[
-              TextButton(child: Text('No'), onPressed: () => Navigator.of(context).pop(false)),
-              TextButton(child: Text('Yes'), onPressed: () => Navigator.of(context).pop(true)),
+              TextButton(
+                child: Text('No'),
+                onPressed: () => Navigator.of(context).pop(false),
+              ),
+              TextButton(
+                child: Text('Yes'),
+                onPressed: () => Navigator.of(context).pop(true),
+              ),
             ],
           );
         },
@@ -392,16 +542,28 @@ class PowerTableManager {
       await prefs.setStringList(_powerTablesListKey, tablesList);
 
       if (context.mounted) {
-        Snackbar.show(ABC.c, "Power table '$selectedTable' deleted successfully", success: true);
+        Snackbar.show(
+          ABC.c,
+          "Power table '$selectedTable' deleted successfully",
+          success: true,
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        Snackbar.show(ABC.c, prettyException("Delete power table failed", e), success: false);
+        Snackbar.show(
+          ABC.c,
+          prettyException("Delete power table failed", e),
+          success: false,
+        );
       }
     }
   }
 
-  static Future<void> showPowerTableMenu(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static Future<void> showPowerTableMenu(
+    BuildContext context,
+    BLEData bleData,
+    BluetoothDevice device,
+  ) async {
     if (!context.mounted) return;
 
     String? action = await showDialog<String>(
@@ -416,7 +578,10 @@ class PowerTableManager {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
-                  child: Text('Power Table Management', style: Theme.of(context).textTheme.titleLarge),
+                  child: Text(
+                    'Power Table Management',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                 ),
                 _buildSectionHeader(context, "Local Storage"),
                 _buildMenuOption(
@@ -462,7 +627,8 @@ class PowerTableManager {
                   context,
                   icon: Icons.refresh,
                   title: 'Clear Active Table',
-                  subtitle: 'Reset the power table and deactivate homing on the SmartSpin2k',
+                  subtitle:
+                      'Reset the power table and deactivate homing on the SmartSpin2k',
                   value: 'clear',
                 ),
                 _buildMenuOption(
@@ -487,7 +653,8 @@ class PowerTableManager {
         break;
       case 'save':
         SharedPreferences prefs = await SharedPreferences.getInstance();
-        List<String> existingTables = prefs.getStringList(_powerTablesListKey) ?? [];
+        List<String> existingTables =
+            prefs.getStringList(_powerTablesListKey) ?? [];
         existingTables.sort();
 
         final nameController = TextEditingController();
@@ -517,36 +684,45 @@ class PowerTableManager {
                         SizedBox(height: 16),
                         Text(
                           'Existing Files (${existingTables.length})',
-                          style: Theme.of(
-                            context,
-                          ).textTheme.labelMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
                         ),
                         SizedBox(height: 8),
                         Flexible(
                           child: Container(
                             constraints: BoxConstraints(maxHeight: 200),
                             decoration: BoxDecoration(
-                              border: Border.all(color: Theme.of(context).dividerColor),
+                              border: Border.all(
+                                color: Theme.of(context).dividerColor,
+                              ),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: existingTables.isEmpty
                                 ? Center(
-                                    child: Text('No saved files', style: TextStyle(color: Colors.grey)),
+                                    child: Text(
+                                      'No saved files',
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
                                   )
                                 : ListView.separated(
                                     shrinkWrap: true,
                                     itemCount: existingTables.length,
-                                    separatorBuilder: (context, index) => Divider(height: 1),
+                                    separatorBuilder: (context, index) =>
+                                        Divider(height: 1),
                                     itemBuilder: (context, index) {
                                       final name = existingTables[index];
-                                      final isSelected = name == nameController.text;
+                                      final isSelected =
+                                          name == nameController.text;
                                       return ListTile(
                                         title: Text(name),
                                         dense: true,
                                         selected: isSelected,
-                                        selectedTileColor: Theme.of(
-                                          context,
-                                        ).colorScheme.primaryContainer.withValues(alpha: 0.2),
+                                        selectedTileColor: Theme.of(context)
+                                            .colorScheme
+                                            .primaryContainer
+                                            .withValues(alpha: 0.2),
                                         onTap: () {
                                           nameController.text = name;
                                           setState(() {});
@@ -560,12 +736,21 @@ class PowerTableManager {
                     ),
                   ),
                   actions: <Widget>[
-                    TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(context).pop()),
+                    TextButton(
+                      child: Text('Cancel'),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
                     FilledButton(
-                      child: Text(existingTables.contains(nameController.text) ? 'Overwrite' : 'Save'),
+                      child: Text(
+                        existingTables.contains(nameController.text)
+                            ? 'Overwrite'
+                            : 'Save',
+                      ),
                       onPressed: nameController.text.trim().isEmpty
                           ? null
-                          : () => Navigator.of(context).pop(nameController.text.trim()),
+                          : () => Navigator.of(
+                              context,
+                            ).pop(nameController.text.trim()),
                     ),
                   ],
                 );
@@ -603,8 +788,15 @@ class PowerTableManager {
                 ),
               ),
               actions: <Widget>[
-                TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(context).pop()),
-                FilledButton(child: Text('Export'), onPressed: () => Navigator.of(context).pop(nameController.text)),
+                TextButton(
+                  child: Text('Cancel'),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                FilledButton(
+                  child: Text('Export'),
+                  onPressed: () =>
+                      Navigator.of(context).pop(nameController.text),
+                ),
               ],
             );
           },
@@ -641,7 +833,10 @@ class PowerTableManager {
     required String value,
   }) {
     return ListTile(
-      leading: Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
+      leading: Icon(
+        icon,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
       title: Text(title),
       subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
       onTap: () {

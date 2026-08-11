@@ -6,11 +6,11 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:provider/provider.dart';
 import '../../../utils/constants.dart';
 import '../../../utils/bledata.dart';
-import '../../../utils/extra.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../utils/snackbar.dart';
 import '../../../utils/demo.dart';
+import '../../../utils/smartspin_advertisement.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../widgets/scan_result_tile.dart';
 
@@ -39,11 +39,14 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
       _scanResults = [DemoDevice().simulateSmartSpin2kScan()];
       return;
     }
-    _scanResultsSubscription = FlutterBluePlus.scanResults.listen((results) {
-      if (mounted) setState(() => _scanResults = results);
-    }, onError: (e) {
-      Snackbar.show(ABC.b, prettyException("Scan Error:", e), success: false);
-    });
+    _scanResultsSubscription = FlutterBluePlus.scanResults.listen(
+      (results) {
+        if (mounted) setState(() => _scanResults = results);
+      },
+      onError: (e) {
+        Snackbar.show(ABC.b, prettyException("Scan Error:", e), success: false);
+      },
+    );
     _isScanningSubscription = FlutterBluePlus.isScanning.listen((state) {
       if (mounted) setState(() => _isScanning = state);
     });
@@ -73,27 +76,43 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
         );
       }
     } catch (e) {
-      Snackbar.show(ABC.b, prettyException("Start Scan Error:", e), success: false);
+      Snackbar.show(
+        ABC.b,
+        prettyException("Start Scan Error:", e),
+        success: false,
+      );
     }
   }
 
-  void _onConnectPressed(BluetoothDevice device, WizardSession session) {
+  Future<void> _onConnectPressed(
+    ScanResult result,
+    WizardSession session,
+  ) async {
+    final device = result.device;
     // In demo mode, seed the simulated device instead of attempting a real BLE
     // connection. Downstream steps read this device's BLEData and behave like
     // the main app's demo mode.
     if (demoModeBypass.value) {
       BLEDataManager.forDevice(device).setupDemoData();
     } else {
-      if (FlutterBluePlus.isScanningNow) FlutterBluePlus.stopScan();
-      if (BLEDataManager.forDevice(device).isUserDisconnect) {
-        BLEDataManager.forDevice(device).isUserDisconnect = false;
+      if (FlutterBluePlus.isScanningNow) await FlutterBluePlus.stopScan();
+      final bleData = BLEDataManager.forDevice(device);
+      bleData.advertisedIpAddress = SmartSpinAdvertisement.ipAddress(
+        result.advertisementData.manufacturerData,
+      );
+      if (bleData.isUserDisconnect) {
+        bleData.isUserDisconnect = false;
       }
 
-      device.connectAndUpdateStream().then((_) {
-        BLEDataManager.forDevice(device).setupConnection(device);
-      }).catchError((e) {
-        Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
-      });
+      unawaited(
+        bleData.connectPreferred(device).catchError((Object e) {
+          Snackbar.show(
+            ABC.c,
+            prettyException("Connect Error:", e),
+            success: false,
+          );
+        }),
+      );
     }
 
     session.connectedDevice = device;
@@ -113,7 +132,8 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
     return _scanResults.where((r) {
       final adv = r.advertisementData;
       return adv.serviceUuids.any(
-        (uuid) => uuid == _csGuid || uuid.str.toLowerCase() == csUUID.toLowerCase(),
+        (uuid) =>
+            uuid == _csGuid || uuid.str.toLowerCase() == csUUID.toLowerCase(),
       );
     }).toList();
   }
@@ -125,37 +145,41 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
     return WizardScaffold(
       title: 'Connect SmartSpin2k',
       stepId: WizardStepId.ss2kConnection,
-        body: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                children: [
-                  ..._filteredResults.map((r) => ScanResultTile(
-                        result: r,
-                        onTap: () => _onConnectPressed(r.device, session),
-                      )),
-                  if (_filteredResults.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(child: Text('Scanning for SmartSpin2k...')),
-                    ),
-                ],
-              ),
-            ),
-            // Scanning is meaningless in demo mode and would clear the demo tile.
-            if (!demoModeBypass.value)
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  child: ElevatedButton.icon(
-                    onPressed: _isScanning ? () => FlutterBluePlus.stopScan() : _startScan,
-                    icon: Icon(_isScanning ? Icons.stop : Icons.search),
-                    label: Text(_isScanning ? 'Stop Scan' : 'Scan Again'),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              children: [
+                ..._filteredResults.map(
+                  (r) => ScanResultTile(
+                    result: r,
+                    onTap: () => _onConnectPressed(r, session),
                   ),
                 ),
+                if (_filteredResults.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Center(child: Text('Scanning for SmartSpin2k...')),
+                  ),
+              ],
+            ),
+          ),
+          // Scanning is meaningless in demo mode and would clear the demo tile.
+          if (!demoModeBypass.value)
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: ElevatedButton.icon(
+                  onPressed: _isScanning
+                      ? () => FlutterBluePlus.stopScan()
+                      : _startScan,
+                  icon: Icon(_isScanning ? Icons.stop : Icons.search),
+                  label: Text(_isScanning ? 'Stop Scan' : 'Scan Again'),
+                ),
               ),
-          ],
-        ),
+            ),
+        ],
+      ),
     );
   }
 }

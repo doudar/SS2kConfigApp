@@ -21,7 +21,18 @@ class PowerTableChart extends StatefulWidget {
     Colors.brown,
   ];
 
-  static const List<int> cadenceTicks = <int>[60, 65, 70, 75, 80, 85, 90, 95, 100, 105];
+  static const List<int> cadenceTicks = <int>[
+    60,
+    65,
+    70,
+    75,
+    80,
+    85,
+    90,
+    95,
+    100,
+    105,
+  ];
 
   final BluetoothDevice device;
   final BLEData bleData;
@@ -42,12 +53,14 @@ class PowerTableChart extends StatefulWidget {
   State<PowerTableChart> createState() => PowerTableChartState();
 }
 
-class PowerTableChartState extends State<PowerTableChart> with SingleTickerProviderStateMixin {
+class PowerTableChartState extends State<PowerTableChart>
+    with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
   double maxResistance = 0;
   double? homingMin;
   double? homingMax;
-  bool _swapAxes = false; // false = Resistance(Y) vs Watts(X), true = Watts(Y) vs Resistance(X)
+  bool _swapAxes =
+      false; // false = Resistance(Y) vs Watts(X), true = Watts(Y) vs Resistance(X)
   static const String _prefsSwapAxesKey = 'power_table_swap_axes';
 
   // Trail tracking
@@ -58,7 +71,8 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   Timer? _targetPositionTimer;
   Timer? _cadenceLinesTimer;
   Timer? _initialDataLoadTimer;
-  StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
+  StreamSubscription<CharacteristicChangeEvent>?
+  _characteristicChangeSubscription;
 
   List<Color> get colors => PowerTableChart.lineColors;
   List<int> get cadences => PowerTableChart.cadenceTicks;
@@ -87,8 +101,10 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
     }
 
     // Set up timer to periodically check homing values
-    _homingValuesTimer = Timer.periodic(const Duration(seconds: 60), (_homingValuesTimer) {
-      if (mounted && widget.device.isConnected) {
+    _homingValuesTimer = Timer.periodic(const Duration(seconds: 60), (
+      _homingValuesTimer,
+    ) {
+      if (mounted && widget.bleData.isTransportActive) {
         requestHomingValues();
       }
     });
@@ -99,11 +115,12 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
     });
 
     // Subscribe to characteristic changes
-    _characteristicChangeSubscription = widget.bleData.characteristicChanges.listen((event) {
-      if (event.vName == BLE_hMinVname || event.vName == BLE_hMaxVname) {
-        _updateHomingFromCache();
-      }
-    });
+    _characteristicChangeSubscription = widget.bleData.characteristicChanges
+        .listen((event) {
+          if (event.vName == BLE_hMinVname || event.vName == BLE_hMaxVname) {
+            _updateHomingFromCache();
+          }
+        });
   }
 
   @override
@@ -159,14 +176,14 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
         timer.cancel();
         return;
       }
-      if (mounted && widget.device.isConnected) {
+      if (mounted && widget.bleData.isTransportActive) {
         widget.bleData.requestSetting(widget.device, targetPositionVname);
       }
     });
   }
 
   Future<void> requestHomingValues() async {
-    if (mounted && widget.device.isConnected) {
+    if (mounted && widget.bleData.isTransportActive) {
       await widget.bleData.requestSetting(widget.device, BLE_hMinVname);
       await widget.bleData.requestSetting(widget.device, BLE_hMaxVname);
 
@@ -175,25 +192,44 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   }
 
   void _updateHomingFromCache() {
-    String test = widget.bleData.getVnameValue(BLE_hMinVname, returnNoFirmSupport: true);
+    String test = widget.bleData.getVnameValue(
+      BLE_hMinVname,
+      returnNoFirmSupport: true,
+    );
     if (test == noFirmSupport) return;
 
-    double? value = double.tryParse(widget.bleData.getVnameValue(BLE_hMinVname));
-    double? value2 = double.tryParse(widget.bleData.getVnameValue(BLE_hMaxVname));
+    double? value = double.tryParse(
+      widget.bleData.getVnameValue(BLE_hMinVname),
+    );
+    double? value2 = double.tryParse(
+      widget.bleData.getVnameValue(BLE_hMaxVname),
+    );
 
     if (mounted && (value != null && value2 != null)) {
       setState(() {
-        homingMin = (value == INT32_MIN) ? null : value / widget.bleData.tableDivisor;
-        homingMax = (value2 == INT32_MIN) ? null : value2 / widget.bleData.tableDivisor;
+        homingMin = (value == INT32_MIN)
+            ? null
+            : value / widget.bleData.tableDivisor;
+        homingMax = (value2 == INT32_MIN)
+            ? null
+            : value2 / widget.bleData.tableDivisor;
       });
     }
   }
 
   Future<void> requestAllCadenceLines() async {
-    if (!mounted || !widget.device.isConnected) return;
+    if (!mounted ||
+        !widget.bleData.isTransportActive ||
+        widget.bleData.isPowerTableTransferInProgress) {
+      return;
+    }
     for (int i = 0; i < 10; i++) {
-      if (!mounted) return;
-      await widget.bleData.requestSetting(widget.device, powerTableDataVname, extraByte: i);
+      if (!mounted || widget.bleData.isPowerTableTransferInProgress) return;
+      await widget.bleData.requestSetting(
+        widget.device,
+        powerTableDataVname,
+        extraByte: i,
+      );
       await Future.delayed(const Duration(milliseconds: 1000));
     }
   }
@@ -242,10 +278,17 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
   Widget build(BuildContext context) {
     // Recalculate max resistance and update history on build
     maxResistance = calculateMaxResistance();
-    
-    if (widget.bleData.ftmsData.watts > 0 && widget.bleData.ftmsData.watts <= 1000 && maxResistance > 0) {
-       double targetPosition = double.tryParse(widget.bleData.getVnameValue(targetPositionVname)) ?? 0;
-       _updatePositionHistory(widget.bleData.ftmsData.watts.toDouble(), targetPosition);
+
+    if (widget.bleData.ftmsData.watts > 0 &&
+        widget.bleData.ftmsData.watts <= 1000 &&
+        maxResistance > 0) {
+      double targetPosition =
+          double.tryParse(widget.bleData.getVnameValue(targetPositionVname)) ??
+          0;
+      _updatePositionHistory(
+        widget.bleData.ftmsData.watts.toDouble(),
+        targetPosition,
+      );
     }
 
     return LayoutBuilder(
@@ -256,14 +299,22 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
             return CustomPaint(
               size: Size(constraints.maxWidth, constraints.maxHeight),
               painter: PowerTablePainter(
-                powerTableData: widget.bleData.powerTableData.map((row) => row.map((value) => value?.toDouble()).toList()).toList(),
+                powerTableData: widget.bleData.powerTableData
+                    .map(
+                      (row) => row.map((value) => value?.toDouble()).toList(),
+                    )
+                    .toList(),
                 cadences: cadences,
                 colors: colors,
                 maxResistance: maxResistance,
                 homingMin: homingMin,
                 homingMax: homingMax,
                 currentWatts: widget.bleData.ftmsData.watts.toDouble(),
-                currentResistance: double.tryParse(widget.bleData.getVnameValue(targetPositionVname)) ?? 0,
+                currentResistance:
+                    double.tryParse(
+                      widget.bleData.getVnameValue(targetPositionVname),
+                    ) ??
+                    0,
                 currentCadence: widget.bleData.ftmsData.cadence,
                 positionHistory: _positionHistory,
                 tableDivisor: widget.bleData.tableDivisor,
@@ -273,7 +324,7 @@ class PowerTableChartState extends State<PowerTableChart> with SingleTickerProvi
             );
           },
         );
-      }
+      },
     );
   }
 }

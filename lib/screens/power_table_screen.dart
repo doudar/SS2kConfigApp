@@ -49,10 +49,14 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
       });
     }
     rwSubscription();
-    unawaited(bleData.updateIndoorBikeData(widget.device));
-    unawaited(
-      bleData.requestSetting(widget.device, shifterPositionVname),
-    );
+    // FTMS setup belongs to the transport that is already connected. Do not
+    // cause a BLE service-discovery attempt just because this screen opened.
+    if (bleData.isTransportActive) {
+      unawaited(bleData.updateIndoorBikeData(widget.device));
+      unawaited(
+        bleData.requestSetting(widget.device, shifterPositionVname),
+      );
+    }
   }
 
   @override
