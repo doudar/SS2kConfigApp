@@ -15,6 +15,7 @@ import 'extra.dart';
 import 'ftmsControlPoint.dart';
 import 'bleConstants.dart';
 import 'ble_request_coalescer.dart';
+import 'connection_setup_coordinator.dart';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
@@ -187,7 +188,9 @@ class BLEData {
                 'Device disconnected during reconnect settle period.');
           }
 
-          await setupConnection(device, forceRefresh: true);
+          // This attempt already reset all connection-scoped state. Join the
+          // shared bootstrap instead of forcing a second service discovery.
+          await setupConnection(device);
 
           if (!device.isConnected) {
             throw Exception('Device disconnected during setup.');
@@ -235,6 +238,7 @@ class BLEData {
   /// Reset BLE state that is tied to a specific connection so that the next
   /// [setupConnection] call performs a full re-bootstrap.
   void _resetConnectionState() {
+    _setupCoordinator.invalidate();
     final pendingResponse = _pendingCustomResponse;
     if (pendingResponse != null && !pendingResponse.isCompleted) {
       // Release the serialized BLE queue immediately. The next operation will
@@ -293,6 +297,8 @@ class BLEData {
   BluetoothCharacteristic? machineStatusCharacteristic;
   StreamSubscription<List<int>>? _machineStatusSubscription;
   Completer<void>? _discoverServicesCompleter;
+  final ConnectionSetupCoordinator _setupCoordinator =
+      ConnectionSetupCoordinator();
   BluetoothConnectionState connectionState =
       BluetoothConnectionState.disconnected;
   List<BluetoothService> services = [];
@@ -382,14 +388,12 @@ class BLEData {
     return value;
   }
 
-  setupConnection(BluetoothDevice device, {bool forceRefresh = false}) async {
-    if (!device.isConnected) {
-      return;
-    }
+  Future<void> setupConnection(BluetoothDevice device,
+      {bool forceRefresh = false}) {
+    if (!device.isConnected || isSimulated) return Future.value();
 
-    if (Platform.isAndroid && device.mtuNow <= 23) {
-      _mtuRequestedForConnection = false;
-    }
+    final setupInProgress = _setupCoordinator.inFlight;
+    if (setupInProgress != null) return setupInProgress;
 
     final needsBootstrap = forceRefresh ||
         services.isEmpty ||
@@ -397,26 +401,46 @@ class BLEData {
         indoorBikeCharacteristic == null ||
         ftmsControlPointCharacteristic == null ||
         !subscribed;
+    if (!needsBootstrap) return Future.value();
 
-    if (needsBootstrap) {
-      if (forceRefresh) {
-        this.subscribed = false;
-        charReceived.value = false;
-        _myCharacteristic = null;
-        indoorBikeCharacteristic = null;
-        ftmsControlPointCharacteristic = null;
-        machineStatusCharacteristic = null;
-        _machineStatusSubscription?.cancel();
-        _machineStatusSubscription = null;
-      }
+    return _setupCoordinator.run(
+      (generation) => _performConnectionSetup(
+        device,
+        generation: generation,
+        forceRefresh: forceRefresh,
+      ),
+    );
+  }
 
-      await _discoverServices(device, forceRefresh: forceRefresh);
-      if (services.length > 1) {
-        await _findChar();
-      }
+  Future<void> _performConnectionSetup(
+    BluetoothDevice device, {
+    required int generation,
+    required bool forceRefresh,
+  }) async {
+    bool connectionIsCurrent() =>
+        _setupCoordinator.isCurrent(generation) && device.isConnected;
+
+    if (Platform.isAndroid && device.mtuNow <= 23) {
+      _mtuRequestedForConnection = false;
     }
 
+    if (forceRefresh) {
+      subscribed = false;
+      charReceived.value = false;
+      _myCharacteristic = null;
+      indoorBikeCharacteristic = null;
+      ftmsControlPointCharacteristic = null;
+      machineStatusCharacteristic = null;
+      await _machineStatusSubscription?.cancel();
+      _machineStatusSubscription = null;
+    }
+
+    await _discoverServices(device, forceRefresh: forceRefresh);
+    if (!connectionIsCurrent()) return;
+    if (services.length > 1) await _findChar();
+    if (!connectionIsCurrent()) return;
     await updateCustomCharacter(device);
+    if (!connectionIsCurrent()) return;
 
     // Set up target power change listener
     ftmsData.onTargetPowerChanged = (int newPower) async {

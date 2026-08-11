@@ -107,7 +107,7 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  void onConnectPressed(BluetoothDevice device) {
+  Future<void> onConnectPressed(BluetoothDevice device) async {
     try {
       // Reset the user disconnect flag if triggered
       if (BLEDataManager.forDevice(device).isUserDisconnect) {
@@ -117,11 +117,15 @@ class _ScanScreenState extends State<ScanScreen> {
       print("Device BLEData was not initialized: $e");
     }
     if (FlutterBluePlus.isScanningNow) {
-      FlutterBluePlus.stopScan();
+      await FlutterBluePlus.stopScan();
     }
-    device.connectAndUpdateStream().catchError((e) {
+    try {
+      await device.connectAndUpdateStream();
+    } catch (e) {
       Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
-    });
+      return;
+    }
+    if (!mounted) return;
     MaterialPageRoute route = MaterialPageRoute(
         builder: (context) => MainDeviceScreen(device: device), settings: RouteSettings(name: '/MainDeviceScreen'));
     Navigator.of(context).push(route).then((_) {

@@ -54,16 +54,17 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     bleData.connectionStateSubscription = widget.device.connectionState.listen((state) async {
       bleData.connectionState = state;
       if (state == BluetoothConnectionState.connected) {
-        bleData.services = [];
         bleData.rssi.value = await widget.device.readRssi();
+        await bleData.setupConnection(widget.device);
       }
-      bleData.setupConnection(widget.device);
     });
 
-    if (bleData.charReceived.value) {
-      bleData.updateCustomCharacter(widget.device);
-    } else {
-      bleData.charReceived.addListener(_crListener);
+    if (widget.device.isConnected) {
+      bleData.connectionState = BluetoothConnectionState.connected;
+      () async {
+        bleData.rssi.value = await widget.device.readRssi();
+        await bleData.setupConnection(widget.device);
+      }();
     }
 
     bleData.isConnectingSubscription = _listenConnectionFlag(
@@ -98,18 +99,11 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     }
   }
 
-  void _crListener() {
-    if (bleData.charReceived.value) {
-      bleData.updateCustomCharacter(widget.device);
-    }
-  }
-
   @override
   void dispose() {
     bleData.connectionStateSubscription?.cancel();
     bleData.isConnectingSubscription?.cancel();
     bleData.isDisconnectingSubscription?.cancel();
-    bleData.charReceived.removeListener(_crListener);
     super.dispose();
   }
 

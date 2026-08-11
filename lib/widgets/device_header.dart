@@ -67,6 +67,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     // Listen for connection state changes to update UI (e.g. RSSI, services)
     _connectionStateSubscription ??=
         this.widget.device.connectionState.listen((state) async {
+      this.bleData.connectionState = state;
       if (state == BluetoothConnectionState.connected) {
         this.bleData.rssi.value = await this.widget.device.readRssi();
         if (widget.customRefreshEnabled) {
@@ -91,7 +92,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     startTimer();
   }
 
-  Future<void> _refreshDeviceInfo() async {
+  Future<void> _refreshDeviceInfo({bool forceRefresh = false}) async {
     if (_isRefreshing) return;
 
     try {
@@ -103,8 +104,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       if (widget.firmwareOnlyRefresh) {
         await bleData.ensureCustomCharacteristicStream(widget.device);
       } else {
-        // A manual/full refresh also refreshes the service cache.
-        this.bleData.services = await this.widget.device.discoverServices();
+        await bleData.setupConnection(widget.device,
+            forceRefresh: forceRefresh);
       }
       await bleData.requestSetting(this.widget.device, fwVname);
     } catch (e) {
@@ -141,16 +142,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       print("*********UPDATE TIMER**************");
       _updateRssi();
     });
-    //This timer checks to see if data has been read from the device
+    // Keep monitoring FTMS health without repeatedly restarting GATT setup.
     setupTimer = Timer.periodic(Duration(seconds: 5), (timer) async {
-      String testValue = bleData.getVnameValue(connectedPWRVname);
-      if (widget.customRefreshEnabled &&
-          !widget.firmwareOnlyRefresh &&
-          testValue == "null" &&
-          this.widget.device.isConnected) {
-        await this.bleData.setupConnection(this.widget.device);
-      }
-      // Check FTMS health on every tick
       if (mounted && this.widget.device.isConnected) {
         await bleData.checkFtmsHealth(this.widget.device);
       }
@@ -183,8 +176,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
     try {
       await this.widget.device.connectAndUpdateStream();
+      await this.bleData.setupConnection(this.widget.device);
       Snackbar.show(ABC.c, "Connect: Success", success: true);
-      await onDiscoverServicesPressed();
     } catch (e) {
       if (e is FlutterBluePlusException &&
           e.code == FbpErrorCode.connectionCanceled.index) {
@@ -208,7 +201,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
   Future onDiscoverServicesPressed() async {
     try {
-      await _refreshDeviceInfo();
+      await _refreshDeviceInfo(forceRefresh: true);
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e),
