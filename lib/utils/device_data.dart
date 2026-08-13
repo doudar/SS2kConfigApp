@@ -592,9 +592,17 @@ class DeviceData {
   _characteristicChangeController =
       StreamController<CharacteristicChangeEvent>.broadcast();
 
+  // Transport-neutral live bike data. Both BLE and DIRCON notifications are
+  // decoded by _decodeIndoorBikeData, so screens should listen here instead of
+  // depending on a transport-specific characteristic notification.
+  final StreamController<FtmsData> _ftmsDataController =
+      StreamController<FtmsData>.broadcast();
+
   /// Stream of characteristic changes
   Stream<CharacteristicChangeEvent> get characteristicChanges =>
       _characteristicChangeController.stream;
+
+  Stream<FtmsData> get ftmsDataChanges => _ftmsDataController.stream;
 
   List<List<int?>> powerTableData = List.generate(
     10,
@@ -1101,6 +1109,20 @@ class DeviceData {
           'speed=${ftmsData.speed} cadence=${ftmsData.cadence} '
           'watts=${ftmsData.watts} resistance=${ftmsData.resistance} '
           'heartRate=${ftmsData.heartRate}',
+        );
+      }
+
+      if (!_ftmsDataController.isClosed) {
+        _ftmsDataController.add(
+          FtmsData(
+            cadence: ftmsData.cadence,
+            watts: ftmsData.watts,
+            targetERG: ftmsData.targetERG,
+            mode: ftmsData.mode,
+            resistance: ftmsData.resistance,
+            heartRate: ftmsData.heartRate,
+            speed: ftmsData.speed,
+          ),
         );
       }
 
@@ -1928,6 +1950,7 @@ class DeviceData {
     _notifySubscription?.cancel();
     _ftmsSubscription?.cancel();
     _characteristicChangeController.close();
+    _ftmsDataController.close();
     _machineStatusSubscription?.cancel();
     _machineStatusSubscription = null;
     _machineStatusController.close();

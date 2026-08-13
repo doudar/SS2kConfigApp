@@ -27,6 +27,11 @@ class _MotorTestStepState extends State<MotorTestStep> {
     setState(() => _testRunning = true);
     final deviceData = DeviceDataManager.forDevice(device);
 
+    // Establish the current position through the active transport before
+    // calculating the test movements. This avoids treating an as-yet-unread
+    // cached value as gear zero when the wizard is entered over DIRCON.
+    await deviceData.requestSetting(device, shifterPositionVname);
+
     var c = deviceData.customCharacteristic.firstWhere(
       (i) => i['vName'] == shifterPositionVname,
       orElse: () => <String, dynamic>{},
@@ -38,7 +43,7 @@ class _MotorTestStepState extends State<MotorTestStep> {
       // Two upshifts then two downshifts, matching the shifter screen's write path
       for (final delta in [1, 2, 1, 0]) {
         c = Map<String, Object>.from(c)..['value'] = (base + delta).toString();
-        deviceData.writeToSS2k(device, c);
+        await deviceData.writeToSS2k(device, c);
         await Future.delayed(const Duration(milliseconds: 800));
       }
     }
@@ -54,7 +59,10 @@ class _MotorTestStepState extends State<MotorTestStep> {
   void _advance(WizardSession session) {
     session.motorTestPassed = true;
     final machine = WizardStepMachine();
-    final next = machine.nextStep(currentStep: WizardStepId.motorTest, session: session.snapshot);
+    final next = machine.nextStep(
+      currentStep: WizardStepId.motorTest,
+      session: session.snapshot,
+    );
     if (next != null) {
       final steps = machine.activeSteps(bikeType: session.bikeType);
       session.setStepIndex(steps.indexOf(next));
@@ -63,7 +71,10 @@ class _MotorTestStepState extends State<MotorTestStep> {
 
   void _skip(WizardSession session) {
     final machine = WizardStepMachine();
-    final next = machine.nextStep(currentStep: WizardStepId.motorTest, session: session.snapshot);
+    final next = machine.nextStep(
+      currentStep: WizardStepId.motorTest,
+      session: session.snapshot,
+    );
     if (next != null) {
       final steps = machine.activeSteps(bikeType: session.bikeType);
       session.setStepIndex(steps.indexOf(next));
@@ -71,7 +82,9 @@ class _MotorTestStepState extends State<MotorTestStep> {
   }
 
   Future<void> _openTroubleshooting() async {
-    final url = Uri.parse('https://docs.smartspin2k.com/documentation/troubleshooting');
+    final url = Uri.parse(
+      'https://docs.smartspin2k.com/documentation/troubleshooting',
+    );
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     }
@@ -98,66 +111,85 @@ class _MotorTestStepState extends State<MotorTestStep> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-            const Text('Watch for the knob to rotate', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            const Text(
-              'Tap "Run Test" below. The SmartSpin2k will send two shift-up commands '
-              'then two shift-down commands to the motor. Watch the resistance knob — '
-              'you should see it click slightly in each direction.',
-              style: TextStyle(fontSize: 16, height: 1.5),
-            ),
-            const SizedBox(height: 20),
-
-            _MotorVideo(maxHeight: videoMaxHeight),
-
-            const SizedBox(height: 24),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _testRunning ? null : () => _runTest(session),
-                icon: _testRunning
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.play_arrow),
-                label: Text(_testRunning ? 'Running…' : 'Run Test'),
-              ),
-            ),
-
-            if (_testRan) ...[
-              const SizedBox(height: 28),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
+                const Text(
+                  'Watch for the knob to rotate',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                const SizedBox(height: 8),
+                const Text(
+                  'Tap "Run Test" below. The SmartSpin2k will send two shift-up commands '
+                  'then two shift-down commands to the motor. Watch the resistance knob — '
+                  'you should see it click slightly in each direction.',
+                  style: TextStyle(fontSize: 16, height: 1.5),
+                ),
+                const SizedBox(height: 20),
+
+                _MotorVideo(maxHeight: videoMaxHeight),
+
+                const SizedBox(height: 24),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _testRunning ? null : () => _runTest(session),
+                    icon: _testRunning
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.play_arrow),
+                    label: Text(_testRunning ? 'Running…' : 'Run Test'),
+                  ),
+                ),
+
+                if (_testRan) ...[
+                  const SizedBox(height: 28),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.check_circle_outline, color: theme.colorScheme.primary, size: 22),
-                        const SizedBox(width: 8),
-                        const Text('Test complete', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.check_circle_outline,
+                              color: theme.colorScheme.primary,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Test complete',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Did you see the knob rotate? Tap "Yes, I Saw It Move" below to continue.',
+                          style: TextStyle(fontSize: 15, height: 1.4),
+                        ),
+                        const SizedBox(height: 12),
+                        TextButton.icon(
+                          onPressed: _openTroubleshooting,
+                          icon: const Icon(Icons.open_in_new, size: 16),
+                          label: const Text(
+                            'Having trouble? Troubleshooting guide',
+                          ),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Did you see the knob rotate? Tap "Yes, I Saw It Move" below to continue.',
-                      style: TextStyle(fontSize: 15, height: 1.4),
-                    ),
-                    const SizedBox(height: 12),
-                    TextButton.icon(
-                      onPressed: _openTroubleshooting,
-                      icon: const Icon(Icons.open_in_new, size: 16),
-                      label: const Text('Having trouble? Troubleshooting guide'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                  ),
+                ],
 
-            const SizedBox(height: 8),
+                const SizedBox(height: 8),
               ],
             ),
           );

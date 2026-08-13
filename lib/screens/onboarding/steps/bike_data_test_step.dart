@@ -16,7 +16,7 @@ class BikeDataTestStep extends StatefulWidget {
 }
 
 class _BikeDataTestStepState extends State<BikeDataTestStep> {
-  StreamSubscription<CharacteristicChangeEvent>? _charSubscription;
+  StreamSubscription<FtmsData>? _ftmsSubscription;
 
   bool _powerSeen = false;
   bool _cadenceSeen = false;
@@ -33,22 +33,31 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
   }
 
   void _subscribe() {
-    _charSubscription?.cancel();
+    _ftmsSubscription?.cancel();
 
     final session = context.read<WizardSession>();
     final device = session.connectedDevice;
     if (device == null) return;
 
     final deviceData = DeviceDataManager.forDevice(device);
-    _charSubscription = deviceData.characteristicChanges.listen((event) {
+    final current = deviceData.ftmsData;
+    _lastWatts = current.watts;
+    _lastCadence = current.cadence;
+    _powerSeen = _powerSeen || current.watts > 0;
+    _cadenceSeen = _cadenceSeen || current.cadence > 0;
+    _ftmsSubscription = deviceData.ftmsDataChanges.listen((ftms) {
       if (!mounted) return;
-      final ftms = deviceData.ftmsData;
-      setState(() {
-        _lastWatts = ftms.watts;
-        _lastCadence = ftms.cadence;
-        if (ftms.watts > 0) _powerSeen = true;
-        if (ftms.cadence > 0) _cadenceSeen = true;
-      });
+      _updateFromFtms(ftms);
+    });
+  }
+
+  void _updateFromFtms(FtmsData ftms) {
+    if (!mounted) return;
+    setState(() {
+      _lastWatts = ftms.watts;
+      _lastCadence = ftms.cadence;
+      if (ftms.watts > 0) _powerSeen = true;
+      if (ftms.cadence > 0) _cadenceSeen = true;
     });
   }
 
@@ -56,7 +65,10 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
     if (!mounted) return;
     final session = context.read<WizardSession>();
     final machine = WizardStepMachine();
-    final next = machine.nextStep(currentStep: WizardStepId.bikeDataTest, session: session.snapshot);
+    final next = machine.nextStep(
+      currentStep: WizardStepId.bikeDataTest,
+      session: session.snapshot,
+    );
     if (next != null) {
       final steps = machine.activeSteps(bikeType: session.bikeType);
       session.setStepIndex(steps.indexOf(next));
@@ -64,7 +76,9 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
   }
 
   Future<void> _openTroubleshooting() async {
-    final url = Uri.parse('https://docs.smartspin2k.com/documentation/troubleshooting');
+    final url = Uri.parse(
+      'https://docs.smartspin2k.com/documentation/troubleshooting',
+    );
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     }
@@ -72,18 +86,21 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
 
   @override
   void dispose() {
-    _charSubscription?.cancel();
+    _ftmsSubscription?.cancel();
     super.dispose();
   }
 
   ({String title, String body, Uri? linkUrl, String? linkLabel})? _wakeCopy(
-      BikeType? bikeType, SideSwitchMode? mode) {
+    BikeType? bikeType,
+    SideSwitchMode? mode,
+  ) {
     if (bikeType != BikeType.pelotonOriginal) return null;
     if (mode == SideSwitchMode.tabletMode) {
       if (_pelotonTabletApp == PelotonTabletApp.peloton) {
         return (
           title: 'Start a free ride on the Peloton tablet',
-          body: 'Open the Peloton app and start a Just Ride. Pedal a few seconds — '
+          body:
+              'Open the Peloton app and start a Just Ride. Pedal a few seconds — '
               'when cadence and output show on screen, your SmartSpin2k is awake and reading the bike.',
           linkUrl: null,
           linkLabel: null,
@@ -91,7 +108,8 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
       }
       return (
         title: 'Launch Grupetto on the tablet',
-        body: 'Open Grupetto on your Peloton tablet. Pedal a few seconds — '
+        body:
+            'Open Grupetto on your Peloton tablet. Pedal a few seconds — '
             'when Grupetto shows live cadence and power, your SmartSpin2k is reading data.',
         linkUrl: Uri.parse('https://github.com/doudar/Openpelo'),
         linkLabel: 'Install with OpenPelo',
@@ -100,7 +118,8 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
     if (mode == SideSwitchMode.headlessMode) {
       return (
         title: 'Pedal to wake your SmartSpin2k',
-        body: 'Your sensors feed the SmartSpin2k through the cable you connected — no tablet needed. '
+        body:
+            'Your sensors feed the SmartSpin2k through the cable you connected — no tablet needed. '
             "Pedal a few seconds and you're awake.",
         linkUrl: null,
         linkLabel: null,
@@ -115,7 +134,9 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
     final bikeType = session.bikeType;
     final sideSwitchMode = session.sideSwitchMode;
     final wake = _wakeCopy(bikeType, sideSwitchMode);
-    final showTabletToggle = bikeType == BikeType.pelotonOriginal && sideSwitchMode == SideSwitchMode.tabletMode;
+    final showTabletToggle =
+        bikeType == BikeType.pelotonOriginal &&
+        sideSwitchMode == SideSwitchMode.tabletMode;
 
     return WizardScaffold(
       title: 'Test Your Connection',
@@ -132,11 +153,18 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
             if (showTabletToggle) ...[
               SegmentedButton<PelotonTabletApp>(
                 segments: const [
-                  ButtonSegment(value: PelotonTabletApp.peloton, label: Text('Peloton app')),
-                  ButtonSegment(value: PelotonTabletApp.grupetto, label: Text('Grupetto overlay')),
+                  ButtonSegment(
+                    value: PelotonTabletApp.peloton,
+                    label: Text('Peloton app'),
+                  ),
+                  ButtonSegment(
+                    value: PelotonTabletApp.grupetto,
+                    label: Text('Grupetto overlay'),
+                  ),
                 ],
                 selected: {_pelotonTabletApp},
-                onSelectionChanged: (s) => setState(() => _pelotonTabletApp = s.first),
+                onSelectionChanged: (s) =>
+                    setState(() => _pelotonTabletApp = s.first),
               ),
               const SizedBox(height: 16),
             ],
@@ -146,13 +174,19 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
                 body: wake.body,
                 trailing: wake.linkUrl != null
                     ? TextButton.icon(
-                        style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          alignment: Alignment.centerLeft,
+                        ),
                         icon: const Icon(Icons.open_in_new, size: 16),
                         label: Text(wake.linkLabel!),
                         onPressed: () async {
                           final url = wake.linkUrl!;
                           if (await canLaunchUrl(url)) {
-                            await launchUrl(url, mode: LaunchMode.externalApplication);
+                            await launchUrl(
+                              url,
+                              mode: LaunchMode.externalApplication,
+                            );
                           }
                         },
                       )
@@ -199,7 +233,9 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
             ),
             const SizedBox(height: 24),
             Theme(
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 8),
@@ -210,14 +246,21 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
                 ),
                 children: [
                   const SizedBox(height: 4),
-                  const _BulletText('Make sure your bike is on and transmitting bluetooth'),
+                  const _BulletText(
+                    'Make sure your bike is on and transmitting bluetooth',
+                  ),
                   const SizedBox(height: 8),
-                  const _BulletText('Ensure no other apps or devices are on and connected to your bike.'),
+                  const _BulletText(
+                    'Ensure no other apps or devices are on and connected to your bike.',
+                  ),
                   const SizedBox(height: 8),
                   const _BulletText('Try restarting your bike or power meter'),
                   const SizedBox(height: 8),
                   TextButton.icon(
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      alignment: Alignment.centerLeft,
+                    ),
                     onPressed: _openTroubleshooting,
                     icon: const Icon(Icons.open_in_new, size: 16),
                     label: const Text('Visit the troubleshooting guide'),
@@ -250,15 +293,21 @@ class _MetricTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = detected ? Colors.green : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4);
+    final accent = detected
+        ? Colors.green
+        : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
       decoration: BoxDecoration(
-        color: detected ? Colors.green.withValues(alpha: 0.12) : theme.colorScheme.surfaceContainerHighest,
+        color: detected
+            ? Colors.green.withValues(alpha: 0.12)
+            : theme.colorScheme.surfaceContainerHighest,
         border: Border.all(
-          color: detected ? Colors.green.withValues(alpha: 0.6) : theme.colorScheme.outline.withValues(alpha: 0.25),
+          color: detected
+              ? Colors.green.withValues(alpha: 0.6)
+              : theme.colorScheme.outline.withValues(alpha: 0.25),
           width: detected ? 1.5 : 1,
         ),
         borderRadius: BorderRadius.circular(16),
@@ -281,13 +330,21 @@ class _MetricTile extends StatelessWidget {
             style: TextStyle(
               fontSize: 48,
               fontWeight: FontWeight.bold,
-              color: detected ? Colors.green.shade700 : theme.colorScheme.onSurface,
+              color: detected
+                  ? Colors.green.shade700
+                  : theme.colorScheme.onSurface,
               height: 1.0,
             ),
             child: Text('$value'),
           ),
           const SizedBox(height: 2),
-          Text(unit, style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7))),
+          Text(
+            unit,
+            style: TextStyle(
+              fontSize: 12,
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+            ),
+          ),
           const SizedBox(height: 14),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 250),
@@ -299,7 +356,10 @@ class _MetricTile extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(detected ? 'Detected' : 'Waiting…', style: TextStyle(fontSize: 11, color: accent)),
+          Text(
+            detected ? 'Detected' : 'Waiting…',
+            style: TextStyle(fontSize: 11, color: accent),
+          ),
         ],
       ),
     );
@@ -316,7 +376,9 @@ class _BulletText extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('• ', style: TextStyle(fontSize: 16)),
-        Expanded(child: Text(text, style: const TextStyle(fontSize: 16, height: 1.4))),
+        Expanded(
+          child: Text(text, style: const TextStyle(fontSize: 16, height: 1.4)),
+        ),
       ],
     );
   }

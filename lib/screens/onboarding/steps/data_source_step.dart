@@ -17,7 +17,10 @@ class DataSourceStep extends StatelessWidget {
     final machine = WizardStepMachine();
 
     void advance() {
-      final next = machine.nextStep(currentStep: WizardStepId.dataSource, session: session.snapshot);
+      final next = machine.nextStep(
+        currentStep: WizardStepId.dataSource,
+        session: session.snapshot,
+      );
       if (next != null) {
         final steps = machine.activeSteps(bikeType: session.bikeType);
         session.setStepIndex(steps.indexOf(next));
@@ -65,7 +68,10 @@ class _BLEPowerMeterDataSource extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Pair a Power Meter', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        const Text(
+          'Pair a Power Meter',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 12),
         const Text(
           'Select your power meter below. Make sure it is active and in range. '
@@ -74,7 +80,10 @@ class _BLEPowerMeterDataSource extends StatelessWidget {
         ),
         const SizedBox(height: 20),
         if (session.connectedDevice != null)
-          BleDeviceSelector(device: session.connectedDevice!, vName: connectedPWRVname)
+          BleDeviceSelector(
+            device: session.connectedDevice!,
+            vName: connectedPWRVname,
+          )
         else
           const Text(
             'Connect your SmartSpin2k first (previous step) to scan for power meters.',
@@ -95,10 +104,16 @@ class _WiredDataSource extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Wired Data Connection', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        const Text(
+          'Wired Data Connection',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 12),
         if (sideSwitchMode == SideSwitchMode.tabletMode) ...[
-          const Text('Tablet Mode detected.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const Text(
+            'Tablet Mode detected.',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
           const SizedBox(height: 8),
           const Text(
             'Start a ride on the Peloton tablet first — data will not flow until you do. '
@@ -106,7 +121,10 @@ class _WiredDataSource extends StatelessWidget {
             style: TextStyle(fontSize: 16, height: 1.5),
           ),
         ] else if (sideSwitchMode == SideSwitchMode.headlessMode) ...[
-          const Text('Headless Mode detected.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const Text(
+            'Headless Mode detected.',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
           const SizedBox(height: 8),
           const Text(
             'No action needed — sensor data flows automatically through the sensor cable '
@@ -132,11 +150,23 @@ class _PelotonBikePlusDataSource extends StatefulWidget {
   const _PelotonBikePlusDataSource({required this.onAdvance});
 
   @override
-  State<_PelotonBikePlusDataSource> createState() => _PelotonBikePlusDataSourceState();
+  State<_PelotonBikePlusDataSource> createState() =>
+      _PelotonBikePlusDataSourceState();
 }
 
-class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> {
+class _PelotonBikePlusDataSourceState
+    extends State<_PelotonBikePlusDataSource> {
   DataSource? _selected;
+  bool _initialized = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      _selected = context.read<WizardSession>().dataSourceChoice;
+      _initialized = true;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -145,9 +175,62 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Choose Your Data Source', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        if (_selected != null) ...[
+          Text(
+            _selected == DataSource.grupetto
+                ? 'Select Grupetto FTMS'
+                : 'Select Your Power Meter',
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          if (session.connectedDevice != null)
+            BleDeviceSelector(
+              device: session.connectedDevice!,
+              vName: connectedPWRVname,
+            )
+          else
+            const Text(
+              'Connect your SmartSpin2k first to select a data source device.',
+              style: TextStyle(fontSize: 14),
+            ),
+          if (_selected == DataSource.grupetto) ...[
+            const SizedBox(height: 20),
+            const Text(
+              'Enable BLE TX in Grupetto',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Open the Grupetto app on your Peloton tablet and enable BLE TX in its settings. '
+              'Then select "Grupetto FTMS" as your power meter above.',
+              style: TextStyle(fontSize: 16, height: 1.5),
+            ),
+          ] else if (_selected == DataSource.powerMeter) ...[
+            const SizedBox(height: 20),
+            const Text(
+              'Wake Your Power Meter',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Pedal for a few seconds to wake up your power meter or power pedals, '
+              'then select the device above.',
+              style: TextStyle(fontSize: 16, height: 1.5),
+            ),
+          ],
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 24),
+        ],
+        const Text(
+          'Choose Your Data Source',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 12),
-        const Text('The Peloton Bike+ supports two data source options:', style: TextStyle(fontSize: 16)),
+        const Text(
+          'The Peloton Bike+ supports two data source options:',
+          style: TextStyle(fontSize: 16),
+        ),
         const SizedBox(height: 16),
         OnboardingOptionCard(
           title: 'Grupetto (Recommended)',
@@ -178,7 +261,9 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
                 icon: const Icon(Icons.play_circle_outline, size: 16),
                 label: const Text('Installation Video'),
                 onPressed: () async {
-                  final url = Uri.parse('https://www.youtube.com/watch?v=X3oN8JhHe_8');
+                  final url = Uri.parse(
+                    'https://www.youtube.com/watch?v=X3oN8JhHe_8',
+                  );
                   if (await canLaunchUrl(url)) {
                     await launchUrl(url, mode: LaunchMode.externalApplication);
                   }
@@ -197,26 +282,6 @@ class _PelotonBikePlusDataSourceState extends State<_PelotonBikePlusDataSource> 
             session.dataSourceChoice = DataSource.powerMeter;
           }),
         ),
-        // Inline guidance + selector when Grupetto is chosen.
-        if (_selected == DataSource.grupetto && session.connectedDevice != null) ...[
-          const SizedBox(height: 20),
-          const Text('Enable BLE TX in Grupetto', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
-          const Text(
-            'Open the Grupetto app on your Peloton tablet and enable BLE TX in its settings. '
-            'Then select "Grupetto FTMS" as your power meter below.',
-            style: TextStyle(fontSize: 16, height: 1.5),
-          ),
-          const SizedBox(height: 16),
-          BleDeviceSelector(device: session.connectedDevice!, vName: connectedPWRVname),
-        ],
-        // Inline power-meter selector when BLE Power Meter is chosen.
-        if (_selected == DataSource.powerMeter && session.connectedDevice != null) ...[
-          const SizedBox(height: 20),
-          const Text('Select your power meter:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
-          BleDeviceSelector(device: session.connectedDevice!, vName: connectedPWRVname),
-        ],
       ],
     );
   }
