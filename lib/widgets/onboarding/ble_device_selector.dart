@@ -2,11 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-import '../../utils/bledata.dart';
+import '../../utils/device_data.dart';
 import '../setting_tile.dart';
 
 /// Inline BLE device selector for wizard steps. Reads discovered devices from
-/// [BLEData.customCharacteristic] and uses [SettingTile] to reuse the existing
+/// [DeviceData.customCharacteristic] and uses [SettingTile] to reuse the existing
 /// Bluetooth settings functionality.
 class BleDeviceSelector extends StatefulWidget {
   final BluetoothDevice device;
@@ -20,21 +20,21 @@ class BleDeviceSelector extends StatefulWidget {
 }
 
 class _BleDeviceSelectorState extends State<BleDeviceSelector> {
-  late BLEData bleData;
+  late DeviceData deviceData;
   StreamSubscription? _charChangeSub;
   VoidCallback? _charReceivedListener;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
+    deviceData = DeviceDataManager.forDevice(widget.device);
 
     _charReceivedListener = () {
       if (mounted) setState(() {});
     };
-    bleData.charReceived.addListener(_charReceivedListener!);
+    deviceData.charReceived.addListener(_charReceivedListener!);
 
-    _charChangeSub = bleData.characteristicChanges.listen((event) {
+    _charChangeSub = deviceData.characteristicChanges.listen((event) {
       if (mounted && event.vName == widget.vName) {
         setState(() {});
       }
@@ -44,7 +44,7 @@ class _BleDeviceSelectorState extends State<BleDeviceSelector> {
   @override
   void dispose() {
     if (_charReceivedListener != null) {
-      bleData.charReceived.removeListener(_charReceivedListener!);
+      deviceData.charReceived.removeListener(_charReceivedListener!);
     }
     _charChangeSub?.cancel();
     super.dispose();
@@ -52,7 +52,7 @@ class _BleDeviceSelectorState extends State<BleDeviceSelector> {
 
   @override
   Widget build(BuildContext context) {
-    final charMap = bleData.customCharacteristic.firstWhere(
+    final charMap = deviceData.customCharacteristic.firstWhere(
       (c) => c['vName'] == widget.vName,
       orElse: () => {},
     );
@@ -62,7 +62,7 @@ class _BleDeviceSelectorState extends State<BleDeviceSelector> {
     }
 
     final value = charMap['value']?.toString();
-    final isReady = bleData.charReceived.value && value != null && value != 'null' && value != 'Loading...';
+    final isReady = deviceData.charReceived.value && value != null && value != 'null' && value != 'Loading...';
 
     if (!isReady) {
       return Center(

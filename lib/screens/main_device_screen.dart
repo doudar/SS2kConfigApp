@@ -25,7 +25,7 @@ import '../widgets/theme_cycle_button.dart';
 
 import '../utils/extra.dart';
 
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 
 class MainDeviceScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -36,14 +36,14 @@ class MainDeviceScreen extends StatefulWidget {
 }
 
 class _MainDeviceScreenState extends State<MainDeviceScreen> {
-  late BLEData bleData;
+  late DeviceData deviceData;
   bool _maintenanceExpanded = false;
   late Future<String?> _appVersionFuture;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
+    deviceData = DeviceDataManager.forDevice(widget.device);
     _appVersionFuture = _loadAppVersion();
 
     if (widget.device.remoteId.toString() == "SmartSpin2k Demo") {
@@ -51,37 +51,37 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       return;
     }
 
-    bleData.connectionStateSubscription = widget.device.connectionState.listen((
+    deviceData.connectionStateSubscription = widget.device.connectionState.listen((
       state,
     ) async {
-      if (bleData.isDirConConnected) return;
-      bleData.connectionState = state;
+      if (deviceData.isDirConConnected) return;
+      deviceData.connectionState = state;
       if (state == BluetoothConnectionState.connected) {
-        bleData.rssi.value = await widget.device.readRssi();
-        await bleData.setupConnection(widget.device);
+        deviceData.rssi.value = await widget.device.readRssi();
+        await deviceData.setupConnection(widget.device);
       }
     });
 
-    if (bleData.isDirConConnected) {
-      bleData.connectionState = BluetoothConnectionState.connected;
+    if (deviceData.isDirConConnected) {
+      deviceData.connectionState = BluetoothConnectionState.connected;
       () async {
-        await bleData.setupConnection(widget.device);
+        await deviceData.setupConnection(widget.device);
       }();
     } else if (widget.device.isConnected) {
-      bleData.connectionState = BluetoothConnectionState.connected;
+      deviceData.connectionState = BluetoothConnectionState.connected;
       () async {
-        bleData.rssi.value = await widget.device.readRssi();
-        await bleData.setupConnection(widget.device);
+        deviceData.rssi.value = await widget.device.readRssi();
+        await deviceData.setupConnection(widget.device);
       }();
     }
 
-    bleData.isConnectingSubscription = _listenConnectionFlag(
+    deviceData.isConnectingSubscription = _listenConnectionFlag(
       stream: widget.device.isConnecting,
-      onValue: (value) => bleData.isConnecting = value,
+      onValue: (value) => deviceData.isConnecting = value,
     );
-    bleData.isDisconnectingSubscription = _listenConnectionFlag(
+    deviceData.isDisconnectingSubscription = _listenConnectionFlag(
       stream: widget.device.isDisconnecting,
-      onValue: (value) => bleData.isDisconnecting = value,
+      onValue: (value) => deviceData.isDisconnecting = value,
     );
   }
 
@@ -112,14 +112,14 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
 
   @override
   void dispose() {
-    bleData.connectionStateSubscription?.cancel();
-    bleData.isConnectingSubscription?.cancel();
-    bleData.isDisconnectingSubscription?.cancel();
+    deviceData.connectionStateSubscription?.cancel();
+    deviceData.isConnectingSubscription?.cancel();
+    deviceData.isDisconnectingSubscription?.cancel();
     super.dispose();
   }
 
   void _demoDeviceSetup() {
-    bleData.setupDemoData();
+    deviceData.setupDemoData();
   }
 
   void _openScreen(Widget screen) {

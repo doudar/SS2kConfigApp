@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import "../utils/snackbar.dart";
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/constants.dart';
 
 class sliderCard extends StatefulWidget {
@@ -23,7 +23,7 @@ class sliderCard extends StatefulWidget {
 
 class _sliderCardState extends State<sliderCard> {
   Map get c => this.widget.c;
-  late BLEData bleData;
+  late DeviceData deviceData;
   late double _currentSliderValue = double.parse(c["value"]);
   final controller = TextEditingController();
   StreamSubscription<CharacteristicChangeEvent>? _charSubscription;
@@ -32,8 +32,8 @@ class _sliderCardState extends State<sliderCard> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
-    _charSubscription = bleData.characteristicChanges
+    deviceData = DeviceDataManager.forDevice(this.widget.device);
+    _charSubscription = deviceData.characteristicChanges
         .where((event) => event.vName == c["vName"])
         .listen((event) {
       if (!mounted || _userIsInteracting) return;
@@ -155,7 +155,7 @@ class _sliderCardState extends State<sliderCard> {
               textAlign: TextAlign.center,
               onSubmitted: (t) {
                 this.verifyInput(t);
-                this.bleData.writeToSS2k(this.widget.device, this.c);
+                this.deviceData.writeToSS2k(this.widget.device, this.c);
                 setState(() {});
                 return this.widget.c["value"];
               },
@@ -174,7 +174,7 @@ class _sliderCardState extends State<sliderCard> {
               child: Slider(
                 min: c["min"].toDouble(),
                 max: c["max"].toDouble(),
-                label: this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c)),
+                label: this._currentSliderValue.toStringAsFixed(deviceData.getPrecision(c)),
                 divisions: 100,
                 value: constrainValue(this._currentSliderValue),
                 onChangeStart: (double v) {
@@ -183,7 +183,7 @@ class _sliderCardState extends State<sliderCard> {
                 onChanged: (double v) {
                   setState(() {
                     this._currentSliderValue = v;
-                    this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
+                    this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(deviceData.getPrecision(c));
                     controller.text = this.widget.c["value"];
                   });
                 },
@@ -191,9 +191,9 @@ class _sliderCardState extends State<sliderCard> {
                   _userIsInteracting = false;
                   setState(() {
                     this._currentSliderValue = v;
-                    this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(bleData.getPrecision(c));
+                    this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(deviceData.getPrecision(c));
                     controller.text = this.widget.c["value"];
-                    this.bleData.writeToSS2k(this.widget.device, this.c);
+                    this.deviceData.writeToSS2k(this.widget.device, this.c);
                   });
                 },
               ),
@@ -212,7 +212,7 @@ class _sliderCardState extends State<sliderCard> {
                     onPressed: () async {
                       //Find the save command and execute it
                       await this
-                          .bleData
+                          .deviceData
                           .writeCommand(this.widget.device, saveVname);
                       if (!mounted) return;
                       Navigator.pop(context);

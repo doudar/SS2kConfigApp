@@ -15,6 +15,7 @@ import 'extra.dart';
 import 'ftmsControlPoint.dart';
 import 'bleConstants.dart';
 import 'ble_request_coalescer.dart';
+import 'bleOTA.dart';
 import 'connection_setup_coordinator.dart';
 import 'dircon_client.dart';
 
@@ -36,17 +37,17 @@ class CharacteristicChangeEvent {
   });
 }
 
-class BLEDataManager {
-  static final Map<String, BLEData> _dataMap = {};
+class DeviceDataManager {
+  static final Map<String, DeviceData> _dataMap = {};
 
-  static BLEData forDevice(BluetoothDevice device) {
+  static DeviceData forDevice(BluetoothDevice device) {
     if (!_dataMap.containsKey(device.remoteId.str)) {
-      _dataMap[device.remoteId.str] = BLEData();
+      _dataMap[device.remoteId.str] = DeviceData();
     }
     return _dataMap[device.remoteId.str]!;
   }
 
-  static void updateDataForDevice(BluetoothDevice device, BLEData data) {
+  static void updateDataForDevice(BluetoothDevice device, DeviceData data) {
     _dataMap[device.remoteId.str] = data;
   }
 
@@ -96,7 +97,7 @@ class FtmsData {
   }) : _targetERG = targetERG;
 }
 
-class BLEData {
+class DeviceData {
   String? advertisedIpAddress;
   DirConClient? _dirConClient;
   StreamSubscription<List<int>>? _dirConNotificationSubscription;
@@ -509,9 +510,47 @@ class BLEData {
 
   StreamSubscription<List<int>>? _notifySubscription;
   StreamSubscription<List<int>>? _ftmsSubscription;
-  late BluetoothService firmwareService;
-  late BluetoothCharacteristic firmwareDataCharacteristic;
-  late BluetoothCharacteristic firmwareControlCharacteristic;
+  BluetoothService? _firmwareService;
+  BluetoothCharacteristic? _firmwareDataCharacteristic;
+  BluetoothCharacteristic? _firmwareControlCharacteristic;
+
+  /// Creates the firmware writer supported by the active transport, or null
+  /// when that transport only supports HTTP OTA. Screens should not inspect
+  /// transport-specific characteristic state themselves.
+  OtaPackage? createFirmwareOtaPackage() {
+    final data = _firmwareDataCharacteristic;
+    final control = _firmwareControlCharacteristic;
+    if (_firmwareService == null || data == null || control == null)
+      return null;
+    return Esp32OtaPackage(data, control);
+  }
+
+  /// Runs a package created by [createFirmwareOtaPackage] without exposing the
+  /// underlying BLE service or characteristics to UI code.
+  Future<void> updateFirmwareWithPackage(
+    OtaPackage package,
+    BluetoothDevice device,
+    int firmwareType, {
+    required String binFilePath,
+  }) async {
+    final service = _firmwareService;
+    final data = _firmwareDataCharacteristic;
+    final control = _firmwareControlCharacteristic;
+    if (service == null || data == null || control == null) {
+      throw StateError(
+        'The active transport does not provide a characteristic-based firmware update.',
+      );
+    }
+    await package.updateFirmware(
+      device,
+      firmwareType,
+      service,
+      data,
+      control,
+      binFilePath: binFilePath,
+    );
+  }
+
   BluetoothCharacteristic? _myCharacteristic;
   BluetoothCharacteristic? ftmsControlPointCharacteristic;
   BluetoothCharacteristic? indoorBikeCharacteristic;
@@ -580,7 +619,7 @@ class BLEData {
     }
   }
 
-  /// Seeds this BLEData as a simulated ("demo") device: marks it simulated,
+  /// Seeds this DeviceData as a simulated ("demo") device: marks it simulated,
   /// fills every custom characteristic with its default value, and reports a
   /// compatible firmware version. Used by both the main device screen and the
   /// onboarding wizard so the demo device behaves identically in either entry
@@ -808,20 +847,20 @@ class BLEData {
       configAppCompatibleFirmware = false;
       for (BluetoothService s in services) {
         if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {
-          firmwareService = s;
+          _firmwareService = s;
           configAppCompatibleFirmware = true;
           break;
         }
       }
       if (configAppCompatibleFirmware) {
-        characteristics = firmwareService.characteristics;
+        characteristics = _firmwareService!.characteristics;
         for (BluetoothCharacteristic c in characteristics) {
           print(c.uuid.toString());
           if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130005")) {
-            firmwareDataCharacteristic = c;
+            _firmwareDataCharacteristic = c;
           }
           if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130003")) {
-            firmwareControlCharacteristic = c;
+            _firmwareControlCharacteristic = c;
           }
         }
       }

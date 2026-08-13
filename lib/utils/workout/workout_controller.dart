@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'dart:math' as math show sqrt, max;
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import '../bledata.dart';
+import '../device_data.dart';
 import '../ftmsControlPoint.dart';
 import 'workout_parser.dart';
 import 'workout_storage.dart';
@@ -81,7 +81,7 @@ class WorkoutController extends ChangeNotifier {
   double _workoutProgressTime = 0; // Track workout's progress position (authoritative source for duration/elapsed time)
   double _skippedTime = 0; // Time skipped by user actions; excluded from elapsed
   int currentSegmentTimeRemaining = 0;
-  final BLEData bleData;
+  final DeviceData deviceData;
   final BluetoothDevice device;
   bool _isCountingDown = false;
   String? _currentWorkoutContent;
@@ -104,15 +104,15 @@ class WorkoutController extends ChangeNotifier {
   static const Duration _workoutStateSaveInterval = Duration(seconds: 30);
 
   // Factory constructor to get device-specific instance
-  factory WorkoutController(BLEData bleData, BluetoothDevice device) {
+  factory WorkoutController(DeviceData deviceData, BluetoothDevice device) {
     final deviceId = device.remoteId.str;
     if (!_instances.containsKey(deviceId)) {
-      _instances[deviceId] = WorkoutController._internal(bleData, device);
+      _instances[deviceId] = WorkoutController._internal(deviceData, device);
     }
     return _instances[deviceId]!;
   }
 
-  WorkoutController._internal(this.bleData, this.device) {
+  WorkoutController._internal(this.deviceData, this.device) {
     _resetSimulationParameters();
     _initializeController();
   }
@@ -135,7 +135,7 @@ class WorkoutController extends ChangeNotifier {
   // Getter for speed calculation
   double get speedMph {
     if (!isPlaying) return 0.0;
-    final currentPower = bleData.ftmsData.watts.toDouble();
+    final currentPower = deviceData.ftmsData.watts.toDouble();
     return currentPower > 0 ? 1.5 * math.sqrt(currentPower) : 0.0;
   }
 
@@ -262,9 +262,9 @@ class WorkoutController extends ChangeNotifier {
 
   // Helper method to reset simulation parameters
   Future<void> _resetSimulationParameters() async {
-    if (bleData.ftmsControlPointCharacteristic != null) {
+    if (deviceData.ftmsControlPointCharacteristic != null) {
       try {
-        await bleData.writeFtmsControlPoint(
+        await deviceData.writeFtmsControlPoint(
           (characteristic) => FTMSControlPoint.writeIndoorBikeSimulation(
             characteristic,
             windSpeed: 0,
@@ -686,8 +686,8 @@ class WorkoutController extends ChangeNotifier {
         }
 
         // Calculate target power in watts and update ftmsData
-        // When target power is 0, the BLEData class will handle switching to simulation mode
-        bleData.ftmsData.targetERG = (targetPower * ftpValue).round();
+        // When target power is 0, the DeviceData class will handle switching to simulation mode
+        deviceData.ftmsData.targetERG = (targetPower * ftpValue).round();
         currentSegmentTimeRemaining = ((elapsedTime + segment.duration) - currentTime).round();
 
         _handleSegmentCountdown(currentSegmentTimeRemaining);
@@ -735,9 +735,9 @@ class WorkoutController extends ChangeNotifier {
       progressPosition = _workoutProgressTime / totalDuration;
 
       // Store power value at current time index
-      final currentPower = bleData.ftmsData.watts.toDouble();
-      final currentHeartRate = bleData.ftmsData.heartRate;
-      final currentCadence = bleData.ftmsData.cadence;
+      final currentPower = deviceData.ftmsData.watts.toDouble();
+      final currentHeartRate = deviceData.ftmsData.heartRate;
+      final currentCadence = deviceData.ftmsData.cadence;
 
       final int currentSecond = _workoutProgressTime.floor();
       final int startSecond = math.max(0, _lastRecordedSecond + 1);

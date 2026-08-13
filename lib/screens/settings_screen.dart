@@ -12,7 +12,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../utils/snackbar.dart';
 
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/presets.dart';
 import '../utils/constants.dart';
 import 'settings_category_screen.dart';
@@ -26,15 +26,15 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen>{
-  late BLEData bleData;
+  late DeviceData deviceData;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    deviceData = DeviceDataManager.forDevice(this.widget.device);
 
     // If the data is simulated, wait for a second before calling setState
-    if (bleData.isSimulated) {
+    if (deviceData.isSimulated) {
       Timer(Duration(seconds: 2), () {
         if (mounted) {
           print("demo delay");
@@ -149,10 +149,10 @@ class _SettingsScreenState extends State<SettingsScreen>{
                   onTap: () async {
                     // Preset operations are the one settings workflow that
                     // needs an authoritative snapshot of every setting.
-                    await bleData.requestAllEditableSettings(widget.device);
+                    await deviceData.requestAllEditableSettings(widget.device);
                     if (!context.mounted) return;
                     await PresetManager.showPresetsMenu(
-                        context, bleData, widget.device);
+                        context, deviceData, widget.device);
                   },
                   trailing: Icon(Icons.chevron_right, color: Colors.white),
                 ),

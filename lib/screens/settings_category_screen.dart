@@ -11,7 +11,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../widgets/setting_tile.dart';
 import '../widgets/ss2k_app_bar.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/constants.dart';
 
 class SettingsCategoryScreen extends StatefulWidget {
@@ -35,14 +35,14 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
   StreamSubscription<CharacteristicChangeEvent>?
   _characteristicChangeSubscription;
   VoidCallback? _charReceivedListener;
-  late BLEData bleData;
+  late DeviceData deviceData;
   late Set<String> _categorySettingNames;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
-    _categorySettingNames = bleData.customCharacteristic
+    deviceData = DeviceDataManager.forDevice(this.widget.device);
+    _categorySettingNames = deviceData.customCharacteristic
         .where(
           (c) =>
               c["isSetting"] == true && c["settingType"] == widget.settingType,
@@ -55,7 +55,7 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
         setState(() {});
       }
     };
-    bleData.charReceived.addListener(_charReceivedListener!);
+    deviceData.charReceived.addListener(_charReceivedListener!);
 
     _connectionStateSubscription = this.widget.device.connectionState.listen((
       state,
@@ -65,7 +65,7 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
       }
     });
 
-    _characteristicChangeSubscription = bleData.characteristicChanges.listen((
+    _characteristicChangeSubscription = deviceData.characteristicChanges.listen((
       event,
     ) {
       if (mounted && _categorySettingNames.contains(event.vName)) {
@@ -74,14 +74,14 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
     });
 
     unawaited(
-      bleData.requestSettingsForType(widget.device, widget.settingType),
+      deviceData.requestSettingsForType(widget.device, widget.settingType),
     );
   }
 
   @override
   void dispose() {
     if (_charReceivedListener != null) {
-      bleData.charReceived.removeListener(_charReceivedListener!);
+      deviceData.charReceived.removeListener(_charReceivedListener!);
     }
     _connectionStateSubscription?.cancel();
     _characteristicChangeSubscription?.cancel();
@@ -91,7 +91,7 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
   List<Widget> buildSettingsList(BuildContext context) {
     List<Widget> settings = [];
     _newEntry(Map c) {
-      if (this.bleData.charReceived.value || this.bleData.isSimulated) {
+      if (this.deviceData.charReceived.value || this.deviceData.isSimulated) {
         final value = c["value"]?.toString();
         // Filter by isSetting AND the requested SettingType
         if (c["isSetting"] == true &&
@@ -103,7 +103,7 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
       }
     }
 
-    this.bleData.customCharacteristic.forEach((c) => _newEntry(c));
+    this.deviceData.customCharacteristic.forEach((c) => _newEntry(c));
 
     return settings;
   }

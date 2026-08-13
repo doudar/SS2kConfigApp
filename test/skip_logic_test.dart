@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
-import 'package:ss2kconfigapp/utils/bledata.dart';
+import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -48,11 +48,11 @@ void main() {
 ''';
 
     final mockDevice = BluetoothDevice.fromId('00:00:00:00:00:00');
-    final bleData = BLEDataManager.forDevice(mockDevice);
-    bleData.ftmsData = FtmsData();
-    bleData.ftmsData.watts = 100; // Mock power data
+    final deviceData = DeviceDataManager.forDevice(mockDevice);
+    deviceData.ftmsData = FtmsData();
+    deviceData.ftmsData.watts = 100; // Mock power data
     
-    final workoutController = WorkoutController(bleData, mockDevice);
+    final workoutController = WorkoutController(deviceData, mockDevice);
     
     // Load and start
     workoutController.loadWorkout(workoutContent);

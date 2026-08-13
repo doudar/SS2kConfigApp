@@ -78,7 +78,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
 - **References**:
   - `../utils/bleOTA.dart` for Bluetooth OTA updates
   - `../utils/wifi_ota.dart` for WiFi OTA updates
-  - `../utils/bledata.dart` for Bluetooth data management
+  - `../utils/device_data.dart` for transport-neutral device communication and state management
   - `../widgets/device_header.dart` for device information display
   - External packages: flutter_blue_plus, wakelock_plus, flutter_archive
 
@@ -101,7 +101,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
   - `_buildLegend()`: Creates chart legend showing cadence-color mapping
 - **References**:
   - `utils/constants.dart` for application constants
-  - `utils/bledata.dart` for Bluetooth data management
+  - `utils/device_data.dart` for transport-neutral device communication and state management
   - `utils/extra.dart` for utility functions
   - `widgets/metric_card.dart` for metric display
   - External packages: fl_chart for data visualization, flutter_blue_plus
@@ -139,7 +139,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
   - `widgets/setting_tile.dart` for individual setting controls
   - `widgets/device_header.dart` for device information display
   - `utils/snackbar.dart` for user notifications
-  - `utils/bledata.dart` for Bluetooth data management
+  - `utils/device_data.dart` for transport-neutral device communication and state management
   - External package: flutter_blue_plus
 
 ### `shifter_screen.dart`
@@ -154,7 +154,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
   - `initState()`: Initializes shifter state and demo mode handling
 - **References**:
   - `utils/constants.dart` for shifter-related constants
-  - `utils/bledata.dart` for Bluetooth data management
+  - `utils/device_data.dart` for transport-neutral device communication and state management
   - `utils/extra.dart` for utility functions
   - `widgets/device_header.dart` for device information display
   - `widgets/metric_card.dart` for performance metrics display
@@ -181,7 +181,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
   - `utils/workout/sounds.dart` for audio feedback
   - `utils/workout/fit_file_exporter.dart` for workout data export
   - `utils/workout/workout_file_manager.dart` for file operations
-  - `utils/bledata.dart` for device data management
+  - `utils/device_data.dart` for device data management
   - `widgets/device_header.dart` for device information
   - `widgets/workout_library.dart` for workout selection
   - External packages: flutter_blue_plus, wakelock_plus
@@ -210,8 +210,8 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
   - Standard FTMS UUID: '00002AD9-0000-1000-8000-00805F9B34FB'
   - Used throughout app for Bluetooth communication protocol
 
-### `bledata.dart`
-- **Purpose**: Bluetooth data management
+### `device_data.dart`
+- **Purpose**: transport-neutral device communication and state management
 - **Major Functions**: [To be documented]
 - **References**: [To be documented]
 
@@ -329,7 +329,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
       - Load existing preset
       - Delete preset
 - **References**:
-  - `bledata.dart` for device settings management
+  - `device_data.dart` for device settings management
   - `snackbar.dart` for user notifications
   - `extra.dart` for utility functions
   - External packages:
@@ -606,7 +606,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
     - Progress timing
     - Simulation parameter management
 - **References**:
-  - `bledata.dart` for device communication
+  - `device_data.dart` for device communication
   - `ftmsControlPoint.dart` for device control
   - `workout_parser.dart` for file parsing
   - `workout_constants.dart` for configuration
@@ -693,7 +693,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
     - Consistent padding and spacing
     - Center alignment
 - **References**:
-  - `bledata.dart` for performance data
+  - `device_data.dart` for performance data
   - `workout_constants.dart` for styling
   - `workout_metric_row.dart` for metric display
   - Flutter animations
@@ -815,7 +815,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
     - Toggle state persistence
     - Device communication
 - **References**:
-  - `utils/bledata.dart` for device communication
+  - `utils/device_data.dart` for device communication
   - `utils/constants.dart` for shared constants
   - External package: flutter_blue_plus
 
@@ -843,7 +843,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
     - Automatic reconnection
     - Error handling with snackbar feedback
 - **References**:
-  - `utils/bledata.dart` for device communication
+  - `utils/device_data.dart` for device communication
   - `utils/snackbar.dart` for notifications
   - `utils/presets.dart` for settings management
   - `utils/constants.dart` for shared values
@@ -872,7 +872,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
     - BLE characteristic monitoring
     - Wheel scroll state
 - **References**:
-  - `utils/bledata.dart` for device communication
+  - `utils/device_data.dart` for device communication
   - `utils/constants.dart` for shared values
   - External package: flutter_blue_plus
 
@@ -922,7 +922,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
     - Device communication
 - **References**:
   - `utils/constants.dart` for shared values
-  - `utils/bledata.dart` for device communication
+  - `utils/device_data.dart` for device communication
   - External package: flutter_blue_plus
 
 ### `scan_result_tile.dart`
@@ -982,7 +982,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
   - `widgets/bool_card.dart`
   - `widgets/plain_text_card.dart`
   - `widgets/dropdown_card.dart`
-  - `utils/bledata.dart`
+  - `utils/device_data.dart`
   - `utils/constants.dart`
   - External package: flutter_blue_plus
 
@@ -1013,7 +1013,7 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
     - Device communication
 - **References**:
   - `utils/snackbar.dart` for notifications
-  - `utils/bledata.dart` for device communication
+  - `utils/device_data.dart` for device communication
   - `utils/constants.dart` for shared values
   - External package: flutter_blue_plus
 

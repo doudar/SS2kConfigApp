@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
 import 'package:ss2kconfigapp/utils/workout/gpx_file_exporter.dart';
 import 'package:ss2kconfigapp/utils/workout/gpx_to_fit.dart';
-import 'package:ss2kconfigapp/utils/bledata.dart';
+import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'dart:io';
 import 'package:path/path.dart' as path;
@@ -55,13 +55,13 @@ void main() {
 
     // Create mock BLE device and data
     final mockDevice = BluetoothDevice.fromId('00:00:00:00:00:00');
-    final bleData = BLEDataManager.forDevice(mockDevice);
+    final deviceData = DeviceDataManager.forDevice(mockDevice);
 
     // Initialize FTMS data
-    bleData.ftmsData = FtmsData();
+    deviceData.ftmsData = FtmsData();
 
     // Create workout controller with 300W FTP
-    final workoutController = WorkoutController(bleData, mockDevice);
+    final workoutController = WorkoutController(deviceData, mockDevice);
     workoutController.updateFTP(300.0); // Set FTP to 300W for 1.0 power = 300W
 
     // Load and start the workout
@@ -73,9 +73,9 @@ void main() {
     // Simulate the workout data - one data point per second for 2 hours
     for (var i = 0; i < 1200; i++) {
       // Update mock BLE data
-      bleData.ftmsData.watts = 300;
-      bleData.ftmsData.cadence = 90;
-      bleData.ftmsData.heartRate = 170;
+      deviceData.ftmsData.watts = 300;
+      deviceData.ftmsData.cadence = 90;
+      deviceData.ftmsData.heartRate = 170;
 
       // Create track point with proper timestamp
       final currentTime = startTime.add(Duration(seconds: i));
@@ -150,10 +150,10 @@ void main() {
 ''';
 
     final mockDevice = BluetoothDevice.fromId('00:00:00:00:00:00');
-    final bleData = BLEDataManager.forDevice(mockDevice);
-    bleData.ftmsData = FtmsData();
+    final deviceData = DeviceDataManager.forDevice(mockDevice);
+    deviceData.ftmsData = FtmsData();
 
-    final workoutController = WorkoutController(bleData, mockDevice);
+    final workoutController = WorkoutController(deviceData, mockDevice);
     await workoutController.updateFTP(250.0);
     workoutController.loadWorkout(workoutContent);
 
@@ -165,7 +165,7 @@ void main() {
 
     // Let the timer run with intentionally jittery delays to simulate slow hardware
     for (int i = 0; i < 25; i++) {
-      bleData.ftmsData
+      deviceData.ftmsData
         ..watts = 250
         ..cadence = 85
         ..heartRate = 150;

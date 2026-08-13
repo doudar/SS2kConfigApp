@@ -12,7 +12,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../utils/bike_profile.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/calibration_monitor.dart';
 import '../utils/constants.dart';
 import '../utils/onboarding/wizard_step_machine.dart';
@@ -74,7 +74,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   /// feel like waiting.
   static const Duration _verdictDelay = Duration(milliseconds: 600);
 
-  late final BLEData bleData;
+  late final DeviceData deviceData;
   late final CalibrationMonitor _monitor;
   final PageController _pageController = PageController();
 
@@ -99,14 +99,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
-    unawaited(bleData.updateIndoorBikeData(widget.device));
-    _monitor = CalibrationMonitor(bleData: bleData, device: widget.device)
+    deviceData = DeviceDataManager.forDevice(widget.device);
+    unawaited(deviceData.updateIndoorBikeData(widget.device));
+    _monitor = CalibrationMonitor(deviceData: deviceData, device: widget.device)
       ..addListener(_onMonitorChanged);
 
-    _cadenceSubscription = bleData.characteristicChanges.listen((event) {
+    _cadenceSubscription = deviceData.characteristicChanges.listen((event) {
       if (!mounted) return;
-      final cadence = bleData.ftmsData.cadence;
+      final cadence = deviceData.ftmsData.cadence;
       final cadenceDetected =
           _cadenceDetected || (_monitor.phase.isRunning && cadence > 10);
       if (cadence != _cadence ||
@@ -120,7 +120,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     });
 
     _loadSetup();
-    unawaited(bleData.requestSetting(widget.device, homingSensitivityVname));
+    unawaited(deviceData.requestSetting(widget.device, homingSensitivityVname));
   }
 
   Future<void> _loadSetup() async {
@@ -168,7 +168,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   bool get _isBikePlus => _calibrationSetup == CalibrationSetup.pelotonBikePlus;
 
   bool get _powerTableWillReset =>
-      bleData.getVnameValue(pTab4pwrVname) != "true";
+      deviceData.getVnameValue(pTab4pwrVname) != "true";
 
   void _goTo(int index) {
     if (!mounted) return;
@@ -190,7 +190,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 
   Map<String, dynamic> get _homingForceSetting =>
-      bleData.customCharacteristic.firstWhere(
+      deviceData.customCharacteristic.firstWhere(
         (c) => c["vName"] == homingSensitivityVname,
         orElse: () => <String, dynamic>{},
       );
@@ -256,9 +256,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           usedFtmsPath: _monitor.usedFtmsPath,
           sweepTimedOut: _monitor.sweepTimedOut,
           logStreamSilent: _monitor.logStreamSilent,
-          firmwareVersion: bleData.firmwareVersion.value,
+          firmwareVersion: deviceData.firmwareVersion.value,
           bikeType: _bikeType == null ? null : _bikeTypeLabel(_bikeType!),
-          homingForce: bleData.getVnameValue(homingSensitivityVname),
+          homingForce: deviceData.getVnameValue(homingSensitivityVname),
           homingMin: _monitor.homingMin,
           homingMax: _monitor.homingMax,
         ),
@@ -696,7 +696,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       );
     }
 
-    final homingSetting = bleData.customCharacteristic.firstWhere(
+    final homingSetting = deviceData.customCharacteristic.firstWhere(
       (c) => c["vName"] == homingSensitivityVname,
       orElse: () => <String, dynamic>{},
     );

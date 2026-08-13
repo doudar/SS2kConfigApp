@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/constants.dart';
 import '../utils/power_table_painter.dart';
 
@@ -35,7 +35,7 @@ class PowerTableChart extends StatefulWidget {
   ];
 
   final BluetoothDevice device;
-  final BLEData bleData;
+  final DeviceData deviceData;
   final bool pollTargetPosition;
   final Duration pollInterval;
   final Duration initialDataLoadDelay;
@@ -43,7 +43,7 @@ class PowerTableChart extends StatefulWidget {
   const PowerTableChart({
     Key? key,
     required this.device,
-    required this.bleData,
+    required this.deviceData,
     this.pollTargetPosition = true,
     this.pollInterval = const Duration(seconds: 5),
     this.initialDataLoadDelay = Duration.zero,
@@ -104,7 +104,7 @@ class PowerTableChartState extends State<PowerTableChart>
     _homingValuesTimer = Timer.periodic(const Duration(seconds: 60), (
       _homingValuesTimer,
     ) {
-      if (mounted && widget.bleData.isTransportActive) {
+      if (mounted && widget.deviceData.isTransportActive) {
         requestHomingValues();
       }
     });
@@ -115,7 +115,7 @@ class PowerTableChartState extends State<PowerTableChart>
     });
 
     // Subscribe to characteristic changes
-    _characteristicChangeSubscription = widget.bleData.characteristicChanges
+    _characteristicChangeSubscription = widget.deviceData.characteristicChanges
         .listen((event) {
           if (event.vName == BLE_hMinVname || event.vName == BLE_hMaxVname) {
             _updateHomingFromCache();
@@ -137,7 +137,7 @@ class PowerTableChartState extends State<PowerTableChart>
   void _loadChartData() {
     if (widget.pollTargetPosition) {
       unawaited(
-        widget.bleData.requestSetting(widget.device, targetPositionVname),
+        widget.deviceData.requestSetting(widget.device, targetPositionVname),
       );
     }
     unawaited(requestAllCadenceLines());
@@ -172,60 +172,60 @@ class PowerTableChartState extends State<PowerTableChart>
     if (!widget.pollTargetPosition) return;
     _targetPositionTimer?.cancel();
     _targetPositionTimer = Timer.periodic(widget.pollInterval, (timer) {
-      if (widget.bleData.isUserDisconnect) {
+      if (widget.deviceData.isUserDisconnect) {
         timer.cancel();
         return;
       }
-      if (mounted && widget.bleData.isTransportActive) {
-        widget.bleData.requestSetting(widget.device, targetPositionVname);
+      if (mounted && widget.deviceData.isTransportActive) {
+        widget.deviceData.requestSetting(widget.device, targetPositionVname);
       }
     });
   }
 
   Future<void> requestHomingValues() async {
-    if (mounted && widget.bleData.isTransportActive) {
-      await widget.bleData.requestSetting(widget.device, BLE_hMinVname);
-      await widget.bleData.requestSetting(widget.device, BLE_hMaxVname);
+    if (mounted && widget.deviceData.isTransportActive) {
+      await widget.deviceData.requestSetting(widget.device, BLE_hMinVname);
+      await widget.deviceData.requestSetting(widget.device, BLE_hMaxVname);
 
       _updateHomingFromCache();
     }
   }
 
   void _updateHomingFromCache() {
-    String test = widget.bleData.getVnameValue(
+    String test = widget.deviceData.getVnameValue(
       BLE_hMinVname,
       returnNoFirmSupport: true,
     );
     if (test == noFirmSupport) return;
 
     double? value = double.tryParse(
-      widget.bleData.getVnameValue(BLE_hMinVname),
+      widget.deviceData.getVnameValue(BLE_hMinVname),
     );
     double? value2 = double.tryParse(
-      widget.bleData.getVnameValue(BLE_hMaxVname),
+      widget.deviceData.getVnameValue(BLE_hMaxVname),
     );
 
     if (mounted && (value != null && value2 != null)) {
       setState(() {
         homingMin = (value == INT32_MIN)
             ? null
-            : value / widget.bleData.tableDivisor;
+            : value / widget.deviceData.tableDivisor;
         homingMax = (value2 == INT32_MIN)
             ? null
-            : value2 / widget.bleData.tableDivisor;
+            : value2 / widget.deviceData.tableDivisor;
       });
     }
   }
 
   Future<void> requestAllCadenceLines() async {
     if (!mounted ||
-        !widget.bleData.isTransportActive ||
-        widget.bleData.isPowerTableTransferInProgress) {
+        !widget.deviceData.isTransportActive ||
+        widget.deviceData.isPowerTableTransferInProgress) {
       return;
     }
     for (int i = 0; i < 10; i++) {
-      if (!mounted || widget.bleData.isPowerTableTransferInProgress) return;
-      await widget.bleData.requestSetting(
+      if (!mounted || widget.deviceData.isPowerTableTransferInProgress) return;
+      await widget.deviceData.requestSetting(
         widget.device,
         powerTableDataVname,
         extraByte: i,
@@ -236,7 +236,7 @@ class PowerTableChartState extends State<PowerTableChart>
 
   double calculateMaxResistance() {
     double maxRes = 0;
-    for (var row in widget.bleData.powerTableData) {
+    for (var row in widget.deviceData.powerTableData) {
       for (int i = 0; i < row.length; i++) {
         if (row[i] != null && row[i]! > maxRes) {
           maxRes = row[i]!.toDouble();
@@ -259,7 +259,7 @@ class PowerTableChartState extends State<PowerTableChart>
 
   void _updatePulseSpeed() {
     int durationMs = 3500;
-    int cadence = widget.bleData.ftmsData.cadence;
+    int cadence = widget.deviceData.ftmsData.cadence;
     if (cadence > 10) {
       durationMs = (50000 / cadence).round();
     }
@@ -279,14 +279,14 @@ class PowerTableChartState extends State<PowerTableChart>
     // Recalculate max resistance and update history on build
     maxResistance = calculateMaxResistance();
 
-    if (widget.bleData.ftmsData.watts > 0 &&
-        widget.bleData.ftmsData.watts <= 1000 &&
+    if (widget.deviceData.ftmsData.watts > 0 &&
+        widget.deviceData.ftmsData.watts <= 1000 &&
         maxResistance > 0) {
       double targetPosition =
-          double.tryParse(widget.bleData.getVnameValue(targetPositionVname)) ??
+          double.tryParse(widget.deviceData.getVnameValue(targetPositionVname)) ??
           0;
       _updatePositionHistory(
-        widget.bleData.ftmsData.watts.toDouble(),
+        widget.deviceData.ftmsData.watts.toDouble(),
         targetPosition,
       );
     }
@@ -299,7 +299,7 @@ class PowerTableChartState extends State<PowerTableChart>
             return CustomPaint(
               size: Size(constraints.maxWidth, constraints.maxHeight),
               painter: PowerTablePainter(
-                powerTableData: widget.bleData.powerTableData
+                powerTableData: widget.deviceData.powerTableData
                     .map(
                       (row) => row.map((value) => value?.toDouble()).toList(),
                     )
@@ -309,15 +309,15 @@ class PowerTableChartState extends State<PowerTableChart>
                 maxResistance: maxResistance,
                 homingMin: homingMin,
                 homingMax: homingMax,
-                currentWatts: widget.bleData.ftmsData.watts.toDouble(),
+                currentWatts: widget.deviceData.ftmsData.watts.toDouble(),
                 currentResistance:
                     double.tryParse(
-                      widget.bleData.getVnameValue(targetPositionVname),
+                      widget.deviceData.getVnameValue(targetPositionVname),
                     ) ??
                     0,
-                currentCadence: widget.bleData.ftmsData.cadence,
+                currentCadence: widget.deviceData.ftmsData.cadence,
                 positionHistory: _positionHistory,
-                tableDivisor: widget.bleData.tableDivisor,
+                tableDivisor: widget.deviceData.tableDivisor,
                 swapAxes: _swapAxes,
                 animationValue: _pulseController.value,
               ),

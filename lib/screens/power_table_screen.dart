@@ -9,7 +9,7 @@ import 'dart:async';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/power_table_chart.dart';
@@ -26,18 +26,18 @@ class PowerTableScreen extends StatefulWidget {
 class _PowerTableScreenState extends State<PowerTableScreen> {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
-  late BLEData bleData;
+  late DeviceData deviceData;
   String statusString = '';
   final GlobalKey<PowerTableChartState> _chartKey = GlobalKey<PowerTableChartState>();
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
-    // Reconnection is handled centrally by BLEData.startConnectionMonitor.
+    deviceData = DeviceDataManager.forDevice(this.widget.device);
+    // Reconnection is handled centrally by DeviceData.startConnectionMonitor.
     // No per-screen reconnect timer needed.
     // If the data is simulated, wait for a second before calling setState
-    if (bleData.isSimulated) {
+    if (deviceData.isSimulated) {
       Timer(Duration(seconds: 2), () {
         if (mounted) {
           print("demo delay");
@@ -51,10 +51,10 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     rwSubscription();
     // FTMS setup belongs to the transport that is already connected. Do not
     // cause a BLE service-discovery attempt just because this screen opened.
-    if (bleData.isTransportActive) {
-      unawaited(bleData.updateIndoorBikeData(widget.device));
+    if (deviceData.isTransportActive) {
+      unawaited(deviceData.updateIndoorBikeData(widget.device));
       unawaited(
-        bleData.requestSetting(widget.device, shifterPositionVname),
+        deviceData.requestSetting(widget.device, shifterPositionVname),
       );
     }
   }
@@ -74,12 +74,12 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   }
 
   String _getGearValue() {
-    var c = bleData.customCharacteristic.firstWhere(
+    var c = deviceData.customCharacteristic.firstWhere(
       (i) => i["vName"] == shifterPositionVname,
       orElse: () => <String, Object>{},
     );
     // In simulation, default to "0" if not set, otherwise check value or return "-"
-    if (bleData.isSimulated && (c.isEmpty || c["value"] == null)) return "0";
+    if (deviceData.isSimulated && (c.isEmpty || c["value"] == null)) return "0";
 
     return c.isNotEmpty ? (c["value"]?.toString() ?? "-") : "-";
   }
@@ -94,9 +94,9 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
       // Connection state changes don't require rebuilding the metrics
     });
     
-    _characteristicChangeSubscription = bleData.characteristicChanges.listen((event) {
-      if (bleData.FTMSmode == 0 || bleData.FTMSmode == 17) {
-        bleData.simulatedTargetWatts = "";
+    _characteristicChangeSubscription = deviceData.characteristicChanges.listen((event) {
+      if (deviceData.FTMSmode == 0 || deviceData.FTMSmode == 17) {
+        deviceData.simulatedTargetWatts = "";
       }
       // Metrics update via StreamBuilder, no need for setState
     });
@@ -115,7 +115,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
             tooltip: 'Manage Power Table',
             onPressed: () async {
               _chartKey.currentState?.requestAllCadenceLines();
-              await PowerTableManager.showPowerTableMenu(context, bleData, widget.device);
+              await PowerTableManager.showPowerTableMenu(context, deviceData, widget.device);
             },
           ),
           IconButton(
@@ -132,40 +132,40 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         child: Column(
           children: <Widget>[
             StreamBuilder<CharacteristicChangeEvent>(
-              stream: bleData.characteristicChanges,
+              stream: deviceData.characteristicChanges,
               builder: (context, snapshot) {
                 return SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: <Widget>[
-                      if (bleData.simulatedTargetWatts != "")
+                      if (deviceData.simulatedTargetWatts != "")
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8.0),
                           child: MetricBox(
-                            value: bleData.simulatedTargetWatts.toString(),
+                            value: deviceData.simulatedTargetWatts.toString(),
                             label: 'Target Watts',
                           ),
                         ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8.0),
                         child: MetricBox(
-                          value: bleData.ftmsData.watts.toString(),
+                          value: deviceData.ftmsData.watts.toString(),
                           label: 'Watts',
                         ),
                       ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8.0),
                         child: MetricBox(
-                          value: bleData.ftmsData.cadence.toString(),
+                          value: deviceData.ftmsData.cadence.toString(),
                           label: 'RPM',
                         ),
                       ),
-                      if (bleData.ftmsData.heartRate != 0)
+                      if (deviceData.ftmsData.heartRate != 0)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8.0),
                           child: MetricBox(
-                            value: bleData.ftmsData.heartRate.toString(),
+                            value: deviceData.ftmsData.heartRate.toString(),
                             label: 'BPM',
                           ),
                         ),
@@ -195,7 +195,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
                 child: PowerTableChart(
                   key: _chartKey,
                   device: widget.device,
-                  bleData: bleData,
+                  deviceData: deviceData,
                   pollTargetPosition: true,
                 ),
               ),

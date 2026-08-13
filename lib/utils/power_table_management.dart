@@ -9,7 +9,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import './bledata.dart';
+import './device_data.dart';
 import './snackbar.dart';
 import './power_table_sharing.dart';
 import './constants.dart';
@@ -28,15 +28,15 @@ class PowerTableManager {
   // Generate test data for the power table
   static Future<void> loadTestData(
     BuildContext context,
-    BLEData bleData,
+    DeviceData deviceData,
     BluetoothDevice device,
   ) async {
-    bleData.isPowerTableTransferInProgress = true;
+    deviceData.isPowerTableTransferInProgress = true;
     try {
       // Clear existing data
-      for (int i = 0; i < bleData.powerTableData.length; i++) {
-        for (int j = 0; j < bleData.powerTableData[i].length; j++) {
-          bleData.powerTableData[i][j] = null;
+      for (int i = 0; i < deviceData.powerTableData.length; i++) {
+        for (int j = 0; j < deviceData.powerTableData[i].length; j++) {
+          deviceData.powerTableData[i][j] = null;
         }
       }
 
@@ -61,7 +61,7 @@ class PowerTableManager {
           // Limit resistance to reasonable range (0-6000)
           resistance = resistance.clamp(0, 6000);
 
-          bleData.powerTableData[rowIndex][col] = resistance;
+          deviceData.powerTableData[rowIndex][col] = resistance;
 
           // Convert to bytes for transmission
           final bytes = Uint8List(2)
@@ -73,10 +73,10 @@ class PowerTableManager {
         List<int> command = [0x02, 0x27, rowIndex, ...rowValue];
 
         try {
-          if (!bleData.isTransportActive) {
+          if (!deviceData.isTransportActive) {
             throw Exception("Device transport disconnected");
           }
-          await bleData.writeCustomCharacteristic(device, command);
+          await deviceData.writeCustomCharacteristic(device, command);
           // Preserve the existing pacing after the acknowledged response.
           await Future.delayed(Duration(milliseconds: 500));
         } catch (e) {
@@ -103,13 +103,13 @@ class PowerTableManager {
         );
       }
     } finally {
-      bleData.isPowerTableTransferInProgress = false;
+      deviceData.isPowerTableTransferInProgress = false;
     }
   }
 
   static Future<void> savePowerTable(
     BuildContext context,
-    BLEData bleData,
+    DeviceData deviceData,
     String tableName,
   ) async {
     try {
@@ -117,11 +117,11 @@ class PowerTableManager {
       List<String> tablesList = prefs.getStringList(_powerTablesListKey) ?? [];
 
       // Get current HMax value from the device
-      String hMaxValue = bleData.getVnameValue(BLE_hMaxVname);
+      String hMaxValue = deviceData.getVnameValue(BLE_hMaxVname);
 
       // Create a data structure that includes both power table and HMax
       Map<String, dynamic> tableData = {
-        'powerTable': bleData.powerTableData,
+        'powerTable': deviceData.powerTableData,
         'hMax': hMaxValue != noFirmSupport ? hMaxValue : null,
       };
 
@@ -156,11 +156,11 @@ class PowerTableManager {
   // Send power table data to device
   static Future<bool> sendPowerTableToDevice(
     BuildContext context,
-    BLEData bleData,
+    DeviceData deviceData,
     BluetoothDevice device, {
     String? hMaxValue,
   }) async {
-    if (!bleData.isTransportActive) {
+    if (!deviceData.isTransportActive) {
       if (context.mounted) {
         Snackbar.show(ABC.c, "Device not connected", success: false);
       }
@@ -170,10 +170,10 @@ class PowerTableManager {
     // Read callbacks update powerTableData in place. Preserve the table chosen
     // by the user so a periodic read of an as-yet-unsent firmware row cannot
     // erase the source data halfway through this transfer.
-    final rowsToSend = bleData.powerTableData
+    final rowsToSend = deviceData.powerTableData
         .map((row) => List<int?>.from(row))
         .toList(growable: false);
-    bleData.isPowerTableTransferInProgress = true;
+    deviceData.isPowerTableTransferInProgress = true;
     try {
       // Send each row of the power table separately
       const int intMinValue = -32768; // INT16_MIN for missing values
@@ -194,10 +194,10 @@ class PowerTableManager {
         List<int> command = [0x02, 0x27, rowIndex, ...rowValue];
 
         try {
-          if (!bleData.isTransportActive) {
+          if (!deviceData.isTransportActive) {
             throw Exception("Device transport disconnected");
           }
-          await bleData.writeCustomCharacteristic(device, command);
+          await deviceData.writeCustomCharacteristic(device, command);
           // Preserve the existing pacing after the acknowledged response.
           await Future.delayed(Duration(milliseconds: 100));
         } catch (e) {
@@ -216,9 +216,9 @@ class PowerTableManager {
       if (hMaxValue != null && hMaxValue != noFirmSupport) {
         try {
           // Find HMax in custom characteristic framework and write to device
-          for (var c in bleData.customCharacteristic) {
+          for (var c in deviceData.customCharacteristic) {
             if (c["vName"] == BLE_hMaxVname) {
-              await bleData.writeToSS2k(device, c, s: hMaxValue);
+              await deviceData.writeToSS2k(device, c, s: hMaxValue);
               break;
             }
           }
@@ -234,14 +234,14 @@ class PowerTableManager {
       // verifying the device accepted the transfer, these responses drive the
       // normal decoder/UI notification path with authoritative table data.
       for (int rowIndex = 0; rowIndex < rowsToSend.length; rowIndex++) {
-        await bleData.requestSetting(
+        await deviceData.requestSetting(
           device,
           powerTableDataVname,
           extraByte: rowIndex,
         );
       }
 
-      final mismatch = _firstMismatchedRow(rowsToSend, bleData.powerTableData);
+      final mismatch = _firstMismatchedRow(rowsToSend, deviceData.powerTableData);
       if (mismatch != null) {
         print('[PowerTable] Readback mismatch on row $mismatch after transfer');
         if (context.mounted) {
@@ -265,7 +265,7 @@ class PowerTableManager {
       }
       return false;
     } finally {
-      bleData.isPowerTableTransferInProgress = false;
+      deviceData.isPowerTableTransferInProgress = false;
     }
   }
 
@@ -287,7 +287,7 @@ class PowerTableManager {
 
   static Future<void> loadPowerTable(
     BuildContext context,
-    BLEData bleData,
+    DeviceData deviceData,
     BluetoothDevice device,
   ) async {
     try {
@@ -405,7 +405,7 @@ class PowerTableManager {
       }
 
       // Load the power table data
-      bleData.powerTableData = List<List<int?>>.from(
+      deviceData.powerTableData = List<List<int?>>.from(
         jsonPowerTableData.map(
           (row) => List<int?>.from(row.map((value) => value as int?)),
         ),
@@ -414,7 +414,7 @@ class PowerTableManager {
       // Send power table data to device
       bool success = await sendPowerTableToDevice(
         context,
-        bleData,
+        deviceData,
         device,
         hMaxValue: hMaxValue,
       );
@@ -561,7 +561,7 @@ class PowerTableManager {
 
   static Future<void> showPowerTableMenu(
     BuildContext context,
-    BLEData bleData,
+    DeviceData deviceData,
     BluetoothDevice device,
   ) async {
     if (!context.mounted) return;
@@ -649,7 +649,7 @@ class PowerTableManager {
 
     switch (action) {
       case 'clear':
-        await bleData.resetPowerTable(device);
+        await deviceData.resetPowerTable(device);
         break;
       case 'save':
         SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -759,17 +759,17 @@ class PowerTableManager {
           },
         );
         if (tableName != null && tableName.isNotEmpty && context.mounted) {
-          await savePowerTable(context, bleData, tableName);
+          await savePowerTable(context, deviceData, tableName);
         }
         break;
       case 'load':
-        await loadPowerTable(context, bleData, device);
+        await loadPowerTable(context, deviceData, device);
         break;
       case 'delete':
         await deletePowerTable(context);
         break;
       case 'test':
-        loadTestData(context, bleData, device);
+        loadTestData(context, deviceData, device);
         break;
       case 'export':
         final nameController = TextEditingController();
@@ -802,11 +802,11 @@ class PowerTableManager {
           },
         );
         if (fileName != null && fileName.isNotEmpty && context.mounted) {
-          await PowerTableSharing.exportPowerTable(context, bleData, fileName);
+          await PowerTableSharing.exportPowerTable(context, deviceData, fileName);
         }
         break;
       case 'import':
-        await PowerTableSharing.importPowerTable(context, bleData, device);
+        await PowerTableSharing.importPowerTable(context, deviceData, device);
         break;
     }
   }

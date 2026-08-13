@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-import '../../utils/bledata.dart';
+import '../../utils/device_data.dart';
 import '../../utils/constants.dart';
 
 /// Inline SSID + password form for the wizard WiFi step.
-/// Writes [ssidVname] and [passwordVname] to the SS2k via [BLEData.writeToSS2k],
+/// Writes [ssidVname] and [passwordVname] to the SS2k via [DeviceData.writeToSS2k],
 /// then triggers [saveVname] to persist to LittleFS.
 class WifiCredentialsForm extends StatefulWidget {
   final BluetoothDevice device;
@@ -19,7 +19,7 @@ class WifiCredentialsForm extends StatefulWidget {
 }
 
 class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
-  late BLEData _bleData;
+  late DeviceData _bleData;
   final TextEditingController _ssidController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _passwordVisible = false;
@@ -29,7 +29,7 @@ class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
   @override
   void initState() {
     super.initState();
-    _bleData = BLEDataManager.forDevice(widget.device);
+    _bleData = DeviceDataManager.forDevice(widget.device);
 
     // Pre-fill from any already-loaded BLE data.
     final ssidMap = _charFor(ssidVname);

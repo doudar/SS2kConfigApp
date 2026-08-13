@@ -11,7 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import './bledata.dart';
+import './device_data.dart';
 import './snackbar.dart';
 import './power_table_management.dart';
 import './constants.dart';
@@ -95,7 +95,7 @@ class PowerTableSharing {
   // Export power table as .ptab file
   static Future<void> exportPowerTable(
     BuildContext context,
-    BLEData bleData,
+    DeviceData deviceData,
     String fileName,
   ) async {
     try {
@@ -103,11 +103,11 @@ class PowerTableSharing {
       final String filePath = '${directory.path}/$fileName.ptab';
 
       // Get HMax value
-      String hMaxValue = bleData.getVnameValue(BLE_hMaxVname);
+      String hMaxValue = deviceData.getVnameValue(BLE_hMaxVname);
 
       // Convert power table to CSV including HMax and save to temporary file
       final String csvContent = convertToCSV(
-        bleData.powerTableData,
+        deviceData.powerTableData,
         hMaxValue != noFirmSupport ? hMaxValue : null,
       );
       await File(filePath).writeAsString(csvContent);
@@ -165,7 +165,7 @@ class PowerTableSharing {
   // Import power table from .ptab file
   static Future<void> importPowerTable(
     BuildContext context,
-    BLEData bleData, [
+    DeviceData deviceData, [
     BluetoothDevice? device,
   ]) async {
     try {
@@ -221,14 +221,14 @@ class PowerTableSharing {
       final String? importedHMax = parsedData['hMax'] as String?;
 
       // Update power table data
-      bleData.powerTableData = importedPowerTable;
+      deviceData.powerTableData = importedPowerTable;
 
       // If device is provided, send the power table to the device
       bool sentToDevice = false;
       if (device != null) {
         sentToDevice = await PowerTableManager.sendPowerTableToDevice(
           context,
-          bleData,
+          deviceData,
           device,
           hMaxValue: importedHMax,
         );
@@ -236,7 +236,7 @@ class PowerTableSharing {
 
       // Save imported table
       if (context.mounted) {
-        await PowerTableManager.savePowerTable(context, bleData, saveName);
+        await PowerTableManager.savePowerTable(context, deviceData, saveName);
 
         // Show appropriate message based on whether the table was sent to device
         if (sentToDevice) {

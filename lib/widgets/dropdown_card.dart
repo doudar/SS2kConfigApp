@@ -9,7 +9,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/constants.dart';
 import '../utils/demo.dart';
 
@@ -30,20 +30,20 @@ class DropdownCard extends StatefulWidget {
 class _DropdownCardState extends State<DropdownCard> {
   List<String> ddItems = [];
   String? selectedValue;
-  late BLEData bleData;
+  late DeviceData deviceData;
   StreamSubscription? _charSubscription;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    deviceData = DeviceDataManager.forDevice(this.widget.device);
     buildDevicesMap();
     selectedValue = ddItems.isNotEmpty ? ddItems[0] : null;
     try {
       // Subscribe to characteristic changes stream instead of direct onValueReceived
       // Listen for changes to the foundDevices characteristic
-      _charSubscription = bleData.characteristicChanges
+      _charSubscription = deviceData.characteristicChanges
           .where((event) => event.vName == foundDevicesVname)
           .listen((event) {
         if (mounted) {
@@ -68,7 +68,7 @@ class _DropdownCardState extends State<DropdownCard> {
     List _items = [];
     ddItems = [this.widget.c["value"]];
     this
-        .bleData
+        .deviceData
         .customCharacteristic
         .forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
 
@@ -108,11 +108,11 @@ class _DropdownCardState extends State<DropdownCard> {
       // Assuming writeToSS2k is your method to handle selection
     });
     //reconnect devices
-    this.bleData.writeToSS2k(this.widget.device, this.widget.c);
+    this.deviceData.writeToSS2k(this.widget.device, this.widget.c);
     this
-        .bleData
+        .deviceData
         .customCharacteristic
-        .forEach((d) => d["vName"] == restartBLEVname ? this.bleData.writeToSS2k(this.widget.device, d, s: "1") : ());
+        .forEach((d) => d["vName"] == restartBLEVname ? this.deviceData.writeToSS2k(this.widget.device, d, s: "1") : ());
   }
 
   Color _getTileColor() {
@@ -249,7 +249,7 @@ class _DropdownCardState extends State<DropdownCard> {
                             onPressed: () async {
                               //Find the save command and execute it
                               await this
-                                  .bleData
+                                  .deviceData
                                   .writeCommand(this.widget.device, scanBLEVname);
                             }),
                       Spacer(),
@@ -265,7 +265,7 @@ class _DropdownCardState extends State<DropdownCard> {
                           onPressed: () async {
                             //Find the save command and execute it
                             await this
-                                .bleData
+                                .deviceData
                                 .writeCommand(this.widget.device, saveVname);
                             if (!mounted) return;
                             Navigator.pop(context);

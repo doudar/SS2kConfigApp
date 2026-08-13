@@ -11,7 +11,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'bleConstants.dart';
-import 'bledata.dart';
+import 'device_data.dart';
 import 'constants.dart';
 import 'ftmsControlPoint.dart';
 
@@ -369,7 +369,7 @@ class CalibrationPhaseTracker {
   /// worth anything:
   ///
   /// * The app cannot tell a real notification from the device's answer to a
-  ///   routine settings poll — `BLEData` emits both identically, and something
+  ///   routine settings poll — `DeviceData` emits both identically, and something
   ///   polls every characteristic every few seconds. So the value has to have
   ///   actually moved off [_hMaxBaseline] to mean anything.
   /// * It only counts once the device's own log says homing began. Before that
@@ -728,13 +728,13 @@ String buildCalibrationReport({
 /// Drives a calibration run and exposes its progress.
 ///
 /// Progress comes from the SmartSpin2k's own log stream, which the app already
-/// receives over the custom characteristic ([BLEData.logStream]). That gives a
+/// receives over the custom characteristic ([DeviceData.logStream]). That gives a
 /// genuine completion signal instead of the fixed wait the old calibration
 /// dialog used — the firmware's per-tap timeout alone is 30 seconds, and each
 /// end stop takes between two and seven taps.
 class CalibrationMonitor extends ChangeNotifier {
   CalibrationMonitor({
-    required this.bleData,
+    required this.deviceData,
     required this.device,
     this.overallTimeout = const Duration(minutes: 8),
     this.stallTimeout = const Duration(seconds: 45),
@@ -743,7 +743,7 @@ class CalibrationMonitor extends ChangeNotifier {
     this.completionGrace = const Duration(seconds: 10),
   });
 
-  final BLEData bleData;
+  final DeviceData deviceData;
   final BluetoothDevice device;
 
   /// Hard ceiling on a run. The firmware's worst case is seven taps at a
@@ -857,7 +857,7 @@ class CalibrationMonitor extends ChangeNotifier {
     _refreshSent = false;
     _logDisableSent = false;
     _tracker.start(
-      hMaxBaseline: int.tryParse(bleData.getVnameValue(BLE_hMaxVname)),
+      hMaxBaseline: int.tryParse(deviceData.getVnameValue(BLE_hMaxVname)),
     );
     notifyListeners();
 
@@ -880,25 +880,25 @@ class CalibrationMonitor extends ChangeNotifier {
       _safeNotify();
     });
 
-    if (bleData.isSimulated) {
+    if (deviceData.isSimulated) {
       _tracker.markRequestSent();
       _runDemoScript();
       return;
     }
 
     // Turn on log streaming for the run; the same toggle the log screen uses.
-    final logCharacteristic = bleData.customCharacteristic.firstWhere(
+    final logCharacteristic = deviceData.customCharacteristic.firstWhere(
       (c) => c["vName"] == BLE_logStreamVname,
       orElse: () => {"vName": BLE_logStreamVname, "value": ""},
     );
     // Set this before awaiting so disposal during the acknowledged write still
     // queues the matching disable behind it.
     _logStreamingStarted = true;
-    await bleData.writeToSS2k(device, logCharacteristic, s: "1");
+    await deviceData.writeToSS2k(device, logCharacteristic, s: "1");
     if (_disposed || !_logStreamingStarted) return;
 
     _tracker.markRequestSent();
-    await bleData.writeFtmsControlPointCommand(
+    await deviceData.writeFtmsControlPointCommand(
       FTMSControlPoint.spinDownCommand(true),
     );
   }
@@ -908,8 +908,8 @@ class CalibrationMonitor extends ChangeNotifier {
     _characteristicSubscription?.cancel();
     _machineStatusSubscription?.cancel();
 
-    _logSubscription = bleData.logStream.listen(_handleLogMessage);
-    _characteristicSubscription = bleData.characteristicChanges.listen((event) {
+    _logSubscription = deviceData.logStream.listen(_handleLogMessage);
+    _characteristicSubscription = deviceData.characteristicChanges.listen((event) {
       final isMax = event.vName == BLE_hMaxVname;
       if (!isMax && event.vName != BLE_hMinVname) return;
 
@@ -924,7 +924,7 @@ class CalibrationMonitor extends ChangeNotifier {
       if (progressed || (_tracker.foundMin, _tracker.foundMax) != before)
         _safeNotify();
     });
-    _machineStatusSubscription = bleData.machineStatusStream.listen((value) {
+    _machineStatusSubscription = deviceData.machineStatusStream.listen((value) {
       if (value.length < 2) return;
       if (value[0] != FTMSStatusOpCodes.SPIN_DOWN_STATUS) return;
       if (_tracker.onSpinDownStatus(value[1])) {
@@ -1004,8 +1004,8 @@ class CalibrationMonitor extends ChangeNotifier {
     _tracker.markRefreshRequested();
 
     unawaited(() async {
-      await bleData.requestSetting(device, BLE_hMinVname);
-      await bleData.requestSetting(device, BLE_hMaxVname);
+      await deviceData.requestSetting(device, BLE_hMinVname);
+      await deviceData.requestSetting(device, BLE_hMaxVname);
     }());
   }
 
@@ -1041,15 +1041,15 @@ class CalibrationMonitor extends ChangeNotifier {
   }
 
   Future<void> _stopLogStreaming() async {
-    if (bleData.isSimulated || !_logStreamingStarted || _logDisableSent) return;
+    if (deviceData.isSimulated || !_logStreamingStarted || _logDisableSent) return;
 
     _logDisableSent = true;
     _logStreamingStarted = false;
-    final logCharacteristic = bleData.customCharacteristic.firstWhere(
+    final logCharacteristic = deviceData.customCharacteristic.firstWhere(
       (c) => c["vName"] == BLE_logStreamVname,
       orElse: () => {"vName": BLE_logStreamVname, "value": ""},
     );
-    await bleData.writeToSS2k(device, logCharacteristic, s: "0");
+    await deviceData.writeToSS2k(device, logCharacteristic, s: "0");
   }
 
   /// Walks the demo device through a plausible run using the firmware's own

@@ -3,7 +3,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2kconfigapp/screens/calibration_screen.dart';
-import 'package:ss2kconfigapp/utils/bledata.dart';
+import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:ss2kconfigapp/widgets/homing_proximity_gauge.dart';
 
@@ -15,14 +15,14 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     device = BluetoothDevice.fromId('AA:BB:CC:DD:EE:01');
-    final bleData = BLEDataManager.forDevice(device)..isSimulated = true;
-    bleData.customCharacteristic.firstWhere(
+    final deviceData = DeviceDataManager.forDevice(device)..isSimulated = true;
+    deviceData.customCharacteristic.firstWhere(
       (c) => c['vName'] == homingSensitivityVname,
     )['value'] = '50';
   });
 
   tearDown(() {
-    BLEDataManager.clearDataForDevice(device);
+    DeviceDataManager.clearDataForDevice(device);
   });
 
   Future<void> pumpScreen(WidgetTester tester) async {
@@ -106,7 +106,7 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'calibration_setup': 'physicalStops',
     });
-    BLEDataManager.forDevice(device).customCharacteristic.firstWhere(
+    DeviceDataManager.forDevice(device).customCharacteristic.firstWhere(
       (c) => c['vName'] == homingSensitivityVname,
     )['value'] = null;
 

@@ -8,7 +8,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import './bledata.dart';
+import './device_data.dart';
 import './snackbar.dart';
 import './extra.dart';
 import './constants.dart';
@@ -16,7 +16,7 @@ import './constants.dart';
 import './preset_sharing.dart';
 
 class PresetManager {
-  static Future<void> savePreset(BuildContext context, BLEData bleData, String presetName) async {
+  static Future<void> savePreset(BuildContext context, DeviceData deviceData, String presetName) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       List<String> presetsList = prefs.getStringList('backups_list') ?? [];
@@ -25,7 +25,7 @@ class PresetManager {
       
       // Filter out non-encodable objects like SettingType enum and only save vName/value
       List<Map<String, dynamic>> saveableData = [];
-      for (var item in bleData.customCharacteristic) {
+      for (var item in deviceData.customCharacteristic) {
         if (item.containsKey('vName') && item.containsKey('value')) {
           saveableData.add({
             'vName': item['vName'],
@@ -51,7 +51,7 @@ class PresetManager {
     }
   }
 
-  static Future<void> loadPreset(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static Future<void> loadPreset(BuildContext context, DeviceData deviceData, BluetoothDevice device) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       List<String> presetsList = prefs.getStringList('backups_list') ?? [];
@@ -89,7 +89,7 @@ class PresetManager {
                         if (presetData != null) {
                           try {
                             List<dynamic> settings = jsonDecode(presetData);
-                            await _showPresetDetails(context, presetName, settings, bleData);
+                            await _showPresetDetails(context, presetName, settings, deviceData);
                           } catch (e) {
                             debugPrint("Error viewing preset: $e");
                           }
@@ -152,7 +152,7 @@ class PresetManager {
         if (loadedItem is Map && loadedItem.containsKey("vName") && loadedItem.containsKey("value")) {
           // Find matching item in current configuration
           try {
-             var matchingItems = bleData.customCharacteristic.where(
+             var matchingItems = deviceData.customCharacteristic.where(
               (item) => item["vName"] == loadedItem["vName"]
             );
             
@@ -167,7 +167,7 @@ class PresetManager {
         }
       }
 
-      await bleData.saveAllSettings(device);
+      await deviceData.saveAllSettings(device);
       
       if (context.mounted) {
         Snackbar.show(ABC.c, "Preset loaded and saved to device", success: true);
@@ -262,7 +262,7 @@ class PresetManager {
     }
   }
 
-  static Future<void> showPresetsMenu(BuildContext context, BLEData bleData, BluetoothDevice device) async {
+  static Future<void> showPresetsMenu(BuildContext context, DeviceData deviceData, BluetoothDevice device) async {
     if (!context.mounted) return;
 
     String? action = await showDialog<String>(
@@ -364,7 +364,7 @@ class PresetManager {
         
         if (confirmed == true && context.mounted) {
           try {
-            await bleData.resetToDefaults(device);
+            await deviceData.resetToDefaults(device);
             // Reconnect logic from resetToDefaults might clear logs/state, wait for a bit
              await Future.delayed(Duration(seconds: 1));
              // Trigger a refresh/connect cycle properly
@@ -471,11 +471,11 @@ class PresetManager {
           },
         );
         if (presetName != null && presetName.isNotEmpty && context.mounted) {
-          await savePreset(context, bleData, presetName);
+          await savePreset(context, deviceData, presetName);
         }
         break;
       case 'load':
-        await loadPreset(context, bleData, device);
+        await loadPreset(context, deviceData, device);
         break;
       case 'delete':
         await deletePreset(context);
@@ -510,22 +510,22 @@ class PresetManager {
           },
         );
         if (fileName != null && fileName.isNotEmpty && context.mounted) {
-          await PresetSharing.exportPreset(context, bleData, fileName);
+          await PresetSharing.exportPreset(context, deviceData, fileName);
         }
         break;
       case 'import':
-        await PresetSharing.importPreset(context, bleData, device);
+        await PresetSharing.importPreset(context, deviceData, device);
         break;
     }
   }
 
-  static Future<void> _showPresetDetails(BuildContext context, String name, List<dynamic> savedSettings, BLEData bleData) async {
+  static Future<void> _showPresetDetails(BuildContext context, String name, List<dynamic> savedSettings, DeviceData deviceData) async {
     List<Map<String, dynamic>> displaySettings = [];
     
     for (var savedItem in savedSettings) {
       if (savedItem is Map && savedItem.containsKey('vName')) {
         // Find matching current config to get readable name
-        var matchingItems = bleData.customCharacteristic.where(
+        var matchingItems = deviceData.customCharacteristic.where(
             (c) => c['vName'] == savedItem['vName']);
         var currentItem = matchingItems.isNotEmpty ? matchingItems.first : null;
 

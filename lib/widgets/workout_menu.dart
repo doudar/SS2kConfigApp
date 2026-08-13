@@ -11,7 +11,7 @@ import '../utils/workout/workout_file_manager.dart';
 import '../utils/workout/workout_tts_settings.dart';
 import '../utils/workout/workout_text_event_overlay.dart';
 import '../utils/workout/workout_parser.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/workout/workout_connected_accounts.dart';
 import 'workout_library.dart';
 import 'audio_coach_dialog.dart';
@@ -28,7 +28,7 @@ class WorkoutMenu extends StatelessWidget {
   const WorkoutMenu({
     super.key,
     required this.workoutController,
-    required this.bleData,
+    required this.deviceData,
     required this.device,
     required this.ttsSettings,
     required this.workoutGraphKey,
@@ -36,7 +36,7 @@ class WorkoutMenu extends StatelessWidget {
   });
 
   final WorkoutController workoutController;
-  final BLEData bleData;
+  final DeviceData deviceData;
   final BluetoothDevice device;
   final WorkoutTTSSettings ttsSettings;
   final GlobalKey workoutGraphKey;

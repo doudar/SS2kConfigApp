@@ -16,7 +16,7 @@ import "../widgets/bool_card.dart";
 import "../widgets/plain_text_card.dart";
 import '../widgets/dropdown_card.dart';
 
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/stream_extensions.dart';
 
 class SettingTile extends StatefulWidget {
@@ -102,14 +102,14 @@ class SettingEditor extends StatelessWidget {
 class _SettingTileState extends State<SettingTile> {
   late String text = this.c["value"].toString();
   StreamSubscription? _charSubscription;
-  late BLEData bleData;
+  late DeviceData deviceData;
   Map get c => this.widget.c;
   late String _value;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    deviceData = DeviceDataManager.forDevice(this.widget.device);
     _value = valueFormatter();
     startSubscription();
   }
@@ -121,10 +121,10 @@ class _SettingTileState extends State<SettingTile> {
   }
 
   Future startSubscription() async {
-    if (this.bleData.charReceived.value) {
+    if (this.deviceData.charReceived.value) {
       try {
         // Subscribe to characteristic changes stream instead of direct onValueReceived
-        _charSubscription = bleData.characteristicChanges
+        _charSubscription = deviceData.characteristicChanges
             .where((event) => event.vName == c["vName"])
             .debounce(const Duration(milliseconds: 100))
             .listen((event) {

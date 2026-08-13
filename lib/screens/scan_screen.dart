@@ -16,7 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../utils/constants.dart';
 import 'main_device_screen.dart';
 import '../utils/snackbar.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../widgets/scan_result_tile.dart';
 import '../widgets/theme_cycle_button.dart';
 import '../utils/demo.dart';
@@ -116,23 +116,23 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Future<void> onConnectPressed(ScanResult result) async {
     final device = result.device;
-    final bleData = BLEDataManager.forDevice(device);
-    bleData.advertisedIpAddress = SmartSpinAdvertisement.ipAddress(
+    final deviceData = DeviceDataManager.forDevice(device);
+    deviceData.advertisedIpAddress = SmartSpinAdvertisement.ipAddress(
       result.advertisementData.manufacturerData,
     );
     try {
       // Reset the user disconnect flag if triggered
-      if (bleData.isUserDisconnect) {
-        bleData.isUserDisconnect = false;
+      if (deviceData.isUserDisconnect) {
+        deviceData.isUserDisconnect = false;
       }
     } catch (e) {
-      print("Device BLEData was not initialized: $e");
+      print("Device DeviceData was not initialized: $e");
     }
     if (FlutterBluePlus.isScanningNow) {
       await FlutterBluePlus.stopScan();
     }
     unawaited(
-      bleData.connectPreferred(device).catchError((Object e) {
+      deviceData.connectPreferred(device).catchError((Object e) {
         Snackbar.show(
           ABC.c,
           prettyException("Connect Error:", e),

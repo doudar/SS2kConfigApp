@@ -610,7 +610,7 @@ void main() {
   });
 
   // The timer that calls this lives in CalibrationMonitor, which needs a live
-  // BLEData and BluetoothDevice; the decision it makes is all here.
+  // DeviceData and BluetoothDevice; the decision it makes is all here.
   group('completing without a closing word', () {
     test('the max end stop alone is enough once nothing else is coming', () {
       startRequest(hMaxBaseline: 27000);
@@ -1150,7 +1150,7 @@ void main() {
     });
 
     test('an empty string counts as unknown, not a blank field', () {
-      // bleData.firmwareVersion starts life as "" before the device answers.
+      // deviceData.firmwareVersion starts life as "" before the device answers.
       expect(
         report(firmwareVersion: '', homingForce: '').split('\n'),
         containsAll([

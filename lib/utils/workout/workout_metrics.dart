@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../bledata.dart';
+import '../device_data.dart';
 import 'workout_constants.dart';
 import 'workout_metric_row.dart';
 
 class WorkoutMetrics extends StatelessWidget {
-  final BLEData bleData;
+  final DeviceData deviceData;
   final Animation<double> fadeAnimation;
   final int elapsedTime;
   final int timeToNextSegment;
@@ -16,7 +16,7 @@ class WorkoutMetrics extends StatelessWidget {
 
   const WorkoutMetrics({
     Key? key,
-    required this.bleData,
+    required this.deviceData,
     required this.fadeAnimation,
     required this.elapsedTime,
     required this.timeToNextSegment,
@@ -31,15 +31,15 @@ class WorkoutMetrics extends StatelessWidget {
   Widget build(BuildContext context) {
     final metrics = [
       WorkoutMetric.elapsedTime(seconds: elapsedTime),
-      WorkoutMetric.power(watts: bleData.ftmsData.watts),
+      WorkoutMetric.power(watts: deviceData.ftmsData.watts),
       WorkoutMetric(
         label: 'Target',
-        value: bleData.ftmsData.targetERG.toString(),
+        value: deviceData.ftmsData.targetERG.toString(),
         unit: 'W',
       ),
-      WorkoutMetric.cadence(rpm: bleData.ftmsData.cadence),
-      if (bleData.ftmsData.heartRate != 0)
-        WorkoutMetric.heartRate(bpm: bleData.ftmsData.heartRate),
+      WorkoutMetric.cadence(rpm: deviceData.ftmsData.cadence),
+      if (deviceData.ftmsData.heartRate != 0)
+        WorkoutMetric.heartRate(bpm: deviceData.ftmsData.heartRate),
       WorkoutMetric.speed(mph: speedMph ?? 0.0),
       WorkoutMetric.distance(miles: (totalDistance ?? 0.0) / 1609.34),
       WorkoutMetric(

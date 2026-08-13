@@ -9,7 +9,7 @@ import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/power_table_chart.dart';
@@ -23,7 +23,7 @@ class ShifterScreen extends StatefulWidget {
 }
 
 class _ShifterScreenState extends State<ShifterScreen> {
-  late BLEData bleData;
+  late DeviceData deviceData;
   late ValueNotifier<String> _displayedShifterValue;
   Map<String, dynamic> _shifterCharacteristic = const {};
   String? _confirmedShifterValue;
@@ -45,22 +45,22 @@ class _ShifterScreenState extends State<ShifterScreen> {
     super.initState();
     // Keep the shifter screen awake during use, matching workout behavior.
     WakelockPlus.enable();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    deviceData = DeviceDataManager.forDevice(this.widget.device);
     _displayedShifterValue = ValueNotifier("Connecting");
     _syncShifterValueFromCache();
-    _lastConnectionState = bleData.isTransportActive
+    _lastConnectionState = deviceData.isTransportActive
         ? BluetoothConnectionState.connected
         : BluetoothConnectionState.disconnected;
 
     //special setup for demo mode
-    if (bleData.isSimulated) {
+    if (deviceData.isSimulated) {
       _displayedShifterValue.value = "0";
       return;
     }
 
     // Subscribe before requesting so a fast response cannot be missed.
     _subscribeToDeviceUpdates();
-    unawaited(bleData.updateIndoorBikeData(widget.device));
+    unawaited(deviceData.updateIndoorBikeData(widget.device));
     unawaited(_refreshAuthoritativeShifterValue());
   }
 
@@ -91,7 +91,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   }
 
   void _syncShifterValueFromCache() {
-    _shifterCharacteristic = this.bleData.customCharacteristic.firstWhere(
+    _shifterCharacteristic = this.deviceData.customCharacteristic.firstWhere(
       (i) => i["vName"] == shifterPositionVname,
       orElse: () => <String, dynamic>{},
     );
@@ -101,17 +101,17 @@ class _ShifterScreenState extends State<ShifterScreen> {
   }
 
   Future<void> _refreshAuthoritativeShifterValue() async {
-    if (!mounted || !bleData.isTransportActive) return;
+    if (!mounted || !deviceData.isTransportActive) return;
     // The write pathway ensures notifications are active before sending, so
     // this request can enter the BLE queue immediately on screen entry.
-    await bleData.requestSetting(widget.device, shifterPositionVname);
+    await deviceData.requestSetting(widget.device, shifterPositionVname);
   }
 
   void _subscribeToDeviceUpdates() {
     _connectionStateSubscription = this.widget.device.connectionState.listen((
       state,
     ) {
-      if (bleData.isDirConConnected) return;
+      if (deviceData.isDirConConnected) return;
       final previousState = _lastConnectionState;
       _lastConnectionState = state;
 
@@ -126,7 +126,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
       }
     });
 
-    _characteristicChangeSubscription = bleData.characteristicChanges.listen((
+    _characteristicChangeSubscription = deviceData.characteristicChanges.listen((
       event,
     ) {
       if (!mounted) return;
@@ -137,8 +137,8 @@ class _ShifterScreenState extends State<ShifterScreen> {
       }
 
       // Keep simulated watts in sync with FTMS mode, matching the live updates used by the power table chart
-      if (bleData.FTMSmode == 0 || bleData.simulateTargetWatts == false) {
-        bleData.simulatedTargetWatts = "";
+      if (deviceData.FTMSmode == 0 || deviceData.simulateTargetWatts == false) {
+        deviceData.simulatedTargetWatts = "";
       }
     });
   }
@@ -148,7 +148,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
     int generation,
   ) async {
     try {
-      await bleData.writeToSS2k(widget.device, shiftValue);
+      await deviceData.writeToSS2k(widget.device, shiftValue);
     } finally {
       if (generation != _shiftGeneration) return;
       if (_pendingShiftWrites > 0) {
@@ -247,7 +247,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
                     child: PowerTableChart(
                       key: _chartKey,
                       device: widget.device,
-                      bleData: bleData,
+                      deviceData: deviceData,
                       pollTargetPosition: false,
                       initialDataLoadDelay: const Duration(seconds: 15),
                     ),
@@ -271,20 +271,20 @@ class _ShifterScreenState extends State<ShifterScreen> {
                     children: [
                       SizedBox(height: 8),
                       StreamBuilder<CharacteristicChangeEvent>(
-                        stream: bleData.characteristicChanges,
+                        stream: deviceData.characteristicChanges,
                         builder: (context, snapshot) {
                           return SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: <Widget>[
-                                if (bleData.simulatedTargetWatts != "")
+                                if (deviceData.simulatedTargetWatts != "")
                                   Padding(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 8.0,
                                     ),
                                     child: MetricBox(
-                                      value: bleData.simulatedTargetWatts
+                                      value: deviceData.simulatedTargetWatts
                                           .toString(),
                                       label: 'Target Watts',
                                     ),
@@ -294,7 +294,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
                                     horizontal: 8.0,
                                   ),
                                   child: MetricBox(
-                                    value: bleData.ftmsData.watts.toString(),
+                                    value: deviceData.ftmsData.watts.toString(),
                                     label: 'Watts',
                                   ),
                                 ),
@@ -303,17 +303,17 @@ class _ShifterScreenState extends State<ShifterScreen> {
                                     horizontal: 8.0,
                                   ),
                                   child: MetricBox(
-                                    value: bleData.ftmsData.cadence.toString(),
+                                    value: deviceData.ftmsData.cadence.toString(),
                                     label: 'RPM',
                                   ),
                                 ),
-                                if (bleData.ftmsData.heartRate != 0)
+                                if (deviceData.ftmsData.heartRate != 0)
                                   Padding(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 8.0,
                                     ),
                                     child: MetricBox(
-                                      value: bleData.ftmsData.heartRate
+                                      value: deviceData.ftmsData.heartRate
                                           .toString(),
                                       label: 'BPM',
                                     ),

@@ -9,7 +9,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/constants.dart';
 
 class DeviceHeader extends StatefulWidget {
@@ -33,7 +33,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   Timer rssiTimer = Timer(Duration(seconds: 0), () {});
   Timer setupTimer = Timer(Duration(seconds: 0), () {});
-  late BLEData bleData;
+  late DeviceData deviceData;
   bool _isRefreshing = false;
   String _fwVersion = "";
   VoidCallback? _firmwareVersionListener;
@@ -42,27 +42,27 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    deviceData = DeviceDataManager.forDevice(this.widget.device);
     _onReconnectedCallback = _handleReconnected;
 
     // Listen for firmware version changes to automatically update the UI
     _firmwareVersionListener = () {
       if (mounted) {
         setState(() {
-          _fwVersion = bleData.firmwareVersion.value;
+          _fwVersion = deviceData.firmwareVersion.value;
         });
       }
     };
-    bleData.firmwareVersion.addListener(_firmwareVersionListener!);
+    deviceData.firmwareVersion.addListener(_firmwareVersionListener!);
 
     // Initialize firmware version
-    _fwVersion = bleData.firmwareVersion.value.isEmpty
+    _fwVersion = deviceData.firmwareVersion.value.isEmpty
         ? "Connecting Please Wait..."
-        : bleData.firmwareVersion.value;
+        : deviceData.firmwareVersion.value;
 
     // Start the centralized auto-reconnect monitor.
     // The onReconnected callback handles UI-specific refresh after reconnecting.
-    bleData.startConnectionMonitor(
+    deviceData.startConnectionMonitor(
       this.widget.device,
       onReconnected: _onReconnectedCallback,
     );
@@ -71,24 +71,24 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     _connectionStateSubscription ??= this.widget.device.connectionState.listen((
       state,
     ) async {
-      if (this.bleData.isDirConConnected) return;
-      this.bleData.connectionState = state;
+      if (this.deviceData.isDirConConnected) return;
+      this.deviceData.connectionState = state;
       if (state == BluetoothConnectionState.connected) {
-        this.bleData.rssi.value = await this.widget.device.readRssi();
+        this.deviceData.rssi.value = await this.widget.device.readRssi();
         if (widget.customRefreshEnabled) {
           if (widget.firmwareOnlyRefresh) {
-            await this.bleData.ensureCustomCharacteristicStream(
+            await this.deviceData.ensureCustomCharacteristicStream(
               this.widget.device,
             );
           } else {
-            await this.bleData.setupConnection(this.widget.device);
+            await this.deviceData.setupConnection(this.widget.device);
           }
           if (!_isRefreshing) {
             await _refreshDeviceInfo();
           }
         }
       } else {
-        this.bleData.rssi.value = 0;
+        this.deviceData.rssi.value = 0;
       }
       if (mounted) {
         setState(() {});
@@ -107,14 +107,14 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       await Future.delayed(Duration(seconds: 1));
 
       if (widget.firmwareOnlyRefresh) {
-        await bleData.ensureCustomCharacteristicStream(widget.device);
+        await deviceData.ensureCustomCharacteristicStream(widget.device);
       } else {
-        await bleData.setupConnection(
+        await deviceData.setupConnection(
           widget.device,
           forceRefresh: forceRefresh,
         );
       }
-      await bleData.requestSetting(this.widget.device, fwVname);
+      await deviceData.requestSetting(this.widget.device, fwVname);
     } catch (e) {
       print('Error refreshing device info: $e');
     } finally {
@@ -126,11 +126,11 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   void dispose() {
     _connectionStateSubscription?.cancel();
     _connectionStateSubscription = null;
-    bleData.stopConnectionMonitor(onReconnected: _onReconnectedCallback);
+    deviceData.stopConnectionMonitor(onReconnected: _onReconnectedCallback);
     rssiTimer.cancel();
     setupTimer.cancel();
     if (_firmwareVersionListener != null) {
-      bleData.firmwareVersion.removeListener(_firmwareVersionListener!);
+      deviceData.firmwareVersion.removeListener(_firmwareVersionListener!);
     }
     super.dispose();
   }
@@ -138,7 +138,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Future<void> _handleReconnected() async {
     if (!mounted) return;
     if (this.widget.device.isConnected) {
-      this.bleData.rssi.value = await this.widget.device.readRssi();
+      this.deviceData.rssi.value = await this.widget.device.readRssi();
     }
     if (widget.customRefreshEnabled && !_isRefreshing) {
       await _refreshDeviceInfo();
@@ -153,8 +153,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     });
     // Keep monitoring FTMS health without repeatedly restarting GATT setup.
     setupTimer = Timer.periodic(Duration(seconds: 5), (timer) async {
-      if (mounted && bleData.isTransportActive) {
-        await bleData.checkFtmsHealth(this.widget.device);
+      if (mounted && deviceData.isTransportActive) {
+        await deviceData.checkFtmsHealth(this.widget.device);
       }
     });
   }
@@ -162,30 +162,30 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Future<void> _updateRssi() async {
     if (this.widget.device.isConnected) {
       try {
-        this.bleData.rssi.value = await this.widget.device.readRssi();
+        this.deviceData.rssi.value = await this.widget.device.readRssi();
       } catch (e) {
-        this.bleData.rssi.value = 0;
+        this.deviceData.rssi.value = 0;
       }
     } else {
-      this.bleData.rssi.value = 0;
+      this.deviceData.rssi.value = 0;
     }
-    if (widget.customRefreshEnabled && bleData.isTransportActive) {
-      bleData.requestSetting(this.widget.device, fwVname);
+    if (widget.customRefreshEnabled && deviceData.isTransportActive) {
+      deviceData.requestSetting(this.widget.device, fwVname);
     }
     // No need for manual setState here anymore - the listener handles
     // firmware version updates on either transport.
   }
 
   bool get isConnected {
-    return this.bleData.isTransportActive;
+    return this.deviceData.isTransportActive;
   }
 
   Future onConnectPressed() async {
     // Reset user disconnect flag when connecting
-    this.bleData.isUserDisconnect = false;
+    this.deviceData.isUserDisconnect = false;
 
     try {
-      await this.bleData.connectPreferred(this.widget.device);
+      await this.deviceData.connectPreferred(this.widget.device);
       Snackbar.show(ABC.c, "Connect: Success", success: true);
     } catch (e) {
       if (e is FlutterBluePlusException &&
@@ -203,7 +203,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
   Future onDisconnectPressed() async {
     try {
-      await this.bleData.disconnectPreferred(this.widget.device);
+      await this.deviceData.disconnectPreferred(this.widget.device);
       Snackbar.show(ABC.c, "Disconnect: Success", success: true);
     } catch (e) {
       Snackbar.show(
@@ -229,7 +229,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
   Future onRebootPressed() async {
     try {
-      await this.bleData.reboot(this.widget.device);
+      await this.deviceData.reboot(this.widget.device);
       Snackbar.show(ABC.a, "SmartSpin2k is rebooting", success: true);
       // Do not treat a reboot as a user-requested disconnect. In particular,
       // closing a DIRCON socket here sets [isUserDisconnect], then reconnects
@@ -263,7 +263,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     IconData iconData;
     Color iconColor;
 
-    if (bleData.isDirConConnected) {
+    if (deviceData.isDirConConnected) {
       // DIRCON is a network transport and has no meaningful BLE RSSI. Use a
       // clearly different connected-cable symbol instead of implying that the
       // network session has no signal.
@@ -340,10 +340,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
               ),
               alignment: Alignment.center,
               child: ValueListenableBuilder<int>(
-                valueListenable: bleData.transportRevision,
+                valueListenable: deviceData.transportRevision,
                 builder: (context, _, _) {
                   return ValueListenableBuilder<int>(
-                    valueListenable: bleData.rssi,
+                    valueListenable: deviceData.rssi,
                     builder: (context, rssi, _) {
                       return _buildSignalStrengthIcon(rssi);
                     },

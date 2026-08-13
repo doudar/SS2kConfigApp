@@ -9,7 +9,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/constants.dart';
 
 
@@ -22,14 +22,14 @@ class boolCard extends StatefulWidget {
 }
 
 class _boolCardState extends State<boolCard> {
-  late BLEData bleData;
+  late DeviceData deviceData;
   StreamSubscription<CharacteristicChangeEvent>? _charSubscription;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
-    _charSubscription = bleData.characteristicChanges
+    deviceData = DeviceDataManager.forDevice(this.widget.device);
+    _charSubscription = deviceData.characteristicChanges
         .where((event) => event.vName == widget.c["vName"])
         .listen((event) {
       if (mounted) setState(() {});
@@ -103,7 +103,7 @@ class _boolCardState extends State<boolCard> {
                 inactiveTrackColor: Colors.black26,
                 onChanged: (b) {
                   this.widget.c["value"] = b.toString();
-                  this.bleData.writeToSS2k(this.widget.device, this.widget.c);
+                  this.deviceData.writeToSS2k(this.widget.device, this.widget.c);
                   setState(() {});
                   return this.widget.c["value"];
                 },
@@ -123,7 +123,7 @@ class _boolCardState extends State<boolCard> {
                       onPressed: () async {
                         //Find the save command and execute it
                         await this
-                            .bleData
+                            .deviceData
                             .writeCommand(this.widget.device, saveVname);
                         if (!mounted) return;
                         Navigator.pop(context);

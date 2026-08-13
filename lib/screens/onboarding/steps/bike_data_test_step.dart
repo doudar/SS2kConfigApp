@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
-import '../../../utils/bledata.dart';
+import '../../../utils/device_data.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../widgets/onboarding/instruction_step_card.dart';
 
@@ -39,10 +39,10 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
     final device = session.connectedDevice;
     if (device == null) return;
 
-    final bleData = BLEDataManager.forDevice(device);
-    _charSubscription = bleData.characteristicChanges.listen((event) {
+    final deviceData = DeviceDataManager.forDevice(device);
+    _charSubscription = deviceData.characteristicChanges.listen((event) {
       if (!mounted) return;
-      final ftms = bleData.ftmsData;
+      final ftms = deviceData.ftmsData;
       setState(() {
         _lastWatts = ftms.watts;
         _lastCadence = ftms.cadence;

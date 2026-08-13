@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
-import 'package:ss2kconfigapp/utils/bledata.dart';
+import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -34,10 +34,10 @@ void main() {
 ''';
 
     final mockDevice = BluetoothDevice.fromId('00:00:00:00:00:00');
-    final bleData = BLEDataManager.forDevice(mockDevice);
-    bleData.ftmsData = FtmsData();
+    final deviceData = DeviceDataManager.forDevice(mockDevice);
+    deviceData.ftmsData = FtmsData();
     
-    final workoutController = WorkoutController(bleData, mockDevice);
+    final workoutController = WorkoutController(deviceData, mockDevice);
     
     // Wait for async initialization to complete
     await Future.delayed(const Duration(milliseconds: 100));
@@ -62,10 +62,10 @@ void main() {
     // - No time drift from system overhead
     
     final mockDevice = BluetoothDevice.fromId('00:00:00:00:00:01');
-    final bleData = BLEDataManager.forDevice(mockDevice);
-    bleData.ftmsData = FtmsData();
+    final deviceData = DeviceDataManager.forDevice(mockDevice);
+    deviceData.ftmsData = FtmsData();
     
-    final workoutController = WorkoutController(bleData, mockDevice);
+    final workoutController = WorkoutController(deviceData, mockDevice);
     
     // Initially, workout should have no track points
     expect(workoutController.trackPoints, isEmpty);
@@ -91,10 +91,10 @@ void main() {
 ''';
 
     final mockDevice = BluetoothDevice.fromId('00:00:00:00:00:02');
-    final bleData = BLEDataManager.forDevice(mockDevice);
-    bleData.ftmsData = FtmsData();
+    final deviceData = DeviceDataManager.forDevice(mockDevice);
+    deviceData.ftmsData = FtmsData();
     
-    final workoutController = WorkoutController(bleData, mockDevice);
+    final workoutController = WorkoutController(deviceData, mockDevice);
     
     // Wait for async initialization to complete
     await Future.delayed(const Duration(milliseconds: 100));
@@ -148,10 +148,10 @@ void main() {
     // Total: 1800s (30 min), Segments: 0-600s, 600-900s, 900-1500s, 1500-1800s
 
     final mockDevice = BluetoothDevice.fromId('00:00:00:00:00:03');
-    final bleData = BLEDataManager.forDevice(mockDevice);
-    bleData.ftmsData = FtmsData();
+    final deviceData = DeviceDataManager.forDevice(mockDevice);
+    deviceData.ftmsData = FtmsData();
     
-    final workoutController = WorkoutController(bleData, mockDevice);
+    final workoutController = WorkoutController(deviceData, mockDevice);
     
     // Wait for async initialization
     await Future.delayed(const Duration(milliseconds: 100));

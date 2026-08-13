@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../../../utils/constants.dart';
-import '../../../utils/bledata.dart';
+import '../../../utils/device_data.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
@@ -25,9 +25,9 @@ class _MotorTestStepState extends State<MotorTestStep> {
     if (device == null) return;
 
     setState(() => _testRunning = true);
-    final bleData = BLEDataManager.forDevice(device);
+    final deviceData = DeviceDataManager.forDevice(device);
 
-    var c = bleData.customCharacteristic.firstWhere(
+    var c = deviceData.customCharacteristic.firstWhere(
       (i) => i['vName'] == shifterPositionVname,
       orElse: () => <String, dynamic>{},
     );
@@ -38,7 +38,7 @@ class _MotorTestStepState extends State<MotorTestStep> {
       // Two upshifts then two downshifts, matching the shifter screen's write path
       for (final delta in [1, 2, 1, 0]) {
         c = Map<String, Object>.from(c)..['value'] = (base + delta).toString();
-        bleData.writeToSS2k(device, c);
+        deviceData.writeToSS2k(device, c);
         await Future.delayed(const Duration(milliseconds: 800));
       }
     }

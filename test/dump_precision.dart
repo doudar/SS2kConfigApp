@@ -1,17 +1,17 @@
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ss2kconfigapp/utils/bledata.dart';
+import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 void main() {
   test('Dump characteristics precision', () {
     final device = BluetoothDevice.fromId("00:00:00:00:00:00");
-    final bleData = BLEDataManager.forDevice(device);
+    final deviceData = DeviceDataManager.forDevice(device);
     
     // customCharacteristicFramework is List<dynamic> (maps)
     for (var c in customCharacteristicFramework) {
-      int prec = bleData.getPrecision(c);
+      int prec = deviceData.getPrecision(c);
       print("Name: ${c['humanReadableName']}, Type: ${c['type']}, Precision: $prec");
       
       if (c['type'] == 'float' && prec == 0) {

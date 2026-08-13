@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/constants.dart';
 import '../widgets/ss2k_app_bar.dart';
 
@@ -23,7 +23,7 @@ class BleLogScreen extends StatefulWidget {
 }
 
 class _BleLogScreenState extends State<BleLogScreen> {
-  late BLEData bleData;
+  late DeviceData deviceData;
   late Map logCharacteristic;
   final List<String> _logMessages = [];
   final ScrollController _scrollController = ScrollController();
@@ -38,26 +38,26 @@ class _BleLogScreenState extends State<BleLogScreen> {
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(widget.device);
+    deviceData = DeviceDataManager.forDevice(widget.device);
     _onReconnectedCallback = _handleReconnected;
 
     // Find the log characteristic
-    logCharacteristic = bleData.customCharacteristic.firstWhere(
+    logCharacteristic = deviceData.customCharacteristic.firstWhere(
       (i) => i["vName"] == BLE_logStreamVname,
       orElse: () => {"vName": BLE_logStreamVname, "value": ""},
     );
 
     // Setup subscriptions
-    if (bleData.isSimulated) {
+    if (deviceData.isSimulated) {
       _setupDemoMode();
     } else {
       _setupSubscriptions();
-      bleData.startConnectionMonitor(
+      deviceData.startConnectionMonitor(
         widget.device,
         onReconnected: _onReconnectedCallback,
       );
       _connectionSubscription = widget.device.connectionState.listen((state) {
-        if (bleData.isDirConConnected) return;
+        if (deviceData.isDirConConnected) return;
         if (state == BluetoothConnectionState.disconnected) {
           _loggingEnabled = false;
         } else if (state == BluetoothConnectionState.connected &&
@@ -73,7 +73,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
   }
 
   Future<void> _enableLogStreaming() async {
-    if (bleData.isSimulated ||
+    if (deviceData.isSimulated ||
         !_wantsLogStreaming ||
         _loggingEnabled ||
         _enableInProgress)
@@ -81,10 +81,10 @@ class _BleLogScreenState extends State<BleLogScreen> {
 
     _enableInProgress = true;
     try {
-      await bleData.ensureCustomCharacteristicStream(widget.device);
-      if (!_wantsLogStreaming || !bleData.isTransportActive) return;
-      await bleData.writeToSS2k(widget.device, logCharacteristic, s: "1");
-      if (_wantsLogStreaming && bleData.isTransportActive) {
+      await deviceData.ensureCustomCharacteristicStream(widget.device);
+      if (!_wantsLogStreaming || !deviceData.isTransportActive) return;
+      await deviceData.writeToSS2k(widget.device, logCharacteristic, s: "1");
+      if (_wantsLogStreaming && deviceData.isTransportActive) {
         _loggingEnabled = true;
         if (mounted) setState(() {});
       }
@@ -95,9 +95,9 @@ class _BleLogScreenState extends State<BleLogScreen> {
 
   Future<void> _disableLogStreaming() async {
     _loggingEnabled = false;
-    if (bleData.isSimulated || !bleData.isTransportActive) return;
+    if (deviceData.isSimulated || !deviceData.isTransportActive) return;
 
-    await bleData.writeToSS2k(widget.device, logCharacteristic, s: "0");
+    await deviceData.writeToSS2k(widget.device, logCharacteristic, s: "0");
   }
 
   Future<void> _handleReconnected() async {
@@ -123,7 +123,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
 
   void _setupSubscriptions() {
     // Subscribe directly to the log stream to catch every message
-    _logSubscription = bleData.logStream.listen((message) {
+    _logSubscription = deviceData.logStream.listen((message) {
       if (!mounted) return;
 
       String newMessage = message;
@@ -149,7 +149,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
     _demoTimer?.cancel();
     _logSubscription?.cancel();
     _connectionSubscription?.cancel();
-    bleData.stopConnectionMonitor(onReconnected: _onReconnectedCallback);
+    deviceData.stopConnectionMonitor(onReconnected: _onReconnectedCallback);
     _scrollController.dispose();
     super.dispose();
   }
@@ -272,7 +272,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
                         child: Text(
                           _loggingEnabled
                               ? 'Log streaming is active'
-                              : bleData.isTransportActive
+                              : deviceData.isTransportActive
                               ? 'Activating log streaming...'
                               : 'Reconnecting to SmartSpin2k...',
                           style: Theme.of(context).textTheme.bodyMedium,
@@ -310,7 +310,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
                       ),
                     ],
                   ),
-                  if (!bleData.isTransportActive && !bleData.isSimulated)
+                  if (!deviceData.isTransportActive && !deviceData.isSimulated)
                     Padding(
                       padding: EdgeInsets.only(top: 8),
                       child: Text(

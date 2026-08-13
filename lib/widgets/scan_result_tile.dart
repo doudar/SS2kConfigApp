@@ -9,7 +9,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 import '../utils/extra.dart';
 
 class ScanResultTile extends StatefulWidget {
@@ -164,7 +164,7 @@ class _ScanResultTileState extends State<ScanResultTile> {
               ),
               onPressed: () async {
                 // Set user-initiated disconnect flag
-                BLEDataManager.forDevice(this.widget.result.device).isUserDisconnect = true;
+                DeviceDataManager.forDevice(this.widget.result.device).isUserDisconnect = true;
                 await this.widget.result.device.disconnectAndUpdateStream();
               },
               style: OutlinedButton.styleFrom(

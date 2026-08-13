@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../utils/constants.dart';
-import '../../../utils/bledata.dart';
+import '../../../utils/device_data.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
@@ -40,13 +40,13 @@ class _PhysicalShifterStepState extends State<PhysicalShifterStep> {
     final device = session.connectedDevice;
     if (device == null) return;
 
-    final bleData = BLEDataManager.forDevice(device);
+    final deviceData = DeviceDataManager.forDevice(device);
 
     _shiftDirChar = Map<String, dynamic>.from(
-      bleData.customCharacteristic.firstWhere((c) => c["vName"] == shiftDirVname, orElse: () => <String, dynamic>{}),
+      deviceData.customCharacteristic.firstWhere((c) => c["vName"] == shiftDirVname, orElse: () => <String, dynamic>{}),
     );
     _shifterPosChar = Map<String, dynamic>.from(
-      bleData.customCharacteristic.firstWhere(
+      deviceData.customCharacteristic.firstWhere(
         (c) => c["vName"] == shifterPositionVname,
         orElse: () => <String, dynamic>{},
       ),
@@ -60,15 +60,15 @@ class _PhysicalShifterStepState extends State<PhysicalShifterStep> {
       _lastGearValue = int.tryParse(cachedGear);
     }
 
-    bleData.requestSetting(device, shifterPositionVname);
-    bleData.requestSetting(device, shiftDirVname);
+    deviceData.requestSetting(device, shifterPositionVname);
+    deviceData.requestSetting(device, shiftDirVname);
 
-    _charSubscription = bleData.characteristicChanges.listen((event) {
+    _charSubscription = deviceData.characteristicChanges.listen((event) {
       if (!mounted) return;
       if (event.vName == shifterPositionVname) {
         _onGearChange();
       } else if (event.vName == shiftDirVname) {
-        final cached = BLEDataManager.forDevice(
+        final cached = DeviceDataManager.forDevice(
           device,
         ).customCharacteristic.firstWhere((c) => c["vName"] == shiftDirVname, orElse: () => <String, dynamic>{});
         setState(() {
@@ -84,8 +84,8 @@ class _PhysicalShifterStepState extends State<PhysicalShifterStep> {
     final device = session.connectedDevice;
     if (device == null) return;
 
-    final bleData = BLEDataManager.forDevice(device);
-    final rawValue = bleData.customCharacteristic
+    final deviceData = DeviceDataManager.forDevice(device);
+    final rawValue = deviceData.customCharacteristic
         .firstWhere((c) => c["vName"] == shifterPositionVname, orElse: () => <String, dynamic>{"value": ""})["value"]
         ?.toString();
     final newGear = int.tryParse(rawValue ?? "");
@@ -107,9 +107,9 @@ class _PhysicalShifterStepState extends State<PhysicalShifterStep> {
     if (device == null) return;
 
     setState(() => _swapDirection = value);
-    final bleData = BLEDataManager.forDevice(device);
+    final deviceData = DeviceDataManager.forDevice(device);
     final updated = Map<String, dynamic>.from(_shiftDirChar)..["value"] = value.toString();
-    bleData.writeToSS2k(device, updated);
+    deviceData.writeToSS2k(device, updated);
   }
 
   void _skip() {
@@ -128,10 +128,10 @@ class _PhysicalShifterStepState extends State<PhysicalShifterStep> {
     final device = session.connectedDevice;
     if (device == null) return;
 
-    final bleData = BLEDataManager.forDevice(device);
+    final deviceData = DeviceDataManager.forDevice(device);
     final updated = Map<String, dynamic>.from(_shiftDirChar)..["value"] = _swapDirection.toString();
-    await bleData.writeToSS2k(device, updated);
-    await bleData.writeCommand(device, saveVname);
+    await deviceData.writeToSS2k(device, updated);
+    await deviceData.writeCommand(device, saveVname);
 
     session.physicalShifterSeen = true;
     final machine = WizardStepMachine();

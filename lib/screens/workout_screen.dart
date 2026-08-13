@@ -13,7 +13,7 @@ import '../utils/workout/gpx_file_exporter.dart';
 import '../utils/workout/workout_file_manager.dart';
 import '../utils/workout/workout_tts_settings.dart';
 // Intervals service & converter now only used inside WorkoutMenu
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 // Workout library dialog now managed inside WorkoutMenu
 // Audio coach dialog now managed inside WorkoutMenu
 import '../utils/workout/workout_text_event_overlay.dart';
@@ -39,7 +39,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
   String? _workoutName;
   late AnimationController _metricsAndSummaryFadeController;
   late Animation<double> _metricsAndSummaryFadeAnimation;
-  late BLEData bleData;
+  late DeviceData deviceData;
   late WorkoutController _workoutController;
   late WorkoutTTSSettings _ttsSettings;
   bool _ttsInitialized = false;
@@ -113,9 +113,9 @@ class _WorkoutScreenState extends State<WorkoutScreen>
   void initState() {
     super.initState();
     WakelockPlus.enable();
-    bleData = BLEDataManager.forDevice(widget.device);
-    unawaited(bleData.updateIndoorBikeData(widget.device));
-    _workoutController = WorkoutController(bleData, widget.device);
+    deviceData = DeviceDataManager.forDevice(widget.device);
+    unawaited(deviceData.updateIndoorBikeData(widget.device));
+    _workoutController = WorkoutController(deviceData, widget.device);
     _initTTSSettings();
     _initializeAnimationControllers();
 
@@ -196,7 +196,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     };
     _workoutController.addListener(_workoutControllerListener);
 
-    // Reconnection is handled centrally by BLEData.startConnectionMonitor.
+    // Reconnection is handled centrally by DeviceData.startConnectionMonitor.
     // No per-screen reconnect timer needed.
   }
 
@@ -400,13 +400,13 @@ class _WorkoutScreenState extends State<WorkoutScreen>
                       currentProgress: _workoutController.progressPosition,
                       actualPowerPoints: _workoutController.actualPowerPoints,
                       currentPower: _workoutController.isPlaying
-                          ? bleData.ftmsData.watts.toDouble()
+                          ? deviceData.ftmsData.watts.toDouble()
                           : null,
                       currentHr: _workoutController.isPlaying
-                          ? bleData.ftmsData.heartRate
+                          ? deviceData.ftmsData.heartRate
                           : null,
                       currentCadence: _workoutController.isPlaying
-                          ? bleData.ftmsData.cadence
+                          ? deviceData.ftmsData.cadence
                           : null,
                       powerPointsList: _workoutController
                           .getPowerPointsUpToNow(),
@@ -424,7 +424,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
                   ),
                 ],
               )
-            : PowerTableChart(device: widget.device, bleData: bleData),
+            : PowerTableChart(device: widget.device, deviceData: deviceData),
       ),
     );
   }
@@ -455,7 +455,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
             ),
           WorkoutMenu(
             workoutController: _workoutController,
-            bleData: bleData,
+            deviceData: deviceData,
             device: widget.device,
             ttsSettings: _ttsSettings,
             workoutGraphKey: _workoutGraphKey,
@@ -484,11 +484,11 @@ class _WorkoutScreenState extends State<WorkoutScreen>
                     ),
                   ),
                   StreamBuilder<CharacteristicChangeEvent>(
-                    stream: bleData.characteristicChanges
+                    stream: deviceData.characteristicChanges
                         .where((event) => event.type == 'ftms')
                         .debounce(const Duration(milliseconds: 100)),
                     builder: (context, snapshot) => WorkoutMetrics(
-                      bleData: bleData,
+                      deviceData: deviceData,
                       fadeAnimation: _metricsAndSummaryFadeAnimation,
                       elapsedTime: _workoutController.elapsedSeconds,
                       timeToNextSegment:
@@ -569,7 +569,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
                                                             currentPower:
                                                                 _workoutController
                                                                     .isPlaying
-                                                                ? bleData
+                                                                ? deviceData
                                                                       .ftmsData
                                                                       .watts
                                                                       .toDouble()
@@ -577,14 +577,14 @@ class _WorkoutScreenState extends State<WorkoutScreen>
                                                             currentHr:
                                                                 _workoutController
                                                                     .isPlaying
-                                                                ? bleData
+                                                                ? deviceData
                                                                       .ftmsData
                                                                       .heartRate
                                                                 : null,
                                                             currentCadence:
                                                                 _workoutController
                                                                     .isPlaying
-                                                                ? bleData
+                                                                ? deviceData
                                                                       .ftmsData
                                                                       .cadence
                                                                 : null,

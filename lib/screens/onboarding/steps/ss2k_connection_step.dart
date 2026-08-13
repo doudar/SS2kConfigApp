@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:provider/provider.dart';
 import '../../../utils/constants.dart';
-import '../../../utils/bledata.dart';
+import '../../../utils/device_data.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../utils/snackbar.dart';
@@ -90,22 +90,22 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
   ) async {
     final device = result.device;
     // In demo mode, seed the simulated device instead of attempting a real BLE
-    // connection. Downstream steps read this device's BLEData and behave like
+    // connection. Downstream steps read this device's DeviceData and behave like
     // the main app's demo mode.
     if (demoModeBypass.value) {
-      BLEDataManager.forDevice(device).setupDemoData();
+      DeviceDataManager.forDevice(device).setupDemoData();
     } else {
       if (FlutterBluePlus.isScanningNow) await FlutterBluePlus.stopScan();
-      final bleData = BLEDataManager.forDevice(device);
-      bleData.advertisedIpAddress = SmartSpinAdvertisement.ipAddress(
+      final deviceData = DeviceDataManager.forDevice(device);
+      deviceData.advertisedIpAddress = SmartSpinAdvertisement.ipAddress(
         result.advertisementData.manufacturerData,
       );
-      if (bleData.isUserDisconnect) {
-        bleData.isUserDisconnect = false;
+      if (deviceData.isUserDisconnect) {
+        deviceData.isUserDisconnect = false;
       }
 
       unawaited(
-        bleData.connectPreferred(device).catchError((Object e) {
+        deviceData.connectPreferred(device).catchError((Object e) {
           Snackbar.show(
             ABC.c,
             prettyException("Connect Error:", e),

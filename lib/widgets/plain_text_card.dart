@@ -10,7 +10,7 @@ import 'dart:async';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../utils/bledata.dart';
+import '../utils/device_data.dart';
 
 class plainTextCard extends StatefulWidget {
   const plainTextCard({super.key, required this.device, required this.c});
@@ -24,16 +24,16 @@ class _plainTextCardState extends State<plainTextCard> {
   Map get c => this.widget.c;
   final controller = TextEditingController();
   bool passwordVisible = false;
-  late BLEData bleData;
+  late DeviceData deviceData;
   final String _currentValue = "Current Value: ";
   StreamSubscription<CharacteristicChangeEvent>? _charSubscription;
 
   @override
   void initState() {
     super.initState();
-    bleData = BLEDataManager.forDevice(this.widget.device);
+    deviceData = DeviceDataManager.forDevice(this.widget.device);
     controller.text = c["value"];
-    _charSubscription = bleData.characteristicChanges
+    _charSubscription = deviceData.characteristicChanges
         .where((event) => event.vName == c["vName"])
         .listen((event) {
       if (mounted) {
@@ -101,7 +101,7 @@ class _plainTextCardState extends State<plainTextCard> {
       style: TextStyle(color: Colors.black, fontSize: 24),
       onSubmitted: (t) {
         this.verifyInput(t);
-        this.bleData.writeToSS2k(this.widget.device, this.c);
+        this.deviceData.writeToSS2k(this.widget.device, this.c);
         setState(() {});
         return this.widget.c["value"];
       },
@@ -127,7 +127,7 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
         this.verifyInput(t);
-        this.bleData.writeToSS2k(this.widget.device, this.c);
+        this.deviceData.writeToSS2k(this.widget.device, this.c);
         setState(() {});
         return this.widget.c["value"];
       },
@@ -204,10 +204,10 @@ class _plainTextCardState extends State<plainTextCard> {
                       print("**********************************" + controller.text);
                       if (inputIsValid) {
                         // Proceed with saving if input is valid
-                        await this.bleData.writeToSS2k(
+                        await this.deviceData.writeToSS2k(
                             this.widget.device, this.widget.c);
                         await this
-                            .bleData
+                            .deviceData
                             .writeCommand(this.widget.device, saveVname);
                         if (!mounted) return;
                         Navigator.pop(context);

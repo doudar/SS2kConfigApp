@@ -11,7 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import './bledata.dart';
+import './device_data.dart';
 import './snackbar.dart';
 import './presets.dart';
 import './constants.dart';
@@ -20,7 +20,7 @@ class PresetSharing {
   // Export preset as .ss2k file
   static Future<void> exportPreset(
     BuildContext context,
-    BLEData bleData,
+    DeviceData deviceData,
     String fileName,
   ) async {
     try {
@@ -29,7 +29,7 @@ class PresetSharing {
 
       // Convert settings to JSON, excluding sensitive data and complex objects
       List<Map<String, dynamic>> exportList = [];
-      for (var item in bleData.customCharacteristic) {
+      for (var item in deviceData.customCharacteristic) {
         if (item.containsKey('vName') && item.containsKey('value')) {
           if (item['vName'] != ssidVname && item['vName'] != passwordVname) {
             exportList.add({'vName': item['vName'], 'value': item['value']});
@@ -85,7 +85,7 @@ class PresetSharing {
   // Import preset from .ss2k or .json file
   static Future<void> importPreset(
     BuildContext context,
-    BLEData bleData,
+    DeviceData deviceData,
     BluetoothDevice device,
   ) async {
     try {
@@ -125,7 +125,7 @@ class PresetSharing {
           if (decoded is! List) throw FormatException("Invalid preset format");
 
           // Create merged version
-          List<dynamic> currentConfig = List.from(bleData.customCharacteristic);
+          List<dynamic> currentConfig = List.from(deviceData.customCharacteristic);
           List<dynamic> importedConfig = decoded;
 
           List<Map<String, dynamic>> mergedConfig = currentConfig.map((item) {
@@ -154,14 +154,14 @@ class PresetSharing {
             return currentMap;
           }).toList();
 
-          // Apply to BLEData temporarily to save
-          var oldSettings = bleData.customCharacteristic;
-          bleData.customCharacteristic = mergedConfig;
+          // Apply to DeviceData temporarily to save
+          var oldSettings = deviceData.customCharacteristic;
+          deviceData.customCharacteristic = mergedConfig;
 
-          await PresetManager.savePreset(context, bleData, saveName);
+          await PresetManager.savePreset(context, deviceData, saveName);
 
           // Restore old settings until user explicitly loads it
-          bleData.customCharacteristic = oldSettings;
+          deviceData.customCharacteristic = oldSettings;
 
           if (context.mounted) {
             // Ask if user wants to apply it now
@@ -188,8 +188,8 @@ class PresetSharing {
             );
 
             if (applyNow == true) {
-              bleData.customCharacteristic = mergedConfig;
-              await bleData.saveAllSettings(device);
+              deviceData.customCharacteristic = mergedConfig;
+              await deviceData.saveAllSettings(device);
               Snackbar.show(ABC.c, "Settings applied to device", success: true);
             } else {
               Snackbar.show(ABC.c, "Preset saved to My Files", success: true);
