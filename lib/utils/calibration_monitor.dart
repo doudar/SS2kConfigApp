@@ -898,9 +898,8 @@ class CalibrationMonitor extends ChangeNotifier {
     if (_disposed || !_logStreamingStarted) return;
 
     _tracker.markRequestSent();
-    await bleData.writeFtmsControlPoint(
-      (characteristic) =>
-          FTMSControlPoint.spinDownControl(characteristic, true),
+    await bleData.writeFtmsControlPointCommand(
+      FTMSControlPoint.spinDownCommand(true),
     );
   }
 

@@ -14,16 +14,16 @@ class FTMSControlPoint {
     try {
       // Create a buffer for the command (1 byte opcode + 2 bytes power)
       final ByteData buffer = ByteData(FTMSDataConfig.TARGET_POWER_LENGTH);
-      
+
       // Write opcode as first byte
       buffer.setUint8(0, FTMSOpCodes.SET_TARGET_POWER);
-      
+
       // Write power value as SINT16 in little-endian format
       buffer.setInt16(1, targetPower, Endian.little);
-      
+
       // Convert ByteData to Uint8List for writing
       final Uint8List command = buffer.buffer.asUint8List();
-      
+
       // Write to the characteristic
       await characteristic.write(command);
     } catch (e) {
@@ -42,11 +42,12 @@ class FTMSControlPoint {
     try {
       final ByteData buffer = ByteData(FTMSDataConfig.TARGET_SPEED_LENGTH);
       buffer.setUint8(0, FTMSOpCodes.SET_TARGET_SPEED);
-      
+
       // Convert speed to uint16 with 0.01 resolution
-      final int speedValue = (speedKph / FTMSDataConfig.SPEED_RESOLUTION).round();
+      final int speedValue = (speedKph / FTMSDataConfig.SPEED_RESOLUTION)
+          .round();
       buffer.setUint16(1, speedValue, Endian.little);
-      
+
       await characteristic.write(buffer.buffer.asUint8List());
     } catch (e) {
       print('Error writing target speed to FTMS: $e');
@@ -62,13 +63,16 @@ class FTMSControlPoint {
     double inclinationPercent,
   ) async {
     try {
-      final ByteData buffer = ByteData(FTMSDataConfig.TARGET_INCLINATION_LENGTH);
+      final ByteData buffer = ByteData(
+        FTMSDataConfig.TARGET_INCLINATION_LENGTH,
+      );
       buffer.setUint8(0, FTMSOpCodes.SET_TARGET_INCLINATION);
-      
+
       // Convert inclination to sint16 with 0.1% resolution
-      final int inclinationValue = (inclinationPercent / FTMSDataConfig.INCLINATION_RESOLUTION).round();
+      final int inclinationValue =
+          (inclinationPercent / FTMSDataConfig.INCLINATION_RESOLUTION).round();
       buffer.setInt16(1, inclinationValue, Endian.little);
-      
+
       await characteristic.write(buffer.buffer.asUint8List());
     } catch (e) {
       print('Error writing target inclination to FTMS: $e');
@@ -86,11 +90,12 @@ class FTMSControlPoint {
     try {
       final ByteData buffer = ByteData(FTMSDataConfig.TARGET_RESISTANCE_LENGTH);
       buffer.setUint8(0, FTMSOpCodes.SET_TARGET_RESISTANCE_LEVEL);
-      
+
       // Convert resistance to uint8 with 0.1 resolution
-      final int resistanceValue = (resistance / FTMSDataConfig.RESISTANCE_RESOLUTION).round();
+      final int resistanceValue =
+          (resistance / FTMSDataConfig.RESISTANCE_RESOLUTION).round();
       buffer.setUint8(1, resistanceValue);
-      
+
       await characteristic.write(buffer.buffer.asUint8List());
     } catch (e) {
       print('Error writing target resistance to FTMS: $e');
@@ -109,7 +114,7 @@ class FTMSControlPoint {
       final ByteData buffer = ByteData(FTMSDataConfig.TARGET_HEART_RATE_LENGTH);
       buffer.setUint8(0, FTMSOpCodes.SET_TARGET_HEART_RATE);
       buffer.setUint8(1, heartRate);
-      
+
       await characteristic.write(buffer.buffer.asUint8List());
     } catch (e) {
       print('Error writing target heart rate to FTMS: $e');
@@ -127,11 +132,12 @@ class FTMSControlPoint {
     try {
       final ByteData buffer = ByteData(FTMSDataConfig.TARGET_CADENCE_LENGTH);
       buffer.setUint8(0, FTMSOpCodes.SET_TARGET_CADENCE);
-      
+
       // Convert cadence to uint16 with 0.5 resolution
-      final int cadenceValue = (cadence / FTMSDataConfig.CADENCE_RESOLUTION).round();
+      final int cadenceValue = (cadence / FTMSDataConfig.CADENCE_RESOLUTION)
+          .round();
       buffer.setUint16(1, cadenceValue, Endian.little);
-      
+
       await characteristic.write(buffer.buffer.asUint8List());
     } catch (e) {
       print('Error writing target cadence to FTMS: $e');
@@ -153,7 +159,9 @@ class FTMSControlPoint {
     required double cw,
   }) async {
     try {
-      final ByteData buffer = ByteData(FTMSDataConfig.INDOOR_BIKE_SIMULATION_LENGTH);
+      final ByteData buffer = ByteData(
+        FTMSDataConfig.INDOOR_BIKE_SIMULATION_LENGTH,
+      );
       int offset = 0;
 
       // Write opcode
@@ -161,7 +169,8 @@ class FTMSControlPoint {
       offset += 1;
 
       // Write wind speed (SINT16, resolution 0.001 m/s)
-      final int windSpeedValue = (windSpeed / FTMSDataConfig.WIND_SPEED_RESOLUTION).round();
+      final int windSpeedValue =
+          (windSpeed / FTMSDataConfig.WIND_SPEED_RESOLUTION).round();
       buffer.setInt16(offset, windSpeedValue, Endian.little);
       offset += 2;
 
@@ -202,9 +211,7 @@ class FTMSControlPoint {
 
   /// Resets the fitness machine to default values
   /// [characteristic] - The FTMS Control Point characteristic to write to
-  static Future<void> reset(
-    BluetoothCharacteristic characteristic,
-  ) async {
+  static Future<void> reset(BluetoothCharacteristic characteristic) async {
     try {
       final List<int> command = [FTMSOpCodes.RESET];
       await characteristic.write(command);
@@ -238,8 +245,11 @@ class FTMSControlPoint {
     try {
       final ByteData buffer = ByteData(FTMSDataConfig.STOP_PAUSE_LENGTH);
       buffer.setUint8(0, FTMSOpCodes.STOP_OR_PAUSE);
-      buffer.setUint8(1, stop ? FTMSStopPauseParams.STOP : FTMSStopPauseParams.PAUSE);
-      
+      buffer.setUint8(
+        1,
+        stop ? FTMSStopPauseParams.STOP : FTMSStopPauseParams.PAUSE,
+      );
+
       await characteristic.write(buffer.buffer.asUint8List());
     } catch (e) {
       print('Error stopping/pausing FTMS session: $e');
@@ -250,16 +260,22 @@ class FTMSControlPoint {
   /// Controls the spin down procedure
   /// [characteristic] - The FTMS Control Point characteristic to write to
   /// [start] - If true, starts the spin down procedure. If false, ignores it.
+  static Uint8List spinDownCommand(bool start) {
+    final ByteData buffer = ByteData(FTMSDataConfig.SPIN_DOWN_CONTROL_LENGTH);
+    buffer.setUint8(0, FTMSOpCodes.SPIN_DOWN_CONTROL);
+    buffer.setUint8(
+      1,
+      start ? FTMSSpinDownParams.START : FTMSSpinDownParams.IGNORE,
+    );
+    return buffer.buffer.asUint8List();
+  }
+
   static Future<void> spinDownControl(
     BluetoothCharacteristic characteristic,
     bool start,
   ) async {
     try {
-      final ByteData buffer = ByteData(FTMSDataConfig.SPIN_DOWN_CONTROL_LENGTH);
-      buffer.setUint8(0, FTMSOpCodes.SPIN_DOWN_CONTROL);
-      buffer.setUint8(1, start ? FTMSSpinDownParams.START : FTMSSpinDownParams.IGNORE);
-      
-      await characteristic.write(buffer.buffer.asUint8List());
+      await characteristic.write(spinDownCommand(start));
     } catch (e) {
       print('Error controlling spin down procedure: $e');
       rethrow;

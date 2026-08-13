@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ss2kconfigapp/utils/ftmsControlPoint.dart';
 import 'package:ss2kconfigapp/utils/dircon_client.dart';
 
 void main() {
@@ -15,5 +16,10 @@ void main() {
     expect(frames[1].identifier, 6);
     expect(frames[1].sequence, 0);
     expect(frames[1].body, [0xcc]);
+  });
+
+  test('encodes the FTMS spin-down command sent over DIRCON', () {
+    expect(FTMSControlPoint.spinDownCommand(true), [0x13, 0x01]);
+    expect(FTMSControlPoint.spinDownCommand(false), [0x13, 0x02]);
   });
 }

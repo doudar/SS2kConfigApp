@@ -1617,6 +1617,29 @@ class BLEData {
     return _queueBleOperation(() => operation(characteristic));
   }
 
+  /// Writes an encoded FTMS Control Point command over the active transport.
+  ///
+  /// DIRCON sessions intentionally do not create FlutterBluePlus
+  /// characteristics, so commands whose only input is a cached BLE
+  /// characteristic can never reach the device while DIRCON is active.
+  Future<void> writeFtmsControlPointCommand(List<int> command) async {
+    if (isSimulated) return;
+
+    return _queueBleOperation(() async {
+      final dirConClient = _dirConClient;
+      if (dirConClient != null && dirConClient.isConnected) {
+        await dirConClient.writeCharacteristic(ftmsControlPointUUID, command);
+        return;
+      }
+
+      final characteristic = ftmsControlPointCharacteristic;
+      if (characteristic == null) {
+        throw StateError('FTMS Control Point characteristic not found');
+      }
+      await characteristic.write(command);
+    });
+  }
+
   void decode(BluetoothDevice device) {
     if (this.isSimulated) return;
 
