@@ -108,6 +108,21 @@ bool isFirmwareVersionNewer(String available, String installed) {
   return false;
 }
 
+/// Matches the release portion of firmware versions while allowing the device
+/// to append branch, commit-count, hardware, and git-hash metadata.
+///
+/// For example, `26.8.14` matches `26.8.14-develop-1-g560fef00`.
+bool firmwareVersionsMatch(String expected, String reported) {
+  final expectedParts = _releaseVersionParts(expected);
+  final reportedParts = _releaseVersionParts(reported);
+  if (expectedParts.length < 3 || reportedParts.length < 3) return false;
+
+  for (var index = 0; index < 3; index++) {
+    if (expectedParts[index] != reportedParts[index]) return false;
+  }
+  return true;
+}
+
 List<int> _releaseVersionParts(String version) => RegExp(r'\d+')
     .allMatches(version)
     .take(3)

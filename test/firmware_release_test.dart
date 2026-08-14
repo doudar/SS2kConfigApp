@@ -77,6 +77,25 @@ void main() {
     test('does not offer an older release', () {
       expect(isFirmwareVersionNewer('25.9.22', '26.1.1'), isFalse);
     });
+
+    test('verification accepts branch and commit metadata', () {
+      expect(
+        firmwareVersionsMatch('26.8.14', '26.8.14-develop-1-g560fef00'),
+        isTrue,
+      );
+    });
+
+    test('verification still rejects a different release', () {
+      expect(
+        firmwareVersionsMatch('26.8.14', '26.8.13-develop-1-g560fef00'),
+        isFalse,
+      );
+    });
+
+    test('verification rejects incomplete version strings', () {
+      expect(firmwareVersionsMatch('26.8.14', 'unknown'), isFalse);
+      expect(firmwareVersionsMatch('26.8', '26.8.0'), isFalse);
+    });
   });
 
   group('GitHub release parsing', () {

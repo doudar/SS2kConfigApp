@@ -700,7 +700,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       String currentVersion = deviceData.firmwareVersion.value;
       if (currentVersion.isNotEmpty) {
         if (targetVersion != null) {
-          if (_versionsMatch(targetVersion, currentVersion)) {
+          if (firmwareVersionsMatch(targetVersion, currentVersion)) {
             if (await _versionRemainsStable(currentVersion, targetVersion)) {
               verifiedVersion = currentVersion;
               break;
@@ -745,7 +745,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       }
 
       if (targetVersion != null) {
-        if (!_versionsMatch(targetVersion, currentVersion)) {
+        if (!firmwareVersionsMatch(targetVersion, currentVersion)) {
           return false;
         }
       } else if (currentVersion != candidateVersion) {
@@ -754,14 +754,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     }
 
     return true;
-  }
-
-  bool _versionsMatch(String versionA, String versionB) {
-    // Extract digit sequences and join them to compare "numbers only"
-    final regex = RegExp(r'\d+');
-    final partsA = regex.allMatches(versionA).map((m) => m.group(0)).join('.');
-    final partsB = regex.allMatches(versionB).map((m) => m.group(0)).join('.');
-    return partsA == partsB;
   }
 
   List<Widget> _buildUpdateButtons() {
