@@ -12,6 +12,7 @@ import 'package:ss2kconfigapp/widgets/ss2k_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -26,6 +27,7 @@ import '../widgets/theme_cycle_button.dart';
 import '../utils/extra.dart';
 
 import '../utils/device_data.dart';
+import '../utils/firmware_release_service.dart';
 
 class MainDeviceScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -39,6 +41,10 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   late DeviceData deviceData;
   bool _maintenanceExpanded = false;
   late Future<String?> _appVersionFuture;
+  FirmwareRelease? _availableFirmwareUpdate;
+  VoidCallback? _firmwareVersionListener;
+  bool _checkingFirmwareUpdate = false;
+  String? _lastCheckedFirmwareVersion;
 
   @override
   void initState() {
@@ -51,16 +57,21 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       return;
     }
 
-    deviceData.connectionStateSubscription = widget.device.connectionState.listen((
-      state,
-    ) async {
-      if (deviceData.isDirConConnected) return;
-      deviceData.connectionState = state;
-      if (state == BluetoothConnectionState.connected) {
-        deviceData.rssi.value = await widget.device.readRssi();
-        await deviceData.setupConnection(widget.device);
-      }
-    });
+    _firmwareVersionListener = () => unawaited(_checkForFirmwareUpdate());
+    deviceData.firmwareVersion.addListener(_firmwareVersionListener!);
+    if (deviceData.firmwareVersion.value.isNotEmpty) {
+      unawaited(_checkForFirmwareUpdate());
+    }
+
+    deviceData.connectionStateSubscription = widget.device.connectionState
+        .listen((state) async {
+          if (deviceData.isDirConConnected) return;
+          deviceData.connectionState = state;
+          if (state == BluetoothConnectionState.connected) {
+            deviceData.rssi.value = await widget.device.readRssi();
+            await deviceData.setupConnection(widget.device);
+          }
+        });
 
     if (deviceData.isDirConConnected) {
       deviceData.connectionState = BluetoothConnectionState.connected;
@@ -110,8 +121,54 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     }
   }
 
+  String get _dismissedFirmwareKey =>
+      'dismissed_firmware_release_${widget.device.remoteId.str}';
+
+  Future<void> _checkForFirmwareUpdate() async {
+    final installedVersion = deviceData.firmwareVersion.value.trim();
+    if (installedVersion.isEmpty ||
+        _checkingFirmwareUpdate ||
+        installedVersion == _lastCheckedFirmwareVersion) {
+      return;
+    }
+
+    _checkingFirmwareUpdate = true;
+    try {
+      final releases = await const FirmwareReleaseService().fetchAll();
+      final latest = releases.isEmpty ? null : releases.first;
+      final prefs = await SharedPreferences.getInstance();
+      final dismissedVersion = prefs.getString(_dismissedFirmwareKey);
+      final shouldShow =
+          latest != null &&
+          latest.version != dismissedVersion &&
+          isFirmwareVersionNewer(latest.version, installedVersion);
+
+      _lastCheckedFirmwareVersion = installedVersion;
+      if (mounted) {
+        setState(() {
+          _availableFirmwareUpdate = shouldShow ? latest : null;
+        });
+      }
+    } catch (error) {
+      print('Unable to check for a firmware update: $error');
+    } finally {
+      _checkingFirmwareUpdate = false;
+    }
+  }
+
+  Future<void> _dismissFirmwareUpdate() async {
+    final release = _availableFirmwareUpdate;
+    if (release == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_dismissedFirmwareKey, release.version);
+    if (mounted) setState(() => _availableFirmwareUpdate = null);
+  }
+
   @override
   void dispose() {
+    if (_firmwareVersionListener != null) {
+      deviceData.firmwareVersion.removeListener(_firmwareVersionListener!);
+    }
     deviceData.connectionStateSubscription?.cancel();
     deviceData.isConnectingSubscription?.cancel();
     deviceData.isDisconnectingSubscription?.cancel();
@@ -415,6 +472,66 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     );
   }
 
+  Widget _buildFirmwareUpdateBadge() {
+    final release = _availableFirmwareUpdate!;
+    final colors = Theme.of(context).colorScheme;
+
+    return Card(
+      color: colors.tertiaryContainer,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openScreen(FirmwareUpdateScreen(device: widget.device)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: colors.tertiary,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  'UPDATE',
+                  style: TextStyle(
+                    color: colors.onTertiary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Firmware ${release.version} is available',
+                      style: TextStyle(
+                        color: colors.onTertiaryContainer,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'Installed: ${deviceData.firmwareVersion.value}',
+                      style: TextStyle(color: colors.onTertiaryContainer),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Dismiss firmware update',
+                onPressed: _dismissFirmwareUpdate,
+                icon: Icon(Icons.close, color: colors.onTertiaryContainer),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -451,6 +568,14 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
               8,
             ),
             children: <Widget>[
+              if (_availableFirmwareUpdate != null)
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    width: gridWidth,
+                    child: _buildFirmwareUpdateBadge(),
+                  ),
+                ),
               Align(
                 alignment: Alignment.topCenter,
                 child: SizedBox(

@@ -8,11 +8,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:app_links/app_links.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'services/strava_service.dart';
 import 'services/intervals_service.dart';
@@ -24,13 +28,16 @@ import 'utils/onboarding/onboarding_state.dart';
 import 'utils/onboarding/wizard_session.dart';
 import 'utils/theme_provider.dart';
 import 'utils/demo.dart' show demoModeBypass;
+import 'utils/app_release_service.dart';
 
 void main() async {
   FlutterBluePlus.setLogLevel(LogLevel.verbose, color: true);
   WidgetsFlutterBinding.ensureInitialized();
-  fvp.registerWith(options: {
-    'platforms': ['windows', 'macos', 'linux'],
-  });
+  fvp.registerWith(
+    options: {
+      'platforms': ['windows', 'macos', 'linux'],
+    },
+  );
 
   runApp(
     ChangeNotifierProvider(
@@ -52,12 +59,16 @@ class SmartSpin2kApp extends StatefulWidget {
 }
 
 class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
-  static const MethodChannel _powerChannel = MethodChannel('com.example.ss2kconfigapp/power');
+  static const String _dismissedAppReleaseKey = 'dismissed_app_release';
+  static const MethodChannel _powerChannel = MethodChannel(
+    'com.example.ss2kconfigapp/power',
+  );
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
   late AppLinks _appLinks;
   StreamSubscription? _linkSubscription;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
-  final GlobalKey<ScaffoldMessengerState> _scaffoldKey = GlobalKey<ScaffoldMessengerState>();
+  final GlobalKey<ScaffoldMessengerState> _scaffoldKey =
+      GlobalKey<ScaffoldMessengerState>();
 
   late StreamSubscription<BluetoothAdapterState> _adapterStateStateSubscription;
   // Start false on native so a clean install shows the wizard, not a ScanScreen flash.
@@ -69,7 +80,9 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     super.initState();
     if (!kIsWeb) {
       try {
-        _adapterStateStateSubscription = FlutterBluePlus.adapterState.listen((state) {
+        _adapterStateStateSubscription = FlutterBluePlus.adapterState.listen((
+          state,
+        ) {
           _adapterState = state;
           if (mounted) {
             setState(() {});
@@ -89,6 +102,87 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     OnboardingState.completedNotifier.addListener(_onCompletedNotifierChanged);
     // React to demo-mode tap-target activated from ScanScreen or WelcomeStep.
     demoModeBypass.addListener(_onDemoModeChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_checkForAppUpdate());
+    });
+  }
+
+  Future<void> _checkForAppUpdate() async {
+    if (kIsWeb) return;
+
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      final release = await const AppReleaseService().fetchLatest();
+      if (!mounted || release == null) return;
+
+      final installedVersion =
+          '${packageInfo.version}+${packageInfo.buildNumber}';
+      if (!isAppVersionNewer(release.version, installedVersion)) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString(_dismissedAppReleaseKey) == release.version) return;
+
+      final destination = appUpdateDestination(
+        platform: defaultTargetPlatform,
+        installerStore: packageInfo.installerStore,
+        release: release,
+      );
+      if (!mounted) return;
+      _showAppUpdateBanner(
+        release: release,
+        installedVersion: installedVersion,
+        destination: destination,
+      );
+    } catch (error) {
+      debugPrint('Unable to check for an app update: $error');
+    }
+  }
+
+  void _showAppUpdateBanner({
+    required AppRelease release,
+    required String installedVersion,
+    required Uri destination,
+  }) {
+    final messenger = _scaffoldKey.currentState;
+    if (messenger == null) return;
+
+    messenger.hideCurrentMaterialBanner();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        leading: const Icon(Icons.system_update_alt),
+        content: Text(
+          'SmartSpin2k Companion ${release.version} is available. '
+          'You have $installedVersion.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              messenger.hideCurrentMaterialBanner();
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString(_dismissedAppReleaseKey, release.version);
+            },
+            child: const Text('NOT NOW'),
+          ),
+          FilledButton.tonal(
+            onPressed: () async {
+              messenger.hideCurrentMaterialBanner();
+              final launched = await launchUrl(
+                destination,
+                mode: LaunchMode.externalApplication,
+              );
+              if (!launched) {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Unable to open the app update page.'),
+                  ),
+                );
+              }
+            },
+            child: const Text('UPDATE'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onCompletedNotifierChanged() {
@@ -115,7 +209,10 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 
     try {
       final isIgnoringBatteryOptimizations =
-          await _powerChannel.invokeMethod<bool>('isIgnoringBatteryOptimizations') ?? false;
+          await _powerChannel.invokeMethod<bool>(
+            'isIgnoringBatteryOptimizations',
+          ) ??
+          false;
 
       if (!isIgnoringBatteryOptimizations) {
         await _powerChannel.invokeMethod('requestIgnoreBatteryOptimizations');
@@ -135,11 +232,14 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     }
 
     // Handle URI when app is already running
-    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
-      _handleDeepLink(uri);
-    }, onError: (err) {
-      debugPrint('Deep link error: $err');
-    });
+    _linkSubscription = _appLinks.uriLinkStream.listen(
+      (uri) {
+        _handleDeepLink(uri);
+      },
+      onError: (err) {
+        debugPrint('Deep link error: $err');
+      },
+    );
   }
 
   void _handleDeepLink(Uri uri) {
@@ -147,7 +247,8 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     debugPrint('URI scheme: ${uri.scheme}, host: ${uri.host}');
 
     // Handle Strava OAuth callback
-    if (uri.scheme == 'smartspin2k' && (uri.host == 'redirect' || uri.host == 'localhost')) {
+    if (uri.scheme == 'smartspin2k' &&
+        (uri.host == 'redirect' || uri.host == 'localhost')) {
       final code = uri.queryParameters['code'];
       final error = uri.queryParameters['error'];
       // final state = uri.queryParameters['state']; // Unused
@@ -293,14 +394,18 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     }
 
     // Add a catch-all debug log for any truly unhandled deep links
-    debugPrint('Unhandled deep link: ${uri.toString()} (scheme: ${uri.scheme}, host: ${uri.host})');
+    debugPrint(
+      'Unhandled deep link: ${uri.toString()} (scheme: ${uri.scheme}, host: ${uri.host})',
+    );
   }
 
   @override
   void dispose() {
     _adapterStateStateSubscription.cancel();
     _linkSubscription?.cancel();
-    OnboardingState.completedNotifier.removeListener(_onCompletedNotifierChanged);
+    OnboardingState.completedNotifier.removeListener(
+      _onCompletedNotifierChanged,
+    );
     demoModeBypass.removeListener(_onDemoModeChanged);
     super.dispose();
   }
@@ -359,7 +464,9 @@ class BluetoothAdapterStateObserver extends NavigatorObserver {
       // Start listening to Bluetooth state changes when a new route is pushed
       if (!kIsWeb) {
         try {
-          _adapterStateSubscription ??= FlutterBluePlus.adapterState.listen((state) {
+          _adapterStateSubscription ??= FlutterBluePlus.adapterState.listen((
+            state,
+          ) {
             if (state != BluetoothAdapterState.on) {
               // Pop the current route if Bluetooth is off
               navigator?.pop();

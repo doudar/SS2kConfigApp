@@ -7,7 +7,6 @@
 
 import 'dart:async';
 import 'dart:io' as io;
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:archive/archive_io.dart' as archive;
@@ -22,6 +21,7 @@ import '../utils/wifi_ota.dart';
 import '../utils/device_data.dart';
 import '../utils/constants.dart';
 import '../utils/firmware_architecture.dart';
+import '../utils/firmware_release_service.dart';
 import '../widgets/ss2k_app_bar.dart';
 
 class FirmwareUpdateScreen extends StatefulWidget {
@@ -32,24 +32,6 @@ class FirmwareUpdateScreen extends StatefulWidget {
 
   @override
   State<FirmwareUpdateScreen> createState() => _FirmwareUpdateState();
-}
-
-// Model class for firmware releases
-class FirmwareRelease {
-  final String version;
-  final String downloadUrl;
-  final bool isMostRecent;
-
-  FirmwareRelease({
-    required this.version,
-    required this.downloadUrl,
-    this.isMostRecent = false,
-  });
-
-  String get displayName {
-    if (isMostRecent) return 'Most Recent Release ($version)';
-    return version;
-  }
 }
 
 class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
@@ -286,60 +268,21 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   Future<void> _fetchAllFirmwareReleases() async {
     try {
-      // Fetch all releases from SmartSpin2k repository
-      final response = await http.get(
-        Uri.parse('https://api.github.com/repos/doudar/SmartSpin2k/releases'),
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> releases = json.decode(response.body);
-        List<FirmwareRelease> releasesList = [];
-
-        // Process all releases from GitHub
-        bool isFirst = true;
-        for (var release in releases) {
-          final tagName = release['tag_name'] as String;
-          if (release['draft'] == true || release['prerelease'] == true) {
-            continue;
-          }
-          final assets = release['assets'] as List;
-
-          // Match the workflow-produced asset exactly. Source archives and
-          // similarly named files are not firmware packages.
-          String? downloadUrl;
-          for (var asset in assets) {
-            if (asset['name'] == expectedReleaseAssetName(tagName)) {
-              downloadUrl = asset['browser_download_url'] as String;
-              break;
-            }
-          }
-
-          if (downloadUrl != null) {
-            releasesList.add(
-              FirmwareRelease(
-                version: tagName,
-                downloadUrl: downloadUrl,
-                isMostRecent: isFirst,
-              ),
+      final releasesList = await const FirmwareReleaseService().fetchAll();
+      if (!mounted) return;
+      setState(() {
+        _availableReleases = releasesList;
+        _selectedRelease = _availableReleases
+            .cast<FirmwareRelease?>()
+            .firstWhere(
+              (item) => item!.isMostRecent,
+              orElse: () =>
+                  _availableReleases.isEmpty ? null : _availableReleases.first,
             );
-            isFirst = false;
-          }
-        }
-
-        setState(() {
-          _availableReleases = releasesList;
-          _selectedRelease = _availableReleases
-              .cast<FirmwareRelease?>()
-              .firstWhere(
-                (item) => item!.isMostRecent,
-                orElse: () => _availableReleases.isEmpty
-                    ? null
-                    : _availableReleases.first,
-              );
-        });
-      }
+      });
     } catch (e) {
       print('Error fetching firmware releases: $e');
+      if (!mounted) return;
       setState(() {
         _availableReleases = [];
         _selectedRelease = null;
