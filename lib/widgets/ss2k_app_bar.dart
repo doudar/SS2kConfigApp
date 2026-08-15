@@ -11,6 +11,7 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool showDeviceHeader;
   final bool firmwareOnlyDeviceHeader;
   final bool deviceHeaderCustomRefreshEnabled;
+  final bool backNavigationEnabled;
 
   const SS2KAppBar({
     Key? key,
@@ -20,6 +21,7 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.showDeviceHeader = true,
     this.firmwareOnlyDeviceHeader = false,
     this.deviceHeaderCustomRefreshEnabled = true,
+    this.backNavigationEnabled = true,
   }) : super(key: key);
 
   double _computeAdaptiveHeight({
@@ -112,13 +114,15 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
       backgroundColor: Colors.transparent,
       titleSpacing: 0,
       leadingWidth: 40.0,
-      automaticallyImplyLeading: true,
+      automaticallyImplyLeading: backNavigationEnabled,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
       ),
       flexibleSpace: Container(
         decoration: BoxDecoration(
-          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(16),
+          ),
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -128,9 +132,7 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
             ],
           ),
           border: Border(
-            bottom: BorderSide(
-              color: Colors.red.withValues(alpha: 0.35),
-            ),
+            bottom: BorderSide(color: Colors.red.withValues(alpha: 0.35)),
           ),
           boxShadow: [
             BoxShadow(
@@ -152,16 +154,23 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
                   softWrap: _isLongTitle,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
-                  style: (_isLongTitle ? theme.textTheme.titleSmall : theme.textTheme.titleLarge)?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    shadows: const [
-                      Shadow(color: Colors.black87, blurRadius: 6, offset: Offset(0, 1)),
-                    ],
-                  ),
+                  style:
+                      (_isLongTitle
+                              ? theme.textTheme.titleSmall
+                              : theme.textTheme.titleLarge)
+                          ?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            shadows: const [
+                              Shadow(
+                                color: Colors.black87,
+                                blurRadius: 6,
+                                offset: Offset(0, 1),
+                              ),
+                            ],
+                          ),
                 ),
-                if (showDeviceHeader)
-                  const SizedBox(height: 2),
+                if (showDeviceHeader) const SizedBox(height: 2),
                 if (showDeviceHeader)
                   DeviceHeader(
                     device: device,
@@ -196,13 +205,21 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
                     softWrap: _isLongTitle,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: (_isLongTitle ? theme.textTheme.titleSmall : theme.textTheme.titleLarge)?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      shadows: const [
-                        Shadow(color: Colors.black87, blurRadius: 6, offset: Offset(0, 1)),
-                      ],
-                    ),
+                    style:
+                        (_isLongTitle
+                                ? theme.textTheme.titleSmall
+                                : theme.textTheme.titleLarge)
+                            ?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              shadows: const [
+                                Shadow(
+                                  color: Colors.black87,
+                                  blurRadius: 6,
+                                  offset: Offset(0, 1),
+                                ),
+                              ],
+                            ),
                   ),
                 ),
               ],
@@ -214,9 +231,10 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Size get preferredSize => Size.fromHeight(
-        _computeAdaptiveHeight(
-          isNarrow: _isLikelyNarrowScreen,
-          textScaleFactor: WidgetsBinding.instance.platformDispatcher.textScaleFactor,
-        ),
-      );
+    _computeAdaptiveHeight(
+      isNarrow: _isLikelyNarrowScreen,
+      textScaleFactor:
+          WidgetsBinding.instance.platformDispatcher.textScaleFactor,
+    ),
+  );
 }

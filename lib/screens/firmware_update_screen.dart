@@ -36,7 +36,6 @@ class FirmwareUpdateScreen extends StatefulWidget {
 
 class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   late DeviceData deviceData;
-  final BleRepository bleRepo = BleRepository();
   VoidCallback? _firmwareVersionListener;
   Future<void>? _initializationFuture;
 
@@ -163,7 +162,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
             return AlertDialog(
               title: Text('Confirm Firmware Update'),
               content: Text(
-                'Detected hardware: ${hardware.hardwareName}\n'
                 'Architecture: ${hardware.architecture.displayName}\n'
                 'Release: $release\n'
                 'Firmware file: $filename\n\n'
@@ -669,7 +667,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
     if (!deviceData.isTransportActive) {
       try {
-        await deviceData.connectPreferred(widget.device, waitForSetup: true);
+        await deviceData.reconnectAndSetup(widget.device);
       } catch (error) {
         print('[FirmwareVerify] Initial reconnect failed: $error');
       }
@@ -682,7 +680,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
       if (!deviceData.isTransportActive) {
         try {
-          await deviceData.connectPreferred(widget.device, waitForSetup: true);
+          await deviceData.reconnectAndSetup(widget.device);
         } catch (_) {
           continue;
         }
@@ -1125,35 +1123,39 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: SS2KAppBar(
-        device: widget.device,
-        title: 'Firmware Update',
-        firmwareOnlyDeviceHeader: true,
-      ),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12.0,
-                vertical: 12.0,
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    const SizedBox(height: 8),
-                    ...(this.deviceData.configAppCompatibleFirmware
-                        ? _buildUpdateButtons()
-                        : _notBLECompatible()),
-                  ],
+    return PopScope(
+      canPop: !updatingFirmware,
+      child: Scaffold(
+        appBar: SS2KAppBar(
+          device: widget.device,
+          title: 'Firmware Update',
+          firmwareOnlyDeviceHeader: true,
+          backNavigationEnabled: !updatingFirmware,
+        ),
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12.0,
+                  vertical: 12.0,
                 ),
-              ),
-            );
-          },
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      const SizedBox(height: 8),
+                      ...(this.deviceData.configAppCompatibleFirmware
+                          ? _buildUpdateButtons()
+                          : _notBLECompatible()),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       ),
     );

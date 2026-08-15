@@ -76,6 +76,8 @@ class ProgressMultipartRequest extends http.MultipartRequest {
 }
 
 class WifiOTA {
+  static const Duration endpointStageTimeout = Duration(seconds: 10);
+
   /// Attempts to update firmware via WiFi
   static Future<WifiOtaResult> updateFirmware({
     required String deviceName,
@@ -84,6 +86,7 @@ class WifiOTA {
     required String firmwareFilename,
     required void Function(WifiOtaProgress progress) onProgress,
     http.Client? client,
+    Duration endpointTimeout = endpointStageTimeout,
   }) async {
     final httpClient = client ?? http.Client();
     final ownsClient = client == null;
@@ -102,37 +105,41 @@ class WifiOTA {
     );
 
     try {
-      final mdnsHost = '$cleanDeviceName.local';
-      String? mdnsIp;
-      if (Platform.isAndroid) {
-        mdnsIp = await _resolveMdnsAddress(mdnsHost);
-        if (mdnsIp != null) {
-          print('WiFi OTA: mDNS resolved $mdnsHost to $mdnsIp');
-        } else {
-          print('WiFi OTA: mDNS lookup for $mdnsHost returned no address');
-        }
-      }
-
-      final candidates = candidateBaseUrls(
-        deviceName: deviceName,
-        deviceIp: deviceIp,
-        mdnsIp: mdnsIp,
-      );
-
       String? baseUrl;
-      for (final candidate in candidates) {
-        print('WiFi OTA: Attempting to connect to: $candidate');
+      if (deviceIp != null && deviceIp.isNotEmpty) {
+        final ipBaseUrl = 'http://$deviceIp';
+        print('WiFi OTA: Checking advertised IP: $ipBaseUrl');
         onProgress(
           WifiOtaProgress(
             phase: WifiOtaPhase.locatingDevice,
-            message: 'Checking ${Uri.parse(candidate).host}…',
+            message: 'Checking advertised IP $deviceIp…',
             fraction: 0,
           ),
         );
-        if (await _checkDeviceAvailability(httpClient, candidate)) {
-          baseUrl = candidate;
-          break;
+        if (await _checkDeviceAvailability(
+          httpClient,
+          ipBaseUrl,
+          timeout: endpointTimeout,
+        )) {
+          baseUrl = ipBaseUrl;
         }
+      }
+
+      if (baseUrl == null) {
+        final mdnsHost = '$cleanDeviceName.local';
+        print('WiFi OTA: Advertised IP unavailable; checking mDNS $mdnsHost');
+        onProgress(
+          WifiOtaProgress(
+            phase: WifiOtaPhase.locatingDevice,
+            message: 'Checking mDNS $mdnsHost…',
+            fraction: 0,
+          ),
+        );
+        baseUrl = await _locateWithMdns(
+          httpClient,
+          mdnsHost,
+          endpointTimeout,
+        ).timeout(endpointTimeout, onTimeout: () => null);
       }
 
       if (baseUrl == null) {
@@ -298,8 +305,8 @@ class WifiOTA {
     }
   }
 
-  /// Builds OTA endpoints in priority order. A DIRCON-advertised IP is already
-  /// known to be reachable, so it takes precedence over another mDNS lookup.
+  /// Builds OTA endpoints in priority order for diagnostics and tests. Runtime
+  /// probing applies one shared timeout to the entire mDNS stage.
   static List<String> candidateBaseUrls({
     required String deviceName,
     String? deviceIp,
@@ -312,18 +319,46 @@ class WifiOTA {
       if (deviceIp != null && deviceIp.isNotEmpty) 'http://$deviceIp',
       if (mdnsIp != null && mdnsIp.isNotEmpty) 'http://$mdnsIp',
       'http://$cleanDeviceName.local',
-      'http://$cleanDeviceName',
     }.toList();
+  }
+
+  static Future<String?> _locateWithMdns(
+    http.Client client,
+    String mdnsHost,
+    Duration timeout,
+  ) async {
+    String? mdnsIp;
+    if (Platform.isAndroid) {
+      mdnsIp = await _resolveMdnsAddress(mdnsHost);
+      if (mdnsIp != null) {
+        print('WiFi OTA: mDNS resolved $mdnsHost to $mdnsIp');
+      } else {
+        print('WiFi OTA: mDNS lookup for $mdnsHost returned no address');
+      }
+    }
+
+    final candidates = <String>{
+      if (mdnsIp != null && mdnsIp.isNotEmpty) 'http://$mdnsIp',
+      'http://$mdnsHost',
+    };
+    for (final candidate in candidates) {
+      print('WiFi OTA: Attempting mDNS endpoint: $candidate');
+      if (await _checkDeviceAvailability(client, candidate, timeout: timeout)) {
+        return candidate;
+      }
+    }
+    return null;
   }
 
   static Future<bool> _checkDeviceAvailability(
     http.Client client,
-    String baseUrl,
-  ) async {
+    String baseUrl, {
+    required Duration timeout,
+  }) async {
     try {
       final response = await client
           .get(Uri.parse('$baseUrl/OTAIndex'))
-          .timeout(const Duration(seconds: 15));
+          .timeout(timeout);
       if (response.statusCode == 200) {
         print('WiFi OTA: Device is available via $baseUrl');
         return true;

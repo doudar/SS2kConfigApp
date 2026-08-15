@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:ss2kconfigapp/utils/wifi_ota.dart';
 
 void main() {
@@ -73,7 +75,6 @@ void main() {
         'http://192.168.1.42',
         'http://192.168.1.43',
         'http://SmartSpin2k.local',
-        'http://SmartSpin2k',
       ],
     );
   });
@@ -85,7 +86,36 @@ void main() {
         deviceIp: '192.168.1.42',
         mdnsIp: '192.168.1.42',
       ),
-      ['http://192.168.1.42', 'http://SmartSpin2k.local', 'http://SmartSpin2k'],
+      ['http://192.168.1.42', 'http://SmartSpin2k.local'],
     );
+  });
+
+  test('WiFi endpoint stages are limited to ten seconds each', () {
+    expect(WifiOTA.endpointStageTimeout, const Duration(seconds: 10));
+  });
+
+  test('probes advertised IP, then mDNS, then permits BLE fallback', () async {
+    final requestedHosts = <String>[];
+    final client = MockClient((request) async {
+      requestedHosts.add(request.url.host);
+      if (request.url.host == '192.0.2.1') {
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      }
+      return http.Response('Not found', 404);
+    });
+
+    final result = await WifiOTA.updateFirmware(
+      deviceName: 'SmartSpin2k',
+      deviceIp: '192.0.2.1',
+      firmwarePath: 'unused.bin',
+      firmwareFilename: 'firmware.bin',
+      onProgress: (_) {},
+      client: client,
+      endpointTimeout: const Duration(milliseconds: 10),
+    );
+
+    expect(requestedHosts, ['192.0.2.1', 'smartspin2k.local']);
+    expect(result.outcome, WifiOtaOutcome.unavailable);
+    expect(result.shouldFallBackToBluetooth, isTrue);
   });
 }

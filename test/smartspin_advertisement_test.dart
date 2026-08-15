@@ -38,4 +38,19 @@ void main() {
       isNull,
     );
   });
+
+  test('distinguishes an advertising device with no WiFi address', () {
+    final advertisement = SmartSpinAdvertisement.parse({
+      0xffff: [0x53, 0x53, 1, 0, 0, 0, 0],
+    });
+
+    expect(advertisement, isNotNull);
+    expect(advertisement!.ipAddress, isNull);
+    expect(
+      SmartSpinAdvertisement.parse({
+        1: [0x53, 0x53, 1, 0, 0, 0, 0],
+      }),
+      isNull,
+    );
+  });
 }

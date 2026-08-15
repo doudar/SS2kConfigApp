@@ -18,6 +18,7 @@ import 'ble_request_coalescer.dart';
 import 'bleOTA.dart';
 import 'connection_setup_coordinator.dart';
 import 'dircon_client.dart';
+import 'smartspin_advertisement.dart';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
@@ -35,6 +36,102 @@ class CharacteristicChangeEvent {
     required this.value,
     required this.type,
   });
+}
+
+class _DirConRecoveryAdvertisementSession {
+  _DirConRecoveryAdvertisementSession(this.device);
+
+  final BluetoothDevice device;
+  final Completer<SmartSpinAdvertisementData> _firstAdvertisement =
+      Completer<SmartSpinAdvertisementData>();
+  final StreamController<SmartSpinAdvertisementData> _updates =
+      StreamController<SmartSpinAdvertisementData>.broadcast();
+  StreamSubscription<List<ScanResult>>? _subscription;
+  SmartSpinAdvertisementData? latest;
+  bool _startedScan = false;
+  bool _disposed = false;
+
+  Future<void> start(Duration scanTimeout) async {
+    _subscription = FlutterBluePlus.onScanResults.listen(
+      _handleResults,
+      onError: (Object error, StackTrace stackTrace) {
+        if (!_firstAdvertisement.isCompleted) {
+          _firstAdvertisement.completeError(error, stackTrace);
+        }
+        if (!_updates.isClosed) _updates.addError(error, stackTrace);
+      },
+    );
+
+    _startedScan = !FlutterBluePlus.isScanningNow;
+    if (_startedScan) {
+      await FlutterBluePlus.startScan(
+        withRemoteIds: [device.remoteId.str],
+        timeout: scanTimeout,
+        continuousUpdates: true,
+        continuousDivisor: 1,
+        oneByOne: true,
+      );
+    }
+  }
+
+  void _handleResults(List<ScanResult> results) {
+    for (final result in results) {
+      if (result.device.remoteId != device.remoteId) continue;
+      final advertisement = SmartSpinAdvertisement.parse(
+        result.advertisementData.manufacturerData,
+      );
+      if (advertisement == null) continue;
+
+      latest = advertisement;
+      if (!_firstAdvertisement.isCompleted) {
+        _firstAdvertisement.complete(advertisement);
+      }
+      if (!_updates.isClosed) _updates.add(advertisement);
+    }
+  }
+
+  Future<SmartSpinAdvertisementData> waitForFirst(Duration timeout) {
+    return _firstAdvertisement.future.timeout(timeout);
+  }
+
+  Future<SmartSpinAdvertisementData> waitForAddressChange(
+    String currentAddress,
+    Duration timeout,
+  ) async {
+    final current = latest;
+    if (current != null && current.ipAddress != currentAddress) return current;
+    try {
+      return await _updates.stream
+          .firstWhere((update) => update.ipAddress != currentAddress)
+          .timeout(timeout);
+    } on TimeoutException {
+      return latest!;
+    }
+  }
+
+  Future<SmartSpinAdvertisementData> waitForUsableAddress(
+    Duration timeout,
+  ) async {
+    final current = latest;
+    if (current?.ipAddress != null) return current!;
+    try {
+      return await _updates.stream
+          .firstWhere((update) => update.ipAddress != null)
+          .timeout(timeout);
+    } on TimeoutException {
+      return latest!;
+    }
+  }
+
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    await _subscription?.cancel();
+    if (!_updates.isClosed) await _updates.close();
+    if (_startedScan && FlutterBluePlus.isScanningNow) {
+      await FlutterBluePlus.stopScan();
+    }
+  }
 }
 
 class DeviceDataManager {
@@ -271,7 +368,8 @@ class DeviceData {
   }
 
   Future<void> _handleDirConDisconnect(BluetoothDevice device) async {
-    if (_dirConClient?.host != advertisedIpAddress) return;
+    final disconnectedAddress = _dirConClient?.host;
+    if (disconnectedAddress == null) return;
     await _closeDirCon();
     _dirConSetupComplete = false;
     subscribed = false;
@@ -280,12 +378,46 @@ class DeviceData {
     if (isUserDisconnect || _dirConReconnectInProgress) return;
 
     _dirConReconnectInProgress = true;
+    _DirConRecoveryAdvertisementSession? advertisementSession;
+    var bleFallbackAttempted = false;
     try {
-      // A SmartSpin2k reboot routinely takes longer than the old 10 second
-      // retry window. Keep the transport choice stable while the device is
-      // starting up so an established DIRCON session is restored over the
-      // network instead of being replaced by a BLE connection.
-      const maxDirConReconnectAttempts = 45;
+      // The endpoint cached before a reboot may no longer be valid after WiFi
+      // settings change. Wait for a fresh advertisement from this exact unit
+      // before choosing DIRCON or BLE again.
+      advertisementSession = _DirConRecoveryAdvertisementSession(device);
+      await advertisementSession.start(const Duration(seconds: 45));
+      final firstAdvertisement = await advertisementSession.waitForFirst(
+        const Duration(seconds: 45),
+      );
+      advertisedIpAddress = firstAdvertisement.ipAddress;
+
+      if (advertisedIpAddress == null) {
+        print(
+          '[DIRCON] Device rebooted without a usable advertised IP; '
+          'switching directly to BLE.',
+        );
+        await advertisementSession.dispose();
+        bleFallbackAttempted = true;
+        await _connectBleAfterDirConLoss(device);
+        return;
+      }
+
+      if (advertisedIpAddress != disconnectedAddress) {
+        print(
+          '[DIRCON] Advertised IP changed from $disconnectedAddress to '
+          '$advertisedIpAddress.',
+        );
+      } else {
+        print(
+          '[DIRCON] Device is advertising the same IP $disconnectedAddress.',
+        );
+      }
+
+      // A fresh advertisement proves the unit has rebooted. Allow a few
+      // spaced attempts for the DIRCON TCP listener to start, while continuing
+      // to react immediately if a later advertisement changes or clears the
+      // WiFi address.
+      const maxDirConReconnectAttempts = 4;
       for (
         var attempt = 1;
         attempt <= maxDirConReconnectAttempts && !isUserDisconnect;
@@ -293,29 +425,105 @@ class DeviceData {
       ) {
         try {
           final ipAddress = advertisedIpAddress;
-          if (ipAddress == null) break;
-          await _connectDirCon(device, ipAddress, waitForSetup: true);
-          for (final callback in List<Future<void> Function()>.from(
-            _onReconnectedCallbacks,
-          )) {
-            await callback();
+          if (ipAddress == null) {
+            print(
+              '[DIRCON] Advertised IP was cleared; switching directly to BLE.',
+            );
+            await advertisementSession.dispose();
+            bleFallbackAttempted = true;
+            await _connectBleAfterDirConLoss(device);
+            return;
           }
+          await _connectDirCon(device, ipAddress, waitForSetup: true);
+          await _runReconnectedCallbacks();
           return;
         } catch (error) {
           print('[DIRCON] Reconnect attempt $attempt failed: $error');
           if (attempt < maxDirConReconnectAttempts) {
-            await Future.delayed(const Duration(seconds: 1));
+            final update = await advertisementSession.waitForAddressChange(
+              advertisedIpAddress!,
+              const Duration(seconds: 2),
+            );
+            advertisedIpAddress = update.ipAddress;
           }
         }
       }
 
       if (!isUserDisconnect) {
-        print('[DIRCON] Reconnect exhausted; trying BLE fallback.');
-        await device.connectAndUpdateStream();
-        await setupConnection(device);
+        print('[DIRCON] Advertised endpoint unavailable; trying BLE fallback.');
+        await advertisementSession.dispose();
+        bleFallbackAttempted = true;
+        await _connectBleAfterDirConLoss(device);
+      }
+    } catch (error) {
+      if (!isUserDisconnect && !bleFallbackAttempted) {
+        print(
+          '[DIRCON] Could not observe a fresh reboot advertisement; '
+          'trying BLE fallback: $error',
+        );
+        await advertisementSession?.dispose();
+        bleFallbackAttempted = true;
+        await _connectBleAfterDirConLoss(device);
+      } else if (!isUserDisconnect) {
+        rethrow;
       }
     } finally {
+      await advertisementSession?.dispose();
       _dirConReconnectInProgress = false;
+    }
+  }
+
+  Future<void> _connectBleAfterDirConLoss(BluetoothDevice device) async {
+    if (!device.isConnected) await device.connectAndUpdateStream();
+    connectionState = BluetoothConnectionState.connected;
+    await setupConnection(device);
+    await _runReconnectedCallbacks();
+  }
+
+  Future<void> _runReconnectedCallbacks() async {
+    for (final callback in List<Future<void> Function()>.from(
+      _onReconnectedCallbacks,
+    )) {
+      await callback();
+    }
+  }
+
+  Future<void> _refreshAdvertisedEndpointForReconnect(
+    BluetoothDevice device,
+  ) async {
+    final previousAddress = advertisedIpAddress;
+    final session = _DirConRecoveryAdvertisementSession(device);
+    try {
+      await session.start(const Duration(seconds: 30));
+      var advertisement = await session.waitForFirst(
+        const Duration(seconds: 30),
+      );
+
+      // When WiFi was previously unavailable, DHCP may complete shortly after
+      // the first post-boot advertisement. Keep observing briefly so a BLE
+      // connection can be promoted to the newly available DIRCON endpoint.
+      if (previousAddress == null && advertisement.ipAddress == null) {
+        advertisement = await session.waitForUsableAddress(
+          const Duration(seconds: 15),
+        );
+      }
+
+      advertisedIpAddress = advertisement.ipAddress;
+      if (advertisedIpAddress == null) {
+        print('[AutoReconnect] Fresh advertisement has no usable WiFi IP.');
+      } else if (advertisedIpAddress != previousAddress) {
+        print(
+          '[AutoReconnect] Advertised IP updated from '
+          '${previousAddress ?? 'none'} to $advertisedIpAddress.',
+        );
+      } else {
+        print(
+          '[AutoReconnect] Fresh advertisement confirms IP '
+          '$advertisedIpAddress.',
+        );
+      }
+    } finally {
+      await session.dispose();
     }
   }
 
@@ -358,6 +566,18 @@ class DeviceData {
 
     bool success = false;
     try {
+      try {
+        await _refreshAdvertisedEndpointForReconnect(device);
+      } catch (error) {
+        // Do not keep probing a cached network endpoint after a reboot when no
+        // fresh advertisement could confirm it. BLE remains the safe fallback.
+        advertisedIpAddress = null;
+        print(
+          '[AutoReconnect] Fresh advertisement unavailable; '
+          'using BLE fallback: $error',
+        );
+      }
+
       for (int attempt = 1; attempt <= maxAttempts; attempt++) {
         if (isUserDisconnect) break;
 
