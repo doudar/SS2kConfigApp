@@ -19,6 +19,9 @@ class MainActivity: FlutterActivity() {
 		MethodChannel(flutterEngine.dartExecutor.binaryMessenger, powerChannelName)
 			.setMethodCallHandler { call, result ->
 				when (call.method) {
+					"getPelotonDeviceInfo" -> {
+						result.success(getPelotonDeviceInfo())
+					}
 					"isIgnoringBatteryOptimizations" -> {
 						result.success(isIgnoringBatteryOptimizations())
 					}
@@ -29,6 +32,41 @@ class MainActivity: FlutterActivity() {
 					else -> result.notImplemented()
 				}
 			}
+	}
+
+	private fun getPelotonDeviceInfo(): Map<String, Any> {
+		val identifiers = listOf(
+			Build.MODEL,
+			Build.PRODUCT,
+			Build.DEVICE,
+		).map { it.lowercase() }
+
+		val isPelotonBrand =
+			Build.BRAND.equals("Peloton", ignoreCase = true) ||
+				Build.MANUFACTURER.equals("Peloton", ignoreCase = true)
+		val isPelotonModel = identifiers.any { identifier ->
+			identifier.startsWith("pltn-") ||
+				identifier.startsWith("rb1v") ||
+				identifier.startsWith("ttr") ||
+				identifier.startsWith("tc1vs") ||
+				identifier == "qbert" ||
+				identifier == "quartz"
+		}
+		val isPelotonBuild = Build.FINGERPRINT.startsWith(
+			"Peloton/",
+			ignoreCase = true,
+		)
+
+		return mapOf(
+			"isPeloton" to (isPelotonBrand || isPelotonModel || isPelotonBuild),
+			"brand" to Build.BRAND,
+			"manufacturer" to Build.MANUFACTURER,
+			"model" to Build.MODEL,
+			"product" to Build.PRODUCT,
+			"device" to Build.DEVICE,
+			"fingerprint" to Build.FINGERPRINT,
+			"androidSdk" to Build.VERSION.SDK_INT,
+		)
 	}
 
 	private fun isIgnoringBatteryOptimizations(): Boolean {

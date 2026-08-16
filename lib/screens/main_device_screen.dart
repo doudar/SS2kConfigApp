@@ -28,6 +28,9 @@ import '../utils/extra.dart';
 
 import '../utils/device_data.dart';
 import '../utils/firmware_release_service.dart';
+import '../utils/constants.dart';
+import '../utils/peloton_environment.dart';
+import 'settings_category_screen.dart';
 
 class MainDeviceScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -38,6 +41,9 @@ class MainDeviceScreen extends StatefulWidget {
 }
 
 class _MainDeviceScreenState extends State<MainDeviceScreen> {
+  static const String _pelotonWifiWarningSuppressedKey =
+      'peloton_wifi_warning_suppressed';
+
   late DeviceData deviceData;
   bool _maintenanceExpanded = false;
   late Future<String?> _appVersionFuture;
@@ -45,12 +51,17 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   VoidCallback? _firmwareVersionListener;
   bool _checkingFirmwareUpdate = false;
   String? _lastCheckedFirmwareVersion;
+  bool _pelotonWifiWarningChecked = false;
 
   @override
   void initState() {
     super.initState();
     deviceData = DeviceDataManager.forDevice(widget.device);
     _appVersionFuture = _loadAppVersion();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_maybeShowPelotonWifiWarning());
+    });
 
     if (widget.device.remoteId.toString() == "SmartSpin2k Demo") {
       _demoDeviceSetup();
@@ -94,6 +105,69 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       stream: widget.device.isDisconnecting,
       onValue: (value) => deviceData.isDisconnecting = value,
     );
+  }
+
+  Future<void> _maybeShowPelotonWifiWarning() async {
+    if (_pelotonWifiWarningChecked || !mounted) return;
+    _pelotonWifiWarningChecked = true;
+
+    final prefs = await SharedPreferences.getInstance();
+    final warningSuppressed =
+        prefs.getBool(_pelotonWifiWarningSuppressedKey) ?? false;
+    final isPelotonTablet = await PelotonEnvironment.isPelotonTablet();
+
+    if (!mounted ||
+        !PelotonEnvironment.shouldShowWifiWarning(
+          isPelotonTablet: isPelotonTablet,
+          smartSpinIpAddress: deviceData.advertisedIpAddress,
+          warningSuppressed: warningSuppressed,
+        )) {
+      return;
+    }
+
+    final action = await showDialog<_PelotonWifiWarningAction>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.wifi),
+        title: const Text('Connect SmartSpin2k to Wi-Fi'),
+        content: const Text(
+          'Your SmartSpin2k must be connected to your home Wi-Fi network to '
+          'use SmartSpin2k Config App and Grupetto at the same time. If you plan to use Grupetto, please connect your SmartSpin2k to Wi-Fi now.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(
+              dialogContext,
+            ).pop(_PelotonWifiWarningAction.notNow),
+            child: const Text('NOT NOW'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(
+              dialogContext,
+            ).pop(_PelotonWifiWarningAction.dontShowAgain),
+            child: const Text("DON'T SHOW AGAIN"),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(
+              dialogContext,
+            ).pop(_PelotonWifiWarningAction.configureWifi),
+            child: const Text('CONFIGURE WI-FI'),
+          ),
+        ],
+      ),
+    );
+
+    if (action == _PelotonWifiWarningAction.dontShowAgain) {
+      await prefs.setBool(_pelotonWifiWarningSuppressedKey, true);
+    } else if (action == _PelotonWifiWarningAction.configureWifi && mounted) {
+      _openScreen(
+        SettingsCategoryScreen(
+          device: widget.device,
+          title: 'Network',
+          settingType: SettingType.network,
+        ),
+      );
+    }
   }
 
   StreamSubscription<bool> _listenConnectionFlag({
@@ -620,3 +694,5 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     );
   }
 }
+
+enum _PelotonWifiWarningAction { notNow, dontShowAgain, configureWifi }
