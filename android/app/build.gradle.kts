@@ -33,7 +33,9 @@ android {
     defaultConfig {
         applicationId = "com.smartspin2k.app"
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        // Pin Play policy compliance independently of Flutter's default.
+        // minSdk remains unchanged so Android 7.0+ devices stay supported.
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
