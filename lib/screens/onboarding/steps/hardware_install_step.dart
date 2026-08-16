@@ -29,7 +29,7 @@ const _hardwareInstallPages = <WizardStepId, _HardwareInstallPageData>{
     stepNumber: 1,
     title: 'Install the Bike Mount',
     body:
-        'Assemble bike mount using nut and bolt. Install it to your bike\'s front tube using the provided O-Rings or velcro straps.',
+        'Assemble bike mount using nut and bolt. Install it to your bike\'s front tube using the provided O-Ring or velcro straps.',
     imageAsset: 'assets/images/install_1.svg',
     imagePlaceholderLabel: 'Photo: Bike mount installation',
   ),
