@@ -12,13 +12,14 @@ import 'package:flutter/foundation.dart';
 
 import 'constants.dart';
 import 'extra.dart';
-import 'ftmsControlPoint.dart';
 import 'bleConstants.dart';
 import 'ble_request_coalescer.dart';
 import 'bleOTA.dart';
 import 'connection_setup_coordinator.dart';
+import 'device_transport_state.dart';
 import 'dircon_client.dart';
 import 'smartspin_advertisement.dart';
+import 'workout_control_lane.dart';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
@@ -162,26 +163,7 @@ class FtmsData {
   late int heartRate;
   late int speed;
 
-  // Add getter and setter for targetERG to monitor changes
   int get targetERG => _targetERG;
-  set targetERG(int value) {
-    if (value != _targetERG) {
-      _targetERG = value;
-      // Notify any listeners that target power has changed
-      if (onTargetPowerChanged != null) {
-        onTargetPowerChanged!(value);
-      }
-      // If target power is 0, switch to simulation mode with 0 incline
-      if (value == 0 && onModeChanged != null) {
-        onModeChanged!(true); // true indicates switch to simulation mode
-      }
-    }
-  }
-
-  // Callback for target power changes
-  void Function(int)? onTargetPowerChanged;
-  // Callback for mode changes (simulation vs target power)
-  void Function(bool)? onModeChanged;
 
   FtmsData({
     this.cadence = 0,
@@ -195,6 +177,15 @@ class FtmsData {
 }
 
 class DeviceData {
+  DeviceData() {
+    _workoutControlLane = WorkoutControlLane(
+      transportState: () => _transportStateController.value,
+      isReady: _isWorkoutControlReady,
+      dispatch: _dispatchWorkoutControlBatch,
+    );
+    _transportStateController.addListener(_handleTransportStateChanged);
+  }
+
   String? advertisedIpAddress;
   DirConClient? _dirConClient;
   StreamSubscription<List<int>>? _dirConNotificationSubscription;
@@ -204,11 +195,23 @@ class DeviceData {
   bool _dirConReconnectInProgress = false;
   bool _initialConnectionInProgress = false;
 
-  bool get isDirConConnected => _dirConClient?.isConnected ?? false;
+  final DeviceTransportStateController _transportStateController =
+      DeviceTransportStateController();
+  late final WorkoutControlLane _workoutControlLane;
+
+  ValueListenable<DeviceTransportState> get transportState =>
+      _transportStateController;
+  bool get isDirConConnected =>
+      _transportStateController.value.transport == DeviceTransportKind.dircon &&
+      _transportStateController.value.phase == DeviceTransportPhase.connected;
   bool get isTransportActive =>
-      isDirConConnected ||
-      connectionState == BluetoothConnectionState.connected;
-  String get activeTransportName => isDirConConnected ? 'DIRCON' : 'Bluetooth';
+      _transportStateController.value.phase == DeviceTransportPhase.connected;
+  String get activeTransportName =>
+      switch (_transportStateController.value.transport) {
+        DeviceTransportKind.dircon => 'DIRCON',
+        DeviceTransportKind.bluetooth => 'Bluetooth',
+        DeviceTransportKind.none => 'None',
+      };
 
   bool isUserDisconnect = false;
   ValueNotifier<int> rssi = ValueNotifier(0);
@@ -251,10 +254,20 @@ class DeviceData {
       // disconnected. Do not let that idle BLE state overwrite the active
       // network transport or start a competing reconnect loop.
       if (isDirConConnected) return;
-      connectionState = state;
+
+      if (state == BluetoothConnectionState.connected) {
+        _markTransportConnected(DeviceTransportKind.bluetooth);
+        return;
+      }
 
       if (state == BluetoothConnectionState.disconnected) {
-        if (isUserDisconnect || _initialConnectionInProgress) return;
+        if (isUserDisconnect) {
+          _markTransportDisconnected(explicit: true);
+          return;
+        }
+        if (_initialConnectionInProgress) return;
+
+        _markTransportReconnecting(DeviceTransportKind.bluetooth);
 
         // Reset connection-specific state so the next setupConnection
         // performs a full re-bootstrap (re-discover services, re-subscribe
@@ -279,6 +292,7 @@ class DeviceData {
     try {
       final ipAddress = advertisedIpAddress;
       if (ipAddress != null && ipAddress.isNotEmpty) {
+        _markTransportConnecting(DeviceTransportKind.dircon);
         try {
           await _connectDirCon(device, ipAddress, waitForSetup: waitForSetup);
           return;
@@ -288,13 +302,17 @@ class DeviceData {
         }
       }
 
+      _markTransportConnecting(DeviceTransportKind.bluetooth);
       await device.connectAndUpdateStream();
-      connectionState = BluetoothConnectionState.connected;
+      _markTransportConnected(DeviceTransportKind.bluetooth);
       if (waitForSetup) {
         await setupConnection(device);
       } else {
         _setupConnectionInBackground(device);
       }
+    } catch (_) {
+      _markTransportDisconnected(explicit: false);
+      rethrow;
     } finally {
       _initialConnectionInProgress = false;
     }
@@ -302,9 +320,9 @@ class DeviceData {
 
   Future<void> disconnectPreferred(BluetoothDevice device) async {
     isUserDisconnect = true;
+    _markTransportDisconnected(explicit: true);
     if (_dirConClient != null) {
       await _closeDirCon();
-      connectionState = BluetoothConnectionState.disconnected;
       _resetConnectionState();
       return;
     }
@@ -326,11 +344,10 @@ class DeviceData {
     }
 
     _dirConClient = client;
-    _notifyTransportChanged();
     _dirConSetupComplete = false;
     configAppCompatibleFirmware = true;
     _ensureCachedMap();
-    connectionState = BluetoothConnectionState.connected;
+    _markTransportConnected(DeviceTransportKind.dircon);
     _dirConNotificationSubscription = client
         .characteristicNotifications(ccUUID)
         .listen(_decodeCustomValue);
@@ -370,11 +387,11 @@ class DeviceData {
   Future<void> _handleDirConDisconnect(BluetoothDevice device) async {
     final disconnectedAddress = _dirConClient?.host;
     if (disconnectedAddress == null) return;
+    _markTransportReconnecting(DeviceTransportKind.dircon);
     await _closeDirCon();
     _dirConSetupComplete = false;
     subscribed = false;
     charReceived.value = false;
-    connectionState = BluetoothConnectionState.disconnected;
     if (isUserDisconnect || _dirConReconnectInProgress) return;
 
     _dirConReconnectInProgress = true;
@@ -474,8 +491,9 @@ class DeviceData {
   }
 
   Future<void> _connectBleAfterDirConLoss(BluetoothDevice device) async {
+    _markTransportConnecting(DeviceTransportKind.bluetooth);
     if (!device.isConnected) await device.connectAndUpdateStream();
-    connectionState = BluetoothConnectionState.connected;
+    _markTransportConnected(DeviceTransportKind.bluetooth);
     await setupConnection(device);
     await _runReconnectedCallbacks();
   }
@@ -530,7 +548,7 @@ class DeviceData {
   Future<void> _closeDirCon() async {
     final client = _dirConClient;
     _dirConClient = null;
-    if (client != null) _notifyTransportChanged();
+    _workoutControlLane.onAvailabilityChanged();
     await _dirConNotificationSubscription?.cancel();
     _dirConNotificationSubscription = null;
     await _dirConFtmsSubscription?.cancel();
@@ -540,8 +558,28 @@ class DeviceData {
     if (client != null) await client.close();
   }
 
-  void _notifyTransportChanged() {
+  void _markTransportConnecting(DeviceTransportKind transport) {
+    _transportStateController.markConnecting(transport);
+  }
+
+  void _markTransportReconnecting(DeviceTransportKind transport) {
+    _transportStateController.markReconnecting(transport);
+  }
+
+  void _markTransportConnected(DeviceTransportKind transport) {
+    _transportStateController.markConnected(transport);
+  }
+
+  void _markTransportDisconnected({required bool explicit}) {
+    _transportStateController.markDisconnected(explicit: explicit);
+  }
+
+  void _handleTransportStateChanged() {
+    connectionState = isTransportActive
+        ? BluetoothConnectionState.connected
+        : BluetoothConnectionState.disconnected;
     transportRevision.value++;
+    _workoutControlLane.onAvailabilityChanged();
   }
 
   /// Reconnect and rebuild all connection-scoped BLE state so all recovery
@@ -561,6 +599,7 @@ class DeviceData {
     }
 
     _reconnecting = true;
+    _markTransportReconnecting(_transportStateController.value.transport);
     _reconnectRequested = false;
     _reconnectCompleter = Completer<bool>();
 
@@ -620,6 +659,8 @@ class DeviceData {
             );
             await device.connectAndUpdateStream();
           }
+
+          _markTransportConnected(DeviceTransportKind.bluetooth);
 
           await Future.delayed(settleDelay);
 
@@ -709,6 +750,7 @@ class DeviceData {
     lastFtmsUpdate = null;
     _ftmsRecoveryInProgress = false;
     _lastFtmsRecoveryAttempt = null;
+    _workoutControlLane.onAvailabilityChanged();
   }
 
   /// Stop the auto-reconnect monitor.
@@ -911,6 +953,7 @@ class DeviceData {
     }
 
     if (!device.isConnected) return Future.value();
+    _markTransportConnected(DeviceTransportKind.bluetooth);
 
     final setupInProgress = _setupCoordinator.inFlight;
     if (setupInProgress != null) return setupInProgress;
@@ -954,6 +997,7 @@ class DeviceData {
       machineStatusCharacteristic = null;
       await _machineStatusSubscription?.cancel();
       _machineStatusSubscription = null;
+      _workoutControlLane.onAvailabilityChanged();
     }
 
     await _discoverServices(device, forceRefresh: forceRefresh);
@@ -962,42 +1006,6 @@ class DeviceData {
     if (!connectionIsCurrent()) return;
     await updateCustomCharacter(device);
     if (!connectionIsCurrent()) return;
-
-    // Set up target power change listener
-    ftmsData.onTargetPowerChanged = (int newPower) async {
-      if (ftmsControlPointCharacteristic != null) {
-        try {
-          await writeFtmsControlPoint(
-            (characteristic) =>
-                FTMSControlPoint.writeTargetPower(characteristic, newPower),
-          );
-        } catch (e) {
-          print('Error writing target power to FTMS: $e');
-        }
-      }
-    };
-
-    // Set up mode change listener
-    ftmsData.onModeChanged = (bool toSimulation) async {
-      if (ftmsControlPointCharacteristic != null) {
-        try {
-          if (toSimulation) {
-            // Switch to simulation mode with 0 incline
-            await writeFtmsControlPoint(
-              (characteristic) => FTMSControlPoint.writeIndoorBikeSimulation(
-                characteristic,
-                windSpeed: 0,
-                grade: 0,
-                crr: 0,
-                cw: 0,
-              ),
-            );
-          }
-        } catch (e) {
-          print('Error switching FTMS mode: $e');
-        }
-      }
-    };
   }
 
   Future<BluetoothCharacteristic?> _getMyCharacteristic(
@@ -1129,8 +1137,10 @@ class DeviceData {
       }
 
       charReceived.value = _myCharacteristic != null;
+      _workoutControlLane.onAvailabilityChanged();
     } catch (e) {
       charReceived.value = false;
+      _workoutControlLane.onAvailabilityChanged();
     }
   }
 
@@ -1767,14 +1777,18 @@ class DeviceData {
   Duration get _bleWriteGuardInterval =>
       Platform.isAndroid ? const Duration(milliseconds: 35) : Duration.zero;
 
-  Future<T> _queueBleOperation<T>(Future<T> Function() operation) {
+  Future<T> _queueBleOperation<T>(
+    Future<T> Function() operation, {
+    bool allowInline = true,
+  }) {
     // Some queued operations perform discovery, and discovery may enable CCCD
     // notifications. Running nested queue work inline avoids self-deadlocking
     // while the outer queued operation is waiting for discovery to finish. The
     // zone token keeps that escape hatch scoped to the current queued operation
     // so unrelated BLE callbacks still serialize behind the queue.
     final currentToken = Zone.current[_bleOperationZoneKey];
-    if (currentToken != null &&
+    if (allowInline &&
+        currentToken != null &&
         _activeBleOperationTokens.contains(currentToken)) {
       return operation();
     }
@@ -1885,17 +1899,57 @@ class DeviceData {
     });
   }
 
-  Future<void> writeFtmsControlPoint(
-    Future<void> Function(BluetoothCharacteristic characteristic) operation,
-  ) async {
-    if (this.isSimulated) return;
-    final characteristic = ftmsControlPointCharacteristic;
-    if (characteristic == null) {
-      print('FTMS Control Point characteristic not found');
+  void setWorkoutTargetPower(int watts, {bool force = false}) {
+    _workoutControlLane.setTargetPower(watts, force: force);
+    ftmsData._targetERG = watts;
+  }
+
+  void resetWorkoutSimulation() {
+    _workoutControlLane.resetSimulation();
+  }
+
+  bool _isWorkoutControlReady() {
+    if (isSimulated) return false;
+    final state = _transportStateController.value;
+    if (state.phase != DeviceTransportPhase.connected) return false;
+    return switch (state.transport) {
+      DeviceTransportKind.dircon => _dirConClient?.isConnected ?? false,
+      DeviceTransportKind.bluetooth => ftmsControlPointCharacteristic != null,
+      DeviceTransportKind.none => false,
+    };
+  }
+
+  Future<bool> _dispatchWorkoutControlBatch(
+    WorkoutControlBatch batch,
+    bool Function() isCurrent,
+  ) {
+    return _queueBleOperation(() async {
+      for (final command in batch.commands) {
+        if (!isCurrent()) return false;
+        await _writeFtmsControlPointCommandNow(command);
+      }
+      return isCurrent();
+    }, allowInline: false);
+  }
+
+  Future<void> _writeFtmsControlPointCommandNow(List<int> command) async {
+    final dirConClient = _dirConClient;
+    if (_transportStateController.value.transport ==
+            DeviceTransportKind.dircon &&
+        dirConClient != null &&
+        dirConClient.isConnected) {
+      await dirConClient.writeCharacteristic(ftmsControlPointUUID, command);
       return;
     }
 
-    return _queueBleOperation(() => operation(characteristic));
+    final characteristic = ftmsControlPointCharacteristic;
+    if (_transportStateController.value.transport !=
+            DeviceTransportKind.bluetooth ||
+        characteristic == null ||
+        !characteristic.device.isConnected) {
+      throw StateError('FTMS Control Point is not ready');
+    }
+    await characteristic.write(command);
   }
 
   /// Writes an encoded FTMS Control Point command over the active transport.
@@ -1905,20 +1959,7 @@ class DeviceData {
   /// characteristic can never reach the device while DIRCON is active.
   Future<void> writeFtmsControlPointCommand(List<int> command) async {
     if (isSimulated) return;
-
-    return _queueBleOperation(() async {
-      final dirConClient = _dirConClient;
-      if (dirConClient != null && dirConClient.isConnected) {
-        await dirConClient.writeCharacteristic(ftmsControlPointUUID, command);
-        return;
-      }
-
-      final characteristic = ftmsControlPointCharacteristic;
-      if (characteristic == null) {
-        throw StateError('FTMS Control Point characteristic not found');
-      }
-      await characteristic.write(command);
-    });
+    return _queueBleOperation(() => _writeFtmsControlPointCommandNow(command));
   }
 
   void decode(BluetoothDevice device) {
@@ -2166,7 +2207,10 @@ class DeviceData {
 
   /// Dispose of resources
   void dispose() {
-    _closeDirCon();
+    _transportStateController.removeListener(_handleTransportStateChanged);
+    _workoutControlLane.dispose();
+    _transportStateController.dispose();
+    unawaited(_closeDirCon());
     _notifySubscription?.cancel();
     _ftmsSubscription?.cancel();
     _characteristicChangeController.close();
