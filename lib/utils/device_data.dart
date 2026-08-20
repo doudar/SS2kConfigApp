@@ -198,6 +198,7 @@ class DeviceData {
   final DeviceTransportStateController _transportStateController =
       DeviceTransportStateController();
   late final WorkoutControlLane _workoutControlLane;
+  bool _isDisposed = false;
 
   ValueListenable<DeviceTransportState> get transportState =>
       _transportStateController;
@@ -311,7 +312,13 @@ class DeviceData {
         _setupConnectionInBackground(device);
       }
     } catch (_) {
-      _markTransportDisconnected(explicit: false);
+      // A failed bootstrap is not a dead link. Only report the transport down
+      // when the physical session was never established; otherwise setup threw
+      // over a live connection and nothing would ever re-mark it as connected.
+      if (_transportStateController.value.phase !=
+          DeviceTransportPhase.connected) {
+        _markTransportDisconnected(explicit: false);
+      }
       rethrow;
     } finally {
       _initialConnectionInProgress = false;
@@ -548,6 +555,16 @@ class DeviceData {
   Future<void> _closeDirCon() async {
     final client = _dirConClient;
     _dirConClient = null;
+    // Tearing down a live session is itself a transport transition. Callers
+    // that already moved to connecting/reconnecting/disconnected are unaffected
+    // by this guard, so no spurious disconnected phase is emitted mid-reconnect.
+    if (client != null &&
+        _transportStateController.value.transport ==
+            DeviceTransportKind.dircon &&
+        _transportStateController.value.phase ==
+            DeviceTransportPhase.connected) {
+      _markTransportDisconnected(explicit: isUserDisconnect);
+    }
     _workoutControlLane.onAvailabilityChanged();
     await _dirConNotificationSubscription?.cancel();
     _dirConNotificationSubscription = null;
@@ -558,19 +575,25 @@ class DeviceData {
     if (client != null) await client.close();
   }
 
+  // A DIRCON disconnect can land after dispose() has torn down the notifier,
+  // so every transition is gated on the same disposal flag.
   void _markTransportConnecting(DeviceTransportKind transport) {
+    if (_isDisposed) return;
     _transportStateController.markConnecting(transport);
   }
 
   void _markTransportReconnecting(DeviceTransportKind transport) {
+    if (_isDisposed) return;
     _transportStateController.markReconnecting(transport);
   }
 
   void _markTransportConnected(DeviceTransportKind transport) {
+    if (_isDisposed) return;
     _transportStateController.markConnected(transport);
   }
 
   void _markTransportDisconnected({required bool explicit}) {
+    if (_isDisposed) return;
     _transportStateController.markDisconnected(explicit: explicit);
   }
 
@@ -750,7 +773,9 @@ class DeviceData {
     lastFtmsUpdate = null;
     _ftmsRecoveryInProgress = false;
     _lastFtmsRecoveryAttempt = null;
-    _workoutControlLane.onAvailabilityChanged();
+    // The control point this target was delivered through is gone, so the
+    // rebuilt session must receive it again even on an unchanged epoch.
+    _workoutControlLane.invalidateDelivery();
   }
 
   /// Stop the auto-reconnect monitor.
@@ -997,7 +1022,7 @@ class DeviceData {
       machineStatusCharacteristic = null;
       await _machineStatusSubscription?.cancel();
       _machineStatusSubscription = null;
-      _workoutControlLane.onAvailabilityChanged();
+      _workoutControlLane.invalidateDelivery();
     }
 
     await _discoverServices(device, forceRefresh: forceRefresh);
@@ -1906,6 +1931,9 @@ class DeviceData {
 
   void resetWorkoutSimulation() {
     _workoutControlLane.resetSimulation();
+    // Zero-grade simulation releases the ERG target, so the displayed target
+    // must follow or it reports a hold the trainer is no longer applying.
+    ftmsData._targetERG = 0;
   }
 
   bool _isWorkoutControlReady() {
@@ -2207,6 +2235,7 @@ class DeviceData {
 
   /// Dispose of resources
   void dispose() {
+    _isDisposed = true;
     _transportStateController.removeListener(_handleTransportStateChanged);
     _workoutControlLane.dispose();
     _transportStateController.dispose();

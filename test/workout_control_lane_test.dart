@@ -300,6 +300,62 @@ void main() {
     ]);
   });
 
+  test('negative targets clamp to the zero-target batch', () async {
+    final harness = _Harness();
+    final lane = harness.createLane();
+
+    lane.setTargetPower(-50);
+    await _flush(4);
+
+    expect(harness.writes, [
+      [0x05, 0x00, 0x00],
+      [0x11, 0, 0, 0, 0, 0, 0],
+    ]);
+  });
+
+  test('epoch bump while connected redelivers the same target once', () async {
+    final harness = _Harness();
+    final lane = harness.createLane();
+
+    lane.setTargetPower(240);
+    await _flush();
+    lane.setTargetPower(240);
+    await _flush();
+    expect(harness.writes, hasLength(1));
+
+    harness.state = const DeviceTransportState(
+      transport: DeviceTransportKind.dircon,
+      phase: DeviceTransportPhase.connected,
+      epoch: 2,
+    );
+    lane.onAvailabilityChanged();
+    await _flush(4);
+    lane.setTargetPower(240);
+    await _flush(4);
+
+    expect(harness.writes, [
+      [0x05, 0xf0, 0x00],
+      [0x05, 0xf0, 0x00],
+    ]);
+  });
+
+  test('invalidateDelivery resends the target within the same epoch', () async {
+    final harness = _Harness();
+    final lane = harness.createLane();
+
+    lane.setTargetPower(210);
+    await _flush();
+    expect(harness.writes, hasLength(1));
+
+    lane.invalidateDelivery();
+    await _flush(4);
+
+    expect(harness.writes, [
+      [0x05, 0xd2, 0x00],
+      [0x05, 0xd2, 0x00],
+    ]);
+  });
+
   test(
     'simulation reset supersedes target and repeated reset dedupes',
     () async {

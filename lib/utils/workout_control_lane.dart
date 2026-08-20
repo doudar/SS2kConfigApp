@@ -54,9 +54,9 @@ class WorkoutControlLane {
   bool _disposed = false;
 
   void setTargetPower(int watts, {bool force = false}) {
-    if (watts < 0) {
-      throw RangeError.range(watts, 0, 0x7fff, 'watts');
-    }
+    // Ramp math runs inside the 100 ms workout tick, so an out-of-range target
+    // from a malformed workout must not throw into the timer callback.
+    watts = watts.clamp(0, 0x7fff);
     final targetCommand = FTMSControlPoint.targetPowerCommand(watts);
     final commands = <Uint8List>[targetCommand];
     if (watts == 0) {
@@ -100,6 +100,16 @@ class WorkoutControlLane {
     );
   }
 
+  /// Drops the delivery record so the desired state is resent on the current
+  /// epoch. Used when connection-scoped state is torn down and rebuilt without
+  /// a phase change, where epoch-scoped deduplication would otherwise suppress
+  /// a target the rebuilt session never received.
+  void invalidateDelivery() {
+    if (_disposed) return;
+    _delivered = null;
+    onAvailabilityChanged();
+  }
+
   void onAvailabilityChanged() {
     if (_disposed) return;
     if (!_available) {
@@ -129,6 +139,10 @@ class WorkoutControlLane {
     if (_disposed) return;
 
     final epoch = _transportState().epoch;
+    // `force` is deliberately absorbed here: an identical batch is already in
+    // flight or pending for this epoch, so that delivery covers the request and
+    // a second write would be redundant. Pinned by the lane test
+    // 'force coalesces with identical request already in flight'.
     if (_hasMatchingActiveRequest(desired, epoch)) {
       _desired = desired;
       return;
