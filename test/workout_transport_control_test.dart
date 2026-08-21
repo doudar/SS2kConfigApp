@@ -69,6 +69,25 @@ void main() {
     expect(deviceData.targets, hasLength(2));
     deviceData.dispose();
   });
+
+  // The lane clamps out-of-range targets before writing them, so mirroring the
+  // caller's argument into the display metric would report a hold the trainer
+  // never received - a negative target stayed negative on screen while the
+  // device got 0.
+  test('stored target matches the clamped value actually sent', () {
+    final deviceData = DeviceData();
+
+    deviceData.setWorkoutTargetPower(-50);
+    expect(deviceData.ftmsData.targetERG, 0);
+
+    deviceData.setWorkoutTargetPower(50000);
+    expect(deviceData.ftmsData.targetERG, 0x7fff);
+
+    deviceData.setWorkoutTargetPower(250);
+    expect(deviceData.ftmsData.targetERG, 250);
+
+    deviceData.dispose();
+  });
 }
 
 class _RecordingDeviceData extends DeviceData {

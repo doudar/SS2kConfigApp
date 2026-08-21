@@ -68,7 +68,11 @@ class WorkoutControlLane {
   int _generation = 0;
   bool _disposed = false;
 
-  void setTargetPower(int watts, {bool force = false}) {
+  /// Requests [watts] as the ERG target and returns the value actually sent
+  /// after clamping. Callers that mirror the target into display state must
+  /// store the return value, not their own argument, or the metric reports a
+  /// hold the trainer never received.
+  int setTargetPower(int watts, {bool force = false}) {
     // Ramp math runs inside the 100 ms workout tick, so an out-of-range target
     // from a malformed workout must not throw into the timer callback.
     watts = watts.clamp(0, 0x7fff);
@@ -95,6 +99,7 @@ class WorkoutControlLane {
       ),
       force: force,
     );
+    return watts;
   }
 
   void resetSimulation() {

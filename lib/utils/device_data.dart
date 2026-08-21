@@ -1876,8 +1876,12 @@ class DeviceData {
 
   void setWorkoutTargetPower(int watts, {bool force = false}) {
     _workoutControlActive = true;
-    _workoutControlLane.setTargetPower(watts, force: force);
-    ftmsData._targetERG = watts;
+    // Store what the lane actually sent, not the requested value: an imported
+    // workout can ask for a target outside sint16 and the lane clamps it.
+    ftmsData._targetERG = _workoutControlLane.setTargetPower(
+      watts,
+      force: force,
+    );
   }
 
   void resetWorkoutSimulation() {
