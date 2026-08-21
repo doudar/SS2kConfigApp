@@ -4,7 +4,193 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/device_transport_state.dart';
 import 'package:ss2kconfigapp/utils/workout_control_lane.dart';
 
+const _keepAlive = Duration(seconds: 2);
+const _retry = Duration(seconds: 1);
+
 void main() {
+  group('ERG keep-alive', () {
+    // Regression for the 2026-08-20 hardware ride: the 30 s warmup applied no
+    // resistance at all while the ramp that followed tracked fine. The firmware
+    // rewrites its own FTMS mode to simulation whenever cadence sits at or
+    // below 30 rpm, so the single target written at the top of a steady segment
+    // was thrown away during spin-up and nothing re-armed ERG. A ramp hid the
+    // bug because every tick produces a different target, hence a fresh write.
+    test('unchanged steady target is re-asserted on the keep-alive', () async {
+      final timers = <_ManualTimer>[];
+      final harness = _Harness();
+      final lane = harness.createLane(
+        keepAliveInterval: _keepAlive,
+        timerFactory: (duration, callback) {
+          final timer = _ManualTimer(callback, duration);
+          timers.add(timer);
+          return timer;
+        },
+      );
+
+      lane.setTargetPower(100, force: true);
+      await _flush(4);
+      expect(harness.writes, hasLength(1));
+
+      // The 100 ms workout tick re-asks for the same target throughout the
+      // segment. Those must stay deduped; only the keep-alive may write.
+      for (var tick = 0; tick < 20; tick++) {
+        lane.setTargetPower(100);
+      }
+      await _flush(4);
+      expect(harness.writes, hasLength(1), reason: 'ticks must not each write');
+
+      _fireKeepAlive(timers);
+      await _flush(4);
+      _fireKeepAlive(timers);
+      await _flush(4);
+
+      expect(harness.writes, [
+        [0x05, 0x64, 0x00],
+        [0x05, 0x64, 0x00],
+        [0x05, 0x64, 0x00],
+      ]);
+    });
+
+    test('zero-watt batch and simulation reset disarm the keep-alive', () async {
+      final timers = <_ManualTimer>[];
+      final harness = _Harness();
+      final lane = harness.createLane(
+        keepAliveInterval: _keepAlive,
+        timerFactory: (duration, callback) {
+          final timer = _ManualTimer(callback, duration);
+          timers.add(timer);
+          return timer;
+        },
+      );
+
+      lane.setTargetPower(120);
+      await _flush(4);
+      expect(_armed(timers, _keepAlive), hasLength(1));
+
+      // FreeRide: the batch ends in a simulation command, so ERG is meant to be
+      // off and re-asserting would just re-run the mode switch every interval.
+      lane.setTargetPower(0);
+      await _flush(4);
+      expect(_armed(timers, _keepAlive), isEmpty);
+
+      lane.setTargetPower(120);
+      await _flush(4);
+      expect(_armed(timers, _keepAlive), hasLength(1));
+
+      // Pause and stop both route through resetSimulation.
+      lane.resetSimulation();
+      await _flush(4);
+      expect(_armed(timers, _keepAlive), isEmpty);
+    });
+
+    test('delivering a new target restarts the keep-alive window', () async {
+      final timers = <_ManualTimer>[];
+      final harness = _Harness();
+      final lane = harness.createLane(
+        keepAliveInterval: _keepAlive,
+        timerFactory: (duration, callback) {
+          final timer = _ManualTimer(callback, duration);
+          timers.add(timer);
+          return timer;
+        },
+      );
+
+      lane.setTargetPower(100);
+      await _flush(4);
+      final firstWindow = _armed(timers, _keepAlive).single;
+
+      lane.setTargetPower(110);
+      await _flush(4);
+
+      expect(harness.writes, hasLength(2));
+      expect(
+        firstWindow.isActive,
+        isFalse,
+        reason: 'a write restarts the silence window instead of firing on top',
+      );
+      expect(_armed(timers, _keepAlive), hasLength(1));
+    });
+
+    test('keep-alive re-arms on the new epoch after a reconnect', () async {
+      final timers = <_ManualTimer>[];
+      final harness = _Harness();
+      final lane = harness.createLane(
+        keepAliveInterval: _keepAlive,
+        timerFactory: (duration, callback) {
+          final timer = _ManualTimer(callback, duration);
+          timers.add(timer);
+          return timer;
+        },
+      );
+
+      lane.setTargetPower(150);
+      await _flush(4);
+      expect(harness.writes, hasLength(1));
+
+      harness
+        ..ready = false
+        ..state = const DeviceTransportState(
+          transport: DeviceTransportKind.dircon,
+          phase: DeviceTransportPhase.reconnecting,
+          epoch: 1,
+        );
+      lane.onAvailabilityChanged();
+      expect(_armed(timers, _keepAlive), isEmpty);
+
+      harness
+        ..ready = true
+        ..state = const DeviceTransportState(
+          transport: DeviceTransportKind.dircon,
+          phase: DeviceTransportPhase.connected,
+          epoch: 2,
+        );
+      lane.onAvailabilityChanged();
+      await _flush(4);
+      expect(harness.writes, hasLength(2), reason: 'epoch bump redelivers once');
+
+      _fireKeepAlive(timers);
+      await _flush(4);
+      expect(harness.writes, hasLength(3));
+    });
+
+    test('keep-alive defers to an armed retry rather than stacking', () async {
+      final timers = <_ManualTimer>[];
+      var failures = 1;
+      final harness = _Harness(
+        fail: () {
+          if (failures == 0) return false;
+          failures--;
+          return true;
+        },
+      );
+      final lane = harness.createLane(
+        keepAliveInterval: _keepAlive,
+        timerFactory: (duration, callback) {
+          final timer = _ManualTimer(callback, duration);
+          timers.add(timer);
+          return timer;
+        },
+      );
+
+      lane.setTargetPower(100);
+      await _flush(4);
+      expect(harness.writes, isEmpty);
+      final retryTimer = _armed(timers, _retry).single;
+
+      _fireKeepAlive(timers);
+      await _flush(4);
+      expect(
+        harness.writes,
+        isEmpty,
+        reason: 'the retry already owns redelivery',
+      );
+
+      retryTimer.fire();
+      await _flush(4);
+      expect(harness.writes, hasLength(1));
+    });
+  });
+
   test('steady target dedupes while force redelivers after success', () async {
     final harness = _Harness();
     final lane = harness.createLane();
@@ -391,10 +577,16 @@ class _Harness {
   final bool Function()? fail;
   final List<List<int>> writes = [];
 
-  WorkoutControlLane createLane({WorkoutControlTimerFactory? timerFactory}) {
+  WorkoutControlLane createLane({
+    WorkoutControlTimerFactory? timerFactory,
+    Duration keepAliveInterval = Duration.zero,
+  }) {
     return WorkoutControlLane(
       transportState: () => state,
       isReady: () => ready,
+      // Off by default so the pre-existing cases keep asserting exactly the
+      // writes their scenario produces; the keep-alive cases opt in.
+      keepAliveInterval: keepAliveInterval,
       timerFactory:
           timerFactory ?? (duration, callback) => Timer(duration, callback),
       dispatch: (batch, isCurrent) async {
@@ -412,8 +604,9 @@ class _Harness {
 }
 
 class _ManualTimer implements Timer {
-  _ManualTimer(this._callback);
+  _ManualTimer(this._callback, [this.duration = Duration.zero]);
 
+  final Duration duration;
   final void Function() _callback;
   bool _active = true;
   int _tick = 0;
@@ -439,4 +632,13 @@ Future<void> _flush([int turns = 2]) async {
   for (var turn = 0; turn < turns; turn++) {
     await Future<void>.delayed(Duration.zero);
   }
+}
+
+List<_ManualTimer> _armed(List<_ManualTimer> timers, Duration duration) =>
+    timers.where((t) => t.isActive && t.duration == duration).toList();
+
+void _fireKeepAlive(List<_ManualTimer> timers) {
+  final armed = _armed(timers, _keepAlive);
+  expect(armed, hasLength(1), reason: 'exactly one keep-alive may be armed');
+  armed.single.fire();
 }

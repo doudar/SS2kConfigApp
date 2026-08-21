@@ -34,6 +34,7 @@ class WorkoutControlLane {
     required WorkoutBatchDispatcher dispatch,
     WorkoutControlTimerFactory timerFactory = _defaultTimerFactory,
     this.retryDelay = const Duration(seconds: 1),
+    this.keepAliveInterval = const Duration(seconds: 2),
   }) : _transportState = transportState,
        _isReady = isReady,
        _dispatch = dispatch,
@@ -45,11 +46,25 @@ class WorkoutControlLane {
   final WorkoutControlTimerFactory _timerFactory;
   final Duration retryDelay;
 
+  /// How long an unchanged ERG target may go unwritten before it is re-sent.
+  ///
+  /// The firmware uses the last control point opcode as its operating mode, and
+  /// `ErgMode::_userIsSpinning` rewrites that mode to
+  /// SetIndoorBikeSimulationParameters whenever cadence sits at or below
+  /// MIN_ERG_CADENCE (30 rpm). Nothing on the device restores it; only another
+  /// Set Target Power write re-arms ERG. Every spin-up from a standstill passes
+  /// through 1-29 rpm, so a target delivered once at the top of a steady
+  /// segment is discarded and that segment never applies resistance. Zwift and
+  /// TrainerRoad both re-assert continuously, which is why they never see this.
+  /// Re-asserting is also the only fix that works on already-shipped firmware.
+  final Duration keepAliveInterval;
+
   _WorkoutControlDesired? _desired;
   _WorkoutControlRequest? _inFlight;
   _WorkoutControlRequest? _pending;
   _DeliveredWorkoutControl? _delivered;
   Timer? _retryTimer;
+  Timer? _keepAliveTimer;
   int _generation = 0;
   bool _disposed = false;
 
@@ -116,15 +131,19 @@ class WorkoutControlLane {
       _retryTimer?.cancel();
       _retryTimer = null;
       _pending = null;
+      _syncKeepAlive();
       return;
     }
     _drainPending();
+    _syncKeepAlive();
   }
 
   void dispose() {
     _disposed = true;
     _retryTimer?.cancel();
     _retryTimer = null;
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = null;
     _desired = null;
     _inFlight = null;
     _pending = null;
@@ -137,7 +156,15 @@ class WorkoutControlLane {
 
   void _request(_WorkoutControlDesired desired, {required bool force}) {
     if (_disposed) return;
+    _requestInner(desired, force: force);
+    // Every early return in `_requestInner` still leaves `_desired` updated, so
+    // the keep-alive is re-evaluated here rather than on the paths that happen
+    // to dispatch. The deduped steady-state tick is exactly the path that
+    // returns early and exactly the one that needs the keep-alive running.
+    _syncKeepAlive();
+  }
 
+  void _requestInner(_WorkoutControlDesired desired, {required bool force}) {
     final epoch = _transportState().epoch;
     // `force` is deliberately absorbed here: an identical batch is already in
     // flight or pending for this epoch, so that delivery covers the request and
@@ -238,8 +265,14 @@ class WorkoutControlLane {
         desired: request.desired,
         epoch: request.epoch,
       );
+      // The target was just written, so the silence window starts over. Without
+      // this a keep-alive armed before a real target change would fire almost
+      // immediately after it and write the same value twice.
+      _keepAliveTimer?.cancel();
+      _keepAliveTimer = null;
     }
     _drainPending();
+    _syncKeepAlive();
   }
 
   bool _isCurrent(_WorkoutControlRequest request) {
@@ -269,6 +302,37 @@ class WorkoutControlLane {
     return pending != null &&
         pending.epoch == epoch &&
         pending.desired.samePayload(desired);
+  }
+
+  /// True while the desired state is an ERG hold that the firmware can silently
+  /// drop. Zero-watt targets are excluded: their batch ends with a simulation
+  /// command, so the trainer is meant to be out of ERG and re-asserting would
+  /// just re-run the mode switch every interval. Simulation resets are excluded
+  /// for the same reason, which is also what stops the keep-alive on pause and
+  /// stop, since both route through `resetSimulation`.
+  bool get _keepAliveApplies {
+    final desired = _desired;
+    return desired != null &&
+        desired.kind == WorkoutControlKind.targetPower &&
+        (desired.watts ?? 0) > 0 &&
+        _available;
+  }
+
+  void _syncKeepAlive() {
+    if (_disposed || !_keepAliveApplies) {
+      _keepAliveTimer?.cancel();
+      _keepAliveTimer = null;
+      return;
+    }
+    if (_keepAliveTimer != null || keepAliveInterval <= Duration.zero) return;
+    _keepAliveTimer = _timerFactory(keepAliveInterval, () {
+      _keepAliveTimer = null;
+      if (!_keepAliveApplies) return;
+      // A retry already re-sends the desired state with force, so stay out of
+      // its way rather than stacking a second write behind it.
+      if (_retryTimer == null) _scheduleDesired(force: true);
+      _syncKeepAlive();
+    });
   }
 
   void _armRetry() {

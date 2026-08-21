@@ -1,4 +1,20 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
+/// Returns the graph width for the current visible workout window.
+///
+/// Short workouts still occupy the full viewport so overlays positioned beside
+/// the graph retain their intended screen-relative placement.
+double calculateWorkoutGraphWidth({
+  required double viewportWidth,
+  required double workoutDurationSeconds,
+  required double visibleMinutes,
+}) {
+  final scaledWidth =
+      workoutDurationSeconds / 60 * (viewportWidth / visibleMinutes);
+  return math.max(viewportWidth, scaledWidth);
+}
 
 /// Base size constant that controls the overall scale of metric boxes
 class WorkoutMetricScale {

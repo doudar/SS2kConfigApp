@@ -194,6 +194,7 @@ class DeviceData {
   bool _dirConSetupComplete = false;
   bool _dirConReconnectInProgress = false;
   bool _initialConnectionInProgress = false;
+  bool _workoutControlActive = false;
 
   final DeviceTransportStateController _transportStateController =
       DeviceTransportStateController();
@@ -402,106 +403,42 @@ class DeviceData {
     if (isUserDisconnect || _dirConReconnectInProgress) return;
 
     _dirConReconnectInProgress = true;
-    _DirConRecoveryAdvertisementSession? advertisementSession;
-    var bleFallbackAttempted = false;
     try {
-      // The endpoint cached before a reboot may no longer be valid after WiFi
-      // settings change. Wait for a fresh advertisement from this exact unit
-      // before choosing DIRCON or BLE again.
-      advertisementSession = _DirConRecoveryAdvertisementSession(device);
-      await advertisementSession.start(const Duration(seconds: 45));
-      final firstAdvertisement = await advertisementSession.waitForFirst(
-        const Duration(seconds: 45),
+      print(
+        '[DIRCON][FALLBACK] start reason=disconnect host=$disconnectedAddress',
       );
-      advertisedIpAddress = firstAdvertisement.ipAddress;
-
-      if (advertisedIpAddress == null) {
-        print(
-          '[DIRCON] Device rebooted without a usable advertised IP; '
-          'switching directly to BLE.',
-        );
-        await advertisementSession.dispose();
-        bleFallbackAttempted = true;
-        await _connectBleAfterDirConLoss(device);
-        return;
-      }
-
-      if (advertisedIpAddress != disconnectedAddress) {
-        print(
-          '[DIRCON] Advertised IP changed from $disconnectedAddress to '
-          '$advertisedIpAddress.',
-        );
-      } else {
-        print(
-          '[DIRCON] Device is advertising the same IP $disconnectedAddress.',
-        );
-      }
-
-      // A fresh advertisement proves the unit has rebooted. Allow a few
-      // spaced attempts for the DIRCON TCP listener to start, while continuing
-      // to react immediately if a later advertisement changes or clears the
-      // WiFi address.
-      const maxDirConReconnectAttempts = 4;
-      for (
-        var attempt = 1;
-        attempt <= maxDirConReconnectAttempts && !isUserDisconnect;
-        attempt++
-      ) {
-        try {
-          final ipAddress = advertisedIpAddress;
-          if (ipAddress == null) {
-            print(
-              '[DIRCON] Advertised IP was cleared; switching directly to BLE.',
-            );
-            await advertisementSession.dispose();
-            bleFallbackAttempted = true;
-            await _connectBleAfterDirConLoss(device);
-            return;
-          }
-          await _connectDirCon(device, ipAddress, waitForSetup: true);
-          await _runReconnectedCallbacks();
-          return;
-        } catch (error) {
-          print('[DIRCON] Reconnect attempt $attempt failed: $error');
-          if (attempt < maxDirConReconnectAttempts) {
-            final update = await advertisementSession.waitForAddressChange(
-              advertisedIpAddress!,
-              const Duration(seconds: 2),
-            );
-            advertisedIpAddress = update.ipAddress;
-          }
-        }
-      }
-
-      if (!isUserDisconnect) {
-        print('[DIRCON] Advertised endpoint unavailable; trying BLE fallback.');
-        await advertisementSession.dispose();
-        bleFallbackAttempted = true;
-        await _connectBleAfterDirConLoss(device);
-      }
+      await _connectBleAfterDirConLoss(device);
     } catch (error) {
-      if (!isUserDisconnect && !bleFallbackAttempted) {
-        print(
-          '[DIRCON] Could not observe a fresh reboot advertisement; '
-          'trying BLE fallback: $error',
-        );
-        await advertisementSession?.dispose();
-        bleFallbackAttempted = true;
-        await _connectBleAfterDirConLoss(device);
-      } else if (!isUserDisconnect) {
-        rethrow;
-      }
+      print('[DIRCON][FALLBACK] failed: $error');
     } finally {
-      await advertisementSession?.dispose();
       _dirConReconnectInProgress = false;
     }
   }
 
   Future<void> _connectBleAfterDirConLoss(BluetoothDevice device) async {
     _markTransportConnecting(DeviceTransportKind.bluetooth);
-    if (!device.isConnected) await device.connectAndUpdateStream();
+    final stopwatch = Stopwatch()..start();
+    if (device.isConnected) {
+      print('[DIRCON][FALLBACK] reusing connected BLE GATT session');
+    } else {
+      print('[DIRCON][FALLBACK] connecting BLE GATT session');
+      await device.connectAndUpdateStream().timeout(
+        const Duration(seconds: 10),
+      );
+    }
+    _resetConnectionState();
+    await setupConnection(
+      device,
+      markTransportConnected: false,
+    ).timeout(const Duration(seconds: 10));
+    if (ftmsControlPointCharacteristic == null || !device.isConnected) {
+      throw StateError('BLE FTMS Control Point is not ready after DIRCON loss');
+    }
     _markTransportConnected(DeviceTransportKind.bluetooth);
-    await setupConnection(device);
+    print(
+      '[DIRCON][FALLBACK] BLE ready epoch=${_transportStateController.value.epoch} '
+      'duration=${stopwatch.elapsedMilliseconds}ms; redelivering target.',
+    );
     await _runReconnectedCallbacks();
   }
 
@@ -628,15 +565,25 @@ class DeviceData {
 
     bool success = false;
     try {
-      try {
-        await _refreshAdvertisedEndpointForReconnect(device);
-      } catch (error) {
-        // Do not keep probing a cached network endpoint after a reboot when no
-        // fresh advertisement could confirm it. BLE remains the safe fallback.
-        advertisedIpAddress = null;
+      final keepWorkoutOnBle =
+          _workoutControlActive &&
+          _transportStateController.value.transport ==
+              DeviceTransportKind.bluetooth;
+      if (!keepWorkoutOnBle) {
+        try {
+          await _refreshAdvertisedEndpointForReconnect(device);
+        } catch (error) {
+          // Do not keep probing a cached network endpoint after a reboot when no
+          // fresh advertisement could confirm it. BLE remains the safe fallback.
+          advertisedIpAddress = null;
+          print(
+            '[AutoReconnect] Fresh advertisement unavailable; '
+            'using BLE fallback: $error',
+          );
+        }
+      } else {
         print(
-          '[AutoReconnect] Fresh advertisement unavailable; '
-          'using BLE fallback: $error',
+          '[WorkoutTransport] keeping active workout on BLE; DIRCON promotion deferred.',
         );
       }
 
@@ -649,7 +596,7 @@ class DeviceData {
           // Reconnection is transport-agnostic: a device that was previously
           // using BLE may have DIRCON available by the time it returns. Probe
           // the advertised endpoint before recreating a BLE GATT connection.
-          final ipAddress = advertisedIpAddress;
+          final ipAddress = keepWorkoutOnBle ? null : advertisedIpAddress;
           if (ipAddress != null && ipAddress.isNotEmpty) {
             try {
               print(
@@ -947,6 +894,7 @@ class DeviceData {
   Future<void> setupConnection(
     BluetoothDevice device, {
     bool forceRefresh = false,
+    bool markTransportConnected = true,
   }) {
     if (isSimulated) return Future.value();
 
@@ -978,7 +926,9 @@ class DeviceData {
     }
 
     if (!device.isConnected) return Future.value();
-    _markTransportConnected(DeviceTransportKind.bluetooth);
+    if (markTransportConnected) {
+      _markTransportConnected(DeviceTransportKind.bluetooth);
+    }
 
     final setupInProgress = _setupCoordinator.inFlight;
     if (setupInProgress != null) return setupInProgress;
@@ -1925,11 +1875,13 @@ class DeviceData {
   }
 
   void setWorkoutTargetPower(int watts, {bool force = false}) {
+    _workoutControlActive = true;
     _workoutControlLane.setTargetPower(watts, force: force);
     ftmsData._targetERG = watts;
   }
 
   void resetWorkoutSimulation() {
+    _workoutControlActive = false;
     _workoutControlLane.resetSimulation();
     // Zero-grade simulation releases the ERG target, so the displayed target
     // must follow or it reports a hold the trainer is no longer applying.
