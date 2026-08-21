@@ -42,7 +42,7 @@ class DirConFrameParser {
 }
 
 class DirConClient {
-  DirConClient._(this.host, this._socket);
+  DirConClient._(this.host, this._socket, {required this.responseTimeout});
 
   static const int port = 8081;
   static const int success = 0;
@@ -59,6 +59,7 @@ class DirConClient {
 
   final String host;
   final Socket _socket;
+  final Duration responseTimeout;
   final DirConFrameParser _parser = DirConFrameParser();
   final Map<int, Completer<DirConFrame>> _pending = {};
   final StreamController<DirConFrame> _notifications =
@@ -69,6 +70,8 @@ class DirConClient {
   int _nextSequence = 1;
   bool _isClosed = false;
   bool _isDisposed = false;
+  bool _disconnectEmitted = false;
+  Future<void>? _resourceClose;
 
   bool get isConnected => !_isClosed;
   Stream<DirConFrame> get notifications => _notifications.stream;
@@ -77,11 +80,17 @@ class DirConClient {
   static Future<DirConClient> connect(
     String host, {
     Duration timeout = const Duration(milliseconds: 1200),
+    Duration responseTimeout = const Duration(seconds: 5),
+    int connectionPort = port,
   }) async {
-    _log('CONNECT', '$host:$port');
-    final socket = await Socket.connect(host, port, timeout: timeout);
+    _log('CONNECT', '$host:$connectionPort');
+    final socket = await Socket.connect(host, connectionPort, timeout: timeout);
     socket.setOption(SocketOption.tcpNoDelay, true);
-    final client = DirConClient._(host, socket);
+    final client = DirConClient._(
+      host,
+      socket,
+      responseTimeout: responseTimeout,
+    );
     client._listen();
     _log('CONNECTED', '${socket.address.address}:${socket.remotePort}');
     return client;
@@ -114,6 +123,16 @@ class DirConClient {
         StackTrace.current,
       ),
       cancelOnError: true,
+    );
+    // Write failures land on the sink's done future rather than on the read
+    // subscription. Observe it so a failed write tears the client down instead
+    // of surfacing as an unhandled asynchronous error.
+    unawaited(
+      _socket.done.then(
+        (_) {},
+        onError: (Object error, StackTrace stackTrace) =>
+            _closeWithError(error, stackTrace),
+      ),
     );
   }
 
@@ -214,21 +233,24 @@ class DirConClient {
     _pending[sequence] = completer;
     final length = body.length;
     _logFrame('TX', identifier, sequence, 0, body);
-    _socket.add([
-      1,
-      identifier,
-      sequence,
-      0,
-      length >> 8,
-      length & 0xff,
-      ...body,
-    ]);
-    await _socket.flush();
-
     try {
-      final response = await completer.future.timeout(
-        const Duration(seconds: 5),
-      );
+      _socket.add([
+        1,
+        identifier,
+        sequence,
+        0,
+        length >> 8,
+        length & 0xff,
+        ...body,
+      ]);
+      // Deliberately no `flush()`. It binds the socket sink until it resolves,
+      // so a concurrent request's `add()` throws "StreamSink is bound to a
+      // stream", and awaiting it opens a gap in which a close or another
+      // request's timeout can fail this request before anything listens for
+      // the result. Writes are queued in order; failures arrive via
+      // `_socket.done`. Creating and awaiting the timeout in one step keeps
+      // the response error observed from the moment it can be raised.
+      final response = await completer.future.timeout(responseTimeout);
       if (response.identifier != identifier) {
         throw StateError('Unexpected DIRCON response type');
       }
@@ -238,38 +260,72 @@ class DirConClient {
         );
       }
       return response;
+    } on TimeoutException catch (error, stackTrace) {
+      // Teardown clears `_pending`, so a still-registered completer means this
+      // request is the one that actually went silent rather than one failed by
+      // another request's timeout. A response timeout is transport liveness
+      // failure, not a protocol response: invalidate synchronously so callers
+      // cannot schedule another workout write against this half-open session.
+      if (_pending.remove(sequence) != null) {
+        _log('TIMEOUT', '$host request type=0x${identifier.toRadixString(16)}');
+        _closeWithError(error, stackTrace);
+      }
+      rethrow;
+    } on SocketException catch (error, stackTrace) {
+      _closeWithError(error, stackTrace);
+      rethrow;
     } finally {
       _pending.remove(sequence);
     }
   }
 
   Future<void> close() async {
-    if (_isDisposed) return;
+    if (_isDisposed) {
+      await _resourceClose;
+      return;
+    }
     _isDisposed = true;
     _isClosed = true;
     _log('CLOSE', host);
-    await _subscription?.cancel();
-    await _socket.close();
     final error = const SocketException('DIRCON client closed');
-    for (final completer in _pending.values) {
-      if (!completer.isCompleted) completer.completeError(error);
-    }
-    _pending.clear();
-    await _notifications.close();
-    await _disconnected.close();
+    _failPending(error, StackTrace.current);
+    await _releaseResources();
   }
 
   void _closeWithError(Object error, StackTrace stackTrace) {
     if (_isClosed) return;
     _isClosed = true;
     _log('DISCONNECTED', '$host: $error');
+    _failPending(error, stackTrace);
+    if (!_disconnectEmitted && !_disconnected.isClosed) {
+      _disconnectEmitted = true;
+      _disconnected.add(null);
+    }
+    unawaited(_releaseResources());
+  }
+
+  void _failPending(Object error, StackTrace stackTrace) {
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
         completer.completeError(error, stackTrace);
       }
     }
     _pending.clear();
-    if (!_disconnected.isClosed) _disconnected.add(null);
+  }
+
+  Future<void> _releaseResources() {
+    return _resourceClose ??= _releaseResourcesInner();
+  }
+
+  Future<void> _releaseResourcesInner() async {
+    await _subscription?.cancel();
+    // The read subscription can be in its terminal callback while an explicit
+    // close or timeout starts teardown. `Socket.close()` rejects that race with
+    // "StreamSink is bound to a stream"; destroy is the idempotent terminal
+    // operation for this unusable transport.
+    _socket.destroy();
+    if (!_notifications.isClosed) await _notifications.close();
+    if (!_disconnected.isClosed) await _disconnected.close();
   }
 
   static List<int> _uuidBytes(String uuid) {

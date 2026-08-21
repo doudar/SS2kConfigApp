@@ -5,7 +5,7 @@ import 'dart:math' as math show sqrt, max;
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../device_data.dart';
-import '../ftmsControlPoint.dart';
+import '../device_transport_state.dart';
 import 'workout_parser.dart';
 import 'workout_storage.dart';
 import 'sounds.dart';
@@ -63,6 +63,8 @@ class WorkoutController extends ChangeNotifier {
   // Static map to store device-specific controllers
   static final Map<String, WorkoutController> _instances = {};
   bool _isDisposed = false;
+  bool _transportListenerAttached = false;
+  int _lastConnectedEpoch = 0;
 
   List<WorkoutSegment> segments = [];
   String? workoutName;
@@ -78,8 +80,10 @@ class WorkoutController extends ChangeNotifier {
   final List<double> _powerPointsList = [];
   final List<double> _hrPointsList = [];
   final List<double> _cadencePointsList = [];
-  double _workoutProgressTime = 0; // Track workout's progress position (authoritative source for duration/elapsed time)
-  double _skippedTime = 0; // Time skipped by user actions; excluded from elapsed
+  double _workoutProgressTime =
+      0; // Track workout's progress position (authoritative source for duration/elapsed time)
+  double _skippedTime =
+      0; // Time skipped by user actions; excluded from elapsed
   int currentSegmentTimeRemaining = 0;
   final DeviceData deviceData;
   final BluetoothDevice device;
@@ -89,18 +93,22 @@ class WorkoutController extends ChangeNotifier {
   double _lastAltitude = 100.0; // Starting altitude in meters
   double _totalAscent = 0; // Track total ascent in meters
   bool _isFreeRide = false; // True when workout is entirely free ride segments
-  bool _isUnlimitedFreeRide = false; // True when free ride has no predefined end time
+  bool _isUnlimitedFreeRide =
+      false; // True when free ride has no predefined end time
 
   // Store track points during workout
   final List<TrackPoint> trackPoints = [];
   DateTime? _workoutStartTime; // Base timestamp for calculating absolute times
-  DateTime? _lastTickTime; // Track last timer tick for accurate drift compensation
-  double _lastTrackPointTime = 0; // Last track point time in workout progress seconds
+  DateTime?
+  _lastTickTime; // Track last timer tick for accurate drift compensation
+  double _lastTrackPointTime =
+      0; // Last track point time in workout progress seconds
   int _lastRecordedSecond = -1; // Track last whole-second data point recorded
   String? _inProgressFilePath;
   bool _isWritingInProgress = false;
   DateTime? _lastWorkoutStateSave;
-  static const int _flushIntervalTrackPoints = 60; // track points recorded ~once/sec in startProgress before flushing
+  static const int _flushIntervalTrackPoints =
+      60; // track points recorded ~once/sec in startProgress before flushing
   static const Duration _workoutStateSaveInterval = Duration(seconds: 30);
 
   // Factory constructor to get device-specific instance
@@ -113,6 +121,9 @@ class WorkoutController extends ChangeNotifier {
   }
 
   WorkoutController._internal(this.deviceData, this.device) {
+    _lastConnectedEpoch = deviceData.transportState.value.epoch;
+    deviceData.transportState.addListener(_handleTransportStateChanged);
+    _transportListenerAttached = true;
     _resetSimulationParameters();
     _initializeController();
   }
@@ -121,15 +132,33 @@ class WorkoutController extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
+    _detachTransportListener();
     super.dispose();
   }
 
   // Method to cleanup when completely done with a device
   void cleanup() {
     progressTimer?.cancel();
+    _detachTransportListener();
     final deviceId = device.remoteId.str;
     _instances.remove(deviceId);
     super.dispose();
+  }
+
+  void _detachTransportListener() {
+    if (!_transportListenerAttached) return;
+    deviceData.transportState.removeListener(_handleTransportStateChanged);
+    _transportListenerAttached = false;
+  }
+
+  void _handleTransportStateChanged() {
+    final state = deviceData.transportState.value;
+    if (state.phase != DeviceTransportPhase.connected ||
+        state.epoch == _lastConnectedEpoch) {
+      return;
+    }
+    _lastConnectedEpoch = state.epoch;
+    if (isPlaying) _updateTargetPower(force: true);
   }
 
   // Getter for speed calculation
@@ -225,6 +254,7 @@ class WorkoutController extends ChangeNotifier {
     if (autoPlay) {
       isPlaying = true;
       await _prepareInProgressFile();
+      _updateTargetPower(force: true);
       startProgress();
     }
 
@@ -261,23 +291,7 @@ class WorkoutController extends ChangeNotifier {
   }
 
   // Helper method to reset simulation parameters
-  Future<void> _resetSimulationParameters() async {
-    if (deviceData.ftmsControlPointCharacteristic != null) {
-      try {
-        await deviceData.writeFtmsControlPoint(
-          (characteristic) => FTMSControlPoint.writeIndoorBikeSimulation(
-            characteristic,
-            windSpeed: 0,
-            grade: 0,
-            crr: 0,
-            cw: 0,
-          ),
-        );
-      } catch (e) {
-        print('Error resetting simulation parameters: $e');
-      }
-    }
-  }
+  void _resetSimulationParameters() => deviceData.resetWorkoutSimulation();
 
   Future<void> _prepareInProgressFile() async {
     if (progressPosition == 0 && _inProgressFilePath != null) {
@@ -295,13 +309,16 @@ class WorkoutController extends ChangeNotifier {
     }
 
     final Directory appDir = await getApplicationDocumentsDirectory();
-    final Directory workoutsDir = Directory('${appDir.path}${Platform.pathSeparator}workouts');
+    final Directory workoutsDir = Directory(
+      '${appDir.path}${Platform.pathSeparator}workouts',
+    );
     if (!await workoutsDir.exists()) {
       await workoutsDir.create(recursive: true);
     }
 
     final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-    final filePath = '${workoutsDir.path}${Platform.pathSeparator}workout_in_progress_$timestamp.jsonl';
+    final filePath =
+        '${workoutsDir.path}${Platform.pathSeparator}workout_in_progress_$timestamp.jsonl';
     final inProgressFile = File(filePath);
     final metadata = {
       'type': 'metadata',
@@ -309,13 +326,18 @@ class WorkoutController extends ChangeNotifier {
       'startTime': (_workoutStartTime ?? DateTime.now()).toIso8601String(),
     };
 
-    await inProgressFile.writeAsString('${jsonEncode(metadata)}\n', mode: FileMode.write);
+    await inProgressFile.writeAsString(
+      '${jsonEncode(metadata)}\n',
+      mode: FileMode.write,
+    );
     _inProgressFilePath = filePath;
     await WorkoutStorage.saveInProgressFilePath(filePath);
     return inProgressFile;
   }
 
-  Future<void> _appendTrackPointsToInProgressFile(List<TrackPoint> points) async {
+  Future<void> _appendTrackPointsToInProgressFile(
+    List<TrackPoint> points,
+  ) async {
     if (points.isEmpty) return;
     final file = await _ensureInProgressFile();
     final sink = file.openWrite(mode: FileMode.append);
@@ -352,14 +374,17 @@ class WorkoutController extends ChangeNotifier {
   void _scheduleInProgressFlush({bool force = false}) {
     final pointsToWrite = _beginFlush(force: force);
     if (pointsToWrite == null) return;
-    _appendTrackPointsToInProgressFile(pointsToWrite).then((_) {
-      _removeFirstTrackPoints(pointsToWrite.length);
-    }).catchError((e) {
-      // Leave points in memory so the next flush can retry.
-      print('Error saving in-progress workout: $e');
-    }).whenComplete(() {
-      _isWritingInProgress = false;
-    });
+    _appendTrackPointsToInProgressFile(pointsToWrite)
+        .then((_) {
+          _removeFirstTrackPoints(pointsToWrite.length);
+        })
+        .catchError((e) {
+          // Leave points in memory so the next flush can retry.
+          print('Error saving in-progress workout: $e');
+        })
+        .whenComplete(() {
+          _isWritingInProgress = false;
+        });
   }
 
   Future<void> _flushInProgressTrackPoints({bool force = false}) async {
@@ -404,7 +429,8 @@ class WorkoutController extends ChangeNotifier {
     final merged = <TrackPoint>[];
     int storedIndex = 0;
     int memoryIndex = 0;
-    while (storedIndex < storedPoints.length && memoryIndex < trackPoints.length) {
+    while (storedIndex < storedPoints.length &&
+        memoryIndex < trackPoints.length) {
       final storedPoint = storedPoints[storedIndex];
       final memoryPoint = trackPoints[memoryIndex];
       if (storedPoint.timestamp.isBefore(memoryPoint.timestamp)) {
@@ -437,32 +463,9 @@ class WorkoutController extends ChangeNotifier {
   }
 
   Future<void> togglePlayPause() async {
-    // For iOS, ensure we reset simulation parameters before starting
-    if (Platform.isIOS && !isPlaying) {
-      // Try resetting parameters up to 3 times before starting
-      for (int i = 0; i < 3; i++) {
-        try {
-          await _resetSimulationParameters();
-          // Add a small delay to ensure parameters are reset
-          await Future.delayed(const Duration(milliseconds: 100));
-          break; // Break if successful
-        } catch (e) {
-          print('Error resetting simulation parameters (attempt ${i + 1}): $e');
-          if (i == 2) {
-            // Last attempt failed
-            if (!_isDisposed) {
-              notifyListeners(); // Notify to update UI if needed
-            }
-            return; // Don't proceed with starting the workout
-          }
-          await Future.delayed(const Duration(milliseconds: 100));
-        }
-      }
-    }
-
     if (isPlaying) {
+      isPlaying = false;
       progressTimer?.cancel();
-      // Reset simulation parameters when stopping
       _resetSimulationParameters();
     } else {
       // Only reset these values if we're at the start of the workout
@@ -480,11 +483,10 @@ class WorkoutController extends ChangeNotifier {
         _workoutStartTime = DateTime.now();
       }
       await _prepareInProgressFile();
-      // Update target power immediately when resuming
-      _updateTargetPower();
+      isPlaying = true;
+      _updateTargetPower(force: true);
       startProgress();
     }
-    isPlaying = !isPlaying;
     _saveWorkoutState(force: true);
     if (!_isDisposed) {
       notifyListeners();
@@ -508,7 +510,8 @@ class WorkoutController extends ChangeNotifier {
     double segmentStartTime = 0;
 
     for (int i = 0; i < segments.length; i++) {
-      if (_workoutProgressTime >= segmentStartTime && _workoutProgressTime < segmentStartTime + segments[i].duration) {
+      if (_workoutProgressTime >= segmentStartTime &&
+          _workoutProgressTime < segmentStartTime + segments[i].duration) {
         // If this is the last segment, stop the workout
         if (i == segments.length - 1) {
           progressPosition = 1.0;
@@ -536,12 +539,13 @@ class WorkoutController extends ChangeNotifier {
         actualPowerPoints[currentTime + skippedTime - 1] = 0;
 
         // Accumulate skipped time so elapsed excludes it
-        final double skippedDelta = (nextSegmentStart - _workoutProgressTime).clamp(0, double.infinity);
+        final double skippedDelta = (nextSegmentStart - _workoutProgressTime)
+            .clamp(0, double.infinity);
         _skippedTime += skippedDelta;
 
         // Set workout progress to the start of next segment
         _workoutProgressTime = nextSegmentStart;
-        
+
         // Advance tracking variables to prevent backfilling of skipped time
         _lastTrackPointTime = _workoutProgressTime;
         _lastRecordedSecond = _workoutProgressTime.floor();
@@ -563,10 +567,12 @@ class WorkoutController extends ChangeNotifier {
       final workoutData = WorkoutParser.parseZwoFile(xmlContent);
 
       // Detect free ride mode
-      final bool allFreeRide = workoutData.segments.isNotEmpty &&
+      final bool allFreeRide =
+          workoutData.segments.isNotEmpty &&
           workoutData.segments.every((s) => s.type == SegmentType.freeRide);
-      final bool hasUnlimitedSegment = workoutData.segments.any((s) =>
-          s.type == SegmentType.freeRide && s.duration == 0);
+      final bool hasUnlimitedSegment = workoutData.segments.any(
+        (s) => s.type == SegmentType.freeRide && s.duration == 0,
+      );
 
       // For unlimited free rides, replace 0-duration segments with initial 1-hour duration
       List<WorkoutSegment> processedSegments;
@@ -601,10 +607,16 @@ class WorkoutController extends ChangeNotifier {
 
       for (var segment in processedSegments) {
         if (segment.isRamp) {
-          maxPowerTemp =
-              [maxPowerTemp, segment.powerLow, segment.powerHigh].reduce((curr, next) => curr > next ? curr : next);
+          maxPowerTemp = [
+            maxPowerTemp,
+            segment.powerLow,
+            segment.powerHigh,
+          ].reduce((curr, next) => curr > next ? curr : next);
         } else {
-          maxPowerTemp = [maxPowerTemp, segment.powerLow].reduce((curr, next) => curr > next ? curr : next);
+          maxPowerTemp = [
+            maxPowerTemp,
+            segment.powerLow,
+          ].reduce((curr, next) => curr > next ? curr : next);
         }
         totalDurationTemp += segment.duration;
       }
@@ -639,7 +651,8 @@ class WorkoutController extends ChangeNotifier {
         _workoutProgressTime = 0;
         _skippedTime = 0;
         _lastTrackPointTime = 0;
-        isPlaying = false; // Ensure workout starts in stopped state for fresh loads
+        isPlaying =
+            false; // Ensure workout starts in stopped state for fresh loads
       }
 
       _currentWorkoutContent = xmlContent;
@@ -662,33 +675,40 @@ class WorkoutController extends ChangeNotifier {
     }
   }
 
-  void _updateTargetPower() {
+  void _updateTargetPower({bool force = false}) {
     if (segments.isEmpty) return;
 
     double currentTime = progressPosition * totalDuration;
     double elapsedTime = 0;
 
     for (var segment in segments) {
-      if (currentTime >= elapsedTime && currentTime < elapsedTime + segment.duration) {
+      if (currentTime >= elapsedTime &&
+          currentTime < elapsedTime + segment.duration) {
         double segmentProgress = (currentTime - elapsedTime) / segment.duration;
         double targetPower;
 
         if (segment.isRamp) {
           if (segment.type == SegmentType.cooldown) {
             // For cooldowns, start at powerHigh and decrease to powerLow
-            targetPower = segment.powerHigh - (segment.powerHigh - segment.powerLow) * segmentProgress;
+            targetPower =
+                segment.powerHigh -
+                (segment.powerHigh - segment.powerLow) * segmentProgress;
           } else {
             // For all other ramps, start at powerLow and increase to powerHigh
-            targetPower = segment.powerLow + (segment.powerHigh - segment.powerLow) * segmentProgress;
+            targetPower =
+                segment.powerLow +
+                (segment.powerHigh - segment.powerLow) * segmentProgress;
           }
         } else {
           targetPower = segment.powerLow;
         }
 
-        // Calculate target power in watts and update ftmsData
-        // When target power is 0, the DeviceData class will handle switching to simulation mode
-        deviceData.ftmsData.targetERG = (targetPower * ftpValue).round();
-        currentSegmentTimeRemaining = ((elapsedTime + segment.duration) - currentTime).round();
+        deviceData.setWorkoutTargetPower(
+          (targetPower * ftpValue).round(),
+          force: force,
+        );
+        currentSegmentTimeRemaining =
+            ((elapsedTime + segment.duration) - currentTime).round();
 
         _handleSegmentCountdown(currentSegmentTimeRemaining);
         break;
@@ -705,7 +725,7 @@ class WorkoutController extends ChangeNotifier {
     if (_workoutStartTime == null) {
       // For resumed workouts, calculate the effective start time by subtracting progress
       _workoutStartTime = DateTime.now().subtract(
-        Duration(milliseconds: (_workoutProgressTime * 1000).round())
+        Duration(milliseconds: (_workoutProgressTime * 1000).round()),
       );
     }
 
@@ -725,8 +745,8 @@ class WorkoutController extends ChangeNotifier {
 
       // Calculate actual time elapsed since last tick to prevent drift
       final now = DateTime.now();
-      final double delta = _lastTickTime != null 
-          ? now.difference(_lastTickTime!).inMicroseconds / 1000000.0 
+      final double delta = _lastTickTime != null
+          ? now.difference(_lastTickTime!).inMicroseconds / 1000000.0
           : 0.1;
       _lastTickTime = now;
 
@@ -745,7 +765,12 @@ class WorkoutController extends ChangeNotifier {
         actualPowerPoints[second] = currentPower;
         actualHrPoints[second] = currentHeartRate;
         actualCadencePoints[second] = currentCadence;
-        _appendPointLists(second, currentPower, currentHeartRate, currentCadence);
+        _appendPointLists(
+          second,
+          currentPower,
+          currentHeartRate,
+          currentCadence,
+        );
       }
       _lastRecordedSecond = currentSecond;
 
@@ -769,19 +794,22 @@ class WorkoutController extends ChangeNotifier {
           Duration(milliseconds: (nextPointTime * 1000).round()),
         );
 
-        trackPoints.add(TrackPoint(
-          timestamp: timestamp,
-          lat: 44.8113, // Eau Claire center - this will be updated by GPX exporter to create bike shape
-          lon: -91.4985,
-          elevation: _lastAltitude,
-          heartRate: currentHeartRate,
-          cadence: currentCadence,
-          power: currentPower.round(),
-          speed: speedMps,
-        ));
+        trackPoints.add(
+          TrackPoint(
+            timestamp: timestamp,
+            lat:
+                44.8113, // Eau Claire center - this will be updated by GPX exporter to create bike shape
+            lon: -91.4985,
+            elevation: _lastAltitude,
+            heartRate: currentHeartRate,
+            cadence: currentCadence,
+            power: currentPower.round(),
+            speed: speedMps,
+          ),
+        );
         _lastTrackPointTime = nextPointTime;
       }
- 
+
       _scheduleInProgressFlush();
 
       // For unlimited free rides, extend duration when approaching the end
@@ -819,10 +847,15 @@ class WorkoutController extends ChangeNotifier {
   void _appendPointLists(int second, double power, int heartRate, int cadence) {
     final int targetLength = second + 1;
     if (_powerPointsList.length < targetLength) {
-      final double lastPower = _powerPointsList.isNotEmpty ? _powerPointsList.last : power;
-      final double lastHr = _hrPointsList.isNotEmpty ? _hrPointsList.last : heartRate.toDouble();
-      final double lastCadence =
-          _cadencePointsList.isNotEmpty ? _cadencePointsList.last : cadence.toDouble();
+      final double lastPower = _powerPointsList.isNotEmpty
+          ? _powerPointsList.last
+          : power;
+      final double lastHr = _hrPointsList.isNotEmpty
+          ? _hrPointsList.last
+          : heartRate.toDouble();
+      final double lastCadence = _cadencePointsList.isNotEmpty
+          ? _cadencePointsList.last
+          : cadence.toDouble();
       while (_powerPointsList.length < targetLength) {
         _powerPointsList.add(lastPower);
         _hrPointsList.add(lastHr);
@@ -877,7 +910,7 @@ class WorkoutController extends ChangeNotifier {
 
   // Get Cadence points as a list up to current time
   List<double> getCadencePointsUpToNow() {
-      return _cadencePointsList;
+    return _cadencePointsList;
   }
 
   /// Extends the last free ride segment by 1 hour.
@@ -941,9 +974,10 @@ class WorkoutController extends ChangeNotifier {
 
   // Getter for workout progress time
   double get workoutProgressSeconds => _workoutProgressTime;
-  
+
   // Getter for elapsed seconds (based on workout progress time)
-  int get elapsedSeconds => (_workoutProgressTime - _skippedTime).clamp(0, double.infinity).round();
+  int get elapsedSeconds =>
+      (_workoutProgressTime - _skippedTime).clamp(0, double.infinity).round();
 
   // Free ride getters
   bool get isFreeRide => _isFreeRide;

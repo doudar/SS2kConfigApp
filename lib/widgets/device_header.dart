@@ -72,7 +72,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       state,
     ) async {
       if (this.deviceData.isDirConConnected) return;
-      this.deviceData.connectionState = state;
       if (state == BluetoothConnectionState.connected) {
         this.deviceData.rssi.value = await this.widget.device.readRssi();
         if (widget.customRefreshEnabled) {

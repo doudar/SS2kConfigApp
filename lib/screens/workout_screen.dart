@@ -510,6 +510,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
                     : LayoutBuilder(
                         builder: (context, constraints) {
                           return Stack(
+                            fit: StackFit.expand,
                             children: [
                               AnimatedBuilder(
                                 animation: Listenable.merge([
@@ -520,13 +521,16 @@ class _WorkoutScreenState extends State<WorkoutScreen>
                                 builder: (context, child) {
                                   return LayoutBuilder(
                                     builder: (context, graphConstraints) {
-                                      final minutesWidth =
-                                          graphConstraints.maxWidth /
-                                          _zoomAnimation.value;
                                       final totalWidth =
-                                          _workoutController.totalDuration /
-                                          60 *
-                                          minutesWidth;
+                                          calculateWorkoutGraphWidth(
+                                            viewportWidth:
+                                                graphConstraints.maxWidth,
+                                            workoutDurationSeconds:
+                                                _workoutController
+                                                    .totalDuration,
+                                            visibleMinutes:
+                                                _zoomAnimation.value,
+                                          );
 
                                       return SingleChildScrollView(
                                         physics:

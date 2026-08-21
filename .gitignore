@@ -121,3 +121,4 @@ specs/
 graphify-out/
 .hermes/
 agents.md
+.claude-skill-update/

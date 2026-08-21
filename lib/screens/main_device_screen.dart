@@ -77,7 +77,6 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     deviceData.connectionStateSubscription = widget.device.connectionState
         .listen((state) async {
           if (deviceData.isDirConConnected) return;
-          deviceData.connectionState = state;
           if (state == BluetoothConnectionState.connected) {
             deviceData.rssi.value = await widget.device.readRssi();
             await deviceData.setupConnection(widget.device);
@@ -85,12 +84,10 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
         });
 
     if (deviceData.isDirConConnected) {
-      deviceData.connectionState = BluetoothConnectionState.connected;
       () async {
         await deviceData.setupConnection(widget.device);
       }();
     } else if (widget.device.isConnected) {
-      deviceData.connectionState = BluetoothConnectionState.connected;
       () async {
         deviceData.rssi.value = await widget.device.readRssi();
         await deviceData.setupConnection(widget.device);

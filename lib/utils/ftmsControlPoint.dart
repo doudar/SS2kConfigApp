@@ -4,32 +4,13 @@ import 'bleConstants.dart';
 
 /// Handles FTMS Control Point operations according to the FTMS specification
 class FTMSControlPoint {
-  /// Writes target power to the FTMS Control Point characteristic
-  /// [characteristic] - The FTMS Control Point characteristic to write to
-  /// [targetPower] - The target power in watts
-  static Future<void> writeTargetPower(
-    BluetoothCharacteristic characteristic,
-    int targetPower,
-  ) async {
-    try {
-      // Create a buffer for the command (1 byte opcode + 2 bytes power)
-      final ByteData buffer = ByteData(FTMSDataConfig.TARGET_POWER_LENGTH);
-
-      // Write opcode as first byte
-      buffer.setUint8(0, FTMSOpCodes.SET_TARGET_POWER);
-
-      // Write power value as SINT16 in little-endian format
-      buffer.setInt16(1, targetPower, Endian.little);
-
-      // Convert ByteData to Uint8List for writing
-      final Uint8List command = buffer.buffer.asUint8List();
-
-      // Write to the characteristic
-      await characteristic.write(command);
-    } catch (e) {
-      print('Error writing target power to FTMS: $e');
-      rethrow;
-    }
+  /// Encodes Set Target Power using signed watts in little-endian order.
+  static Uint8List targetPowerCommand(int targetPower) {
+    _checkRange(targetPower, -0x8000, 0x7fff, 'targetPower');
+    final buffer = ByteData(FTMSDataConfig.TARGET_POWER_LENGTH);
+    buffer.setUint8(0, FTMSOpCodes.SET_TARGET_POWER);
+    buffer.setInt16(1, targetPower, Endian.little);
+    return buffer.buffer.asUint8List();
   }
 
   /// Writes target speed to the FTMS Control Point characteristic
@@ -145,54 +126,49 @@ class FTMSControlPoint {
     }
   }
 
-  /// Writes indoor bike simulation parameters to the FTMS Control Point characteristic
-  /// [characteristic] - The FTMS Control Point characteristic to write to
-  /// [windSpeed] - Wind speed in meters per second
-  /// [grade] - Grade percentage
-  /// [crr] - Coefficient of Rolling Resistance (unitless)
-  /// [cw] - Wind Resistance Coefficient in kg/m
-  static Future<void> writeIndoorBikeSimulation(
-    BluetoothCharacteristic characteristic, {
+  /// Encodes Indoor Bike Simulation parameters using FTMS field resolutions.
+  static Uint8List indoorBikeSimulationCommand({
     required double windSpeed,
     required double grade,
     required double crr,
     required double cw,
-  }) async {
-    try {
-      final ByteData buffer = ByteData(
-        FTMSDataConfig.INDOOR_BIKE_SIMULATION_LENGTH,
-      );
-      int offset = 0;
+  }) {
+    final windSpeedValue = _scaledValue(
+      windSpeed,
+      FTMSDataConfig.WIND_SPEED_RESOLUTION,
+      -0x8000,
+      0x7fff,
+      'windSpeed',
+    );
+    final gradeValue = _scaledValue(
+      grade,
+      FTMSDataConfig.GRADE_RESOLUTION,
+      -0x8000,
+      0x7fff,
+      'grade',
+    );
+    final crrValue = _scaledValue(
+      crr,
+      FTMSDataConfig.CRR_RESOLUTION,
+      0,
+      0xff,
+      'crr',
+    );
+    final cwValue = _scaledValue(
+      cw,
+      FTMSDataConfig.CW_RESOLUTION,
+      0,
+      0xff,
+      'cw',
+    );
 
-      // Write opcode
-      buffer.setUint8(offset, FTMSOpCodes.SET_INDOOR_BIKE_SIMULATION);
-      offset += 1;
-
-      // Write wind speed (SINT16, resolution 0.001 m/s)
-      final int windSpeedValue =
-          (windSpeed / FTMSDataConfig.WIND_SPEED_RESOLUTION).round();
-      buffer.setInt16(offset, windSpeedValue, Endian.little);
-      offset += 2;
-
-      // Write grade (SINT16, resolution 0.01%)
-      final int gradeValue = (grade / FTMSDataConfig.GRADE_RESOLUTION).round();
-      buffer.setInt16(offset, gradeValue, Endian.little);
-      offset += 2;
-
-      // Write Crr (UINT8, resolution 0.0001)
-      final int crrValue = (crr / FTMSDataConfig.CRR_RESOLUTION).round();
-      buffer.setUint8(offset, crrValue);
-      offset += 1;
-
-      // Write Cw (UINT8, resolution 0.01 kg/m)
-      final int cwValue = (cw / FTMSDataConfig.CW_RESOLUTION).round();
-      buffer.setUint8(offset, cwValue);
-
-      await characteristic.write(buffer.buffer.asUint8List());
-    } catch (e) {
-      print('Error writing indoor bike simulation parameters to FTMS: $e');
-      rethrow;
-    }
+    final buffer = ByteData(FTMSDataConfig.INDOOR_BIKE_SIMULATION_LENGTH);
+    buffer.setUint8(0, FTMSOpCodes.SET_INDOOR_BIKE_SIMULATION);
+    buffer.setInt16(1, windSpeedValue, Endian.little);
+    buffer.setInt16(3, gradeValue, Endian.little);
+    buffer.setUint8(5, crrValue);
+    buffer.setUint8(6, cwValue);
+    return buffer.buffer.asUint8List();
   }
 
   /// Requests control of the fitness machine
@@ -279,6 +255,25 @@ class FTMSControlPoint {
     } catch (e) {
       print('Error controlling spin down procedure: $e');
       rethrow;
+    }
+  }
+
+  static int _scaledValue(
+    double value,
+    double resolution,
+    int minimum,
+    int maximum,
+    String name,
+  ) {
+    if (!value.isFinite) throw RangeError.value(value, name);
+    final scaled = (value / resolution).round();
+    _checkRange(scaled, minimum, maximum, name);
+    return scaled;
+  }
+
+  static void _checkRange(int value, int minimum, int maximum, String name) {
+    if (value < minimum || value > maximum) {
+      throw RangeError.range(value, minimum, maximum, name);
     }
   }
 }
