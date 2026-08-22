@@ -37,6 +37,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   bool _isRefreshing = false;
   String _fwVersion = "";
   VoidCallback? _firmwareVersionListener;
+  StreamSubscription<CharacteristicChangeEvent>? _deviceNameSubscription;
   late final Future<void> Function() _onReconnectedCallback;
 
   @override
@@ -54,6 +55,11 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       }
     };
     deviceData.firmwareVersion.addListener(_firmwareVersionListener!);
+    _deviceNameSubscription = deviceData.characteristicChanges
+        .where((event) => event.vName == deviceNameVname)
+        .listen((_) {
+          if (mounted) setState(() {});
+        });
 
     // Initialize firmware version
     _fwVersion = deviceData.firmwareVersion.value.isEmpty
@@ -125,6 +131,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   void dispose() {
     _connectionStateSubscription?.cancel();
     _connectionStateSubscription = null;
+    _deviceNameSubscription?.cancel();
+    _deviceNameSubscription = null;
     deviceData.stopConnectionMonitor(onReconnected: _onReconnectedCallback);
     rssiTimer.cancel();
     setupTimer.cancel();
@@ -297,6 +305,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final advertisedName = widget.device.platformName.isNotEmpty
+        ? widget.device.platformName
+        : widget.device.advName;
+    final displayName = deviceData.preferredDeviceName(advertisedName);
 
     return PopupMenuButton<VoidCallback>(
       child: Container(
@@ -356,7 +368,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  this.widget.device.platformName,
+                  displayName,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),

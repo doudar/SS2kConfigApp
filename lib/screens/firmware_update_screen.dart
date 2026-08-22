@@ -65,6 +65,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   void initState() {
     super.initState();
     deviceData = DeviceDataManager.forDevice(this.widget.device);
+    unawaited(_blockFtmsSubscription());
 
     _loaded = deviceData.firmwareVersion.value.isNotEmpty;
     _firmwareVersionListener = () {
@@ -108,8 +109,17 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     if (_firmwareVersionListener != null) {
       deviceData.firmwareVersion.removeListener(_firmwareVersionListener!);
     }
+    unawaited(deviceData.unblockFtmsSubscription(widget.device));
     WakelockPlus.disable();
     super.dispose();
+  }
+
+  Future<void> _blockFtmsSubscription() async {
+    try {
+      await deviceData.blockFtmsSubscription();
+    } catch (error) {
+      print('Failed to block FTMS notifications for firmware update: $error');
+    }
   }
 
   // Method to display dialog based on firmware update success or failure
@@ -302,6 +312,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     final architecture = _hardwareDetection!.architecture;
     final expectedFilename = architecture.firmwareFilename;
     final tempDir = await getTemporaryDirectory();
+    await tempDir.create(recursive: true);
     final zipFile = io.File('${tempDir.path}/firmware.zip');
     final firmwareFile = io.File('${tempDir.path}/$expectedFilename');
 
@@ -404,8 +415,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       _wifiOtaPhase = WifiOtaPhase.loadingFirmware;
       _updateStatus = 'Preparing firmware update…';
     });
-    deviceData.beginFirmwareUpdate();
-
     // Determine original version
     String originalVersion = deviceData.firmwareVersion.value;
 
@@ -474,7 +483,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
       // Try WiFi update first
       final wifiResult = await WifiOTA.updateFirmware(
-        deviceName: widget.device.advName,
+        deviceName: deviceData.preferredDeviceName(widget.device.advName),
         deviceIp: deviceData.advertisedIpAddress,
         firmwarePath: binFilePath,
         firmwareFilename: _hardwareDetection!.architecture.firmwareFilename,
@@ -545,10 +554,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
         updateSuccess = otaPackage!.firmwareupdate;
 
-        // Resume notifications after BLE update (critical for verification)
-        if (deviceData.indoorBikeCharacteristic != null) {
-          await deviceData.indoorBikeCharacteristic!.setNotifyValue(true);
-        }
+        // Restore the custom settings listener used for verification. FTMS
+        // remains blocked until this screen is disposed.
         deviceData.decode(this.widget.device);
       }
 
@@ -605,18 +612,15 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       }
 
       if (!recovered) {
-        // Make sure to re-enable notifications even if update fails
+        // Restore the custom settings listener even if the update fails. FTMS
+        // remains blocked until this screen is disposed.
         if (!_usingWifi) {
-          if (deviceData.indoorBikeCharacteristic != null) {
-            await deviceData.indoorBikeCharacteristic!.setNotifyValue(true);
-          }
           deviceData.decode(this.widget.device);
         }
         _showPreflightError(e.toString().replaceFirst('Exception: ', ''));
         print('Firmware update failed with error: $e');
       }
     } finally {
-      deviceData.endFirmwareUpdate();
       if (mounted) {
         setState(() {
           updatingFirmware = false;
@@ -807,8 +811,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                     child: ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.memory),
-                      title: Text(_hardwareDetection!.hardwareName),
-                      subtitle: Text(
+                      title: Text(
                         '${_hardwareDetection!.architecture.displayName} • '
                         '${_hardwareDetection!.architecture.firmwareFilename}'
                         '${_hardwareDetection!.assumedLegacy ? ' • legacy assumption' : ''}',

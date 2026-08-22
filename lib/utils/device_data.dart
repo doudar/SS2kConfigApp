@@ -196,7 +196,10 @@ class DeviceData {
   bool _dirConReconnectInProgress = false;
   bool _initialConnectionInProgress = false;
   bool _workoutControlActive = false;
-  int _firmwareUpdateSessions = 0;
+  int _ftmsSubscriptionBlocks = 0;
+  int _ftmsBlockGeneration = 0;
+  Timer? _ftmsPostConnectionTimer;
+  bool _ftmsPostConnectionBlockActive = false;
 
   final DeviceTransportStateController _transportStateController =
       DeviceTransportStateController();
@@ -210,21 +213,13 @@ class DeviceData {
       _transportStateController.value.phase == DeviceTransportPhase.connected;
   bool get isTransportActive =>
       _transportStateController.value.phase == DeviceTransportPhase.connected;
-  bool get isFirmwareUpdateInProgress => _firmwareUpdateSessions > 0;
+  bool get isFtmsSubscriptionBlocked => _ftmsSubscriptionBlocks > 0;
   String get activeTransportName =>
       switch (_transportStateController.value.transport) {
         DeviceTransportKind.dircon => 'DIRCON',
         DeviceTransportKind.bluetooth => 'Bluetooth',
         DeviceTransportKind.none => 'None',
       };
-
-  void beginFirmwareUpdate() {
-    _firmwareUpdateSessions++;
-  }
-
-  void endFirmwareUpdate() {
-    if (_firmwareUpdateSessions > 0) _firmwareUpdateSessions--;
-  }
 
   bool isUserDisconnect = false;
   ValueNotifier<int> rssi = ValueNotifier(0);
@@ -269,7 +264,7 @@ class DeviceData {
       if (isDirConConnected) return;
 
       if (state == BluetoothConnectionState.connected) {
-        _markTransportConnected(DeviceTransportKind.bluetooth);
+        _markTransportConnected(DeviceTransportKind.bluetooth, device);
         return;
       }
 
@@ -325,7 +320,7 @@ class DeviceData {
         },
       );
       if (!connected) return;
-      _markTransportConnected(DeviceTransportKind.bluetooth);
+      _markTransportConnected(DeviceTransportKind.bluetooth, device);
       if (waitForSetup) {
         await setupConnection(device);
       } else {
@@ -374,7 +369,7 @@ class DeviceData {
     _dirConSetupComplete = false;
     configAppCompatibleFirmware = true;
     _ensureCachedMap();
-    _markTransportConnected(DeviceTransportKind.dircon);
+    _markTransportConnected(DeviceTransportKind.dircon, device);
     _dirConNotificationSubscription = client
         .characteristicNotifications(ccUUID)
         .listen(_decodeCustomValue);
@@ -382,12 +377,14 @@ class DeviceData {
       await client.ensureCharacteristic(
         serviceUuid: ftmsServiceUUID,
         characteristicUuid: ftmsIndoorBikeDataUUID,
-        enableNotifications: true,
+        enableNotifications: !isFtmsSubscriptionBlocked,
       );
-      _dirConFtmsSubscription = client
-          .characteristicNotifications(ftmsIndoorBikeDataUUID)
-          .listen(_decodeIndoorBikeData);
-      print('[DIRCON] Subscribed to FTMS Indoor Bike Data');
+      if (!isFtmsSubscriptionBlocked) {
+        _dirConFtmsSubscription = client
+            .characteristicNotifications(ftmsIndoorBikeDataUUID)
+            .listen(_decodeIndoorBikeData);
+        print('[DIRCON] Subscribed to FTMS Indoor Bike Data');
+      }
     } catch (error) {
       // Configuration remains usable on firmware variants without FTMS.
       print('[DIRCON] FTMS subscription unavailable: $error');
@@ -453,7 +450,7 @@ class DeviceData {
     if (ftmsControlPointCharacteristic == null || !device.isConnected) {
       throw StateError('BLE FTMS Control Point is not ready after DIRCON loss');
     }
-    _markTransportConnected(DeviceTransportKind.bluetooth);
+    _markTransportConnected(DeviceTransportKind.bluetooth, device);
     print(
       '[DIRCON][FALLBACK] BLE ready epoch=${_transportStateController.value.epoch} '
       'duration=${stopwatch.elapsedMilliseconds}ms; redelivering target.',
@@ -543,9 +540,31 @@ class DeviceData {
     _transportStateController.markReconnecting(transport);
   }
 
-  void _markTransportConnected(DeviceTransportKind transport) {
+  void _markTransportConnected(
+    DeviceTransportKind transport,
+    BluetoothDevice device,
+  ) {
     if (_isDisposed) return;
+    final wasAlreadyConnected =
+        _transportStateController.value.transport == transport &&
+        _transportStateController.value.phase == DeviceTransportPhase.connected;
     _transportStateController.markConnected(transport);
+    if (!wasAlreadyConnected) {
+      _startFtmsPostConnectionBlock(device);
+    }
+  }
+
+  void _startFtmsPostConnectionBlock(BluetoothDevice device) {
+    _ftmsPostConnectionTimer?.cancel();
+    if (!_ftmsPostConnectionBlockActive) {
+      _ftmsPostConnectionBlockActive = true;
+      unawaited(blockFtmsSubscription());
+    }
+    _ftmsPostConnectionTimer = Timer(const Duration(seconds: 10), () {
+      _ftmsPostConnectionTimer = null;
+      _ftmsPostConnectionBlockActive = false;
+      unawaited(unblockFtmsSubscription(device));
+    });
   }
 
   void _markTransportDisconnected({required bool explicit}) {
@@ -649,7 +668,7 @@ class DeviceData {
             await device.connectAndUpdateStream();
           }
 
-          _markTransportConnected(DeviceTransportKind.bluetooth);
+          _markTransportConnected(DeviceTransportKind.bluetooth, device);
 
           await Future.delayed(settleDelay);
 
@@ -910,6 +929,20 @@ class DeviceData {
     return value;
   }
 
+  String preferredDeviceName(String advertisedName) {
+    final configuredName = getVnameValue(
+      deviceNameVname,
+      returnNoFirmSupport: true,
+    ).trim();
+    if (configuredName.isNotEmpty &&
+        configuredName != '0' &&
+        configuredName != 'null' &&
+        configuredName != noFirmSupport) {
+      return configuredName;
+    }
+    return advertisedName.trim();
+  }
+
   Future<void> setupConnection(
     BluetoothDevice device, {
     bool forceRefresh = false,
@@ -946,7 +979,7 @@ class DeviceData {
 
     if (!device.isConnected) return Future.value();
     if (markTransportConnected) {
-      _markTransportConnected(DeviceTransportKind.bluetooth);
+      _markTransportConnected(DeviceTransportKind.bluetooth, device);
     }
 
     final setupInProgress = _setupCoordinator.inFlight;
@@ -1106,13 +1139,9 @@ class DeviceData {
       }
       for (BluetoothCharacteristic c in characteristics) {
         if (c.uuid == Guid(ftmsIndoorBikeDataUUID)) {
+          // Discovery only records the characteristic. Notification lifecycle
+          // is owned exclusively by the FTMS block/subscription methods.
           indoorBikeCharacteristic = c;
-          if (!indoorBikeCharacteristic!.isNotifying) {
-            await _queueBleOperation(
-              () => indoorBikeCharacteristic!.setNotifyValue(true),
-            );
-            print("subscribed to indoor bike characteristic");
-          }
         }
         if (c.uuid == Guid(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID)) {
           ftmsControlPointCharacteristic = c;
@@ -1211,6 +1240,8 @@ class DeviceData {
   }
 
   Future<void> updateIndoorBikeData(BluetoothDevice device) async {
+    if (isFtmsSubscriptionBlocked) return;
+
     // The DIRCON session subscribes to FTMS during transport setup. Avoid
     // attempting BLE service discovery merely because a screen wants to make
     // sure the live stream is active.
@@ -1218,6 +1249,7 @@ class DeviceData {
 
     if (indoorBikeCharacteristic == null) {
       await _discoverServices(device);
+      if (isFtmsSubscriptionBlocked) return;
       if (services.length > 1) {
         await _findChar();
       }
@@ -1230,6 +1262,7 @@ class DeviceData {
     }
 
     try {
+      if (isFtmsSubscriptionBlocked) return;
       if (!ftmsCharacteristic.isNotifying) {
         await _queueBleOperation(() => ftmsCharacteristic.setNotifyValue(true));
       }
@@ -1238,8 +1271,8 @@ class DeviceData {
       return;
     }
 
-    // TODO handle cancelling subscription
-    _ftmsSubscription?.cancel();
+    if (isFtmsSubscriptionBlocked) return;
+    await _ftmsSubscription?.cancel();
 
     _ftmsSubscription = ftmsCharacteristic.onValueReceived.listen(
       _decodeIndoorBikeData,
@@ -1248,6 +1281,49 @@ class DeviceData {
       },
     );
     device.cancelWhenDisconnected(_ftmsSubscription!);
+  }
+
+  Future<void> blockFtmsSubscription() async {
+    _ftmsSubscriptionBlocks++;
+    if (_ftmsSubscriptionBlocks > 1) return;
+
+    final generation = ++_ftmsBlockGeneration;
+    final subscription = _ftmsSubscription;
+    final dirConSubscription = _dirConFtmsSubscription;
+    _ftmsSubscription = null;
+    _dirConFtmsSubscription = null;
+    await subscription?.cancel();
+    await dirConSubscription?.cancel();
+
+    final characteristic = indoorBikeCharacteristic;
+    if (generation == _ftmsBlockGeneration &&
+        isFtmsSubscriptionBlocked &&
+        characteristic != null &&
+        characteristic.isNotifying) {
+      await _queueBleOperation(() => characteristic.setNotifyValue(false));
+    }
+  }
+
+  Future<void> unblockFtmsSubscription(BluetoothDevice device) async {
+    if (_ftmsSubscriptionBlocks == 0) return;
+    _ftmsSubscriptionBlocks--;
+    if (_ftmsSubscriptionBlocks > 0) return;
+
+    _ftmsBlockGeneration++;
+    final dirConClient = _dirConClient;
+    if (isDirConConnected && dirConClient != null) {
+      await dirConClient.ensureCharacteristic(
+        serviceUuid: ftmsServiceUUID,
+        characteristicUuid: ftmsIndoorBikeDataUUID,
+        enableNotifications: true,
+      );
+      if (isFtmsSubscriptionBlocked || _dirConClient != dirConClient) return;
+      _dirConFtmsSubscription = dirConClient
+          .characteristicNotifications(ftmsIndoorBikeDataUUID)
+          .listen(_decodeIndoorBikeData);
+      return;
+    }
+    await updateIndoorBikeData(device);
   }
 
   void _decodeIndoorBikeData(List<int> value) {
@@ -1374,9 +1450,9 @@ class DeviceData {
   /// Checks the health of the FTMS data stream and attempts to recover if stalled.
   /// Skips if a recovery is already in progress.
   Future<void> checkFtmsHealth(BluetoothDevice device) async {
-    // Firmware updates intentionally pause or saturate BLE notifications. A
-    // CCCD toggle here competes with OTA traffic and can corrupt the update.
-    if (isFirmwareUpdateInProgress) return;
+    // Screens and operations can intentionally pause FTMS notifications. A
+    // CCCD toggle here would bypass that block and compete for the transport.
+    if (isFtmsSubscriptionBlocked) return;
     if (isSimulated || !isTransportActive) return;
     // DIRCON socket loss has its own reconnect path. The notification toggle
     // below is specifically a BLE CCCD recovery operation.
@@ -1522,29 +1598,34 @@ class DeviceData {
   Future requestSettings(BluetoothDevice device) async {
     if (this.isSimulated) return;
 
-    for (var c in this.customCharacteristic) {
-      // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
-      if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
-        continue;
-      }
+    await blockFtmsSubscription();
+    try {
+      for (var c in this.customCharacteristic) {
+        // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
+        if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
+          continue;
+        }
 
-      // Do not poll for BLE logging as it floods the connection. We rely on notifications for this.
-      if (c["vName"] == BLE_logStreamVname) {
-        continue;
-      }
+        // Do not poll for BLE logging as it floods the connection. We rely on notifications for this.
+        if (c["vName"] == BLE_logStreamVname) {
+          continue;
+        }
 
-      try {
-        await writeCustomCharacteristic(device, [
-          0x01,
-          int.parse(c["reference"]),
-        ]);
-      } catch (e) {
-        Snackbar.show(
-          ABC.c,
-          "Failed to write to SmartSpin2k $e",
-          success: false,
-        );
+        try {
+          await writeCustomCharacteristic(device, [
+            0x01,
+            int.parse(c["reference"]),
+          ]);
+        } catch (e) {
+          Snackbar.show(
+            ABC.c,
+            "Failed to write to SmartSpin2k $e",
+            success: false,
+          );
+        }
       }
+    } finally {
+      await unblockFtmsSubscription(device);
     }
   }
 
@@ -2214,6 +2295,8 @@ class DeviceData {
   /// Dispose of resources
   void dispose() {
     _isDisposed = true;
+    _ftmsPostConnectionTimer?.cancel();
+    _ftmsPostConnectionTimer = null;
     _transportStateController.removeListener(_handleTransportStateChanged);
     _workoutControlLane.dispose();
     _transportStateController.dispose();

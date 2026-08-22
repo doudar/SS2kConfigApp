@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:multicast_dns/multicast_dns.dart';
 
 enum WifiOtaPhase {
   locatingDevice,
@@ -76,7 +75,7 @@ class ProgressMultipartRequest extends http.MultipartRequest {
 }
 
 class WifiOTA {
-  static const Duration endpointStageTimeout = Duration(seconds: 10);
+  static const Duration endpointStageTimeout = Duration(seconds: 3);
 
   /// Attempts to update firmware via WiFi
   static Future<WifiOtaResult> updateFirmware({
@@ -105,42 +104,23 @@ class WifiOTA {
     );
 
     try {
-      String? baseUrl;
-      if (deviceIp != null && deviceIp.isNotEmpty) {
-        final ipBaseUrl = 'http://$deviceIp';
-        print('WiFi OTA: Checking advertised IP: $ipBaseUrl');
-        onProgress(
-          WifiOtaProgress(
-            phase: WifiOtaPhase.locatingDevice,
-            message: 'Checking advertised IP $deviceIp…',
-            fraction: 0,
-          ),
-        );
-        if (await _checkDeviceAvailability(
-          httpClient,
-          ipBaseUrl,
-          timeout: endpointTimeout,
-        )) {
-          baseUrl = ipBaseUrl;
-        }
-      }
-
-      if (baseUrl == null) {
-        final mdnsHost = '$cleanDeviceName.local';
-        print('WiFi OTA: Advertised IP unavailable; checking mDNS $mdnsHost');
-        onProgress(
-          WifiOtaProgress(
-            phase: WifiOtaPhase.locatingDevice,
-            message: 'Checking mDNS $mdnsHost…',
-            fraction: 0,
-          ),
-        );
-        baseUrl = await _locateWithMdns(
-          httpClient,
-          mdnsHost,
-          endpointTimeout,
-        ).timeout(endpointTimeout, onTimeout: () => null);
-      }
+      final candidates = candidateBaseUrls(
+        deviceName: cleanDeviceName,
+        deviceIp: deviceIp,
+      );
+      print('WiFi OTA: Checking ${candidates.join(' and ')}');
+      onProgress(
+        WifiOtaProgress(
+          phase: WifiOtaPhase.locatingDevice,
+          message: 'Checking SmartSpin2k IP address and hostname…',
+          fraction: 0,
+        ),
+      );
+      final baseUrl = await _firstReachableEndpoint(
+        httpClient,
+        candidates,
+        timeout: endpointTimeout,
+      );
 
       if (baseUrl == null) {
         final message = 'SmartSpin2k was not reachable over WiFi.';
@@ -310,55 +290,46 @@ class WifiOTA {
   static List<String> candidateBaseUrls({
     required String deviceName,
     String? deviceIp,
-    String? mdnsIp,
   }) {
     final cleanDeviceName = deviceName
         .replaceAll(RegExp(r'[^\w\s-]'), '')
         .trim();
     return <String>{
       if (deviceIp != null && deviceIp.isNotEmpty) 'http://$deviceIp',
-      if (mdnsIp != null && mdnsIp.isNotEmpty) 'http://$mdnsIp',
       'http://$cleanDeviceName.local',
     }.toList();
   }
 
-  static Future<String?> _locateWithMdns(
+  static Future<String?> _firstReachableEndpoint(
     http.Client client,
-    String mdnsHost,
-    Duration timeout,
-  ) async {
-    String? mdnsIp;
-    if (Platform.isAndroid) {
-      mdnsIp = await _resolveMdnsAddress(mdnsHost);
-      if (mdnsIp != null) {
-        print('WiFi OTA: mDNS resolved $mdnsHost to $mdnsIp');
-      } else {
-        print('WiFi OTA: mDNS lookup for $mdnsHost returned no address');
-      }
+    List<String> candidates, {
+    required Duration timeout,
+  }) {
+    final result = Completer<String?>();
+    var remaining = candidates.length;
+
+    for (final candidate in candidates) {
+      print('WiFi OTA: Checking endpoint: $candidate');
+      _checkDeviceAvailability(client, candidate).then((available) {
+        if (result.isCompleted) return;
+        if (available) {
+          result.complete(candidate);
+          return;
+        }
+        remaining--;
+        if (remaining == 0) result.complete(null);
+      });
     }
 
-    final candidates = <String>{
-      if (mdnsIp != null && mdnsIp.isNotEmpty) 'http://$mdnsIp',
-      'http://$mdnsHost',
-    };
-    for (final candidate in candidates) {
-      print('WiFi OTA: Attempting mDNS endpoint: $candidate');
-      if (await _checkDeviceAvailability(client, candidate, timeout: timeout)) {
-        return candidate;
-      }
-    }
-    return null;
+    return result.future.timeout(timeout, onTimeout: () => null);
   }
 
   static Future<bool> _checkDeviceAvailability(
     http.Client client,
-    String baseUrl, {
-    required Duration timeout,
-  }) async {
+    String baseUrl,
+  ) async {
     try {
-      final response = await client
-          .get(Uri.parse('$baseUrl/OTAIndex'))
-          .timeout(timeout);
+      final response = await client.get(Uri.parse('$baseUrl/OTAIndex'));
       if (response.statusCode == 200) {
         print('WiFi OTA: Device is available via $baseUrl');
         return true;
@@ -368,27 +339,6 @@ class WifiOTA {
     } catch (e) {
       print('WiFi OTA: Failed to reach $baseUrl: $e');
       return false;
-    }
-  }
-
-  static Future<String?> _resolveMdnsAddress(String hostname) async {
-    final client = MDnsClient();
-    try {
-      await client.start();
-      final record = await client
-          .lookup<IPAddressResourceRecord>(
-            ResourceRecordQuery.addressIPv4(hostname),
-          )
-          .timeout(const Duration(seconds: 3))
-          .first;
-      return record.address.address;
-    } catch (e) {
-      print('WiFi OTA: mDNS lookup failed for $hostname: $e');
-      return null;
-    } finally {
-      try {
-        client.stop();
-      } catch (_) {}
     }
   }
 }

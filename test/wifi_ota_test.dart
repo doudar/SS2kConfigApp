@@ -69,53 +69,46 @@ void main() {
       WifiOTA.candidateBaseUrls(
         deviceName: 'SmartSpin2k',
         deviceIp: '192.168.1.42',
-        mdnsIp: '192.168.1.43',
-      ),
-      [
-        'http://192.168.1.42',
-        'http://192.168.1.43',
-        'http://SmartSpin2k.local',
-      ],
-    );
-  });
-
-  test('duplicate discovered addresses are tried only once', () {
-    expect(
-      WifiOTA.candidateBaseUrls(
-        deviceName: 'SmartSpin2k',
-        deviceIp: '192.168.1.42',
-        mdnsIp: '192.168.1.42',
       ),
       ['http://192.168.1.42', 'http://SmartSpin2k.local'],
     );
   });
 
-  test('WiFi endpoint stages are limited to ten seconds each', () {
-    expect(WifiOTA.endpointStageTimeout, const Duration(seconds: 10));
+  test('hostname is used when no advertised IP is available', () {
+    expect(WifiOTA.candidateBaseUrls(deviceName: 'SmartSpin2k'), [
+      'http://SmartSpin2k.local',
+    ]);
   });
 
-  test('probes advertised IP, then mDNS, then permits BLE fallback', () async {
-    final requestedHosts = <String>[];
-    final client = MockClient((request) async {
-      requestedHosts.add(request.url.host);
-      if (request.url.host == '192.0.2.1') {
-        await Future<void>.delayed(const Duration(milliseconds: 40));
-      }
-      return http.Response('Not found', 404);
-    });
-
-    final result = await WifiOTA.updateFirmware(
-      deviceName: 'SmartSpin2k',
-      deviceIp: '192.0.2.1',
-      firmwarePath: 'unused.bin',
-      firmwareFilename: 'firmware.bin',
-      onProgress: (_) {},
-      client: client,
-      endpointTimeout: const Duration(milliseconds: 10),
-    );
-
-    expect(requestedHosts, ['192.0.2.1', 'smartspin2k.local']);
-    expect(result.outcome, WifiOtaOutcome.unavailable);
-    expect(result.shouldFallBackToBluetooth, isTrue);
+  test('WiFi endpoint checks share a short deadline', () {
+    expect(WifiOTA.endpointStageTimeout, const Duration(seconds: 3));
   });
+
+  test(
+    'probes advertised IP and hostname in parallel before fallback',
+    () async {
+      final requestedHosts = <String>[];
+      final client = MockClient((request) async {
+        requestedHosts.add(request.url.host);
+        if (request.url.host == '192.0.2.1') {
+          await Future<void>.delayed(const Duration(milliseconds: 40));
+        }
+        return http.Response('Not found', 404);
+      });
+
+      final result = await WifiOTA.updateFirmware(
+        deviceName: 'SmartSpin2k',
+        deviceIp: '192.0.2.1',
+        firmwarePath: 'unused.bin',
+        firmwareFilename: 'firmware.bin',
+        onProgress: (_) {},
+        client: client,
+        endpointTimeout: const Duration(milliseconds: 10),
+      );
+
+      expect(requestedHosts, containsAll(['192.0.2.1', 'smartspin2k.local']));
+      expect(result.outcome, WifiOtaOutcome.unavailable);
+      expect(result.shouldFallBackToBluetooth, isTrue);
+    },
+  );
 }

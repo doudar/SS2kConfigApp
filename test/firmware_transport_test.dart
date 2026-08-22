@@ -1,3 +1,4 @@
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 
@@ -8,23 +9,39 @@ void main() {
     expect(deviceData.createFirmwareOtaPackage(), isNull);
   });
 
-  test('tracks the complete firmware update session for FTMS suppression', () {
+  test('FTMS subscription blocks are reference counted', () async {
     final deviceData = DeviceData();
+    final device = BluetoothDevice.fromId(
+      '00000000-0000-0000-0000-000000000001',
+    );
 
-    expect(deviceData.isFirmwareUpdateInProgress, isFalse);
+    await deviceData.blockFtmsSubscription();
+    await deviceData.blockFtmsSubscription();
+    expect(deviceData.isFtmsSubscriptionBlocked, isTrue);
 
-    deviceData.beginFirmwareUpdate();
-    deviceData.beginFirmwareUpdate();
-    expect(deviceData.isFirmwareUpdateInProgress, isTrue);
+    await deviceData.unblockFtmsSubscription(device);
+    expect(deviceData.isFtmsSubscriptionBlocked, isTrue);
 
-    deviceData.endFirmwareUpdate();
-    expect(deviceData.isFirmwareUpdateInProgress, isTrue);
+    await deviceData.unblockFtmsSubscription(device);
+    expect(deviceData.isFtmsSubscriptionBlocked, isFalse);
 
-    deviceData.endFirmwareUpdate();
-    expect(deviceData.isFirmwareUpdateInProgress, isFalse);
+    // Defensive cleanup must not underflow and poison the next block.
+    await deviceData.unblockFtmsSubscription(device);
+    expect(deviceData.isFtmsSubscriptionBlocked, isFalse);
+  });
 
-    // Defensive cleanup must not underflow and poison the next update.
-    deviceData.endFirmwareUpdate();
-    expect(deviceData.isFirmwareUpdateInProgress, isFalse);
+  test('prefers the full custom device name over the BLE advertisement', () {
+    final deviceData = DeviceData();
+    final nameSetting = deviceData.customCharacteristic.firstWhere(
+      (setting) => setting['vName'] == 'BLE_deviceName',
+    );
+
+    expect(deviceData.preferredDeviceName('SmartSpin'), 'SmartSpin');
+
+    nameSetting['value'] = 'Full SmartSpin2k Name';
+    expect(
+      deviceData.preferredDeviceName('Full SmartS'),
+      'Full SmartSpin2k Name',
+    );
   });
 }
