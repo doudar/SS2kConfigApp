@@ -34,7 +34,7 @@ class WorkoutControlLane {
     required WorkoutBatchDispatcher dispatch,
     WorkoutControlTimerFactory timerFactory = _defaultTimerFactory,
     this.retryDelay = const Duration(seconds: 1),
-    this.keepAliveInterval = const Duration(seconds: 2),
+    this.keepAliveInterval = const Duration(seconds: 5),
   }) : _transportState = transportState,
        _isReady = isReady,
        _dispatch = dispatch,

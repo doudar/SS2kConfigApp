@@ -9,11 +9,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-enum ABC {
-  a,
-  b,
-  c,
-}
+import 'ble_connection_retry.dart';
+
+enum ABC { a, b, c }
 
 class Snackbar {
   static final snackBarKeyA = GlobalKey<ScaffoldMessengerState>();
@@ -40,11 +38,12 @@ class Snackbar {
   }
 }
 
-
 String prettyException(String prefix, dynamic e) {
   if (e is FlutterBluePlusException) {
     return "$prefix ${e.description}";
   } else if (e is PlatformException) {
+    return "$prefix ${e.message}";
+  } else if (e is BleConnectionAttemptsExhausted) {
     return "$prefix ${e.message}";
   }
   return prefix + e.toString();

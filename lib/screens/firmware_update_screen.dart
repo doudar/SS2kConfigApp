@@ -404,6 +404,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       _wifiOtaPhase = WifiOtaPhase.loadingFirmware;
       _updateStatus = 'Preparing firmware update…';
     });
+    deviceData.beginFirmwareUpdate();
 
     // Determine original version
     String originalVersion = deviceData.firmwareVersion.value;
@@ -582,10 +583,6 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       } else {
         _showUploadCompleteDialog(false);
       }
-
-      setState(() {
-        updatingFirmware = false;
-      });
     } catch (e) {
       bool recovered = false;
       // If error occurred but progress was high, try to verify anyway
@@ -618,10 +615,13 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         _showPreflightError(e.toString().replaceFirst('Exception: ', ''));
         print('Firmware update failed with error: $e');
       }
-
-      setState(() {
-        updatingFirmware = false;
-      });
+    } finally {
+      deviceData.endFirmwareUpdate();
+      if (mounted) {
+        setState(() {
+          updatingFirmware = false;
+        });
+      }
     }
   }
 

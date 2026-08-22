@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart';
 import 'constants.dart';
 import 'extra.dart';
 import 'bleConstants.dart';
+import 'ble_connection_retry.dart';
 import 'ble_request_coalescer.dart';
 import 'bleOTA.dart';
 import 'connection_setup_coordinator.dart';
@@ -195,6 +196,7 @@ class DeviceData {
   bool _dirConReconnectInProgress = false;
   bool _initialConnectionInProgress = false;
   bool _workoutControlActive = false;
+  int _firmwareUpdateSessions = 0;
 
   final DeviceTransportStateController _transportStateController =
       DeviceTransportStateController();
@@ -208,12 +210,21 @@ class DeviceData {
       _transportStateController.value.phase == DeviceTransportPhase.connected;
   bool get isTransportActive =>
       _transportStateController.value.phase == DeviceTransportPhase.connected;
+  bool get isFirmwareUpdateInProgress => _firmwareUpdateSessions > 0;
   String get activeTransportName =>
       switch (_transportStateController.value.transport) {
         DeviceTransportKind.dircon => 'DIRCON',
         DeviceTransportKind.bluetooth => 'Bluetooth',
         DeviceTransportKind.none => 'None',
       };
+
+  void beginFirmwareUpdate() {
+    _firmwareUpdateSessions++;
+  }
+
+  void endFirmwareUpdate() {
+    if (_firmwareUpdateSessions > 0) _firmwareUpdateSessions--;
+  }
 
   bool isUserDisconnect = false;
   ValueNotifier<int> rssi = ValueNotifier(0);
@@ -305,7 +316,15 @@ class DeviceData {
       }
 
       _markTransportConnecting(DeviceTransportKind.bluetooth);
-      await device.connectAndUpdateStream();
+      final connected = await retryBleConnection(
+        connect: device.connectAndUpdateStream,
+        isConnected: () => device.isConnected,
+        isCancelled: () => isUserDisconnect,
+        onAttemptFailed: (attempt, error) {
+          print('[BLE] Initial connection attempt $attempt/10 failed: $error');
+        },
+      );
+      if (!connected) return;
       _markTransportConnected(DeviceTransportKind.bluetooth);
       if (waitForSetup) {
         await setupConnection(device);
@@ -1355,6 +1374,9 @@ class DeviceData {
   /// Checks the health of the FTMS data stream and attempts to recover if stalled.
   /// Skips if a recovery is already in progress.
   Future<void> checkFtmsHealth(BluetoothDevice device) async {
+    // Firmware updates intentionally pause or saturate BLE notifications. A
+    // CCCD toggle here competes with OTA traffic and can corrupt the update.
+    if (isFirmwareUpdateInProgress) return;
     if (isSimulated || !isTransportActive) return;
     // DIRCON socket loss has its own reconnect path. The notification toggle
     // below is specifically a BLE CCCD recovery operation.

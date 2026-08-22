@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/device_transport_state.dart';
 import 'package:ss2kconfigapp/utils/workout_control_lane.dart';
 
-const _keepAlive = Duration(seconds: 2);
+const _keepAlive = Duration(seconds: 5);
 const _retry = Duration(seconds: 1);
 
 void main() {

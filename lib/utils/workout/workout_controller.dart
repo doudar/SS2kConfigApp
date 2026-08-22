@@ -65,6 +65,8 @@ class WorkoutController extends ChangeNotifier {
   bool _isDisposed = false;
   bool _transportListenerAttached = false;
   int _lastConnectedEpoch = 0;
+  static const _targetUpdateInterval = Duration(seconds: 2);
+  DateTime? _lastTargetUpdate;
 
   List<WorkoutSegment> segments = [];
   String? workoutName;
@@ -551,6 +553,7 @@ class WorkoutController extends ChangeNotifier {
         _lastRecordedSecond = _workoutProgressTime.floor();
 
         progressPosition = _workoutProgressTime / totalDuration;
+        _lastTargetUpdate = null;
 
         _saveWorkoutState();
         if (!_isDisposed) {
@@ -703,10 +706,16 @@ class WorkoutController extends ChangeNotifier {
           targetPower = segment.powerLow;
         }
 
-        deviceData.setWorkoutTargetPower(
-          (targetPower * ftpValue).round(),
-          force: force,
-        );
+        final now = DateTime.now();
+        if (force ||
+            _lastTargetUpdate == null ||
+            now.difference(_lastTargetUpdate!) >= _targetUpdateInterval) {
+          deviceData.setWorkoutTargetPower(
+            (targetPower * ftpValue).round(),
+            force: force,
+          );
+          _lastTargetUpdate = now;
+        }
         currentSegmentTimeRemaining =
             ((elapsedTime + segment.duration) - currentTime).round();
 
