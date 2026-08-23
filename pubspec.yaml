@@ -45,6 +45,10 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   test: ^1.24.9
+  # Transitive via flutter_blue_plus. Declared so the FTMS transport-parity test
+  # can install a fake FlutterBluePlusPlatform; the flutter_blue_plus entrypoint
+  # re-exports only DeviceIdentifier, Guid, LogLevel and PhySupport.
+  flutter_blue_plus_platform_interface: ^9.0.3
 
 flutter:
   # Xcode Cloud disables automatic package resolution, and Flutter's SPM

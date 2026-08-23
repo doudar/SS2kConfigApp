@@ -1,8 +1,9 @@
 # Universal Transport Remediation Plan
 
-**Status:** Ready for implementation  
+**Status:** In progress — Plans 1 and 2 complete; Plan 3 ready
 **Reviewed:** Codex investigation plus independent Claude Opus plan review  
 **Firmware baseline:** SmartSpin2k `develop` firmware inspected August 2026
+**Progress updated:** August 23, 2026
 
 ## 1. Objective
 
@@ -30,16 +31,22 @@ The program is complete when:
 
 Implement the work as three independently reviewable changes followed by one release gate:
 
-1. **Workout control repair and bounded scheduler**
-2. **DIRCON calibration parity and fakeable session seam**
+1. **Workout control repair and bounded scheduler — complete**
+2. **DIRCON calibration parity and fakeable session seam — complete**
 3. **Focused transport-state consumer migration**
 4. **Cross-transport validation and release gate**
 
-The first change closes the reported workout defect and must not wait for the UI migration.
+The first change closed the reported workout defect without waiting for the UI migration. Its 39 focused encoder, scheduler, epoch, transport-control, target-clamping, and DIRCON timeout-handling tests pass.
 
-## 4. Plan 1 — Workout Control Repair
+The second change added the injectable session seam, subscribed DIRCON to FTMS Machine Status, and converted the previously untested transport-selection code into 16 passing tests.
 
-### 4.1 FTMS command encoding
+## 4. Plan 1 — Workout Control Repair (Complete)
+
+Completed on the `universal-transport-workouts` branch. Follow-up review fixes cover transport-state transitions, Wi-Fi/BLE handoff behavior, DIRCON timeout handling, ERG keep-alive behavior, and target clamping. The unused BLE-only FTMS instance writers are retained as FTMS specification coverage for potential future use; they are not a Plan 1 completion blocker or a Plan 2 prerequisite.
+
+Sections 4.1–4.4 retain the delivered design requirements as an implementation record.
+
+### 4.1 FTMS command encoding (Delivered)
 
 Add pure encoders to `FTMSControlPoint`:
 
@@ -54,11 +61,11 @@ static Uint8List indoorBikeSimulationCommand({
 });
 ```
 
-The encoders own FTMS opcode, scaling, signed-value, and little-endian rules. Replace the existing target-power and simulation BLE writers rather than retaining wrappers with no callers.
+The encoders own FTMS opcode, scaling, signed-value, and little-endian rules. Replace the existing target-power and simulation BLE writers used by workouts. Retain the other currently unused FTMS methods as specification coverage for potential future features.
 
 Remove `DeviceData.writeFtmsControlPoint` after its workout call sites are migrated. Keep `writeFtmsControlPointCommand` for general already-encoded universal FTMS operations such as calibration.
 
-### 4.2 Explicit workout-control API
+### 4.2 Explicit workout-control API (Delivered)
 
 Make `FtmsData.targetERG` passive model/display state. Remove `onTargetPowerChanged` and `onModeChanged` transport side effects.
 
@@ -80,7 +87,7 @@ Behavior:
 - Ramp calculations may request targets every 100 ms, but only the newest pending rounded watt value is retained.
 - Load and workout completion call `resetWorkoutSimulation` through the universal path.
 
-### 4.3 Bounded control scheduler
+### 4.3 Bounded control scheduler (Delivered)
 
 Use a dedicated workout-control lane inside `DeviceData`, still sharing the existing low-level serialized transport queue.
 
@@ -100,7 +107,7 @@ The scheduler must enforce:
 
 If a new target arrives after the first command of a zero-target batch, re-check the generation before sending the simulation command. This prevents a stale mode switch after a newer ERG target has superseded it.
 
-### 4.4 Connection epoch foundation
+### 4.4 Connection epoch foundation (Delivered)
 
 Introduce the state model required for safe delivery:
 
@@ -136,7 +143,17 @@ Centralize transitions in idempotent private methods rather than assigning conne
 
 The workout controller observes connected epoch changes. If a workout is playing, it force-requests the current target. Its next normal tick remains a fallback, and scheduler deduplication guarantees exactly one delivery.
 
-## 5. Plan 2 — DIRCON Calibration Parity
+## 5. Plan 2 — DIRCON Calibration Parity (Complete)
+
+Delivered on the `universal-transport-workouts` branch. `DirConSession` and `DirConConnector` live in `lib/utils/dircon_client.dart`; `DeviceData` takes the connector through its constructor and defaults to `DirConClient.connect`. DIRCON now subscribes to FTMS Machine Status `0x2ADA` independently of Indoor Bike Data, and both transports publish through one disposal-guarded `_forwardMachineStatus`.
+
+One requirement was tightened during implementation: the subscription is created **before** notifications are enabled. `characteristicNotifications` filters a broadcast stream with no replay, so enabling first would drop any frame the device emitted while the enable request was still in flight. A test pins that ordering and fails if it is reversed.
+
+Sections 5.1–5.2 retain the delivered design requirements as an implementation record.
+
+### 5.0 Resolved precondition — FTMS specification methods
+
+The project maintainer confirmed that the ten currently unused FTMS methods documented in `docs/ftms_control_point_cleanup_todo.md` should remain because they cover operations from the FTMS specification that may be needed later. Their retention is API/specification coverage, not evidence that every method has been exercised against firmware, and it does not block Plan 2. Any future use must be reviewed for universal-transport compatibility: new workout or DIRCON-capable control paths must not call a BLE-only writer directly, while a deliberately BLE-only feature may use an existing writer when that transport restriction is explicit and tested.
 
 ### 5.1 Fakeable DIRCON session
 
@@ -187,6 +204,14 @@ Do not migrate these deliberately BLE-specific areas:
 - GATT characteristic and CCCD health recovery.
 
 ## 7. Test Plan
+
+Plan 1's focused encoder, scheduler, epoch, transport-control, target-clamping, and DIRCON timeout-handling suites pass.
+
+Plan 2 closed the transport-selection test debt in `test/dircon_machine_status_test.dart`, `test/dircon_transport_dispatch_test.dart`, and `test/ftms_control_point_transport_parity_test.dart`, backed by the fake in `test/support/fake_dircon_session.dart`. BLE/DIRCON command parity is proven against a real `BluetoothCharacteristic.write()` driven by a fake `FlutterBluePlusPlatform`; that fake binds to the isolate permanently, so it must stay in its own test file.
+
+One item is pinned by outcome rather than by exception: `requestSettings` catches every write failure individually, so no current code path lets `setupConnection` throw over a live link. The test asserts what the `connectPreferred` guard exists to protect — a wholly failed bootstrap leaves the DIRCON transport connected and still able to carry FTMS control — and says so in place.
+
+Remaining before the release gate: §7.4's shifter/log per-epoch reinitialization and screen-listener items belong to Plan 3, and §7.5's hardware matrix to Plan 4.
 
 ### 7.1 Encoding tests
 

@@ -41,7 +41,41 @@ class DirConFrameParser {
   }
 }
 
-class DirConClient {
+/// The DIRCON operations [DeviceData] actually uses, and nothing more.
+///
+/// Narrow on purpose: it exists so tests can drive the DIRCON transport without
+/// a socket. BLE is deliberately not generalized behind it — the two transports
+/// stay distinct everywhere except the FTMS command payloads they carry.
+abstract interface class DirConSession {
+  String get host;
+  bool get isConnected;
+  Stream<void> get disconnected;
+
+  Future<void> initialize({
+    required String serviceUuid,
+    required String characteristicUuid,
+  });
+
+  Future<void> ensureCharacteristic({
+    required String serviceUuid,
+    required String characteristicUuid,
+    bool enableNotifications = false,
+  });
+
+  Future<List<int>> writeCharacteristic(
+    String characteristicUuid,
+    List<int> value,
+  );
+
+  Stream<List<int>> characteristicNotifications(String characteristicUuid);
+
+  Future<void> close();
+}
+
+/// Opens a [DirConSession] to [host]. Production supplies [DirConClient.connect].
+typedef DirConConnector = Future<DirConSession> Function(String host);
+
+class DirConClient implements DirConSession {
   DirConClient._(this.host, this._socket, {required this.responseTimeout});
 
   static const int port = 8081;

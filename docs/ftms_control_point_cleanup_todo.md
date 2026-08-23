@@ -1,8 +1,8 @@
-# TODO — FTMSControlPoint cleanup and Plan 2 test debt
+# FTMSControlPoint retained methods and Plan 2 test debt
 
-**Status:** Deferred, not scheduled
+**Status:** Maintainer decision recorded — retain the unused FTMS methods; Plan 2 test debt closed
 **Raised by:** Phase 1 code review (universal transport remediation, Plan §4)
-**Blocking:** nothing — this is cleanup and tracked test debt
+**Blocking:** Nothing
 
 ## 1. Unused BLE-only instance writers
 
@@ -21,27 +21,31 @@ Nine of the ten were already dead before Phase 1. At `8078f1b` (pre-Phase-1), on
 | `writeIndoorBikeSimulation` | `DeviceData` mode callback, `WorkoutController` | replaced by `indoorBikeSimulationCommand` encoder |
 | `spinDownCommand` | `calibration_monitor.dart` | unchanged, still live |
 
-Phase 1 converted the two live writers into pure encoders and removed `DeviceData.writeFtmsControlPoint`, which was the only thing that ever supplied their `BluetoothCharacteristic` argument. Nothing lost a capability.
+Phase 1 converted the two live writers into pure encoders and removed `DeviceData.writeFtmsControlPoint`, which was the only thing that ever supplied their `BluetoothCharacteristic` argument. No user-facing capability was lost.
 
-### Why the signature is the problem
+### Universal-transport constraint
 
-Taking a `BluetoothCharacteristic` fuses encoding to the BLE transport. Any future caller reaching for one of these gets code that silently cannot reach the device over DIRCON — the exact class of defect Phase 1 was written to eliminate.
+Taking a `BluetoothCharacteristic` fuses these methods to the BLE transport. That is acceptable while they are retained as unused FTMS specification coverage, but a future caller must not assume the methods work over DIRCON.
 
 FTMS-over-BLE itself is unaffected and fully live: `DeviceData._writeFtmsControlPointCommandNow` writes to `ftmsControlPointCharacteristic` whenever the active transport is Bluetooth. That is the "FTMS when DIRCON is unavailable" path.
 
 SmartSpin2k implements three control opcodes — Set Target Power (`0x05`), Indoor Bike Simulation (`0x11`), Spin Down (`0x13`) — and all three already have working transport-neutral encoders.
 
-### Recommended resolution
+### Maintainer decision
 
-Delete all ten, leaving `FTMSControlPoint` as three pure encoders. Any future opcode should be added as a `static Uint8List xCommand()` plus a `DeviceData.writeFtmsControlPointCommand` call, which works over both transports from day one. This is what plan §4.1 asks for: *"Replace the existing target-power and simulation BLE writers rather than retaining wrappers with no callers."*
+Retain all ten methods because they represent operations from the FTMS specification that may be needed by future features. No deletion is planned as part of Plan 2.
 
-## 2. Test debt blocked on Plan 2
+Retention provides API/specification coverage only; these methods have no current callers and are not thereby proven against SmartSpin2k firmware.
 
-These need the injectable `DirConSession` / connector seam from plan §5.1 and cannot be written until it exists:
+If one becomes active, first add or extract a pure `static Uint8List xCommand()` encoder and route universal behavior through `DeviceData.writeFtmsControlPointCommand`. A deliberately BLE-only feature may use the existing writer only when that transport restriction is explicit and tested.
 
-- BLE and DIRCON emit identical encoded target commands (§7.2).
-- Target power delivered while `_dirConSetupComplete` is false (§7.2). The code is correct — there is no bootstrap gate on the write path — but nothing pins it.
-- Regression test for the `connectPreferred` fix: a `setupConnection` failure over a live link must leave the phase `connected`.
-- Regression test for the `_closeDirCon` fix: closing a live DIRCON session must report the transport down.
+## 2. Test debt awaiting the Plan 2 seam — closed
 
-`_dispatchWorkoutControlBatch`, `_writeFtmsControlPointCommandNow`, and `_isWorkoutControlReady` — the actual transport-selection logic — currently have no test coverage at all. The lane, the encoders, and the epoch model are well covered; this is the untested seam between them.
+The injectable `DirConSession` / connector seam from plan §5.1 now exists, and all four items are covered:
+
+- BLE and DIRCON emit identical encoded target commands (§7.2) — `test/ftms_control_point_transport_parity_test.dart`, comparing a real `BluetoothCharacteristic.write()` against a DIRCON session write.
+- Target power delivered while `_dirConSetupComplete` is false (§7.2) — `test/dircon_transport_dispatch_test.dart`. The target write is asserted to interleave with the settings bootstrap rather than follow it.
+- `connectPreferred` fix — same file. Pinned by outcome: `requestSettings` catches each write failure individually, so no path currently lets `setupConnection` throw; the test asserts that a wholly failed bootstrap leaves the live transport `connected` and still usable for FTMS control.
+- `_closeDirCon` fix — same file: closing a live DIRCON session reports the transport down and refuses further workout writes.
+
+`_dispatchWorkoutControlBatch`, `_writeFtmsControlPointCommandNow`, and `_isWorkoutControlReady` — the actual transport-selection logic — are now exercised by all three DIRCON test files.

@@ -178,7 +178,8 @@ class FtmsData {
 }
 
 class DeviceData {
-  DeviceData() {
+  DeviceData({DirConConnector? dirConConnector})
+    : _dirConConnector = dirConConnector ?? _connectDirConClient {
     _workoutControlLane = WorkoutControlLane(
       transportState: () => _transportStateController.value,
       isReady: _isWorkoutControlReady,
@@ -187,10 +188,16 @@ class DeviceData {
     _transportStateController.addListener(_handleTransportStateChanged);
   }
 
+  static Future<DirConSession> _connectDirConClient(String host) =>
+      DirConClient.connect(host);
+
+  final DirConConnector _dirConConnector;
+
   String? advertisedIpAddress;
-  DirConClient? _dirConClient;
+  DirConSession? _dirConSession;
   StreamSubscription<List<int>>? _dirConNotificationSubscription;
   StreamSubscription<List<int>>? _dirConFtmsSubscription;
+  StreamSubscription<List<int>>? _dirConMachineStatusSubscription;
   StreamSubscription<void>? _dirConDisconnectedSubscription;
   bool _dirConSetupComplete = false;
   bool _dirConReconnectInProgress = false;
@@ -343,7 +350,7 @@ class DeviceData {
   Future<void> disconnectPreferred(BluetoothDevice device) async {
     isUserDisconnect = true;
     _markTransportDisconnected(explicit: true);
-    if (_dirConClient != null) {
+    if (_dirConSession != null) {
       await _closeDirCon();
       _resetConnectionState();
       return;
@@ -357,47 +364,100 @@ class DeviceData {
     required bool waitForSetup,
   }) async {
     await _closeDirCon();
-    final client = await DirConClient.connect(ipAddress);
+    final session = await _dirConConnector(ipAddress);
     try {
-      await client.initialize(serviceUuid: csUUID, characteristicUuid: ccUUID);
+      await session.initialize(serviceUuid: csUUID, characteristicUuid: ccUUID);
     } catch (_) {
-      await client.close();
+      await session.close();
       rethrow;
     }
 
-    _dirConClient = client;
+    _dirConSession = session;
     _dirConSetupComplete = false;
     configAppCompatibleFirmware = true;
     _ensureCachedMap();
     _markTransportConnected(DeviceTransportKind.dircon, device);
-    _dirConNotificationSubscription = client
+    _dirConNotificationSubscription = session
         .characteristicNotifications(ccUUID)
         .listen(_decodeCustomValue);
-    try {
-      await client.ensureCharacteristic(
-        serviceUuid: ftmsServiceUUID,
-        characteristicUuid: ftmsIndoorBikeDataUUID,
-        enableNotifications: !isFtmsSubscriptionBlocked,
-      );
-      if (!isFtmsSubscriptionBlocked) {
-        _dirConFtmsSubscription = client
-            .characteristicNotifications(ftmsIndoorBikeDataUUID)
-            .listen(_decodeIndoorBikeData);
-        print('[DIRCON] Subscribed to FTMS Indoor Bike Data');
-      }
-    } catch (error) {
-      // Configuration remains usable on firmware variants without FTMS.
-      print('[DIRCON] FTMS subscription unavailable: $error');
-    }
-    _dirConDisconnectedSubscription = client.disconnected.listen((_) {
+
+    // Indoor Bike Data and Machine Status are set up independently: firmware
+    // that exposes one but not the other must still deliver the one it has, and
+    // neither gates configuration, which is already live above.
+    _dirConFtmsSubscription = await _subscribeDirConNotifications(
+      session,
+      ftmsIndoorBikeDataUUID,
+      _decodeIndoorBikeData,
+      label: 'FTMS Indoor Bike Data',
+      enable: !isFtmsSubscriptionBlocked,
+    );
+    // Deliberately not gated by the FTMS subscription block. That block exists
+    // to keep the high-rate Indoor Bike Data telemetry off a transport that is
+    // busy with OTA or a settings bootstrap. Machine Status is event-driven
+    // homing status at a handful of frames per run, and it is the stream
+    // calibration trusts, so blocking it would blind calibration for the whole
+    // post-connection window and for every settings refresh.
+    _dirConMachineStatusSubscription = await _subscribeDirConNotifications(
+      session,
+      FTMS_MACHINE_STATUS_CHARACTERISTIC_UUID,
+      _forwardMachineStatus,
+      label: 'FTMS Machine Status',
+    );
+
+    _dirConDisconnectedSubscription = session.disconnected.listen((_) {
       _handleDirConDisconnect(device);
     });
-    print('[DIRCON] Connected to $ipAddress:${DirConClient.port}');
+    print('[DIRCON] Connected to $ipAddress');
     if (waitForSetup) {
       await setupConnection(device);
     } else {
       _setupConnectionInBackground(device);
     }
+  }
+
+  /// Subscribes to a DIRCON characteristic's notifications, returning null when
+  /// the firmware does not expose it.
+  ///
+  /// Listens *before* enabling notifications: [DirConSession.characteristicNotifications]
+  /// filters a broadcast stream with no replay, so a frame the device emits
+  /// while the enable request is still in flight would otherwise be dropped.
+  ///
+  /// With [enable] false the characteristic is still discovered but no
+  /// notifications are turned on and nothing is subscribed, which is how a
+  /// blocked stream is left for [unblockFtmsSubscription] to pick up later.
+  Future<StreamSubscription<List<int>>?> _subscribeDirConNotifications(
+    DirConSession session,
+    String characteristicUuid,
+    void Function(List<int>) onData, {
+    required String label,
+    bool enable = true,
+  }) async {
+    final subscription = enable
+        ? session.characteristicNotifications(characteristicUuid).listen(onData)
+        : null;
+    try {
+      await session.ensureCharacteristic(
+        serviceUuid: ftmsServiceUUID,
+        characteristicUuid: characteristicUuid,
+        enableNotifications: enable,
+      );
+      if (enable) print('[DIRCON] Subscribed to $label');
+      return subscription;
+    } catch (error) {
+      await subscription?.cancel();
+      print('[DIRCON] $label unavailable: $error');
+      return null;
+    }
+  }
+
+  /// Publishes a raw FTMS Machine Status frame from either transport.
+  ///
+  /// Guarded because `dispose()` closes the controller synchronously while the
+  /// DIRCON teardown it started is still unwinding, so a late frame can arrive
+  /// after the controller is gone.
+  void _forwardMachineStatus(List<int> value) {
+    if (_isDisposed || _machineStatusController.isClosed) return;
+    _machineStatusController.add(value);
   }
 
   void _setupConnectionInBackground(BluetoothDevice device) {
@@ -409,7 +469,7 @@ class DeviceData {
   }
 
   Future<void> _handleDirConDisconnect(BluetoothDevice device) async {
-    final disconnectedAddress = _dirConClient?.host;
+    final disconnectedAddress = _dirConSession?.host;
     if (disconnectedAddress == null) return;
     _markTransportReconnecting(DeviceTransportKind.dircon);
     await _closeDirCon();
@@ -506,12 +566,12 @@ class DeviceData {
   }
 
   Future<void> _closeDirCon() async {
-    final client = _dirConClient;
-    _dirConClient = null;
+    final session = _dirConSession;
+    _dirConSession = null;
     // Tearing down a live session is itself a transport transition. Callers
     // that already moved to connecting/reconnecting/disconnected are unaffected
     // by this guard, so no spurious disconnected phase is emitted mid-reconnect.
-    if (client != null &&
+    if (session != null &&
         _transportStateController.value.transport ==
             DeviceTransportKind.dircon &&
         _transportStateController.value.phase ==
@@ -523,9 +583,11 @@ class DeviceData {
     _dirConNotificationSubscription = null;
     await _dirConFtmsSubscription?.cancel();
     _dirConFtmsSubscription = null;
+    await _dirConMachineStatusSubscription?.cancel();
+    _dirConMachineStatusSubscription = null;
     await _dirConDisconnectedSubscription?.cancel();
     _dirConDisconnectedSubscription = null;
-    if (client != null) await client.close();
+    if (session != null) await session.close();
   }
 
   // A DIRCON disconnect can land after dispose() has torn down the notifier,
@@ -1150,7 +1212,7 @@ class DeviceData {
           machineStatusCharacteristic = c;
           await _machineStatusSubscription?.cancel();
           _machineStatusSubscription = c.onValueReceived.listen(
-            _machineStatusController.add,
+            _forwardMachineStatus,
           );
           if (!c.isNotifying) {
             await _queueBleOperation(() => c.setNotifyValue(true));
@@ -1310,17 +1372,24 @@ class DeviceData {
     if (_ftmsSubscriptionBlocks > 0) return;
 
     _ftmsBlockGeneration++;
-    final dirConClient = _dirConClient;
-    if (isDirConConnected && dirConClient != null) {
-      await dirConClient.ensureCharacteristic(
-        serviceUuid: ftmsServiceUUID,
-        characteristicUuid: ftmsIndoorBikeDataUUID,
-        enableNotifications: true,
+    final dirConSession = _dirConSession;
+    if (isDirConConnected && dirConSession != null) {
+      // Same helper the initial setup uses, so the resubscribe also listens
+      // before enabling and a firmware variant without FTMS reports rather than
+      // throwing out of the post-connection timer that calls this.
+      final subscription = await _subscribeDirConNotifications(
+        dirConSession,
+        ftmsIndoorBikeDataUUID,
+        _decodeIndoorBikeData,
+        label: 'FTMS Indoor Bike Data',
       );
-      if (isFtmsSubscriptionBlocked || _dirConClient != dirConClient) return;
-      _dirConFtmsSubscription = dirConClient
-          .characteristicNotifications(ftmsIndoorBikeDataUUID)
-          .listen(_decodeIndoorBikeData);
+      // The block may have been re-taken, or the session replaced, while
+      // enablement was in flight.
+      if (isFtmsSubscriptionBlocked || _dirConSession != dirConSession) {
+        await subscription?.cancel();
+        return;
+      }
+      _dirConFtmsSubscription = subscription;
       return;
     }
     await updateIndoorBikeData(device);
@@ -1916,10 +1985,10 @@ class DeviceData {
     List<int> value,
   ) async {
     return _queueBleOperation(() async {
-      final dirConClient = _dirConClient;
-      if (dirConClient != null && dirConClient.isConnected) {
+      final dirConSession = _dirConSession;
+      if (dirConSession != null && dirConSession.isConnected) {
         try {
-          final response = await dirConClient.writeCharacteristic(
+          final response = await dirConSession.writeCharacteristic(
             ccUUID,
             value,
           );
@@ -2000,7 +2069,7 @@ class DeviceData {
     final state = _transportStateController.value;
     if (state.phase != DeviceTransportPhase.connected) return false;
     return switch (state.transport) {
-      DeviceTransportKind.dircon => _dirConClient?.isConnected ?? false,
+      DeviceTransportKind.dircon => _dirConSession?.isConnected ?? false,
       DeviceTransportKind.bluetooth => ftmsControlPointCharacteristic != null,
       DeviceTransportKind.none => false,
     };
@@ -2020,12 +2089,12 @@ class DeviceData {
   }
 
   Future<void> _writeFtmsControlPointCommandNow(List<int> command) async {
-    final dirConClient = _dirConClient;
+    final dirConSession = _dirConSession;
     if (_transportStateController.value.transport ==
             DeviceTransportKind.dircon &&
-        dirConClient != null &&
-        dirConClient.isConnected) {
-      await dirConClient.writeCharacteristic(ftmsControlPointUUID, command);
+        dirConSession != null &&
+        dirConSession.isConnected) {
+      await dirConSession.writeCharacteristic(ftmsControlPointUUID, command);
       return;
     }
 
