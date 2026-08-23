@@ -149,6 +149,8 @@ Delivered on the `universal-transport-workouts` branch. `DirConSession` and `Dir
 
 One requirement was tightened during implementation: the subscription is created **before** notifications are enabled. `characteristicNotifications` filters a broadcast stream with no replay, so enabling first would drop any frame the device emitted while the enable request was still in flight. A test pins that ordering and fails if it is reversed.
 
+**Interaction with the FTMS subscription blocker.** `develop` gained a refcounted `blockFtmsSubscription` / `unblockFtmsSubscription` pair that suppresses FTMS notifications during OTA, the settings bootstrap, and a ten-second post-connection window. Machine Status is deliberately **not** gated by it. The block exists to keep the high-rate Indoor Bike Data telemetry off a transport that is already busy; Machine Status is event-driven homing status at a handful of frames per run, and it is the stream calibration trusts. Gating it would blind calibration for the entire post-connection window and for every settings refresh — reintroducing the defect this plan exists to fix. Indoor Bike Data still honours the block, and `unblockFtmsSubscription` now resubscribes through the same listen-before-enable helper, so its DIRCON resubscribe no longer has the drop window either.
+
 Sections 5.1–5.2 retain the delivered design requirements as an implementation record.
 
 ### 5.0 Resolved precondition — FTMS specification methods
