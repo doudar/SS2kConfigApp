@@ -374,6 +374,10 @@ void main() {
     expect(monitor.phase, CalibrationPhase.searchingMax);
     expect(monitor.minFound, isTrue);
 
+    // The run's own evidence that DIRCON carried it, which is what the
+    // copied calibration report exists to show on hardware.
+    expect(monitor.machineStatusLog.single.message, '14 04  max search started');
+
     monitor.dispose();
     deviceData.dispose();
   });

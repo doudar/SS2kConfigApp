@@ -250,6 +250,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         text: buildCalibrationReport(
           transcript: _monitor.transcript,
           droppedLines: _monitor.droppedLines,
+          machineStatus: _monitor.machineStatusLog,
+          droppedStatusFrames: _monitor.droppedStatusFrames,
+          transport: deviceData.activeTransportName,
           phase: _monitor.phase,
           minFound: _monitor.minFound,
           maxFound: _monitor.maxFound,

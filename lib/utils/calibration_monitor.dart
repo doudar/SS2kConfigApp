@@ -675,6 +675,28 @@ String _elapsed(Duration at) {
 /// directly, and so the caller decides what it knows. Fields with no value are
 /// rendered as `unknown` rather than dropped — every report has the same shape,
 /// which matters when someone is skimming a pasted one.
+/// Renders a raw `0x2ADA` frame as hex plus, where it is one, the spin-down
+/// status the firmware meant by it.
+///
+/// The names come from [FTMSSpinDownStatus], which documents why the FTMS
+/// spec labels do not describe what the SmartSpin2k does with them.
+String describeMachineStatusFrame(List<int> value) {
+  final hex = value
+      .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+      .join(' ');
+  if (value.length < 2 || value[0] != FTMSStatusOpCodes.SPIN_DOWN_STATUS) {
+    return '$hex  (not a spin-down status)';
+  }
+  final meaning = switch (value[1]) {
+    FTMSSpinDownStatus.SPIN_DOWN_REQUESTED => 'spin-down requested',
+    FTMSSpinDownStatus.SUCCESS => 'success',
+    FTMSSpinDownStatus.ERROR => 'error',
+    FTMSSpinDownStatus.MAX_SEARCH_STARTED => 'max search started',
+    _ => 'unknown parameter',
+  };
+  return '$hex  $meaning';
+}
+
 String buildCalibrationReport({
   required List<CalibrationLogEntry> transcript,
   required int droppedLines,
@@ -684,6 +706,9 @@ String buildCalibrationReport({
   required bool usedFtmsPath,
   required bool sweepTimedOut,
   required bool logStreamSilent,
+  required List<CalibrationLogEntry> machineStatus,
+  required int droppedStatusFrames,
+  String? transport,
   String? firmwareVersion,
   String? bikeType,
   String? homingForce,
@@ -702,6 +727,10 @@ String buildCalibrationReport({
     ..writeln(
       'firmware: ${orUnknown(firmwareVersion)}   bike: ${orUnknown(bikeType)}',
     )
+    // The transport is what makes the machine-status section below readable:
+    // no 0x2ADA frames is unremarkable on one transport and a defect on the
+    // other.
+    ..writeln('transport: ${orUnknown(transport)}')
     ..writeln(
       'phase: ${phase.name}  min: $minFound  max: $maxFound  range: $range',
     )
@@ -709,6 +738,20 @@ String buildCalibrationReport({
       'ftmsPath: $usedFtmsPath  sweepTimedOut: $sweepTimedOut  logSilent: $logStreamSilent',
     )
     ..writeln('homingForce: ${orUnknown(homingForce)}');
+
+  if (machineStatus.isEmpty) {
+    // The negative result is the interesting one over DIRCON: it means the
+    // 0x2ADA subscription never took and the log path carried the whole run.
+    buffer.writeln('--- FTMS machine status 0x2ADA (no frames received) ---');
+  } else {
+    buffer.writeln(
+      '--- FTMS machine status 0x2ADA (${machineStatus.length} frames, '
+      '$droppedStatusFrames dropped) ---',
+    );
+    for (final entry in machineStatus) {
+      buffer.writeln('[${_elapsed(entry.at)}] ${entry.message}');
+    }
+  }
 
   if (transcript.isEmpty) {
     // Worth reporting in its own right: a run where the device never spoke.
@@ -783,10 +826,21 @@ class CalibrationMonitor extends ChangeNotifier {
   /// counted in [_droppedLines] rather than passing silently.
   static const int _maxTranscriptLines = 1000;
 
+  /// A run emits a handful of status frames. This is a runaway guard, not a
+  /// working limit; overflow is counted in [_droppedStatusFrames].
+  static const int _maxStatusFrames = 200;
+
   final CalibrationPhaseTracker _tracker = CalibrationPhaseTracker();
   final List<CalibrationLogEntry> _transcript = [];
+
+  /// Deliberately not merged into [_transcript]: the log-silence timer treats a
+  /// non-empty transcript as proof the device is talking, and a status frame is
+  /// not evidence about the *log* stream. A run where `0x2ADA` flows while the
+  /// log is dead must still report `logStreamSilent`.
+  final List<CalibrationLogEntry> _machineStatusLog = [];
   DateTime? _runStartedAt;
   int _droppedLines = 0;
+  int _droppedStatusFrames = 0;
 
   StreamSubscription<String>? _logSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicSubscription;
@@ -844,6 +898,23 @@ class CalibrationMonitor extends ChangeNotifier {
   /// [_maxTranscriptLines]. Reported rather than truncating silently.
   int get droppedLines => _droppedLines;
 
+  /// Every FTMS Machine Status `0x2ADA` frame this run received, decoded and
+  /// stamped with when it arrived.
+  ///
+  /// Recorded for its evidential value rather than for the UI. Calibration
+  /// tracks homing from three redundant sources — the device log, `hMax`/`hMin`
+  /// characteristic changes, and these frames — so a run that completes proves
+  /// nothing about which one carried it. Over DIRCON that ambiguity is the
+  /// whole question: the firmware only forwards `0x2ADA` to clients that
+  /// subscribed (`DirConManager::notifyCharacteristic(..., onlySubscribers)`),
+  /// so an empty list here after a DIRCON run means the subscription never
+  /// took and the log path did the work.
+  List<CalibrationLogEntry> get machineStatusLog =>
+      List.unmodifiable(_machineStatusLog);
+
+  /// How many frames fell out of [machineStatusLog] at [_maxStatusFrames].
+  int get droppedStatusFrames => _droppedStatusFrames;
+
   Future<void> start() async {
     // A retry can begin before the previous run's asynchronous cleanup has
     // reached the BLE queue. Queue its stop before enabling the new stream.
@@ -851,6 +922,8 @@ class CalibrationMonitor extends ChangeNotifier {
     _cancelTimers();
     _transcript.clear();
     _droppedLines = 0;
+    _machineStatusLog.clear();
+    _droppedStatusFrames = 0;
     _runStartedAt = DateTime.now();
     _showPedalHint = false;
     _logStreamSilent = false;
@@ -925,6 +998,10 @@ class CalibrationMonitor extends ChangeNotifier {
         _safeNotify();
     });
     _machineStatusSubscription = deviceData.machineStatusStream.listen((value) {
+      // Recorded before the filters below, so a frame the tracker ignores is
+      // still visible as proof the subscription is live. "Arrived but was not
+      // a spin-down status" and "never arrived" are different diagnoses.
+      _recordMachineStatus(value);
       if (value.length < 2) return;
       if (value[0] != FTMSStatusOpCodes.SPIN_DOWN_STATUS) return;
       if (_tracker.onSpinDownStatus(value[1])) {
@@ -932,6 +1009,20 @@ class CalibrationMonitor extends ChangeNotifier {
         _safeNotify();
       }
     });
+  }
+
+  void _recordMachineStatus(List<int> value) {
+    final startedAt = _runStartedAt;
+    _machineStatusLog.add((
+      at: startedAt == null
+          ? Duration.zero
+          : DateTime.now().difference(startedAt),
+      message: describeMachineStatusFrame(value),
+    ));
+    while (_machineStatusLog.length > _maxStatusFrames) {
+      _machineStatusLog.removeAt(0);
+      _droppedStatusFrames++;
+    }
   }
 
   void _handleLogMessage(String message) {

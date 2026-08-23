@@ -272,6 +272,17 @@ Validate on SmartSpin2k hardware:
 7. Stalled DIRCON recovery without delayed-target flooding.
 8. Calibration homing with FTMS Machine Status over DIRCON.
 
+**Item 8 needs positive evidence, not a green result.** Calibration tracks homing from three redundant sources — the device log over `ccUUID`, `hMax`/`hMin` characteristic changes, and Machine Status `0x2ADA` — so a run that completes over DIRCON does not show which one carried it. That redundancy is why the missing subscription went unnoticed in the first place.
+
+The calibration screen's **Copy Log** button is the artefact. Its report names the transport and lists every `0x2ADA` frame the run received, decoded and stamped; when none arrived it says so explicitly rather than omitting the section. On the firmware side `DirConManager::notifyCharacteristic` defaults to `onlySubscribers`, so a DIRCON run reporting no frames means the subscription never took and the log path did all the work.
+
+Two further checks belong with it, both covering the exemption recorded in §5:
+
+- Start a calibration during a settings refresh. `requestSettings` holds the FTMS subscription block for the whole poll; Machine Status must keep flowing while Indoor Bike Data goes quiet.
+- Start one inside the ten-second post-connection block, with the same expectation.
+
+For the transport-failure classification, `DIRCON_MAX_CLIENTS` is 3 and the firmware handles exhaustion by accepting the socket and immediately stopping it. Occupying all three slots and then connecting the app exercises the fallback, though which `await` the failure lands on is timing-dependent. The `DirConConnector` seam is the precise instrument: a debug-only connector that delegates to `DirConClient` and kills the session on the `0x2ADA` `ensureCharacteristic` call hits the exact branch.
+
 Run focused tests after each child plan. At the final gate, run the complete Flutter test suite and static analysis. Record any failure reproducible on the untouched baseline separately; no new failure is acceptable.
 
 ## 8. Firmware Compatibility and Non-Goals

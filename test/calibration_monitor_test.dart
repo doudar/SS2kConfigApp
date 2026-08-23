@@ -1062,6 +1062,9 @@ void main() {
       bool usedFtmsPath = false,
       bool sweepTimedOut = false,
       bool logStreamSilent = false,
+      List<CalibrationLogEntry>? machineStatus,
+      int droppedStatusFrames = 0,
+      String? transport = 'Bluetooth',
       String? firmwareVersion = '24.1.3',
       String? bikeType = 'Most spin bikes',
       String? homingForce = '55',
@@ -1070,6 +1073,9 @@ void main() {
     }) => buildCalibrationReport(
       transcript: transcript ?? const [],
       droppedLines: droppedLines,
+      machineStatus: machineStatus ?? const [],
+      droppedStatusFrames: droppedStatusFrames,
+      transport: transport,
       phase: phase,
       minFound: minFound,
       maxFound: maxFound,
@@ -1111,6 +1117,71 @@ void main() {
         lessThan(text.indexOf('Homing procedure complete')),
         reason: 'lines keep the order the device sent them',
       );
+    });
+
+    // The report is the hardware-validation artefact for DIRCON Machine
+    // Status: calibration tracks homing from three redundant sources, so a run
+    // that completed says nothing about which one carried it.
+    test('machine status frames are decoded and stamped', () {
+      final text = report(
+        transport: 'DIRCON',
+        machineStatus: entries([
+          (ms: 900, message: describeMachineStatusFrame([0x14, 0x01])),
+          (ms: 4200, message: describeMachineStatusFrame([0x14, 0x04])),
+          (ms: 61000, message: describeMachineStatusFrame([0x14, 0x02])),
+        ]),
+      );
+
+      expect(text, contains('transport: DIRCON'));
+      expect(
+        text,
+        contains('--- FTMS machine status 0x2ADA (3 frames, 0 dropped) ---'),
+      );
+      expect(text, contains('[00:00.9] 14 01  spin-down requested'));
+      expect(text, contains('[00:04.2] 14 04  max search started'));
+      expect(text, contains('[01:01.0] 14 02  success'));
+    });
+
+    // The negative result is the one that matters: over DIRCON it means the
+    // subscription never took and the log path did all the work.
+    test('an absence of machine status frames is stated, not omitted', () {
+      final text = report(
+        transport: 'DIRCON',
+        transcript: entries([
+          (ms: 500, message: 'Homing procedure complete.'),
+        ]),
+      );
+
+      expect(
+        text,
+        contains('--- FTMS machine status 0x2ADA (no frames received) ---'),
+      );
+    });
+
+    // A dead log stream is exactly when the status frames are the only
+    // evidence, so the empty-transcript early return must not skip them.
+    test('machine status survives a run where the device log said nothing', () {
+      final text = report(
+        transport: 'DIRCON',
+        logStreamSilent: true,
+        machineStatus: entries([
+          (ms: 1000, message: describeMachineStatusFrame([0x14, 0x04])),
+        ]),
+      );
+
+      expect(text, contains('[00:01.0] 14 04  max search started'));
+      expect(text, contains('--- device log (no lines received) ---'));
+    });
+
+    test('a frame the tracker ignores is still recorded as arriving', () {
+      // Proof the subscription is live even when nothing advances the phase —
+      // a different diagnosis from no frames at all.
+      expect(
+        describeMachineStatusFrame([0x08, 0x01]),
+        '08 01  (not a spin-down status)',
+      );
+      expect(describeMachineStatusFrame([0x14]), '14  (not a spin-down status)');
+      expect(describeMachineStatusFrame([0x14, 0x7f]), '14 7f  unknown parameter');
     });
 
     test('the travel range is carried, and named as unknown when it is', () {
