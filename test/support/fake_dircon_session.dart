@@ -27,6 +27,9 @@ class FakeDirConSession implements DirConSession {
   final List<({String uuid, List<int> value})> writes = [];
 
   final Map<String, Object> _characteristicFailures = {};
+  final Set<String> _transportLossOnEnsure = {};
+  final Set<String> _silentCloseOnEnsure = {};
+  final Set<String> _dropAfterEnsure = {};
   final Map<String, Object> _writeFailures = {};
   final Map<String, List<int>> _writeResponses = {};
   final Map<String, List<List<int>>> _framesDuringEnable = {};
@@ -46,10 +49,33 @@ class FakeDirConSession implements DirConSession {
   // ---------------------------------------------------------------- controls
 
   /// Makes discovery/enablement fail for [uuid], as firmware without the
-  /// characteristic does.
+  /// characteristic does. The session stays live.
   void failCharacteristic(String uuid, [Object? error]) {
     _characteristicFailures[_key(uuid)] =
         error ?? StateError('characteristic $uuid not found');
+  }
+
+  /// Makes discovery for [uuid] fail the way a *transport* failure does in
+  /// `DirConClient`: a response timeout or socket error runs `_closeWithError`,
+  /// which invalidates the session and emits `disconnected` before the error
+  /// reaches the awaiting caller.
+  ///
+  /// Distinct from [failCharacteristic] on purpose — the two must not be
+  /// handled the same way.
+  ///
+  /// Set [emitDisconnect] false for the paths that invalidate the session
+  /// *without* publishing anything: `DirConClient.close()`, and any second
+  /// `_closeWithError` after `_disconnectEmitted` is already set. There the
+  /// only evidence of the failure is [isConnected].
+  void failCharacteristicWithTransportLoss(
+    String uuid, {
+    Object? error,
+    bool emitDisconnect = true,
+  }) {
+    final key = _key(uuid);
+    (emitDisconnect ? _transportLossOnEnsure : _silentCloseOnEnsure).add(key);
+    _characteristicFailures[key] =
+        error ?? TimeoutException('DIRCON request timed out');
   }
 
   /// Makes writes to [uuid] fail. Per-characteristic so a bootstrap failure on
@@ -67,6 +93,13 @@ class FakeDirConSession implements DirConSession {
   /// listened *before* enabling can observe them.
   void emitDuringEnable(String uuid, List<int> frame) {
     _framesDuringEnable.putIfAbsent(_key(uuid), () => []).add(frame);
+  }
+
+  /// Drops the connection immediately *after* [uuid] is discovered
+  /// successfully — the socket dying in the window between one setup step and
+  /// the next, with no exception for the caller to inspect.
+  void dropConnectionAfterEnsure(String uuid) {
+    _dropAfterEnsure.add(_key(uuid));
   }
 
   void emitNotification(String uuid, List<int> frame) {
@@ -137,7 +170,13 @@ class FakeDirConSession implements DirConSession {
     ));
     final key = _key(characteristicUuid);
     final failure = _characteristicFailures[key];
-    if (failure != null) throw failure;
+    if (failure != null) {
+      // Order matters: DirConClient tears the session down and emits
+      // `disconnected` before the pending request completes with the error.
+      if (_transportLossOnEnsure.contains(key)) dropConnection();
+      if (_silentCloseOnEnsure.contains(key)) _isConnected = false;
+      throw failure;
+    }
 
     // Deliberately synchronous with respect to the caller's await: these frames
     // are delivered while enablement is still in flight.
@@ -145,6 +184,8 @@ class FakeDirConSession implements DirConSession {
       final controller = _notifications[key];
       if (controller != null && !controller.isClosed) controller.add(frame);
     }
+
+    if (_dropAfterEnsure.contains(key)) dropConnection();
   }
 
   @override

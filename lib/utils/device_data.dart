@@ -376,6 +376,14 @@ class DeviceData {
     _dirConSetupComplete = false;
     configAppCompatibleFirmware = true;
     _ensureCachedMap();
+    // Registered before any optional discovery below. `disconnected` is a
+    // broadcast stream with no replay: a transport failure raised while FTMS
+    // discovery is in flight fires into it immediately, and if nothing is
+    // listening yet that event is dropped and the session is closed before the
+    // listener ever attaches.
+    _dirConDisconnectedSubscription = session.disconnected.listen((_) {
+      _handleDirConDisconnect(device);
+    });
     _markTransportConnected(DeviceTransportKind.dircon, device);
     _dirConNotificationSubscription = session
         .characteristicNotifications(ccUUID)
@@ -384,7 +392,7 @@ class DeviceData {
     // Indoor Bike Data and Machine Status are set up independently: firmware
     // that exposes one but not the other must still deliver the one it has, and
     // neither gates configuration, which is already live above.
-    _dirConFtmsSubscription = await _subscribeDirConNotifications(
+    final ftmsSubscription = await _subscribeDirConNotifications(
       session,
       ftmsIndoorBikeDataUUID,
       _decodeIndoorBikeData,
@@ -397,16 +405,25 @@ class DeviceData {
     // homing status at a handful of frames per run, and it is the stream
     // calibration trusts, so blocking it would blind calibration for the whole
     // post-connection window and for every settings refresh.
-    _dirConMachineStatusSubscription = await _subscribeDirConNotifications(
+    final machineStatusSubscription = await _subscribeDirConNotifications(
       session,
       FTMS_MACHINE_STATUS_CHARACTERISTIC_UUID,
       _forwardMachineStatus,
       label: 'FTMS Machine Status',
     );
 
-    _dirConDisconnectedSubscription = session.disconnected.listen((_) {
-      _handleDirConDisconnect(device);
-    });
+    // The disconnect handler above may have torn this session down while
+    // discovery was in flight, which nulls the subscription fields. Assigning
+    // them now would leak live subscriptions onto a dead session and bootstrap
+    // over it, so unwind and let the caller fall back instead.
+    if (_dirConSession != session) {
+      await ftmsSubscription?.cancel();
+      await machineStatusSubscription?.cancel();
+      throw StateError('DIRCON session was lost during FTMS setup');
+    }
+    _dirConFtmsSubscription = ftmsSubscription;
+    _dirConMachineStatusSubscription = machineStatusSubscription;
+
     print('[DIRCON] Connected to $ipAddress');
     if (waitForSetup) {
       await setupConnection(device);
@@ -416,7 +433,8 @@ class DeviceData {
   }
 
   /// Subscribes to a DIRCON characteristic's notifications, returning null when
-  /// the firmware does not expose it.
+  /// the firmware does not expose it and rethrowing when the transport itself
+  /// failed.
   ///
   /// Listens *before* enabling notifications: [DirConSession.characteristicNotifications]
   /// filters a broadcast stream with no replay, so a frame the device emits
@@ -445,6 +463,15 @@ class DeviceData {
       return subscription;
     } catch (error) {
       await subscription?.cancel();
+      // Absent characteristic or dead transport? Liveness is the reliable
+      // discriminator, not the exception type: DirConClient raises a bare
+      // StateError both for a characteristic the firmware genuinely lacks and
+      // for protocol-level request failures, while every transport-fatal path
+      // (response timeout, socket error, remote close) invalidates the session
+      // first. Downgrading a dead transport to "unavailable" would leave
+      // DeviceData reporting DIRCON/connected over a closed socket, which also
+      // suppresses the BLE reconnect path in startConnectionMonitor.
+      if (!session.isConnected) rethrow;
       print('[DIRCON] $label unavailable: $error');
       return null;
     }
@@ -476,7 +503,15 @@ class DeviceData {
     _dirConSetupComplete = false;
     subscribed = false;
     charReceived.value = false;
-    if (isUserDisconnect || _dirConReconnectInProgress) return;
+    // During the initial connect, connectPreferred owns the fallback: it
+    // catches the DIRCON failure and runs the retrying BLE path itself. Racing
+    // a second BLE connect from here would duplicate it, exactly as the
+    // _initialConnectionInProgress guard in startConnectionMonitor prevents.
+    if (isUserDisconnect ||
+        _dirConReconnectInProgress ||
+        _initialConnectionInProgress) {
+      return;
+    }
 
     _dirConReconnectInProgress = true;
     try {
@@ -1377,12 +1412,21 @@ class DeviceData {
       // Same helper the initial setup uses, so the resubscribe also listens
       // before enabling and a firmware variant without FTMS reports rather than
       // throwing out of the post-connection timer that calls this.
-      final subscription = await _subscribeDirConNotifications(
-        dirConSession,
-        ftmsIndoorBikeDataUUID,
-        _decodeIndoorBikeData,
-        label: 'FTMS Indoor Bike Data',
-      );
+      StreamSubscription<List<int>>? subscription;
+      try {
+        subscription = await _subscribeDirConNotifications(
+          dirConSession,
+          ftmsIndoorBikeDataUUID,
+          _decodeIndoorBikeData,
+          label: 'FTMS Indoor Bike Data',
+        );
+      } catch (error) {
+        // The transport died while resubscribing. The disconnect listener owns
+        // the failover from here; this method runs unawaited from the
+        // post-connection timer and must not raise into it.
+        print('[DIRCON] FTMS resubscribe abandoned: $error');
+        return;
+      }
       // The block may have been re-taken, or the session replaced, while
       // enablement was in flight.
       if (isFtmsSubscriptionBlocked || _dirConSession != dirConSession) {

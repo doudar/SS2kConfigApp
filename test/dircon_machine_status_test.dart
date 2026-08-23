@@ -144,6 +144,102 @@ void main() {
       deviceData.dispose();
     });
 
+    // Regression: "the firmware lacks this characteristic" and "the socket just
+    // died" arrive at the same catch block. Downgrading the second to the first
+    // leaves DeviceData reporting DIRCON/connected over a closed session — and
+    // because startConnectionMonitor short-circuits on isDirConConnected, that
+    // also wedges the BLE reconnect path.
+    test('a transport failure during Machine Status setup abandons DIRCON', () async {
+      final session = FakeDirConSession()
+        ..failCharacteristicWithTransportLoss(_machineStatusUuid);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = DeviceData(dirConConnector: connector.call)
+        ..advertisedIpAddress = _ipAddress;
+
+      final connect = deviceData.connectPreferred(device, waitForSetup: true);
+      // connectPreferred falls back to BLE, which has no platform in this
+      // isolate. Cancel its retry loop as soon as the DIRCON half has given up
+      // so the test asserts on the handoff rather than on ten real attempts.
+      await _until(
+        () => !deviceData.isDirConConnected,
+        'DIRCON stayed connected over a dead session',
+      );
+      deviceData.isUserDisconnect = true;
+      await connect.catchError((Object _) {});
+
+      expect(deviceData.isDirConConnected, isFalse);
+      expect(deviceData.isTransportActive, isFalse);
+      expect(session.isClosed, isTrue);
+      // Nothing is left subscribed to the abandoned session.
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
+      expect(session.isListening(ccUUID), isFalse);
+
+      deviceData.dispose();
+    });
+
+    // The same abandonment must hold when the session dies *silently*. Not
+    // every DirConClient invalidation publishes on `disconnected`:
+    // `close()` never does, and `_closeWithError` is one-shot via
+    // `_disconnectEmitted`. Listening earlier does not help here — isConnected
+    // is the only evidence, so the catch block has to consult it.
+    test('a silent session close during Machine Status setup abandons DIRCON', () async {
+      final session = FakeDirConSession()
+        ..failCharacteristicWithTransportLoss(
+          _machineStatusUuid,
+          emitDisconnect: false,
+        );
+      final connector = FakeDirConConnector([session]);
+      final deviceData = DeviceData(dirConConnector: connector.call)
+        ..advertisedIpAddress = _ipAddress;
+
+      final connect = deviceData.connectPreferred(device, waitForSetup: true);
+      await _until(
+        () => !deviceData.isDirConConnected,
+        'DIRCON stayed connected over a silently closed session',
+      );
+      deviceData.isUserDisconnect = true;
+      await connect.catchError((Object _) {});
+
+      expect(deviceData.isDirConConnected, isFalse);
+      expect(deviceData.isTransportActive, isFalse);
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.isListening(ccUUID), isFalse);
+
+      deviceData.dispose();
+    });
+
+    // Discovery succeeds and *then* the socket dies, so there is no exception
+    // for the catch block to inspect — only the `disconnected` event. It is a
+    // broadcast stream with no replay, so this is caught only if the listener
+    // was already attached when the event fired.
+    test('a session lost after Machine Status discovery abandons DIRCON', () async {
+      final session = FakeDirConSession()
+        ..dropConnectionAfterEnsure(_machineStatusUuid);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = DeviceData(dirConConnector: connector.call)
+        ..advertisedIpAddress = _ipAddress;
+
+      final connect = deviceData.connectPreferred(device, waitForSetup: true);
+      await _until(
+        () => !deviceData.isDirConConnected,
+        'DIRCON stayed connected after the session was lost mid-setup',
+      );
+      deviceData.isUserDisconnect = true;
+      await connect.catchError((Object _) {});
+
+      expect(deviceData.isDirConConnected, isFalse);
+      expect(deviceData.isTransportActive, isFalse);
+      expect(session.isClosed, isTrue);
+      // The staleness guard must unwind the subscriptions it opened after
+      // _closeDirCon had already cleared the fields.
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
+      expect(session.isListening(ccUUID), isFalse);
+
+      deviceData.dispose();
+    });
+
     test('firmware without either characteristic still connects for configuration', () async {
       final session = FakeDirConSession()
         ..failCharacteristic(ftmsIndoorBikeDataUUID)
@@ -300,3 +396,13 @@ Future<DeviceData> _connect(
 
 /// Lets broadcast-stream deliveries and pending teardown microtasks run.
 Future<void> _settle() => Future<void>.delayed(Duration.zero);
+
+/// Waits for [condition], failing with [reason] instead of hanging until the
+/// suite-level timeout when the behaviour under test regresses.
+Future<void> _until(bool Function() condition, String reason) async {
+  for (var attempt = 0; attempt < 400; attempt++) {
+    if (condition()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+  fail(reason);
+}
