@@ -52,7 +52,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
     // FTMS setup belongs to the transport that is already connected. Do not
     // cause a BLE service-discovery attempt just because this screen opened.
     if (deviceData.isTransportActive) {
-      unawaited(deviceData.updateIndoorBikeData(widget.device));
+      unawaited(deviceData.ensureFtmsNotifications(widget.device));
       unawaited(
         deviceData.requestSetting(widget.device, shifterPositionVname),
       );

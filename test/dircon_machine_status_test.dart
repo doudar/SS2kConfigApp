@@ -28,31 +28,96 @@ void main() {
   });
 
   group('DIRCON FTMS subscription setup', () {
-    // Machine Status is deliberately outside the FTMS subscription block: that
-    // block throttles the high-rate Indoor Bike Data telemetry, and gating
-    // homing status with it would blind calibration for the whole
-    // post-connection window.
-    test('subscribes Machine Status immediately while Indoor Bike Data waits '
-        'for the post-connection block', () async {
+    // Both FTMS streams share one lifecycle. An earlier revision exempted
+    // Machine Status from the block so calibration could never be blinded;
+    // review reversed that, and calibration now waits for readiness instead.
+    test('neither FTMS stream starts while the post-connection block is held', () async {
       final connector = FakeDirConConnector();
       final deviceData = await _connect(connector, device);
       final session = connector.first;
 
-      expect(deviceData.isFtmsSubscriptionBlocked, isTrue);
+      expect(deviceData.isFtmsNotificationsBlocked, isTrue);
 
-      expect(session.enabledNotificationsFor(_machineStatusUuid), isTrue);
-      expect(session.isListening(_machineStatusUuid), isTrue);
+      // Both discovered, neither listening, neither enabled on the wire.
+      for (final uuid in [ftmsIndoorBikeDataUUID, _machineStatusUuid]) {
+        expect(session.discovered(uuid), isTrue, reason: uuid);
+        expect(session.notificationsEnabledNow(uuid), isFalse, reason: uuid);
+        expect(session.isListening(uuid), isFalse, reason: uuid);
+      }
 
-      // Discovered, but held back until the block lifts.
-      expect(session.discovered(ftmsIndoorBikeDataUUID), isTrue);
-      expect(session.enabledNotificationsFor(ftmsIndoorBikeDataUUID), isFalse);
+      await deviceData.unblockFtmsNotifications(device);
+
+      for (final uuid in [ftmsIndoorBikeDataUUID, _machineStatusUuid]) {
+        expect(session.notificationsEnabledNow(uuid), isTrue, reason: uuid);
+        expect(session.isListening(uuid), isTrue, reason: uuid);
+      }
+
+      deviceData.dispose();
+    });
+
+    test('a nested block only releases both streams on the final unblock', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+
+      // Post-connection block plus one more.
+      await deviceData.blockFtmsNotifications();
+      await deviceData.unblockFtmsNotifications(device);
+
+      expect(deviceData.isFtmsNotificationsBlocked, isTrue);
+      expect(session.isListening(_machineStatusUuid), isFalse);
       expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
 
-      await deviceData.unblockFtmsSubscription(device);
+      await deviceData.unblockFtmsNotifications(device);
 
-      expect(session.enabledNotificationsFor(ftmsIndoorBikeDataUUID), isTrue);
-      expect(session.isListening(ftmsIndoorBikeDataUUID), isTrue);
       expect(session.isListening(_machineStatusUuid), isTrue);
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isTrue);
+
+      deviceData.dispose();
+    });
+
+    test('re-blocking cancels and disables both streams', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+      await deviceData.unblockFtmsNotifications(device);
+
+      await deviceData.blockFtmsNotifications();
+
+      for (final uuid in [ftmsIndoorBikeDataUUID, _machineStatusUuid]) {
+        expect(session.isListening(uuid), isFalse, reason: uuid);
+        // Current wire state, not "was ever enabled" — an enable that leaked
+        // past a block is invisible to the historical check.
+        expect(session.notificationsEnabledNow(uuid), isFalse, reason: uuid);
+      }
+
+      deviceData.dispose();
+    });
+
+    // A block taken while an enable is still in flight would otherwise leave
+    // the device notifying with nothing listening: the block saw nothing
+    // enabled, so it scheduled no disable, and the enable landed afterwards.
+    test('an enable superseded by a new block undoes itself', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+
+      session.holdNotificationGate(_machineStatusUuid);
+      final unblock = deviceData.unblockFtmsNotifications(device);
+      await _settle();
+
+      // The enable is parked mid-flight; take the block that supersedes it.
+      // Not awaited before the release: the block's own disable queues behind
+      // the same gate, so awaiting it here would deadlock the test.
+      final block = deviceData.blockFtmsNotifications();
+      await _settle();
+      session.releaseNotificationGate(_machineStatusUuid);
+      await unblock;
+      await block;
+      await _settle();
+
+      expect(session.notificationsEnabledNow(_machineStatusUuid), isFalse);
+      expect(session.isListening(_machineStatusUuid), isFalse);
 
       deviceData.dispose();
     });
@@ -60,6 +125,7 @@ void main() {
     test('forwards a Machine Status payload to machineStatusStream', () async {
       final connector = FakeDirConConnector();
       final deviceData = await _connect(connector, device);
+      await deviceData.unblockFtmsNotifications(device);
       final received = <List<int>>[];
       final subscription = deviceData.machineStatusStream.listen(received.add);
 
@@ -94,6 +160,9 @@ void main() {
       final subscription = deviceData.machineStatusStream.listen(received.add);
 
       await deviceData.connectPreferred(device, waitForSetup: true);
+      // The enable that matters is the one the unblock performs; the block held
+      // during connect never turns notifications on at all.
+      await deviceData.unblockFtmsNotifications(device);
       await _settle();
 
       expect(received, [
@@ -106,40 +175,63 @@ void main() {
   });
 
   group('FTMS setup failures are isolated', () {
-    test('missing Indoor Bike Data still leaves Machine Status subscribed', () async {
+    test('missing Indoor Bike Data does not stop Machine Status', () async {
       final session = FakeDirConSession()
         ..failCharacteristic(ftmsIndoorBikeDataUUID);
       final connector = FakeDirConConnector([session]);
       final deviceData = await _connect(connector, device);
 
       expect(deviceData.isDirConConnected, isTrue);
-      expect(session.isListening(_machineStatusUuid), isTrue);
-      expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
 
       // Lifting the block must not resurrect a characteristic the firmware
-      // does not have, and must not throw out of the timer that calls it.
-      await deviceData.unblockFtmsSubscription(device);
+      // does not have, must not throw out of the timer that calls it, and must
+      // not let the first characteristic's absence skip the second.
+      await deviceData.unblockFtmsNotifications(device);
       expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
       expect(session.isListening(_machineStatusUuid), isTrue);
+      expect(session.notificationsEnabledNow(_machineStatusUuid), isTrue);
 
       deviceData.dispose();
     });
 
-    test('missing Machine Status still leaves Indoor Bike Data subscribed', () async {
+    test('missing Machine Status does not stop Indoor Bike Data', () async {
       final session = FakeDirConSession()..failCharacteristic(_machineStatusUuid);
       final connector = FakeDirConConnector([session]);
       final deviceData = await _connect(connector, device);
 
       expect(deviceData.isDirConConnected, isTrue);
+      expect(session.isListening(_machineStatusUuid), isFalse);
+
+      await deviceData.unblockFtmsNotifications(device);
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isTrue);
+      expect(session.notificationsEnabledNow(ftmsIndoorBikeDataUUID), isTrue);
       // Cancelled rather than leaked: the helper listens first, then unwinds
-      // its own subscription when discovery fails.
+      // its own subscription when enablement fails.
       expect(session.isListening(_machineStatusUuid), isFalse);
       expect(session.cancellationsFor(_machineStatusUuid), 1);
 
-      // Indoor Bike Data is unaffected and still subscribes when unblocked.
-      expect(session.discovered(ftmsIndoorBikeDataUUID), isTrue);
-      await deviceData.unblockFtmsSubscription(device);
-      expect(session.isListening(ftmsIndoorBikeDataUUID), isTrue);
+      deviceData.dispose();
+    });
+
+    // "The firmware lacks this characteristic" and "the socket just died" reach
+    // the same catch. Only the first may continue to the other characteristic:
+    // subscribing to a dead session achieves nothing and would leave a listener
+    // attached to it.
+    test('a transport failure mid-resubscribe abandons the pass', () async {
+      final session = FakeDirConSession();
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+
+      session.failCharacteristicWithTransportLoss(
+        ftmsIndoorBikeDataUUID,
+        emitDisconnect: false,
+      );
+      await deviceData.unblockFtmsNotifications(device);
+
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
+      // Not attempted at all — the pass gave up on the dead session.
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.notificationsEnabledNow(_machineStatusUuid), isFalse);
 
       deviceData.dispose();
     });
@@ -333,8 +425,13 @@ void main() {
       expect(connector.issued, hasLength(2));
       expect(first.isListening(_machineStatusUuid), isFalse);
       expect(first.isClosed, isTrue);
-      expect(second.isListening(_machineStatusUuid), isTrue);
       expect(deviceData.isDirConConnected, isTrue);
+
+      // The new session gets its own post-connection block, so it comes up only
+      // once that is released — same lifecycle as the first connection.
+      expect(second.isListening(_machineStatusUuid), isFalse);
+      await deviceData.unblockFtmsNotifications(device);
+      expect(second.isListening(_machineStatusUuid), isTrue);
 
       final received = <List<int>>[];
       final subscription = deviceData.machineStatusStream.listen(received.add);
@@ -350,14 +447,26 @@ void main() {
     });
   });
 
-  test('calibration follows homing from DIRCON Machine Status', () async {
+  test('calibration waits for the block, then follows homing from DIRCON '
+      'Machine Status', () async {
     final connector = FakeDirConConnector();
     final deviceData = await _connect(connector, device);
     final session = connector.first;
     final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
 
-    await monitor.start();
+    // The automatic post-connection block is still held. Machine Status is
+    // suspended with it, so the homing command must not go out yet — the run's
+    // own acknowledgement frames would land before anything was listening.
+    final started = monitor.start();
+    await _settle();
+    expect(session.writesFor(ftmsControlPointUUID), isEmpty);
+    expect(monitor.awaitingNotifications, isTrue);
 
+    await deviceData.unblockFtmsNotifications(device);
+    await started;
+
+    expect(monitor.awaitingNotifications, isFalse);
+    expect(monitor.notificationsReadiness, FtmsNotificationsReadiness.ready);
     // Log streaming is enabled over the custom characteristic first, so the
     // spin-down command is never the first write on the session.
     expect(
@@ -380,6 +489,88 @@ void main() {
 
     monitor.dispose();
     deviceData.dispose();
+  });
+
+  group('calibration readiness is bounded', () {
+    // A leaked block count must not make calibration unstartable. The run goes
+    // ahead on the log and hMax paths, and the report says the stream was not
+    // there rather than leaving the reader to infer it.
+    test('a block that never lifts still starts the run, and says so', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(milliseconds: 50),
+      );
+
+      await monitor.start();
+
+      expect(monitor.notificationsReadiness, FtmsNotificationsReadiness.timedOut);
+      expect(monitor.awaitingNotifications, isFalse);
+      expect(
+        session.writesFor(ftmsControlPointUUID),
+        contains(orderedEquals(FTMSControlPoint.spinDownCommand(true))),
+      );
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // Firmware without the characteristic is not a stuck block: the count did
+    // drain, there is simply nothing to subscribe to. The two must not report
+    // the same thing.
+    test('firmware without Machine Status reports unavailable, not timedOut', () async {
+      final session = FakeDirConSession()..failCharacteristic(_machineStatusUuid);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(seconds: 5),
+      );
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(
+        monitor.notificationsReadiness,
+        FtmsNotificationsReadiness.unavailable,
+      );
+      expect(
+        session.writesFor(ftmsControlPointUUID),
+        contains(orderedEquals(FTMSControlPoint.spinDownCommand(true))),
+      );
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // The flag is cleared in a finally, so nothing can strand the screen on
+    // "getting ready" with no way out.
+    test('disposal during the wait clears the waiting flag', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(milliseconds: 50),
+      );
+
+      final started = monitor.start();
+      await _settle();
+      expect(monitor.awaitingNotifications, isTrue);
+
+      monitor.dispose();
+      await started;
+
+      expect(monitor.awaitingNotifications, isFalse);
+
+      deviceData.dispose();
+    });
   });
 }
 

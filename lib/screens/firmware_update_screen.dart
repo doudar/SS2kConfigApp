@@ -65,7 +65,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   void initState() {
     super.initState();
     deviceData = DeviceDataManager.forDevice(this.widget.device);
-    unawaited(_blockFtmsSubscription());
+    unawaited(_blockFtmsNotifications());
 
     _loaded = deviceData.firmwareVersion.value.isNotEmpty;
     _firmwareVersionListener = () {
@@ -109,14 +109,14 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     if (_firmwareVersionListener != null) {
       deviceData.firmwareVersion.removeListener(_firmwareVersionListener!);
     }
-    unawaited(deviceData.unblockFtmsSubscription(widget.device));
+    unawaited(deviceData.unblockFtmsNotifications(widget.device));
     WakelockPlus.disable();
     super.dispose();
   }
 
-  Future<void> _blockFtmsSubscription() async {
+  Future<void> _blockFtmsNotifications() async {
     try {
-      await deviceData.blockFtmsSubscription();
+      await deviceData.blockFtmsNotifications();
     } catch (error) {
       print('Failed to block FTMS notifications for firmware update: $error');
     }

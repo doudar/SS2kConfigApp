@@ -40,6 +40,28 @@ class CharacteristicChangeEvent {
   });
 }
 
+/// Why a caller waiting on FTMS notifications stopped waiting.
+///
+/// Deliberately not a bool: a calibration run that starts without `0x2ADA` can
+/// have got there four ways, and the Copy Log report is the only place anyone
+/// ever finds out which. "Never became ready" and "the firmware has no Machine
+/// Status characteristic" call for different replies from a maintainer.
+enum FtmsNotificationsReadiness {
+  /// The stream is live: the session is still valid, a listener is attached,
+  /// and wire-level notifications were enabled successfully.
+  ready,
+
+  /// The block never drained within the caller's budget.
+  timedOut,
+
+  /// The block drained, but the characteristic could not be brought up —
+  /// absent from this firmware, enablement failed, or the transport dropped.
+  unavailable,
+
+  /// The [DeviceData] was disposed while the caller was waiting.
+  disposed,
+}
+
 class _DirConRecoveryAdvertisementSession {
   _DirConRecoveryAdvertisementSession(this.device);
 
@@ -203,10 +225,23 @@ class DeviceData {
   bool _dirConReconnectInProgress = false;
   bool _initialConnectionInProgress = false;
   bool _workoutControlActive = false;
-  int _ftmsSubscriptionBlocks = 0;
+  int _ftmsNotificationBlocks = 0;
   int _ftmsBlockGeneration = 0;
   Timer? _ftmsPostConnectionTimer;
   bool _ftmsPostConnectionBlockActive = false;
+
+  /// True only while FTMS Machine Status is genuinely usable: a listener is
+  /// published and its wire-level enable succeeded on the current transport.
+  ///
+  /// A drained block count proves none of that — the characteristic may be
+  /// absent, the enable may have failed, the session may have died — so this is
+  /// what [awaitFtmsNotificationsReady] answers from rather than the counter.
+  bool _machineStatusNotificationsLive = false;
+
+  /// Waiters for the current block cycle. Created on the outermost 0 -> 1
+  /// transition and completed by the final unblock; see
+  /// [awaitFtmsNotificationsReady] for the full lifecycle.
+  Completer<void>? _ftmsReadyCompleter;
 
   final DeviceTransportStateController _transportStateController =
       DeviceTransportStateController();
@@ -220,7 +255,7 @@ class DeviceData {
       _transportStateController.value.phase == DeviceTransportPhase.connected;
   bool get isTransportActive =>
       _transportStateController.value.phase == DeviceTransportPhase.connected;
-  bool get isFtmsSubscriptionBlocked => _ftmsSubscriptionBlocks > 0;
+  bool get isFtmsNotificationsBlocked => _ftmsNotificationBlocks > 0;
   String get activeTransportName =>
       switch (_transportStateController.value.transport) {
         DeviceTransportKind.dircon => 'DIRCON',
@@ -392,24 +427,25 @@ class DeviceData {
     // Indoor Bike Data and Machine Status are set up independently: firmware
     // that exposes one but not the other must still deliver the one it has, and
     // neither gates configuration, which is already live above.
+    final blocked = isFtmsNotificationsBlocked;
     final ftmsSubscription = await _subscribeDirConNotifications(
       session,
       ftmsIndoorBikeDataUUID,
       _decodeIndoorBikeData,
       label: 'FTMS Indoor Bike Data',
-      enable: !isFtmsSubscriptionBlocked,
+      enable: !blocked,
     );
-    // Deliberately not gated by the FTMS subscription block. That block exists
-    // to keep the high-rate Indoor Bike Data telemetry off a transport that is
-    // busy with OTA or a settings bootstrap. Machine Status is event-driven
-    // homing status at a handful of frames per run, and it is the stream
-    // calibration trusts, so blocking it would blind calibration for the whole
-    // post-connection window and for every settings refresh.
+    // Gated by the same block, for the same reason. An earlier revision exempted
+    // Machine Status so calibration could never be blinded; review reversed that,
+    // because a second stream outside the block is a second thing that can be
+    // live while the transport is meant to be quiet. Calibration instead waits
+    // for readiness — see [awaitFtmsNotificationsReady].
     final machineStatusSubscription = await _subscribeDirConNotifications(
       session,
       FTMS_MACHINE_STATUS_CHARACTERISTIC_UUID,
       _forwardMachineStatus,
       label: 'FTMS Machine Status',
+      enable: !blocked,
     );
 
     // The disconnect handler above may have torn this session down while
@@ -423,6 +459,7 @@ class DeviceData {
     }
     _dirConFtmsSubscription = ftmsSubscription;
     _dirConMachineStatusSubscription = machineStatusSubscription;
+    _machineStatusNotificationsLive = machineStatusSubscription != null;
 
     print('[DIRCON] Connected to $ipAddress');
     if (waitForSetup) {
@@ -442,7 +479,13 @@ class DeviceData {
   ///
   /// With [enable] false the characteristic is still discovered but no
   /// notifications are turned on and nothing is subscribed, which is how a
-  /// blocked stream is left for [unblockFtmsSubscription] to pick up later.
+  /// blocked stream is left for [unblockFtmsNotifications] to pick up later.
+  ///
+  /// A returned subscription means the stream is genuinely live: enablement
+  /// succeeded and the block generation captured on entry is still current. If
+  /// a block was taken while enablement was in flight the enable is *undone*
+  /// rather than merely abandoned — leaving the device notifying into a socket
+  /// nobody reads is the exact state the block exists to prevent.
   Future<StreamSubscription<List<int>>?> _subscribeDirConNotifications(
     DirConSession session,
     String characteristicUuid,
@@ -450,6 +493,7 @@ class DeviceData {
     required String label,
     bool enable = true,
   }) async {
+    final generation = _ftmsBlockGeneration;
     final subscription = enable
         ? session.characteristicNotifications(characteristicUuid).listen(onData)
         : null;
@@ -459,10 +503,18 @@ class DeviceData {
         characteristicUuid: characteristicUuid,
         enableNotifications: enable,
       );
-      if (enable) print('[DIRCON] Subscribed to $label');
+      if (!enable) return null;
+
+      if (generation != _ftmsBlockGeneration || isFtmsNotificationsBlocked) {
+        await _safeCancel(subscription, label);
+        await _disableDirConNotifications(session, characteristicUuid, label);
+        return null;
+      }
+
+      print('[DIRCON] Subscribed to $label');
       return subscription;
     } catch (error) {
-      await subscription?.cancel();
+      await _safeCancel(subscription, label);
       // Absent characteristic or dead transport? Liveness is the reliable
       // discriminator, not the exception type: DirConClient raises a bare
       // StateError both for a characteristic the firmware genuinely lacks and
@@ -474,6 +526,25 @@ class DeviceData {
       if (!session.isConnected) rethrow;
       print('[DIRCON] $label unavailable: $error');
       return null;
+    }
+  }
+
+  /// Turns a DIRCON characteristic's notifications off, swallowing failures.
+  ///
+  /// Every caller is either tearing down or undoing, and both run from paths
+  /// that must not throw — a `unawaited` block, or the error handler of an
+  /// enable that already failed. A dead session is the disconnect listener's
+  /// problem, not this method's.
+  Future<void> _disableDirConNotifications(
+    DirConSession session,
+    String characteristicUuid,
+    String label,
+  ) async {
+    try {
+      await session.setNotifications(characteristicUuid, false);
+      print('[DIRCON] Disabled $label notifications');
+    } catch (error) {
+      print('[DIRCON] Could not disable $label notifications: $error');
     }
   }
 
@@ -614,6 +685,7 @@ class DeviceData {
       _markTransportDisconnected(explicit: isUserDisconnect);
     }
     _workoutControlLane.onAvailabilityChanged();
+    _machineStatusNotificationsLive = false;
     await _dirConNotificationSubscription?.cancel();
     _dirConNotificationSubscription = null;
     await _dirConFtmsSubscription?.cancel();
@@ -655,18 +727,22 @@ class DeviceData {
     _ftmsPostConnectionTimer?.cancel();
     if (!_ftmsPostConnectionBlockActive) {
       _ftmsPostConnectionBlockActive = true;
-      unawaited(blockFtmsSubscription());
+      unawaited(blockFtmsNotifications());
     }
     _ftmsPostConnectionTimer = Timer(const Duration(seconds: 10), () {
       _ftmsPostConnectionTimer = null;
       _ftmsPostConnectionBlockActive = false;
-      unawaited(unblockFtmsSubscription(device));
+      unawaited(unblockFtmsNotifications(device));
     });
   }
 
   void _markTransportDisconnected({required bool explicit}) {
     if (_isDisposed) return;
     _transportStateController.markDisconnected(explicit: explicit);
+    // A user disconnect ends the wait: nothing is coming back on its own. A
+    // *reconnecting* phase deliberately does not, so a waiter whose timeout
+    // outlives the reconnect can still be satisfied by the new session.
+    if (explicit) _releaseFtmsReadyWaiters();
   }
 
   void _handleTransportStateChanged() {
@@ -849,6 +925,7 @@ class DeviceData {
     _ftmsSubscription = null;
     _machineStatusSubscription?.cancel();
     _machineStatusSubscription = null;
+    _machineStatusNotificationsLive = false;
     _inUpdateLoop = false;
     _lastRequestStopwatch.reset();
     _cachedCharacteristicMap = null;
@@ -1244,15 +1321,10 @@ class DeviceData {
           ftmsControlPointCharacteristic = c;
         }
         if (c.uuid == Guid(FTMS_MACHINE_STATUS_CHARACTERISTIC_UUID)) {
+          // As above: discovery only records the characteristic. Subscribing
+          // here would put Machine Status outside the FTMS notification block,
+          // which is exactly what this branch used to do.
           machineStatusCharacteristic = c;
-          await _machineStatusSubscription?.cancel();
-          _machineStatusSubscription = c.onValueReceived.listen(
-            _forwardMachineStatus,
-          );
-          if (!c.isNotifying) {
-            await _queueBleOperation(() => c.setNotifyValue(true));
-            print("subscribed to FTMS machine status characteristic");
-          }
         }
       }
 
@@ -1291,7 +1363,7 @@ class DeviceData {
     try {
       if (!subscribed) {
         decode(device);
-        await updateIndoorBikeData(device);
+        await ensureFtmsNotifications(device);
       }
       if (_myCharacteristic != null && !_myCharacteristic!.isNotifying) {
         await _queueBleOperation(() => _myCharacteristic!.setNotifyValue(true));
@@ -1336,107 +1408,304 @@ class DeviceData {
     }
   }
 
-  Future<void> updateIndoorBikeData(BluetoothDevice device) async {
-    if (isFtmsSubscriptionBlocked) return;
+  /// Brings both FTMS notification streams up over BLE: Indoor Bike Data and
+  /// Machine Status `0x2ADA`.
+  ///
+  /// The two are attempted independently — firmware that exposes one but not
+  /// the other must still deliver the one it has, and a failure on either must
+  /// not decide anything about the other.
+  Future<void> ensureFtmsNotifications(BluetoothDevice device) async {
+    if (isFtmsNotificationsBlocked) return;
 
     // The DIRCON session subscribes to FTMS during transport setup. Avoid
     // attempting BLE service discovery merely because a screen wants to make
     // sure the live stream is active.
     if (!isTransportActive || isDirConConnected) return;
 
+    // Both characteristics come out of the same `_findChar` pass, so Indoor
+    // Bike Data being present is proof discovery has run. Keying off a null
+    // Machine Status instead would re-discover on every call for firmware that
+    // simply does not have it.
     if (indoorBikeCharacteristic == null) {
       await _discoverServices(device);
-      if (isFtmsSubscriptionBlocked) return;
+      if (isFtmsNotificationsBlocked) return;
       if (services.length > 1) {
         await _findChar();
       }
     }
 
-    final ftmsCharacteristic = indoorBikeCharacteristic;
-    if (ftmsCharacteristic == null) {
-      print("no FTMS characteristic");
-      return;
-    }
-
-    try {
-      if (isFtmsSubscriptionBlocked) return;
-      if (!ftmsCharacteristic.isNotifying) {
-        await _queueBleOperation(() => ftmsCharacteristic.setNotifyValue(true));
-      }
-    } catch (e) {
-      print("failed to enable FTMS notify: $e");
-      return;
-    }
-
-    if (isFtmsSubscriptionBlocked) return;
-    await _ftmsSubscription?.cancel();
-
-    _ftmsSubscription = ftmsCharacteristic.onValueReceived.listen(
+    await _subscribeBleNotifications(
+      device,
+      indoorBikeCharacteristic,
       _decodeIndoorBikeData,
-      onError: (Object e) {
-        print('Error in FTMS subscription: $e');
-      },
+      label: 'FTMS Indoor Bike Data',
+      publish: (subscription) => _ftmsSubscription = subscription,
+      previous: _ftmsSubscription,
     );
-    device.cancelWhenDisconnected(_ftmsSubscription!);
+
+    await _subscribeBleNotifications(
+      device,
+      machineStatusCharacteristic,
+      _forwardMachineStatus,
+      label: 'FTMS Machine Status',
+      publish: (subscription) {
+        _machineStatusSubscription = subscription;
+        _machineStatusNotificationsLive = subscription != null;
+      },
+      previous: _machineStatusSubscription,
+    );
   }
 
-  Future<void> blockFtmsSubscription() async {
-    _ftmsSubscriptionBlocks++;
-    if (_ftmsSubscriptionBlocks > 1) return;
+  /// Subscribes one BLE FTMS characteristic, listening *before* enabling.
+  ///
+  /// The mirror image of [_subscribeDirConNotifications], and for the same
+  /// reason: the device can emit a frame the moment the CCCD is written, and
+  /// `onValueReceived` is a broadcast stream with no replay, so a listener
+  /// attached afterwards silently loses it.
+  ///
+  /// If the block generation moves while enablement is in flight, the enable is
+  /// *undone* rather than merely abandoned. Returning early would leave the
+  /// characteristic notifying with nothing listening — a block that had seen
+  /// `isNotifying == false` would have scheduled no disable for it.
+  Future<void> _subscribeBleNotifications(
+    BluetoothDevice device,
+    BluetoothCharacteristic? characteristic,
+    void Function(List<int>) onData, {
+    required String label,
+    required void Function(StreamSubscription<List<int>>?) publish,
+    StreamSubscription<List<int>>? previous,
+  }) async {
+    if (characteristic == null) {
+      print('[BLE] $label unavailable: characteristic not discovered');
+      return;
+    }
+    if (isFtmsNotificationsBlocked) return;
 
-    final generation = ++_ftmsBlockGeneration;
-    final subscription = _ftmsSubscription;
-    final dirConSubscription = _dirConFtmsSubscription;
-    _ftmsSubscription = null;
-    _dirConFtmsSubscription = null;
-    await subscription?.cancel();
-    await dirConSubscription?.cancel();
+    final generation = _ftmsBlockGeneration;
+    await _safeCancel(previous, label);
+    publish(null);
 
-    final characteristic = indoorBikeCharacteristic;
-    if (generation == _ftmsBlockGeneration &&
-        isFtmsSubscriptionBlocked &&
-        characteristic != null &&
-        characteristic.isNotifying) {
-      await _queueBleOperation(() => characteristic.setNotifyValue(false));
+    final subscription = characteristic.onValueReceived.listen(
+      onData,
+      onError: (Object e) => print('[BLE] Error in $label subscription: $e'),
+    );
+
+    bool enabled = false;
+    try {
+      if (!characteristic.isNotifying) {
+        await _queueBleOperation(() => characteristic.setNotifyValue(true));
+      }
+      enabled = true;
+    } catch (e) {
+      await _safeCancel(subscription, label);
+      print('[BLE] failed to enable $label notify: $e');
+      return;
+    }
+
+    if (generation != _ftmsBlockGeneration || isFtmsNotificationsBlocked) {
+      await _safeCancel(subscription, label);
+      if (enabled) await _disableBleNotifications(characteristic, label);
+      return;
+    }
+
+    device.cancelWhenDisconnected(subscription);
+    publish(subscription);
+  }
+
+  /// Cancels a notification subscription without letting a failing cancel cost
+  /// the rest of a teardown.
+  ///
+  /// The block and unblock paths run `unawaited` from the post-connection
+  /// timer, and both walk several subscriptions in sequence. One erroring
+  /// `cancel()` must not skip the subscriptions and wire disables behind it.
+  Future<void> _safeCancel(
+    StreamSubscription<List<int>>? subscription,
+    String label,
+  ) async {
+    if (subscription == null) return;
+    try {
+      await subscription.cancel();
+    } catch (error) {
+      print('[FTMS] Cancelling $label notifications failed: $error');
     }
   }
 
-  Future<void> unblockFtmsSubscription(BluetoothDevice device) async {
-    if (_ftmsSubscriptionBlocks == 0) return;
-    _ftmsSubscriptionBlocks--;
-    if (_ftmsSubscriptionBlocks > 0) return;
+  /// Turns a BLE characteristic's notifications off, swallowing failures for
+  /// the same reason [_disableDirConNotifications] does.
+  ///
+  /// Deliberately not gated on `isNotifying`, which reads a cached CCCD
+  /// descriptor value rather than asking the device. A block that skipped a
+  /// disable because the cache said "already quiet" is exactly the failure this
+  /// is meant to rule out, and a redundant CCCD write on two characteristics is
+  /// a cheap price for the guarantee. The DIRCON side has never had such a
+  /// guard, so this also puts the two transports on the same footing.
+  Future<void> _disableBleNotifications(
+    BluetoothCharacteristic characteristic,
+    String label,
+  ) async {
+    try {
+      await _queueBleOperation(() => characteristic.setNotifyValue(false));
+    } catch (e) {
+      print('[BLE] Could not disable $label notifications: $e');
+    }
+  }
+
+  /// Suspends both FTMS notification streams on whichever transport is live.
+  ///
+  /// Refcounted: OTA, the settings bootstrap, and the post-connection window
+  /// each hold one, and only the outermost release brings the streams back.
+  ///
+  /// Every cancellation and every wire operation is guarded individually. This
+  /// runs `unawaited` from [_startFtmsPostConnectionBlock], so it must not
+  /// complete with an error on any path — and one failing `cancel()` must not
+  /// cost the remaining teardown.
+  Future<void> blockFtmsNotifications() async {
+    _ftmsNotificationBlocks++;
+    if (_ftmsNotificationBlocks > 1) return;
+
+    _ftmsReadyCompleter ??= Completer<void>();
+    final generation = ++_ftmsBlockGeneration;
+    _machineStatusNotificationsLive = false;
+
+    final subscriptions = <StreamSubscription<List<int>>?>[
+      _ftmsSubscription,
+      _machineStatusSubscription,
+      _dirConFtmsSubscription,
+      _dirConMachineStatusSubscription,
+    ];
+    _ftmsSubscription = null;
+    _machineStatusSubscription = null;
+    _dirConFtmsSubscription = null;
+    _dirConMachineStatusSubscription = null;
+    for (final subscription in subscriptions) {
+      await _safeCancel(subscription, 'FTMS');
+    }
+
+    bool stillBlocking() =>
+        generation == _ftmsBlockGeneration && isFtmsNotificationsBlocked;
+
+    final session = _dirConSession;
+    if (isDirConConnected && session != null) {
+      for (final (uuid, label) in _ftmsNotificationCharacteristics) {
+        if (!stillBlocking()) return;
+        await _disableDirConNotifications(session, uuid, label);
+      }
+      return;
+    }
+
+    for (final (characteristic, label) in <(BluetoothCharacteristic?, String)>[
+      (indoorBikeCharacteristic, 'FTMS Indoor Bike Data'),
+      (machineStatusCharacteristic, 'FTMS Machine Status'),
+    ]) {
+      if (!stillBlocking()) return;
+      if (characteristic == null) continue;
+      await _disableBleNotifications(characteristic, label);
+    }
+  }
+
+  /// Releases one block. The outermost release brings both streams back.
+  Future<void> unblockFtmsNotifications(BluetoothDevice device) async {
+    if (_ftmsNotificationBlocks == 0) return;
+    _ftmsNotificationBlocks--;
+    if (_ftmsNotificationBlocks > 0) return;
 
     _ftmsBlockGeneration++;
     final dirConSession = _dirConSession;
     if (isDirConConnected && dirConSession != null) {
       // Same helper the initial setup uses, so the resubscribe also listens
-      // before enabling and a firmware variant without FTMS reports rather than
-      // throwing out of the post-connection timer that calls this.
-      StreamSubscription<List<int>>? subscription;
-      try {
-        subscription = await _subscribeDirConNotifications(
-          dirConSession,
-          ftmsIndoorBikeDataUUID,
-          _decodeIndoorBikeData,
-          label: 'FTMS Indoor Bike Data',
-        );
-      } catch (error) {
-        // The transport died while resubscribing. The disconnect listener owns
-        // the failover from here; this method runs unawaited from the
-        // post-connection timer and must not raise into it.
-        print('[DIRCON] FTMS resubscribe abandoned: $error');
-        return;
+      // before enabling and a firmware variant without a characteristic reports
+      // rather than throwing out of the post-connection timer that calls this.
+      for (final (uuid, label) in _ftmsNotificationCharacteristics) {
+        StreamSubscription<List<int>>? subscription;
+        try {
+          subscription = await _subscribeDirConNotifications(
+            dirConSession,
+            uuid,
+            uuid == ftmsIndoorBikeDataUUID
+                ? _decodeIndoorBikeData
+                : _forwardMachineStatus,
+            label: label,
+          );
+        } catch (error) {
+          // A dead transport, not an absent characteristic — the helper only
+          // rethrows once the session is invalid. Abandon the whole pass:
+          // subscribing the other characteristic to a closed session achieves
+          // nothing, and the disconnect listener owns the failover from here.
+          // This method runs unawaited from the post-connection timer and must
+          // not raise into it.
+          print('[DIRCON] FTMS resubscribe abandoned: $error');
+          break;
+        }
+        // The session may have been replaced while enablement was in flight;
+        // the block-generation race is handled inside the helper.
+        if (_dirConSession != dirConSession) {
+          await _safeCancel(subscription, label);
+          break;
+        }
+        if (uuid == ftmsIndoorBikeDataUUID) {
+          _dirConFtmsSubscription = subscription;
+        } else {
+          _dirConMachineStatusSubscription = subscription;
+          _machineStatusNotificationsLive = subscription != null;
+        }
       }
-      // The block may have been re-taken, or the session replaced, while
-      // enablement was in flight.
-      if (isFtmsSubscriptionBlocked || _dirConSession != dirConSession) {
-        await subscription?.cancel();
-        return;
-      }
-      _dirConFtmsSubscription = subscription;
-      return;
+    } else {
+      await ensureFtmsNotifications(device);
     }
-    await updateIndoorBikeData(device);
+
+    // A block taken while the resubscribe was in flight invalidates this
+    // attempt: leave the waiters pending for that cycle's own release rather
+    // than reporting a readiness the block just revoked.
+    if (_ftmsNotificationBlocks == 0) _releaseFtmsReadyWaiters();
+  }
+
+  /// The two characteristics the FTMS notification block owns, in setup order.
+  static final List<(String, String)> _ftmsNotificationCharacteristics = [
+    (ftmsIndoorBikeDataUUID, 'FTMS Indoor Bike Data'),
+    (FTMS_MACHINE_STATUS_CHARACTERISTIC_UUID, 'FTMS Machine Status'),
+  ];
+
+  void _releaseFtmsReadyWaiters() {
+    final completer = _ftmsReadyCompleter;
+    _ftmsReadyCompleter = null;
+    if (completer != null && !completer.isCompleted) completer.complete();
+  }
+
+  /// Waits until FTMS Machine Status is genuinely usable, and reports why if it
+  /// is not.
+  ///
+  /// "Ready" is not "the block count reached zero": the characteristic may be
+  /// absent from this firmware, its enable may have failed, or the transport
+  /// may have dropped. It means a listener is published and its wire-level
+  /// enable succeeded on the current session.
+  ///
+  /// Never touches the refcount. A caller waiting on this must not be able to
+  /// revoke a block that OTA or the settings bootstrap is holding.
+  Future<FtmsNotificationsReadiness> awaitFtmsNotificationsReady(
+    BluetoothDevice device, {
+    required Duration timeout,
+  }) async {
+    if (_isDisposed) return FtmsNotificationsReadiness.disposed;
+
+    if (isFtmsNotificationsBlocked) {
+      final completer = (_ftmsReadyCompleter ??= Completer<void>());
+      try {
+        await completer.future.timeout(timeout);
+      } on TimeoutException {
+        return FtmsNotificationsReadiness.timedOut;
+      }
+      if (_isDisposed) return FtmsNotificationsReadiness.disposed;
+    } else if (!_machineStatusNotificationsLive) {
+      // Unblocked but not yet subscribed is a real state: screens kick setup off
+      // unawaited, so this can be the exact moment a caller asks. Drive it
+      // rather than reporting a readiness that only happens to be pending.
+      await ensureFtmsNotifications(device);
+      if (_isDisposed) return FtmsNotificationsReadiness.disposed;
+    }
+
+    return _machineStatusNotificationsLive && isTransportActive
+        ? FtmsNotificationsReadiness.ready
+        : FtmsNotificationsReadiness.unavailable;
   }
 
   void _decodeIndoorBikeData(List<int> value) {
@@ -1565,7 +1834,7 @@ class DeviceData {
   Future<void> checkFtmsHealth(BluetoothDevice device) async {
     // Screens and operations can intentionally pause FTMS notifications. A
     // CCCD toggle here would bypass that block and compete for the transport.
-    if (isFtmsSubscriptionBlocked) return;
+    if (isFtmsNotificationsBlocked) return;
     if (isSimulated || !isTransportActive) return;
     // DIRCON socket loss has its own reconnect path. The notification toggle
     // below is specifically a BLE CCCD recovery operation.
@@ -1586,7 +1855,7 @@ class DeviceData {
         _ftmsRecoveryInProgress = true;
         _lastFtmsRecoveryAttempt = now;
         try {
-          await updateIndoorBikeData(device);
+          await ensureFtmsNotifications(device);
         } catch (e) {
           print('Error retrying FTMS notify setup: $e');
           if (!device.isConnected) {
@@ -1711,7 +1980,7 @@ class DeviceData {
   Future requestSettings(BluetoothDevice device) async {
     if (this.isSimulated) return;
 
-    await blockFtmsSubscription();
+    await blockFtmsNotifications();
     try {
       for (var c in this.customCharacteristic) {
         // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
@@ -1738,7 +2007,7 @@ class DeviceData {
         }
       }
     } finally {
-      await unblockFtmsSubscription(device);
+      await unblockFtmsNotifications(device);
     }
   }
 
@@ -2410,6 +2679,11 @@ class DeviceData {
     _isDisposed = true;
     _ftmsPostConnectionTimer?.cancel();
     _ftmsPostConnectionTimer = null;
+    // Anything waiting on readiness is woken here rather than left to time out
+    // against an object that will never answer. The disposal flag turns that
+    // into `disposed` rather than a spurious `ready`.
+    _machineStatusNotificationsLive = false;
+    _releaseFtmsReadyWaiters();
     _transportStateController.removeListener(_handleTransportStateChanged);
     _workoutControlLane.dispose();
     _transportStateController.dispose();

@@ -100,7 +100,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   void initState() {
     super.initState();
     deviceData = DeviceDataManager.forDevice(widget.device);
-    unawaited(deviceData.updateIndoorBikeData(widget.device));
+    unawaited(deviceData.ensureFtmsNotifications(widget.device));
     _monitor = CalibrationMonitor(deviceData: deviceData, device: widget.device)
       ..addListener(_onMonitorChanged);
 
@@ -252,6 +252,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           droppedLines: _monitor.droppedLines,
           machineStatus: _monitor.machineStatusLog,
           droppedStatusFrames: _monitor.droppedStatusFrames,
+          machineStatusReadiness: _monitor.notificationsReadiness,
           transport: deviceData.activeTransportName,
           phase: _monitor.phase,
           minFound: _monitor.minFound,
@@ -464,7 +465,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   Widget _buildRunningPage() {
     final phase = _monitor.phase;
     final gauge = _monitor.gaugeReading;
-    final showGauge = !_showVerdict;
+    final preparing = _monitor.awaitingNotifications;
+    final showGauge = !_showVerdict && !preparing;
     final expectsFtms = _isBikePlus || _monitor.usedFtmsPath;
     final showCadence = !_cadenceDetected;
     final succeeded = phase == CalibrationPhase.complete;
@@ -486,6 +488,19 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           ? () => _goTo(2)
           : null,
       children: [
+        // Shown in place of the cadence prompt: nothing the rider does affects
+        // this wait, so asking them to pedal yet would be misleading.
+        if (preparing) ...[
+          _Callout(
+            icon: Icons.hourglass_top,
+            color: Theme.of(context).colorScheme.primary,
+            title: 'Getting the connection ready',
+            body:
+                'Waiting for SmartSpin2k to finish settling before the homing '
+                'command goes out. This normally takes a few seconds.',
+          ),
+          const SizedBox(height: 16),
+        ],
         // Held until the verdict is actually on screen rather than dropped the
         // moment the phase turns terminal — the last checkmark should be the
         // only thing moving at that instant.

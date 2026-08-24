@@ -62,6 +62,15 @@ abstract interface class DirConSession {
     bool enableNotifications = false,
   });
 
+  /// Turns wire-level notifications for [characteristicUuid] on or off.
+  ///
+  /// Exposed separately from [ensureCharacteristic] because the FTMS
+  /// notification block has to *disable* a characteristic it already
+  /// discovered, and because a stale enable has to undo itself. Cancelling the
+  /// local stream subscription alone leaves the device notifying into a socket
+  /// nobody is reading.
+  Future<void> setNotifications(String characteristicUuid, bool enabled);
+
   Future<List<int>> writeCharacteristic(
     String characteristicUuid,
     List<int> value,
@@ -227,6 +236,7 @@ class DirConClient implements DirConSession {
     ];
   }
 
+  @override
   Future<void> setNotifications(String characteristicUuid, bool enabled) async {
     await _request(enableNotificationsMessage, [
       ..._uuidBytes(characteristicUuid),

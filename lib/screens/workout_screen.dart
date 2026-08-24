@@ -114,7 +114,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     super.initState();
     WakelockPlus.enable();
     deviceData = DeviceDataManager.forDevice(widget.device);
-    unawaited(deviceData.updateIndoorBikeData(widget.device));
+    unawaited(deviceData.ensureFtmsNotifications(widget.device));
     _workoutController = WorkoutController(deviceData, widget.device);
     _initTTSSettings();
     _initializeAnimationControllers();

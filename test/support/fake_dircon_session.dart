@@ -26,6 +26,16 @@ class FakeDirConSession implements DirConSession {
   final List<({String uuid, bool enableNotifications})> ensureCalls = [];
   final List<({String uuid, List<int> value})> writes = [];
 
+  /// Every notification state change, in order, from either
+  /// `ensureCharacteristic(enableNotifications: true)` or `setNotifications`.
+  final List<({String uuid, bool enabled})> notificationCalls = [];
+
+  /// Current wire state per UUID. The distinction from [enabledNotificationsFor]
+  /// matters: "was ever enabled" cannot detect an enable that leaked past a
+  /// block, which is the whole point of the stale-undo path.
+  final Map<String, bool> _notificationsEnabled = {};
+  final Map<String, Completer<void>> _gates = {};
+
   final Map<String, Object> _characteristicFailures = {};
   final Set<String> _transportLossOnEnsure = {};
   final Set<String> _silentCloseOnEnsure = {};
@@ -102,6 +112,18 @@ class FakeDirConSession implements DirConSession {
     _dropAfterEnsure.add(_key(uuid));
   }
 
+  /// Suspends any notification enable/disable for [uuid] until
+  /// [releaseNotificationGate], so a test can take a block while an enable is
+  /// still in flight.
+  void holdNotificationGate(String uuid) {
+    _gates[_key(uuid)] = Completer<void>();
+  }
+
+  void releaseNotificationGate(String uuid) {
+    final gate = _gates.remove(_key(uuid));
+    if (gate != null && !gate.isCompleted) gate.complete();
+  }
+
   void emitNotification(String uuid, List<int> frame) {
     final controller = _notifications[_key(uuid)];
     if (controller == null || controller.isClosed) return;
@@ -124,12 +146,19 @@ class FakeDirConSession implements DirConSession {
     ];
   }
 
+  /// Historical: true if notifications were *ever* enabled for [uuid].
   bool enabledNotificationsFor(String uuid) {
     final key = _key(uuid);
     return ensureCalls.any(
       (call) => _key(call.uuid) == key && call.enableNotifications,
     );
   }
+
+  /// Current wire state. This is what a block assertion needs — an enable that
+  /// was later undone must read false here while [enabledNotificationsFor]
+  /// still reads true.
+  bool notificationsEnabledNow(String uuid) =>
+      _notificationsEnabled[_key(uuid)] ?? false;
 
   /// True once the characteristic has been looked up at all, whether or not
   /// notifications were enabled for it.
@@ -185,7 +214,26 @@ class FakeDirConSession implements DirConSession {
       if (controller != null && !controller.isClosed) controller.add(frame);
     }
 
+    if (enableNotifications) {
+      await _applyNotificationState(characteristicUuid, true);
+    }
+
     if (_dropAfterEnsure.contains(key)) dropConnection();
+  }
+
+  @override
+  Future<void> setNotifications(String characteristicUuid, bool enabled) async {
+    if (!_isConnected) throw StateError('DIRCON session is closed');
+    await _applyNotificationState(characteristicUuid, enabled);
+  }
+
+  /// The one place wire state changes, so `ensureCharacteristic` and
+  /// `setNotifications` cannot drift into disagreeing models.
+  Future<void> _applyNotificationState(String uuid, bool enabled) async {
+    final gate = _gates[_key(uuid)];
+    if (gate != null) await gate.future;
+    notificationCalls.add((uuid: uuid, enabled: enabled));
+    _notificationsEnabled[_key(uuid)] = enabled;
   }
 
   @override

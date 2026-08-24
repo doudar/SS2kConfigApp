@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/bleConstants.dart';
 import 'package:ss2kconfigapp/utils/calibration_monitor.dart';
+import 'package:ss2kconfigapp/utils/device_data.dart';
 
 /// Every string fed in here is a literal `SS2K_LOG` call from the firmware's
 /// `src/Stepper.cpp`, with the `%d`/`%s` placeholders filled in the way the
@@ -1064,6 +1065,8 @@ void main() {
       bool logStreamSilent = false,
       List<CalibrationLogEntry>? machineStatus,
       int droppedStatusFrames = 0,
+      FtmsNotificationsReadiness machineStatusReadiness =
+          FtmsNotificationsReadiness.ready,
       String? transport = 'Bluetooth',
       String? firmwareVersion = '24.1.3',
       String? bikeType = 'Most spin bikes',
@@ -1075,6 +1078,7 @@ void main() {
       droppedLines: droppedLines,
       machineStatus: machineStatus ?? const [],
       droppedStatusFrames: droppedStatusFrames,
+      machineStatusReadiness: machineStatusReadiness,
       transport: transport,
       phase: phase,
       minFound: minFound,
@@ -1135,7 +1139,10 @@ void main() {
       expect(text, contains('transport: DIRCON'));
       expect(
         text,
-        contains('--- FTMS machine status 0x2ADA (3 frames, 0 dropped) ---'),
+        contains(
+          '--- FTMS machine status 0x2ADA (3 frames, 0 dropped, '
+          'readiness: ready) ---',
+        ),
       );
       expect(text, contains('[00:00.9] 14 01  spin-down requested'));
       expect(text, contains('[00:04.2] 14 04  max search started'));
@@ -1154,8 +1161,24 @@ void main() {
 
       expect(
         text,
-        contains('--- FTMS machine status 0x2ADA (no frames received) ---'),
+        contains(
+          '--- FTMS machine status 0x2ADA (no frames received, '
+          'readiness: ready) ---',
+        ),
       );
+    });
+
+    // Silence plus a readiness verdict is a diagnosis; silence alone is not.
+    // "This firmware has no Machine Status" and "the notification block had not
+    // lifted yet" produce the same empty section and want different replies.
+    test('an empty section names why the stream was not ready', () {
+      for (final readiness in FtmsNotificationsReadiness.values) {
+        expect(
+          report(machineStatusReadiness: readiness),
+          contains('readiness: ${readiness.name}'),
+          reason: readiness.name,
+        );
+      }
     });
 
     // A dead log stream is exactly when the status frames are the only

@@ -149,7 +149,19 @@ Delivered on the `dircon-calibration-parity` branch, rebased onto `develop` afte
 
 One requirement was tightened during implementation: the subscription is created **before** notifications are enabled. `characteristicNotifications` filters a broadcast stream with no replay, so enabling first would drop any frame the device emitted while the enable request was still in flight. A test pins that ordering and fails if it is reversed.
 
-**Interaction with the FTMS subscription blocker.** `develop` gained a refcounted `blockFtmsSubscription` / `unblockFtmsSubscription` pair that suppresses FTMS notifications during OTA, the settings bootstrap, and a ten-second post-connection window. Machine Status is deliberately **not** gated by it. The block exists to keep the high-rate Indoor Bike Data telemetry off a transport that is already busy; Machine Status is event-driven homing status at a handful of frames per run, and it is the stream calibration trusts. Gating it would blind calibration for the entire post-connection window and for every settings refresh — reintroducing the defect this plan exists to fix. Indoor Bike Data still honours the block, and `unblockFtmsSubscription` now resubscribes through the same listen-before-enable helper, so its DIRCON resubscribe no longer has the drop window either.
+**Interaction with the FTMS notification blocker.** `develop` gained a refcounted pair — now `blockFtmsNotifications` / `unblockFtmsNotifications` — that suppresses FTMS notifications during OTA, the settings bootstrap, and a ten-second post-connection window.
+
+An earlier revision of this plan exempted Machine Status from that block, on the reasoning that the block exists to throttle high-rate Indoor Bike Data telemetry while Machine Status is a handful of event-driven frames per run. **Review reversed that exemption and it is no longer in force.** A second stream outside the block is a second thing that can be live while the transport is meant to be quiet, and the exemption also left Machine Status on a lifecycle of its own — subscribed inside BLE service discovery, never torn down by a block, never re-established by an unblock.
+
+Both characteristics now share one lifecycle on both transports:
+
+- Connection setup discovers both but subscribes neither while a block is held.
+- `blockFtmsNotifications` cancels all four subscriptions (two characteristics × two transports) and disables both on the wire. Over DIRCON that means an actual `setNotifications(uuid, false)` through the new `DirConSession` method; previously the DIRCON block only cancelled the local listener while the device kept notifying into the socket.
+- The outermost `unblockFtmsNotifications` re-establishes both independently.
+- Every cancellation and wire operation is individually guarded — both methods run `unawaited` from the post-connection timer and must not complete with an error.
+- Both transports listen before enabling, and an enable superseded by a new block **undoes itself** rather than merely declining to publish. Returning early would leave a characteristic notifying with nothing listening, because a block that saw nothing enabled scheduled no disable for it.
+
+What the exemption used to buy is now provided explicitly: calibration waits on `DeviceData.awaitFtmsNotificationsReady`, which reports `ready`, `timedOut`, `unavailable`, or `disposed`. Readiness means a published listener plus a successful wire-level enable on the current session — not merely that the refcount reached zero. The wait is bounded (15 s by default) and never releases a block owned by settings or OTA; on a non-ready outcome the run proceeds on the log and `hMax` paths and the verdict is recorded in the calibration report.
 
 **Failure classification during optional setup.** Review found that the helper's catch block treated every failure as "firmware does not expose this characteristic", including a response timeout or socket error. Because `DirConClient` invalidates itself on those, `DeviceData` could be left reporting DIRCON/connected over a closed session — and since `startConnectionMonitor` short-circuits on `isDirConConnected`, that also suppressed the BLE reconnect path. Three changes close it, each with its own regression test:
 
@@ -180,7 +192,7 @@ Define a narrow `DirConSession` interface containing only the operations `Device
 During DIRCON connection setup:
 
 1. Discover FTMS Machine Status `0x2ADA` independently of Indoor Bike Data.
-2. Enable its notifications.
+2. Leave enablement to the FTMS notification block lifecycle rather than to discovery, so the two characteristics come up and go down together.
 3. Forward notification payloads to the existing `machineStatusStream`.
 4. Track the subscription separately from custom and Indoor Bike Data subscriptions.
 5. Cancel it on disconnect, fallback, reconnect, and disposal.
@@ -250,6 +262,19 @@ Remaining before the release gate: §7.4's shifter/log per-epoch reinitializatio
 - Disconnect, fallback, reconnect, and disposal cancel the correct subscription.
 - Firmware without Machine Status continues through existing fallback behavior.
 
+Shared-lifecycle cases, on both transports:
+
+- Neither stream has a listener or enabled notifications while the refcount is positive.
+- Only the outermost unblock releases them, and it attempts both independently.
+- Re-blocking cancels both listeners and leaves both *currently* disabled on the wire — asserted against current state, not against "was ever enabled", which cannot detect an enable that leaked past a block.
+- An enable superseded by a new block undoes itself.
+- One absent characteristic does not prevent the other from working.
+- A dead transport aborts the resubscribe pass rather than being read as characteristic absence; nothing stays attached to the abandoned session.
+- Calibration withholds its homing command until readiness resolves, then receives `0x2ADA`.
+- Each non-ready readiness outcome still starts the run and is named in the report.
+
+The BLE half of these lives in `test/ftms_control_point_transport_parity_test.dart`, because a real `BluetoothCharacteristic` needs the platform fake that file installs, and that fake binds to the isolate permanently. Its `setNotifyValue` override returns `false` for "no CCCD", which is the branch where `flutter_blue_plus` skips waiting for an `OnDescriptorWritten` event; it also has to override `onDescriptorWritten` with a controller that never closes, since `setNotifyValue` takes `.first` on that stream before it learns whether a CCCD exists.
+
 ### 7.4 Transport-state tests
 
 - Initial BLE and DIRCON connections each create one epoch.
@@ -276,10 +301,12 @@ Validate on SmartSpin2k hardware:
 
 The calibration screen's **Copy Log** button is the artefact. Its report names the transport and lists every `0x2ADA` frame the run received, decoded and stamped; when none arrived it says so explicitly rather than omitting the section. On the firmware side `DirConManager::notifyCharacteristic` defaults to `onlySubscribers`, so a DIRCON run reporting no frames means the subscription never took and the log path did all the work.
 
-Two further checks belong with it, both covering the exemption recorded in §5:
+Two further checks belong with it, both covering the reversal of the exemption recorded in §5. Their expectation is the opposite of what it was while the exemption stood — Machine Status no longer keeps flowing through a block, it waits with Indoor Bike Data:
 
-- Start a calibration during a settings refresh. `requestSettings` holds the FTMS subscription block for the whole poll; Machine Status must keep flowing while Indoor Bike Data goes quiet.
+- Start a calibration during a settings refresh. `requestSettings` holds the block for the whole poll, so both streams go quiet; the run must show "getting ready", start once the poll finishes, and report `readiness: ready` with `0x2ADA` frames listed.
 - Start one inside the ten-second post-connection block, with the same expectation.
+
+A third confirms the wait is bounded rather than open-ended: open the firmware update screen, back out without updating, then calibrate. That proves the OTA block is released and readiness resolves rather than sitting until the timeout.
 
 For the transport-failure classification, `DIRCON_MAX_CLIENTS` is 3 and the firmware handles exhaustion by accepting the socket and immediately stopping it. Occupying all three slots and then connecting the app exercises the fallback, though which `await` the failure lands on is timing-dependent. The `DirConConnector` seam is the precise instrument: a debug-only connector that delegates to `DirConClient` and kills the session on the `0x2ADA` `ensureCharacteristic` call hits the exact branch.
 

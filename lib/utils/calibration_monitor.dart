@@ -708,6 +708,7 @@ String buildCalibrationReport({
   required bool logStreamSilent,
   required List<CalibrationLogEntry> machineStatus,
   required int droppedStatusFrames,
+  required FtmsNotificationsReadiness machineStatusReadiness,
   String? transport,
   String? firmwareVersion,
   String? bikeType,
@@ -740,13 +741,19 @@ String buildCalibrationReport({
     ..writeln('homingForce: ${orUnknown(homingForce)}');
 
   if (machineStatus.isEmpty) {
-    // The negative result is the interesting one over DIRCON: it means the
-    // 0x2ADA subscription never took and the log path carried the whole run.
-    buffer.writeln('--- FTMS machine status 0x2ADA (no frames received) ---');
+    // The negative result is the interesting one: it means the 0x2ADA
+    // subscription never took and the log path carried the whole run. The
+    // readiness verdict is what separates "this firmware has no Machine Status"
+    // from "the notification block had not lifted yet".
+    buffer.writeln(
+      '--- FTMS machine status 0x2ADA (no frames received, '
+      'readiness: ${machineStatusReadiness.name}) ---',
+    );
   } else {
     buffer.writeln(
       '--- FTMS machine status 0x2ADA (${machineStatus.length} frames, '
-      '$droppedStatusFrames dropped) ---',
+      '$droppedStatusFrames dropped, '
+      'readiness: ${machineStatusReadiness.name}) ---',
     );
     for (final entry in machineStatus) {
       buffer.writeln('[${_elapsed(entry.at)}] ${entry.message}');
@@ -784,6 +791,7 @@ class CalibrationMonitor extends ChangeNotifier {
     this.pedalHintDelay = const Duration(seconds: 20),
     this.logSilenceTimeout = const Duration(seconds: 15),
     this.completionGrace = const Duration(seconds: 10),
+    this.notificationsReadyTimeout = const Duration(seconds: 15),
   });
 
   final DeviceData deviceData;
@@ -816,6 +824,16 @@ class CalibrationMonitor extends ChangeNotifier {
   /// success status arrives, the run finished and the app simply missed the
   /// word. Without this the last row spins for ever.
   final Duration completionGrace;
+
+  /// How long to wait for FTMS Machine Status `0x2ADA` before starting anyway.
+  ///
+  /// Machine Status honours the FTMS notification block, so a run started
+  /// inside the ten-second post-connection window or during a settings refresh
+  /// would otherwise send its homing command into a stream that is still
+  /// suspended. Bounded rather than open-ended on purpose: a leaked block count
+  /// must not make calibration unstartable. On expiry the run proceeds on the
+  /// log and `hMax` paths and [notificationsReadiness] records what happened.
+  final Duration notificationsReadyTimeout;
 
   /// How many lines the on-screen tail shows. The full run is kept separately
   /// in [_transcript] for [buildCalibrationReport].
@@ -858,6 +876,21 @@ class CalibrationMonitor extends ChangeNotifier {
   bool _refreshSent = false;
   bool _logStreamingStarted = false;
   bool _logDisableSent = false;
+  bool _awaitingNotifications = false;
+  FtmsNotificationsReadiness _notificationsReadiness =
+      FtmsNotificationsReadiness.unavailable;
+
+  /// True while [start] is waiting for FTMS notifications to come up. The screen
+  /// shows this instead of the cadence prompt — nothing the rider does affects
+  /// it, so asking them to pedal yet would be misleading.
+  bool get awaitingNotifications => _awaitingNotifications;
+
+  /// Whether FTMS Machine Status was live when this run's homing command went
+  /// out, and if not, why. Reported rather than acted on: the run continues
+  /// either way, but a run without `0x2ADA` was tracked by the log and `hMax`
+  /// paths alone, and the report is the only place that distinction survives.
+  FtmsNotificationsReadiness get notificationsReadiness =>
+      _notificationsReadiness;
 
   CalibrationPhase get phase => _tracker.phase;
   bool get minFound => _tracker.minFound;
@@ -929,6 +962,8 @@ class CalibrationMonitor extends ChangeNotifier {
     _logStreamSilent = false;
     _refreshSent = false;
     _logDisableSent = false;
+    _awaitingNotifications = false;
+    _notificationsReadiness = FtmsNotificationsReadiness.unavailable;
     _tracker.start(
       hMaxBaseline: int.tryParse(deviceData.getVnameValue(BLE_hMaxVname)),
     );
@@ -942,18 +977,10 @@ class CalibrationMonitor extends ChangeNotifier {
         _safeNotify();
       }
     });
-    _pedalHintTimer = Timer(pedalHintDelay, () {
-      if (_tracker.phase != CalibrationPhase.waitingForCadence) return;
-      _showPedalHint = true;
-      _safeNotify();
-    });
-    _logSilenceTimer = Timer(logSilenceTimeout, () {
-      if (_transcript.isNotEmpty) return;
-      _logStreamSilent = true;
-      _safeNotify();
-    });
 
     if (deviceData.isSimulated) {
+      _notificationsReadiness = FtmsNotificationsReadiness.ready;
+      _startRunWatchdogs();
       _tracker.markRequestSent();
       _runDemoScript();
       return;
@@ -970,10 +997,51 @@ class CalibrationMonitor extends ChangeNotifier {
     await deviceData.writeToSS2k(device, logCharacteristic, s: "1");
     if (_disposed || !_logStreamingStarted) return;
 
+    // Machine Status is suspended while any FTMS notification block is held, so
+    // the homing command has to wait for it — otherwise the run's own
+    // acknowledgement frames land before anything is listening. The wait never
+    // releases a block it does not own; it only observes one draining.
+    _awaitingNotifications = true;
+    _safeNotify();
+    try {
+      _notificationsReadiness = await deviceData.awaitFtmsNotificationsReady(
+        device,
+        timeout: notificationsReadyTimeout,
+      );
+    } finally {
+      // In a finally so a disposal or an unexpected error cannot strand the
+      // screen on "getting ready" with no way out.
+      _awaitingNotifications = false;
+      _safeNotify();
+    }
+    if (_disposed || !_logStreamingStarted) return;
+
+    // Deliberately started here rather than with the overall timer: a pedal
+    // hint counting down through the readiness wait would prompt the rider for
+    // something that cannot help, and log silence during the wait says nothing
+    // about the run.
+    _startRunWatchdogs();
+
     _tracker.markRequestSent();
     await deviceData.writeFtmsControlPointCommand(
       FTMSControlPoint.spinDownCommand(true),
     );
+  }
+
+  /// The stall/prompt timers that only make sense once the run is under way.
+  void _startRunWatchdogs() {
+    _pedalHintTimer?.cancel();
+    _logSilenceTimer?.cancel();
+    _pedalHintTimer = Timer(pedalHintDelay, () {
+      if (_tracker.phase != CalibrationPhase.waitingForCadence) return;
+      _showPedalHint = true;
+      _safeNotify();
+    });
+    _logSilenceTimer = Timer(logSilenceTimeout, () {
+      if (_transcript.isNotEmpty) return;
+      _logStreamSilent = true;
+      _safeNotify();
+    });
   }
 
   void _listen() {
