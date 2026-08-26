@@ -1196,8 +1196,23 @@ class DeviceData {
       indoorBikeCharacteristic = null;
       ftmsControlPointCharacteristic = null;
       machineStatusCharacteristic = null;
-      await _machineStatusSubscription?.cancel();
+      // Published state is discarded first and synchronously, before the first
+      // await: a setup pass already waiting on setNotifyValue must not be able
+      // to publish onto the characteristics this reset just dropped. Bumping
+      // the generation is what makes that pass fail its own staleness check
+      // rather than reattaching. Matches _resetConnectionState, which clears
+      // both subscriptions and the readiness flag together.
+      final stale = <StreamSubscription<List<int>>?>[
+        _ftmsSubscription,
+        _machineStatusSubscription,
+      ];
+      _ftmsSubscription = null;
       _machineStatusSubscription = null;
+      _machineStatusNotificationsLive = false;
+      _ftmsBlockGeneration++;
+      for (final subscription in stale) {
+        await _safeCancel(subscription, 'FTMS');
+      }
       _workoutControlLane.invalidateDelivery();
     }
 
@@ -1408,13 +1423,38 @@ class DeviceData {
     }
   }
 
+  /// Serializes FTMS notification setup.
+  ///
+  /// Four screens call [ensureFtmsNotifications] unawaited from `initState`,
+  /// and the health watchdog, the readiness wait and the unblock path all drive
+  /// it too, so two passes can genuinely overlap. Each pass cancels the
+  /// subscription it was *handed* and then publishes its own, so an overlap
+  /// ends with both listeners created and only the last published — the other
+  /// keeps decoding Indoor Bike Data and forwarding Machine Status with nothing
+  /// able to cancel it.
+  ///
+  /// Queued rather than coalesced: a caller arriving mid-pass still needs a
+  /// pass of its own, because the block generation may have moved since the
+  /// in-flight one captured it.
+  Future<void> _ftmsSetupQueue = Future<void>.value();
+
   /// Brings both FTMS notification streams up over BLE: Indoor Bike Data and
   /// Machine Status `0x2ADA`.
   ///
   /// The two are attempted independently — firmware that exposes one but not
   /// the other must still deliver the one it has, and a failure on either must
   /// not decide anything about the other.
-  Future<void> ensureFtmsNotifications(BluetoothDevice device) async {
+  Future<void> ensureFtmsNotifications(BluetoothDevice device) {
+    final pass = _ftmsSetupQueue.then((_) => _ensureFtmsNotifications(device));
+    // The queue must outlive a failing pass, or one error wedges every later
+    // caller. The error still reaches whoever awaited this call.
+    _ftmsSetupQueue = pass.catchError((Object _) {});
+    return pass;
+  }
+
+  Future<void> _ensureFtmsNotifications(BluetoothDevice device) async {
+    // A queued pass can start well after it was requested.
+    if (_isDisposed) return;
     if (isFtmsNotificationsBlocked) return;
 
     // The DIRCON session subscribes to FTMS during transport setup. Avoid
@@ -1477,6 +1517,14 @@ class DeviceData {
   }) async {
     if (characteristic == null) {
       print('[BLE] $label unavailable: characteristic not discovered');
+      // Not merely "nothing to do": a previous connection's subscription may
+      // still be published against a characteristic this pass no longer has,
+      // and for Machine Status `publish` is what maintains
+      // _machineStatusNotificationsLive — the one field
+      // awaitFtmsNotificationsReady answers from. Returning early here is how
+      // calibration gets told the stream is ready with no listener behind it.
+      await _safeCancel(previous, label);
+      publish(null);
       return;
     }
     if (isFtmsNotificationsBlocked) return;
@@ -1502,7 +1550,9 @@ class DeviceData {
       return;
     }
 
-    if (generation != _ftmsBlockGeneration || isFtmsNotificationsBlocked) {
+    if (_isDisposed ||
+        generation != _ftmsBlockGeneration ||
+        isFtmsNotificationsBlocked) {
       await _safeCancel(subscription, label);
       if (enabled) await _disableBleNotifications(characteristic, label);
       return;
@@ -1630,10 +1680,29 @@ class DeviceData {
           // A dead transport, not an absent characteristic — the helper only
           // rethrows once the session is invalid. Abandon the whole pass:
           // subscribing the other characteristic to a closed session achieves
-          // nothing, and the disconnect listener owns the failover from here.
-          // This method runs unawaited from the post-connection timer and must
-          // not raise into it.
+          // nothing. This method runs unawaited from the post-connection timer
+          // and must not raise into it.
           print('[DIRCON] FTMS resubscribe abandoned: $error');
+          // The disconnect listener normally owns the failover, but it cannot
+          // be relied on here: `DirConClient.close()` invalidates the session
+          // without publishing on `disconnected`, and `_closeWithError` is
+          // one-shot via `_disconnectEmitted`. On those paths `isConnected` is
+          // the only evidence, and leaving it unread would strand DeviceData
+          // reporting DIRCON/connected over a dead socket — which also wedges
+          // BLE recovery, since startConnectionMonitor short-circuits on
+          // isDirConConnected.
+          if (_dirConSession == dirConSession && !dirConSession.isConnected) {
+            // Unawaited because requestSettings awaits this method during the
+            // settings bootstrap and OTA; a BLE reconnect must not block it.
+            // The guards in _handleDirConDisconnect make a second, concurrent
+            // invocation from the real listener harmless.
+            unawaited(
+              _handleDirConDisconnect(device).catchError(
+                (Object e) =>
+                    print('[DIRCON] post-resubscribe teardown failed: $e'),
+              ),
+            );
+          }
           break;
         }
         // The session may have been replaced while enablement was in flight;

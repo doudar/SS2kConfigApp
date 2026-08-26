@@ -116,7 +116,94 @@ void main() {
       harness.dispose();
     });
   });
+
+  group('FTMS notification setup is single-flight', () {
+    // Four screens call ensureFtmsNotifications unawaited from initState, and
+    // the health watchdog and the readiness wait drive it too, so two passes
+    // can genuinely overlap. Each pass cancels the subscription it was *handed*
+    // and then publishes its own: overlapping passes both create a listener and
+    // only the last is published, leaving the other delivering frames with
+    // nothing able to cancel it.
+    test('two overlapping passes leave exactly one Indoor Bike listener', () async {
+      final harness = await _BleHarness.connect(blePlatform);
+      await harness.deviceData.unblockFtmsNotifications(harness.device);
+
+      final decoded = <FtmsData>[];
+      final subscription = harness.deviceData.ftmsDataChanges.listen(
+        decoded.add,
+      );
+
+      // The gate goes on Indoor Bike Data, the *first* characteristic each pass
+      // touches, not on Machine Status. _queueBleOperation is a serial queue:
+      // parking it on the second characteristic would push the second pass's
+      // Indoor Bike step behind the first pass's publish, so the second pass
+      // would be handed the first's subscription to cancel and the leak could
+      // never form. Gating the first lets both passes create their listener
+      // before either reaches the queue — which is where the leak comes from.
+      blePlatform.holdNotifyGate(_indoorBikeUuid);
+      final first = harness.deviceData.ensureFtmsNotifications(harness.device);
+      final second = harness.deviceData.ensureFtmsNotifications(harness.device);
+      await _waitUntil(
+        () => blePlatform.notifyGateWaiters(_indoorBikeUuid) >= 1,
+      );
+      await _settle();
+      blePlatform.releaseNotifyGate(_indoorBikeUuid);
+      await first;
+      await second;
+
+      blePlatform.emitNotification(
+        harness.device.remoteId,
+        _indoorBikeUuid,
+        _indoorBikeFrame,
+      );
+      await _settle();
+
+      // One listener, so one decode. Two means the superseded pass is still
+      // attached; zero means the frame never matched the characteristic's
+      // filters and this test proves nothing.
+      expect(decoded, hasLength(1));
+
+      await subscription.cancel();
+      harness.dispose();
+    });
+
+    // _machineStatusNotificationsLive is the single field
+    // awaitFtmsNotificationsReady answers from, and calibration gates on it.
+    // A pass that finds no characteristic has to clear it, or calibration is
+    // told the stream is ready with no listener behind it.
+    test('a Machine Status characteristic that goes missing clears readiness', () async {
+      final harness = await _BleHarness.connect(blePlatform);
+      await harness.deviceData.unblockFtmsNotifications(harness.device);
+
+      expect(
+        await harness.deviceData.awaitFtmsNotificationsReady(
+          harness.device,
+          timeout: const Duration(seconds: 1),
+        ),
+        FtmsNotificationsReadiness.ready,
+      );
+
+      // Firmware refreshed, or discovery no longer finds 0x2ADA. Indoor Bike
+      // Data stays assigned so the pass still has work to do.
+      harness.deviceData.machineStatusCharacteristic = null;
+      await harness.deviceData.ensureFtmsNotifications(harness.device);
+
+      expect(
+        await harness.deviceData.awaitFtmsNotificationsReady(
+          harness.device,
+          timeout: const Duration(seconds: 1),
+        ),
+        FtmsNotificationsReadiness.unavailable,
+      );
+
+      harness.dispose();
+    });
+  });
 }
+
+/// Flags 0x0000 plus the mandatory instantaneous speed — the shortest frame
+/// `_decodeIndoorBikeData` accepts and publishes.
+const _indoorBikeFrame = [0x00, 0x00, 0x64, 0x00];
 
 /// A BLE-connected [DeviceData] with the FTMS characteristics assigned
 /// directly.
@@ -235,6 +322,8 @@ final class _FakeBlePlatform extends FlutterBluePlusPlatform {
       StreamController<BmBluetoothAdapterState>.broadcast();
   final StreamController<BmCharacteristicData> _characteristicWrites =
       StreamController<BmCharacteristicData>.broadcast();
+  final StreamController<BmCharacteristicData> _characteristicReceived =
+      StreamController<BmCharacteristicData>.broadcast();
   // setNotifyValue takes `.first` on this *before* it learns whether the
   // characteristic has a CCCD. The base class default is an empty stream, whose
   // `.first` completes with a "No element" error nothing is there to catch.
@@ -248,6 +337,7 @@ final class _FakeBlePlatform extends FlutterBluePlusPlatform {
   final List<({String uuid, bool enable})> notifyCalls = [];
   final Map<String, bool> _notifyState = {};
   final Map<String, Completer<void>> _notifyGates = {};
+  final Map<String, int> _notifyGateWaiters = {};
 
   /// Current wire state per characteristic. `isNotifying` on the real
   /// characteristic reads a CCCD descriptor cache this fake does not populate,
@@ -258,11 +348,45 @@ final class _FakeBlePlatform extends FlutterBluePlusPlatform {
   /// can take a block while an enable is still in flight.
   void holdNotifyGate(String uuid) {
     _notifyGates[_key(uuid)] = Completer<void>();
+    _notifyGateWaiters[_key(uuid)] = 0;
   }
 
   void releaseNotifyGate(String uuid) {
     final gate = _notifyGates.remove(_key(uuid));
     if (gate != null && !gate.isCompleted) gate.complete();
+  }
+
+  /// How many `setNotifyValue` calls are currently parked on [uuid]'s gate.
+  /// Lets a test wait for a pass to actually reach the wire rather than
+  /// guessing at a number of event-loop turns.
+  int notifyGateWaiters(String uuid) => _notifyGateWaiters[_key(uuid)] ?? 0;
+
+  /// Emits a notification frame the way the platform does.
+  ///
+  /// `onValueReceived` filters on remoteId, primaryServiceUuid, serviceUuid,
+  /// characteristicUuid, instanceId *and* success. [_BleHarness] builds its
+  /// characteristics without a primaryServiceUuid and with the default
+  /// instanceId, so those two have to be null and 0 here — otherwise every
+  /// frame is filtered out and an "exactly one event" assertion passes because
+  /// nothing was ever delivered.
+  void emitNotification(
+    DeviceIdentifier remoteId,
+    String uuid,
+    List<int> value,
+  ) {
+    _characteristicReceived.add(
+      BmCharacteristicData(
+        remoteId: remoteId,
+        primaryServiceUuid: null,
+        serviceUuid: Guid(ftmsServiceUUID),
+        characteristicUuid: Guid(uuid),
+        instanceId: 0,
+        value: List<int>.from(value),
+        success: true,
+        errorCode: 0,
+        errorString: '',
+      ),
+    );
   }
 
   /// `Guid.str` collapses a standard 128-bit UUID to its 16-bit short form, so
@@ -275,6 +399,7 @@ final class _FakeBlePlatform extends FlutterBluePlusPlatform {
     notifyCalls.clear();
     _notifyState.clear();
     _notifyGates.clear();
+    _notifyGateWaiters.clear();
   }
 
   // Returning false means "this characteristic has no CCCD", which is the
@@ -284,7 +409,11 @@ final class _FakeBlePlatform extends FlutterBluePlusPlatform {
   Future<bool> setNotifyValue(BmSetNotifyValueRequest request) async {
     final uuid = request.characteristicUuid.str.toLowerCase();
     final gate = _notifyGates[uuid];
-    if (gate != null) await gate.future;
+    if (gate != null) {
+      _notifyGateWaiters[uuid] = (_notifyGateWaiters[uuid] ?? 0) + 1;
+      await gate.future;
+      _notifyGateWaiters[uuid] = (_notifyGateWaiters[uuid] ?? 1) - 1;
+    }
     notifyCalls.add((uuid: uuid, enable: request.enable));
     _notifyState[uuid] = request.enable;
     return false;
@@ -301,6 +430,10 @@ final class _FakeBlePlatform extends FlutterBluePlusPlatform {
   @override
   Stream<BmCharacteristicData> get onCharacteristicWritten =>
       _characteristicWrites.stream;
+
+  @override
+  Stream<BmCharacteristicData> get onCharacteristicReceived =>
+      _characteristicReceived.stream;
 
   @override
   Stream<BmDescriptorData> get onDescriptorWritten => _descriptorWrites.stream;

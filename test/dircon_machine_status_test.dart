@@ -217,7 +217,14 @@ void main() {
     // the same catch. Only the first may continue to the other characteristic:
     // subscribing to a dead session achieves nothing and would leave a listener
     // attached to it.
-    test('a transport failure mid-resubscribe abandons the pass', () async {
+    //
+    // Abandoning the pass is only half the job. The session here is invalidated
+    // *silently* — DirConSession.close() never publishes on `disconnected` and
+    // _closeWithError is one-shot — so nothing else is coming to notice. If the
+    // catch only breaks, DeviceData keeps reporting DIRCON/connected over a
+    // dead socket, which also wedges BLE recovery: startConnectionMonitor
+    // short-circuits on isDirConConnected.
+    test('a transport failure mid-resubscribe abandons the pass and the transport', () async {
       final session = FakeDirConSession();
       final connector = FakeDirConConnector([session]);
       final deviceData = await _connect(connector, device);
@@ -232,6 +239,23 @@ void main() {
       // Not attempted at all — the pass gave up on the dead session.
       expect(session.isListening(_machineStatusUuid), isFalse);
       expect(session.notificationsEnabledNow(_machineStatusUuid), isFalse);
+
+      await _until(
+        () => !deviceData.isDirConConnected,
+        'DIRCON stayed connected over a silently closed session',
+      );
+      // Stops the BLE half of the failover, which has no platform in this
+      // isolate. The assertions below are about releasing DIRCON, not about
+      // what replaces it.
+      deviceData.isUserDisconnect = true;
+      await _settle();
+
+      expect(deviceData.isTransportActive, isFalse);
+      expect(session.isClosed, isTrue);
+      expect(session.isListening(ccUUID), isFalse);
+      // Deliberately not asserting a specific phase: automatic recovery passes
+      // through DIRCON/reconnecting and then Bluetooth/connecting, and
+      // none/disconnected is reserved for an explicit user disconnect.
 
       deviceData.dispose();
     });
