@@ -534,6 +534,64 @@ void main() {
       await recovery;
       harness.dispose();
     });
+
+    // The watchdog's other branch, and the one Run C exposed. `lastFtmsUpdate`
+    // stays null forever on a connection that never delivered a frame, so the
+    // stalled branch above is unreachable and this is the only recovery there
+    // is — yet it called `ensureFtmsNotifications`, which is a no-op once
+    // `isNotifying` is true. In Run C it ran four times, logged
+    // `already notifying, no CCCD write` each time, and repaired nothing.
+    test('a connection that never delivered a frame is recycled, not re-ensured', () async {
+      final harness = await _BleHarness.connect(blePlatform);
+      await harness.deviceData.unblockFtmsNotifications(harness.device);
+
+      // Subscribed on both ends, and not one frame has arrived: exactly the
+      // state the old branch could not tell from a healthy one.
+      expect(blePlatform.enabledNow(_indoorBikeUuid), isTrue);
+      expect(harness.deviceData.lastFtmsUpdate, isNull);
+
+      blePlatform.notifyCalls.clear();
+      await harness.deviceData.checkFtmsHealth(harness.device);
+
+      for (final uuid in [_indoorBikeUuid, _machineStatusUuid]) {
+        // The fake records what the platform channel sees, which for a
+        // standard 16-bit UUID is the short form.
+        final key = Guid(uuid).str.toLowerCase();
+        expect(
+          blePlatform.notifyCalls
+              .where((call) => call.uuid.toLowerCase() == key)
+              .map((call) => call.enable),
+          containsAllInOrder([false, true]),
+          reason: '$uuid was not cycled off and back on',
+        );
+        expect(blePlatform.enabledNow(uuid), isTrue, reason: uuid);
+      }
+
+      harness.dispose();
+    });
+
+    // Nothing to cycle before discovery has produced the characteristics, and
+    // an ensure pass is what runs discovery in the first place. Recycling here
+    // would disable nothing and then do the same work anyway.
+    test('with no characteristic yet the branch still drives discovery', () async {
+      final harness = await _BleHarness.connectViaDiscovery(blePlatform);
+      await harness.deviceData.unblockFtmsNotifications(harness.device);
+
+      harness.deviceData.indoorBikeCharacteristic = null;
+      harness.deviceData.machineStatusCharacteristic = null;
+      blePlatform.notifyCalls.clear();
+
+      await harness.deviceData.checkFtmsHealth(harness.device);
+
+      expect(harness.deviceData.indoorBikeCharacteristic, isNotNull);
+      expect(
+        blePlatform.notifyCalls.map((call) => call.enable),
+        isNot(contains(false)),
+        reason: 'nothing was subscribed, so nothing should have been disabled',
+      );
+
+      harness.dispose();
+    });
   });
 
   // The starvation case: the spin-down used to queue behind a forty-entry

@@ -1067,6 +1067,7 @@ void main() {
       int droppedStatusFrames = 0,
       FtmsNotificationsReadiness machineStatusReadiness =
           FtmsNotificationsReadiness.ready,
+      bool transportStalled = false,
       String? transport = 'Bluetooth',
       String? firmwareVersion = '24.1.3',
       String? bikeType = 'Most spin bikes',
@@ -1079,6 +1080,7 @@ void main() {
       machineStatus: machineStatus ?? const [],
       droppedStatusFrames: droppedStatusFrames,
       machineStatusReadiness: machineStatusReadiness,
+      transportStalled: transportStalled,
       transport: transport,
       phase: phase,
       minFound: minFound,
@@ -1092,6 +1094,28 @@ void main() {
       homingMin: homingMin,
       homingMax: homingMax,
     );
+
+    // The stalled-transport attribution has to survive into the report: it is
+    // the difference between "the device refused" and "the device never heard
+    // it", and the transcript alone cannot show that.
+    test('the stalled-transport attribution appears only when it applies', () {
+      expect(
+        report(
+          phase: CalibrationPhase.failedTransportStalled,
+          transportStalled: true,
+        ),
+        allOf(
+          contains('phase: failedTransportStalled'),
+          contains('transportStalled: true'),
+          contains('DIRCON->BLE fallback'),
+        ),
+      );
+
+      expect(
+        report(phase: CalibrationPhase.failedNoAcknowledgement),
+        isNot(contains('transportStalled')),
+      );
+    });
 
     test('a completed run carries the header and every line in order', () {
       final text = report(
@@ -1283,6 +1307,7 @@ void main() {
         CalibrationPhase.failedUnstable,
         CalibrationPhase.failedAborted,
         CalibrationPhase.failedUnsupported,
+        CalibrationPhase.failedTransportStalled,
       ]) {
         expect(phase.isFailure, isTrue, reason: '$phase');
         expect(phase.isTerminal, isTrue, reason: '$phase');
@@ -1291,6 +1316,50 @@ void main() {
 
       expect(CalibrationPhase.complete.isTerminal, isTrue);
       expect(CalibrationPhase.complete.isFailure, isFalse);
+    });
+
+    // The list above is hand-maintained, so it cannot catch the next phase
+    // someone adds. This can: a `failed*` value left out of [isFailure] is
+    // also left out of [isTerminal], and a run that ends on it never stops.
+    test('every failure phase is classified as one', () {
+      for (final phase in CalibrationPhase.values) {
+        if (!phase.name.startsWith('failed')) continue;
+        expect(phase.isFailure, isTrue, reason: '$phase');
+        expect(phase.isTerminal, isTrue, reason: '$phase');
+      }
+    });
+  });
+
+  group('a device wedged on a connection that went away', () {
+    // Same evidence as failedNoAcknowledgement — nothing came back — but the
+    // caller has established why, and the advice inverts: no retry can reach a
+    // device that is blocked writing to a TCP peer that vanished.
+    test('the caller can name the cause of the silence', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      tracker.markRequestSent();
+
+      expect(tracker.markNoAcknowledgement(transportStalled: true), isTrue);
+      expect(tracker.phase, CalibrationPhase.failedTransportStalled);
+      expect(tracker.acknowledged, isFalse);
+    });
+
+    test('without that evidence the generic verdict still stands', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      tracker.markRequestSent();
+
+      expect(tracker.markNoAcknowledgement(), isTrue);
+      expect(tracker.phase, CalibrationPhase.failedNoAcknowledgement);
+    });
+
+    // Ordinary _fail semantics: a verdict that already arrived wins, so a
+    // late-firing deadline cannot relabel a run the device did answer.
+    test('it does not overwrite a verdict that already landed', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      tracker.markRequestSent();
+      expect(tracker.markTimedOut(), isTrue);
+
+      expect(tracker.markNoAcknowledgement(transportStalled: true), isFalse);
+      expect(tracker.phase, CalibrationPhase.failedNeverStarted);
     });
   });
 }

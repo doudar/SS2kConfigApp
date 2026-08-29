@@ -268,6 +268,10 @@ class DeviceData {
   StreamSubscription<void>? _dirConDisconnectedSubscription;
   bool _dirConSetupComplete = false;
   bool _dirConReconnectInProgress = false;
+
+  /// The transport epoch the DIRCON->BLE fallback brought up, or null if this
+  /// session never fell back. See [isDirConFallbackSilent].
+  int? _dirConFallbackEpoch;
   bool _initialConnectionInProgress = false;
   bool _workoutControlActive = false;
   int _ftmsNotificationBlocks = 0;
@@ -704,9 +708,19 @@ class DeviceData {
       );
     }
     _resetConnectionState();
+    // `sweepSettings: false` is what makes this timeout satisfiable. The sweep
+    // polls every custom characteristic one round-trip at a time — ~80 s on a
+    // fresh session — so a 10 s bound around it could never be met: it fired on
+    // every DIRCON->BLE transition, skipping `_markTransportConnected`, the
+    // settle decision and `_runReconnectedCallbacks()` below, while the
+    // abandoned continuation carried on holding the FTMS notification block.
+    // The timeout freed the caller, not the work. Bound only what the fallback
+    // actually needs — discovery and the FTMS characteristics — and sweep
+    // settings at the end, off this budget.
     await setupConnection(
       device,
       markTransportConnected: false,
+      sweepSettings: false,
     ).timeout(const Duration(seconds: 10));
     if (ftmsControlPointCharacteristic == null || !device.isConnected) {
       throw StateError('BLE FTMS Control Point is not ready after DIRCON loss');
@@ -719,6 +733,7 @@ class DeviceData {
       device,
       settle: !reusedSession,
     );
+    _dirConFallbackEpoch = _transportStateController.value.epoch;
     print(
       '[DIRCON][FALLBACK] BLE ready epoch=${_transportStateController.value.epoch} '
       'duration=${stopwatch.elapsedMilliseconds}ms '
@@ -728,6 +743,34 @@ class DeviceData {
       await ensureFtmsNotifications(device);
     }
     await _runReconnectedCallbacks();
+    // Last, and unawaited: the sweep holds the FTMS notification block for its
+    // whole duration, so every stream above has to be live before it starts.
+    _sweepSettingsInBackground(device);
+  }
+
+  /// Runs the full settings sweep without blocking the caller.
+  ///
+  /// The sweep is cosmetic to the transport — it repopulates the settings UI —
+  /// but it is the slowest thing `setupConnection` does and it holds the FTMS
+  /// notification block throughout. A recovery path that needs a live FTMS
+  /// stream runs it through here, after the stream is up, rather than inside
+  /// its own timeout budget.
+  ///
+  /// The stopwatch is started before the sweep launches, not after it lands, so
+  /// a concurrent [updateCustomCharacter] sees a sweep already in flight
+  /// instead of starting a second one against the same characteristics.
+  void _sweepSettingsInBackground(BluetoothDevice device) {
+    if (isSimulated) return;
+    if (_lastRequestStopwatch.isRunning) {
+      _lastRequestStopwatch.reset();
+    } else {
+      _lastRequestStopwatch.start();
+    }
+    unawaited(
+      requestSettings(device).catchError((Object error) {
+        print('[transport] background settings sweep failed: $error');
+      }),
+    );
   }
 
   /// Reconnect callbacks are advisory: they refresh UI, re-read RSSI, redeliver
@@ -1175,6 +1218,29 @@ class DeviceData {
   /// wire-level enable succeeded on the current session.
   bool get controlPointNotificationsLive => _controlPointNotificationsLive;
 
+  /// True when this session fell back from DIRCON to BLE and the BLE transport
+  /// it brought up has never delivered a single FTMS frame.
+  ///
+  /// That combination is the app-visible signature of a SmartSpin2k wedged on a
+  /// half-open DirCon socket: pulling Wi-Fi sends no FIN, so the device still
+  /// believes its TCP client is there and blocks its main loop writing to it.
+  /// Everything on the synchronous custom-characteristic path keeps working —
+  /// settings, shifting, the log stream — while every FTMS write sits unread in
+  /// the firmware's cache and no Indoor Bike Data or Machine Status comes back.
+  ///
+  /// Nothing the app can send repairs this, so a flow that would otherwise
+  /// offer a retry should say so instead. The device has to drop the stale
+  /// socket first: restart it, or restore Wi-Fi so the connection is reaped.
+  ///
+  /// Scoped to the fallback's own epoch. A later reconnect publishes a new
+  /// epoch, and this stops claiming anything about it.
+  bool get isDirConFallbackSilent =>
+      _dirConFallbackEpoch != null &&
+      _dirConFallbackEpoch == _transportStateController.value.epoch &&
+      isTransportActive &&
+      !isDirConConnected &&
+      lastFtmsUpdate == null;
+
   String simulatedTargetWatts = "";
   String simulatedFTMSmode = "";
   int FTMSmode = 0;
@@ -1265,10 +1331,17 @@ class DeviceData {
     return advertisedName.trim();
   }
 
+  /// [sweepSettings] false brings the transport up — discovery, characteristics,
+  /// notification subscriptions — and leaves the settings poll to the caller.
+  /// The sweep is the one unbounded step in here (one round-trip per custom
+  /// characteristic, ~80 s cold) and it holds the FTMS notification block for
+  /// its whole duration, so a caller under a timeout, or one that needs live
+  /// FTMS data first, runs it itself via [_sweepSettingsInBackground].
   Future<void> setupConnection(
     BluetoothDevice device, {
     bool forceRefresh = false,
     bool markTransportConnected = true,
+    bool sweepSettings = true,
   }) {
     if (isSimulated) return Future.value();
 
@@ -1289,7 +1362,7 @@ class DeviceData {
         // characteristic reference.
         _ensureCachedMap();
         _lastRequestStopwatch.reset();
-        await requestSettings(device);
+        if (sweepSettings) await requestSettings(device);
         if (_setupCoordinator.isCurrent(generation) && isDirConConnected) {
           _dirConSetupComplete = true;
           if (!_lastRequestStopwatch.isRunning) {
@@ -1321,6 +1394,7 @@ class DeviceData {
         device,
         generation: generation,
         forceRefresh: forceRefresh,
+        sweepSettings: sweepSettings,
       ),
     );
   }
@@ -1329,6 +1403,7 @@ class DeviceData {
     BluetoothDevice device, {
     required int generation,
     required bool forceRefresh,
+    bool sweepSettings = true,
   }) async {
     bool connectionIsCurrent() =>
         _setupCoordinator.isCurrent(generation) && device.isConnected;
@@ -1371,7 +1446,7 @@ class DeviceData {
     if (!connectionIsCurrent()) return;
     if (services.length > 1) await _findChar();
     if (!connectionIsCurrent()) return;
-    await updateCustomCharacter(device);
+    await updateCustomCharacter(device, sweepSettings: sweepSettings);
     if (!connectionIsCurrent()) return;
   }
 
@@ -1542,7 +1617,12 @@ class DeviceData {
   // only used as a flag to prevent multiple concurrent instances of updateCustomCharacter
   bool _inUpdateLoop = false;
 
-  Future updateCustomCharacter(BluetoothDevice device) async {
+  /// [sweepSettings] false skips the settings poll only; the subscriptions and
+  /// the MTU bump above it still happen. See [setupConnection].
+  Future updateCustomCharacter(
+    BluetoothDevice device, {
+    bool sweepSettings = true,
+  }) async {
     if (this.isSimulated) return;
     if (_inUpdateLoop) {
       return;
@@ -1566,12 +1646,17 @@ class DeviceData {
       if (_myCharacteristic != null && !_myCharacteristic!.isNotifying) {
         await _queueBleOperation(() => _myCharacteristic!.setNotifyValue(true));
       }
-      if (!_lastRequestStopwatch.isRunning) {
-        await requestSettings(device);
-        _lastRequestStopwatch.start();
-      } else if (_lastRequestStopwatch.elapsed > Duration(seconds: 5)) {
-        _lastRequestStopwatch.reset();
-        await requestSettings(device);
+      // Skipping deliberately leaves the stopwatch alone: the caller owns the
+      // sweep now, and starting it here would pretend one just ran and suppress
+      // the next due one.
+      if (sweepSettings) {
+        if (!_lastRequestStopwatch.isRunning) {
+          await requestSettings(device);
+          _lastRequestStopwatch.start();
+        } else if (_lastRequestStopwatch.elapsed > Duration(seconds: 5)) {
+          _lastRequestStopwatch.reset();
+          await requestSettings(device);
+        }
       }
     } finally {
       _inUpdateLoop = false;
@@ -2354,12 +2439,36 @@ class DeviceData {
     // custom characteristic decode path is active. Keep retrying the FTMS notify
     // setup on the watchdog cooldown so a failed initial setNotifyValue(true)
     // does not leave the stream silent until reconnect.
+    //
+    // This branch has to recycle, not merely ensure. `ensureFtmsNotifications`
+    // is a no-op once `isNotifying` is true, and a connection that has never
+    // delivered a frame is very often exactly that: subscribed on both ends,
+    // silent anyway. In Run C it ran four times and logged
+    // `subscribed (already notifying, no CCCD write)` each time, repairing
+    // nothing — the same "repairs the wire and nothing else" trap
+    // [_recycleFtmsNotifications] was written to close for the stalled branch,
+    // just on the other side of the null check. Note the stalled branch below
+    // cannot cover for it: `lastFtmsUpdate` stays null forever on a connection
+    // that never delivered, so it is never reached.
     if (lastFtmsUpdate == null) {
       if (!recentlyTriedRecovery) {
         _ftmsRecoveryInProgress = true;
         _lastFtmsRecoveryAttempt = now;
         try {
-          await ensureFtmsNotifications(device);
+          // Nothing to cycle before discovery has produced the characteristics;
+          // an ensure pass is what runs discovery in the first place.
+          if (indoorBikeCharacteristic != null && device.isConnected) {
+            // The stalled branch below announces itself; this one used to be
+            // silent, which made a watchdog that ran and repaired nothing
+            // indistinguishable in the log from one that never ran.
+            print(
+              'FTMS has delivered nothing since this connection came up. '
+              'Recycling notifications...',
+            );
+            await _recycleFtmsNotifications(device);
+          } else {
+            await ensureFtmsNotifications(device);
+          }
         } catch (e) {
           print('Error retrying FTMS notify setup: $e');
           if (!device.isConnected) {

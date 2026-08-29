@@ -20,6 +20,41 @@ void main() {
     device = BluetoothDevice.fromId('00:00:00:00:00:2B');
   });
 
+  // The seam that makes the DIRCON->BLE fallback's own timeout satisfiable.
+  //
+  // The sweep is one round-trip per custom characteristic — ~80 s on a cold
+  // session — so the fallback's 10 s bound around a `setupConnection` that
+  // awaits it could never be met. It fired on every transition, freeing the
+  // caller while the work carried on, and skipping the transport bookkeeping
+  // that followed it. Bringing the transport up has to be separable from
+  // polling settings.
+  test('setupConnection can bring the transport up without the settings sweep', () async {
+    final connector = FakeDirConConnector();
+    final deviceData = DeviceData(dirConConnector: connector.call)
+      ..advertisedIpAddress = _ipAddress;
+    await deviceData.connectPreferred(device, waitForSetup: true);
+    final session = connector.first;
+
+    final afterBootstrap = session.writesFor(ccUUID).length;
+    expect(afterBootstrap, greaterThan(0), reason: 'bootstrap did sweep');
+
+    // A full re-bootstrap, minus the poll: not one settings read goes out.
+    await deviceData.setupConnection(
+      device,
+      forceRefresh: true,
+      sweepSettings: false,
+    );
+    expect(session.writesFor(ccUUID).length, afterBootstrap);
+    expect(deviceData.transportState.value.phase, DeviceTransportPhase.connected);
+
+    // ...and the default still sweeps, so the flag is what suppressed it and
+    // not something else about the second pass.
+    await deviceData.setupConnection(device, forceRefresh: true);
+    expect(session.writesFor(ccUUID).length, greaterThan(afterBootstrap));
+
+    deviceData.dispose();
+  });
+
   // The settings bootstrap must not gate FTMS control: a workout that starts
   // the instant a DIRCON session comes up has to reach the trainer even though
   // _dirConSetupComplete is still false.

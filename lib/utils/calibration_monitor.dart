@@ -63,6 +63,23 @@ enum CalibrationPhase {
   /// acted on.
   failedNoAcknowledgement,
 
+  /// Same silence as [failedNoAcknowledgement], but the app can name the cause:
+  /// the SmartSpin2k is wedged behind a connection that went away without
+  /// closing.
+  ///
+  /// After the app falls back from DIRCON to BLE and not one FTMS frame arrives
+  /// on the new link, the device is almost certainly still blocked writing to
+  /// the TCP client that vanished when Wi-Fi dropped. Its main loop never gets
+  /// back to the queue the spin-down is sitting in, so the request is not
+  /// refused — it is never read.
+  ///
+  /// Separate from [failedNoAcknowledgement] because the advice inverts. That
+  /// verdict says "the device didn't accept the request" and offers a retry;
+  /// here the device accepted nothing because it was never asked, and a retry
+  /// is guaranteed to fail identically. Only restarting the SmartSpin2k or
+  /// restoring Wi-Fi clears it. See [DeviceData.isDirConFallbackSilent].
+  failedTransportStalled,
+
   /// The device acknowledged the request and homing never began.
   ///
   /// The firmware acts on a spin-down only after it sees roughly two seconds of
@@ -106,6 +123,7 @@ extension CalibrationPhaseX on CalibrationPhase {
       this == CalibrationPhase.failedUnsupported ||
       this == CalibrationPhase.failedToStart ||
       this == CalibrationPhase.failedNoAcknowledgement ||
+      this == CalibrationPhase.failedTransportStalled ||
       this == CalibrationPhase.failedNeverStarted;
 
   bool get isTerminal => this == CalibrationPhase.complete || isFailure;
@@ -585,8 +603,16 @@ class CalibrationPhaseTracker {
 
   /// Ends a run the device never acknowledged. Ordinary [_fail] semantics: a
   /// verdict that already arrived wins.
-  bool markNoAcknowledgement() =>
-      _fail(CalibrationPhase.failedNoAcknowledgement);
+  ///
+  /// [transportStalled] picks the sharper of the two silence verdicts. Same
+  /// evidence — nothing came back — but the caller has established *why*, so
+  /// the run gets [CalibrationPhase.failedTransportStalled] and its advice
+  /// rather than the generic "the device did not respond".
+  bool markNoAcknowledgement({bool transportStalled = false}) => _fail(
+    transportStalled
+        ? CalibrationPhase.failedTransportStalled
+        : CalibrationPhase.failedNoAcknowledgement,
+  );
 
   /// Ends a run that could not be started, *overriding* a terminal phase.
   ///
@@ -842,6 +868,7 @@ String buildCalibrationReport({
   Duration? acknowledgedAfter,
   bool ackChannelsLive = false,
   CalibrationAckSource? ackSource,
+  bool transportStalled = false,
   String? startFailure,
   String? transport,
   String? firmwareVersion,
@@ -885,6 +912,15 @@ String buildCalibrationReport({
       '${ackSource == null ? '' : ' via ${ackSource.name}'}'
       '  ackChannelsLive: $ackChannelsLive',
     );
+
+  // Only when true, and only ever set on a run that ended in silence: it names
+  // the one cause of that silence the app can identify from the outside.
+  if (transportStalled) {
+    buffer.writeln(
+      'transportStalled: true (no FTMS frame since the DIRCON->BLE fallback; '
+      'device wedged on the dropped connection)',
+    );
+  }
 
   if (startFailure != null) {
     buffer.writeln('startFailure: $startFailure');
@@ -1034,6 +1070,7 @@ class CalibrationMonitor extends ChangeNotifier {
   String? _startFailure;
   CalibrationStartStage? _startFailureStage;
   bool _acknowledged = false;
+  bool _transportStalled = false;
   DateTime? _dispatchedAt;
   Duration? _acknowledgedAfter;
 
@@ -1062,6 +1099,12 @@ class CalibrationMonitor extends ChangeNotifier {
 
   /// How long the acknowledgement took, or null if none arrived.
   Duration? get acknowledgedAfter => _acknowledgedAfter;
+
+  /// Whether this run's silence was attributed to a SmartSpin2k wedged on a
+  /// connection that went away. Latched at the acknowledgement deadline, so it
+  /// stays true for the verdict and the report even if the transport recovers
+  /// afterwards. See [CalibrationPhase.failedTransportStalled].
+  bool get transportStalled => _transportStalled;
 
   /// Which channel carried the acknowledgement. See [CalibrationAckSource].
   CalibrationAckSource? get ackSource => _tracker.ackSource;
@@ -1156,6 +1199,7 @@ class CalibrationMonitor extends ChangeNotifier {
     _startFailure = null;
     _startFailureStage = null;
     _acknowledged = false;
+    _transportStalled = false;
     _dispatchedAt = null;
     _acknowledgedAfter = null;
     _notificationsReadiness = FtmsNotificationsReadiness.unavailable;
@@ -1391,10 +1435,20 @@ class CalibrationMonitor extends ChangeNotifier {
       if (_disposed) return;
       _checkAcknowledged();
       if (_acknowledged) return;
-      if (!_tracker.markNoAcknowledgement()) return;
+      // Read once, here, and carried into the report: the verdict and the
+      // report must agree about which failure this was, and the underlying
+      // transport state can move between the two reads.
+      _transportStalled = deviceData.isDirConFallbackSilent;
+      if (!_tracker.markNoAcknowledgement(transportStalled: _transportStalled)) {
+        return;
+      }
       _note(
-        'no acknowledgement within ${logSilenceTimeout.inSeconds}s '
-        '(${ackChannelsLive ? 'an evidence channel was live' : 'no evidence channel was live'})',
+        _transportStalled
+            ? 'no acknowledgement within ${logSilenceTimeout.inSeconds}s; '
+                  'no FTMS frame has arrived since the DIRCON fallback, so the '
+                  'device is wedged on the dropped connection'
+            : 'no acknowledgement within ${logSilenceTimeout.inSeconds}s '
+                  '(${ackChannelsLive ? 'an evidence channel was live' : 'no evidence channel was live'})',
       );
       _finishRun();
       _safeNotify();
