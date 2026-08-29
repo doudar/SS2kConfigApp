@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import 'ble_connection_retry.dart';
 import 'bleConstants.dart';
 import 'device_data.dart';
 import 'constants.dart';
@@ -1069,6 +1070,14 @@ class CalibrationMonitor extends ChangeNotifier {
   bool _disposed = false;
   bool _refreshSent = false;
   bool _logStreamingStarted = false;
+
+  /// Whether the log-stream enable write was *confirmed* by the device. An
+  /// unconfirmed write ([TransportResponseUnconfirmed]) leaves this false but
+  /// does not clear [_logStreamingStarted] — streaming may well be on, and
+  /// cleanup must still run. "Attempted but not confirmed" vs. "not attempted"
+  /// is distinguished by whether a `log stream enable …` note is in the
+  /// transcript.
+  bool _logStreamAvailable = false;
   bool _logDisableSent = false;
   bool _awaitingNotifications = false;
   FtmsNotificationsReadiness _notificationsReadiness =
@@ -1201,6 +1210,7 @@ class CalibrationMonitor extends ChangeNotifier {
     _logStreamSilent = false;
     _deviceLogSeen = false;
     _refreshSent = false;
+    _logStreamAvailable = false;
     _logDisableSent = false;
     _awaitingNotifications = false;
     _startFailure = null;
@@ -1266,9 +1276,20 @@ class CalibrationMonitor extends ChangeNotifier {
       orElse: () => {"vName": BLE_logStreamVname, "value": ""},
     );
     // Set this before awaiting so disposal during the acknowledged write still
-    // queues the matching disable behind it.
+    // queues the matching disable behind it — and left set even when the write
+    // goes unconfirmed, so [_stopLogStreaming] still runs.
     _logStreamingStarted = true;
-    await deviceData.writeToSS2k(device, logCharacteristic, s: "1");
+    try {
+      await deviceData.writeToSS2kStrict(device, logCharacteristic, s: "1");
+      _logStreamAvailable = true;
+    } on TransportResponseUnconfirmed {
+      // The write may well have enabled streaming; the app just cannot confirm
+      // it. Not a start failure on its own — only if no other channel can
+      // observe the run either (checked below).
+      _note('log stream enable not confirmed');
+    } catch (error) {
+      _note('log stream enable failed: $error');
+    }
     if (_disposed || !_logStreamingStarted) return;
 
     // Machine Status is suspended while any FTMS notification block is held, so
@@ -1300,6 +1321,18 @@ class CalibrationMonitor extends ChangeNotifier {
       'FTMS readiness: ${_notificationsReadiness.name} '
       '(waited ${readinessWait.elapsedMilliseconds}ms)',
     );
+
+    // The log stream is the primary progress channel. If its enable went
+    // unconfirmed *and* neither FTMS channel is live, nothing could observe
+    // this run — dispatching the homing command would only end in an
+    // eight-minute timeout. Fail it now, in its own stage.
+    final anotherChannelIsLive =
+        _notificationsReadiness == FtmsNotificationsReadiness.ready ||
+        deviceData.controlPointNotificationsLive;
+    if (!_logStreamAvailable && !anotherChannelIsLive) {
+      _startFailureStage = CalibrationStartStage.logStreamEnable;
+      throw StateError('no channel could observe this run');
+    }
 
     // Deliberately started here rather than with the overall timer: a pedal
     // hint counting down through the readiness wait would prompt the rider for
@@ -1403,7 +1436,7 @@ class CalibrationMonitor extends ChangeNotifier {
   /// transcript and report where it is useful instead.
   String _describeStartFailure(CalibrationStartStage stage) => switch (stage) {
     CalibrationStartStage.logStreamEnable =>
-      "The SmartSpin2k didn't accept the request to start reporting.",
+      "The app couldn't confirm that log reporting started.",
     CalibrationStartStage.notificationsReady =>
       "The connection couldn't be prepared for a calibration run.",
     CalibrationStartStage.dispatch =>

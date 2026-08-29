@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_blue_plus_platform_interface/flutter_blue_plus_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ss2kconfigapp/utils/ble_connection_retry.dart';
 import 'package:ss2kconfigapp/utils/bleConstants.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
@@ -616,12 +617,14 @@ void main() {
       // Background requests queued first. Three is enough: the first occupies
       // the queue immediately, so strict arrival order would put the control
       // command behind all three.
+      // Each unanswered write now surfaces TransportResponseUnconfirmed; this
+      // test is about queue ordering, not the outcome, so absorb it.
       final sweep = [
         for (var reference = 1; reference <= 3; reference++)
           harness.deviceData.writeCustomCharacteristic(harness.device, [
             0x01,
             reference,
-          ]),
+          ]).catchError((Object _) {}),
       ];
       await _settle();
 
@@ -676,10 +679,13 @@ void main() {
 
       blePlatform.answerCustomRequests = false;
       for (var reference = 1; reference <= 3; reference++) {
-        await deviceData.writeCustomCharacteristic(harness.device, [
-          0x01,
-          reference,
-        ]);
+        await expectLater(
+          deviceData.writeCustomCharacteristic(harness.device, [
+            0x01,
+            reference,
+          ]),
+          throwsA(isA<TransportResponseUnconfirmed>()),
+        );
       }
 
       expect(deviceData.customResponsesDegraded.value, isTrue);
@@ -702,10 +708,13 @@ void main() {
 
       blePlatform.answerCustomRequests = false;
       for (var reference = 1; reference <= 3; reference++) {
-        await deviceData.writeCustomCharacteristic(harness.device, [
-          0x01,
-          reference,
-        ]);
+        await expectLater(
+          deviceData.writeCustomCharacteristic(harness.device, [
+            0x01,
+            reference,
+          ]),
+          throwsA(isA<TransportResponseUnconfirmed>()),
+        );
       }
       expect(deviceData.customResponsesDegraded.value, isTrue);
 
@@ -717,6 +726,33 @@ void main() {
       // ...and the FTMS block it took is released, which is what lets
       // calibration get its notifications back.
       expect(deviceData.isFtmsNotificationsBlocked, isFalse);
+
+      harness.dispose();
+    });
+  });
+
+  group('strict vs. tolerant custom writes', () {
+    // The low-level write must surface an unconfirmed response, and the legacy
+    // writeToSS2k wrapper must be the only thing that swallows it.
+    test('writeToSS2kStrict throws where writeToSS2k absorbs', () async {
+      final harness = await _BleHarness.connect(blePlatform);
+      final deviceData = harness.deviceData;
+      final logChar = deviceData.customCharacteristic.firstWhere(
+        (c) => c['vName'] == BLE_logStreamVname,
+      );
+
+      blePlatform.answerCustomRequests = false;
+
+      await expectLater(
+        deviceData.writeToSS2kStrict(harness.device, logChar, s: '1'),
+        throwsA(isA<TransportResponseUnconfirmed>()),
+      );
+
+      // The tolerant wrapper turns the same fault into a snackbar and returns.
+      await expectLater(
+        deviceData.writeToSS2k(harness.device, logChar, s: '1'),
+        completes,
+      );
 
       harness.dispose();
     });

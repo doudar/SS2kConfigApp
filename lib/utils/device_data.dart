@@ -2622,6 +2622,7 @@ class DeviceData {
     if (this.isSimulated) return;
 
     await blockFtmsNotifications();
+    var unconfirmed = 0;
     try {
       for (var c in this.customCharacteristic) {
         // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
@@ -2649,18 +2650,25 @@ class DeviceData {
             0x01,
             int.parse(c["reference"]),
           ]);
+        } on TransportResponseUnconfirmed {
+          // One unconfirmed read is within jitter. The three-strike breaker
+          // checked at the top of the loop is the arbiter of when to stop.
+          unconfirmed++;
         } catch (e) {
-          Snackbar.show(
-            ABC.c,
-            "Failed to write to SmartSpin2k $e",
-            success: false,
-          );
+          // TransportNotConnected, or anything else fatal to the transport: the
+          // rest of the sweep would only throw identically.
+          print('[transport] settings sweep stopped: $e');
+          break;
         }
       }
     } finally {
       // Always, on every exit path — a sweep that abandoned early must not keep
       // FTMS notifications suspended behind it.
       await unblockFtmsNotifications(device);
+    }
+    // Once at the sweep boundary, with a count — not one line per characteristic.
+    if (unconfirmed > 0) {
+      print('[transport] settings sweep: $unconfirmed reads unconfirmed');
     }
   }
 
@@ -2672,6 +2680,7 @@ class DeviceData {
   ) async {
     if (isSimulated) return;
 
+    var unconfirmed = 0;
     for (final c in customCharacteristic) {
       if (c["isSetting"] != true || c["settingType"] != settingType) {
         continue;
@@ -2686,9 +2695,15 @@ class DeviceData {
           0x01,
           int.parse(c["reference"]),
         ]);
+      } on TransportResponseUnconfirmed {
+        unconfirmed++;
       } catch (e) {
-        Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
+        print('[transport] settings request stopped: $e');
+        break;
       }
+    }
+    if (unconfirmed > 0) {
+      print('[transport] settings request: $unconfirmed reads unconfirmed');
     }
   }
 
@@ -2746,7 +2761,26 @@ class DeviceData {
     return precision;
   }
 
+  /// A legacy UI-feedback wrapper retained for compatibility: it forwards to
+  /// [writeToSS2kStrict] and turns any transport fault into a snackbar. Not a
+  /// principled presentation boundary — a caller that needs to know whether the
+  /// write landed must call [writeToSS2kStrict] and handle
+  /// [TransportNotConnected] / [TransportResponseUnconfirmed] itself.
   Future<void> writeToSS2k(
+    BluetoothDevice device,
+    Map c, {
+    String s = "",
+  }) async {
+    try {
+      await writeToSS2kStrict(device, c, s: s);
+    } catch (e) {
+      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
+    }
+  }
+
+  /// Serialises [c] and writes it to the custom characteristic, propagating
+  /// every transport fault. No UI. See [writeToSS2k] for the tolerant wrapper.
+  Future<void> writeToSS2kStrict(
     BluetoothDevice device,
     Map c, {
     String s = "",
@@ -2852,34 +2886,22 @@ class DeviceData {
           List<int> rowToSend =
               [0x02, int.parse(c["reference"]), rowIndex] + rowValue;
 
-          // Write the data to the device
-          try {
-            await writeCustomCharacteristic(device, rowToSend);
-          } catch (e) {
-            Snackbar.show(
-              ABC.c,
-              "Failed to write to SmartSpin2k $e",
-              success: false,
-            );
-            return;
-          }
+          // Write the data to the device. A failed row propagates: a
+          // half-written power table was never a good outcome.
+          await writeCustomCharacteristic(device, rowToSend);
         }
         break;
 
       default:
       //value = [0xff];
     }
-    try {
-      // A setting the user just changed, or a run enabling its log stream.
-      // Something is waiting on it, unlike the background settings sweep.
-      await writeCustomCharacteristic(
-        device,
-        value,
-        priority: TransportOpPriority.interactive,
-      );
-    } catch (e) {
-      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
-    }
+    // A setting the user just changed, or a run enabling its log stream.
+    // Something is waiting on it, unlike the background settings sweep.
+    await writeCustomCharacteristic(
+      device,
+      value,
+      priority: TransportOpPriority.interactive,
+    );
   }
 
   final List<_PendingTransportOp> _pendingTransportOps = [];
@@ -2928,8 +2950,10 @@ class DeviceData {
     );
   }
 
-  /// Any answered request clears the breaker. Called from [_decodeCustomValue],
-  /// which is the one place a response is positively identified.
+  /// A request that was positively answered clears the breaker. Called from
+  /// [_decodeCustomValue] only when an incoming frame's reference matches the
+  /// in-flight request — never for unsolicited notifications on the same
+  /// characteristic.
   void _recordCustomResponseSuccess() {
     _consecutiveCustomResponseTimeouts = 0;
     if (customResponsesDegraded.value) {
@@ -3088,54 +3112,47 @@ class DeviceData {
       }
 
       final characteristic = await _getMyCharacteristic(device);
-      if (characteristic != null && characteristic.device.isConnected) {
-        // Subscribe before writing so even a very fast server response cannot be
-        // missed. Custom-characteristic writes are kept in the queue until the
-        // response bearing the same characteristic reference arrives.
-        if (!subscribed) {
-          decode(device);
-        }
-        if (!characteristic.isNotifying) {
-          await characteristic.setNotifyValue(true);
-        }
+      if (characteristic == null || !characteristic.device.isConnected) {
+        // The write never left the app. A different fact from an unconfirmed
+        // write, and callers act on the difference — see the sweep in
+        // [requestSettings].
+        throw const TransportNotConnected();
+      }
 
-        final response = Completer<void>();
-        final expectedReference = value.length > 1 ? value[1] : null;
+      // Subscribe before writing so even a very fast server response cannot be
+      // missed. Custom-characteristic writes are kept in the queue until the
+      // response bearing the same characteristic reference arrives.
+      if (!subscribed) {
+        decode(device);
+      }
+      if (!characteristic.isNotifying) {
+        await characteristic.setNotifyValue(true);
+      }
+
+      final response = Completer<void>();
+      final expectedReference = value.length > 1 ? value[1] : null;
+      if (expectedReference != null) {
+        _pendingCustomResponse = response;
+        _pendingCustomResponseReference = expectedReference;
+      }
+
+      try {
+        await characteristic.write(value);
         if (expectedReference != null) {
-          _pendingCustomResponse = response;
-          _pendingCustomResponseReference = expectedReference;
+          await response.future.timeout(_customResponseTimeout);
         }
-
-        try {
-          await characteristic.write(value);
-          if (expectedReference != null) {
-            await response.future.timeout(_customResponseTimeout);
-          }
-        } on TimeoutException {
-          // This is the wait that holds the queue: against a device that has
-          // stopped answering, every request costs the full timeout, and a
-          // forty-entry sweep turns into well over a minute of dead queue.
-          _recordCustomResponseTimeout();
-        } catch (e) {
-          if (!customResponsesDegraded.value) {
-            Snackbar.show(
-              ABC.c,
-              "Failed to write to SmartSpin2k $e",
-              success: false,
-            );
-          }
-        } finally {
-          if (identical(_pendingCustomResponse, response)) {
-            _pendingCustomResponse = null;
-            _pendingCustomResponseReference = null;
-          }
+      } on TimeoutException {
+        // The write went out; no matching response arrived in time. Record the
+        // strike for the three-strike breaker, then surface it — swallowing it
+        // here is what let an unconfirmed calibration write read as success and
+        // a stalled sweep grind through forty full timeouts silently.
+        _recordCustomResponseTimeout();
+        throw const TransportResponseUnconfirmed();
+      } finally {
+        if (identical(_pendingCustomResponse, response)) {
+          _pendingCustomResponse = null;
+          _pendingCustomResponseReference = null;
         }
-      } else {
-        Snackbar.show(
-          ABC.c,
-          "Failed to write to SmartSpin2k - Not Connected",
-          success: false,
-        );
       }
     });
   }
@@ -3275,10 +3292,16 @@ class DeviceData {
             !pendingResponse.isCompleted &&
             value[1] == _pendingCustomResponseReference) {
           pendingResponse.complete();
+          // Reference matching is the strongest correlation this protocol
+          // offers, so only a matched response clears the breaker. An
+          // unsolicited notification — log-stream frames arrive as 0x80 on this
+          // same characteristic — proves the link carries traffic but not that
+          // a *request* was answered. Clearing on those let the calibration log
+          // flood keep _consecutiveCustomResponseTimeouts permanently reset, so
+          // customResponsesDegraded never tripped and the post-fallback sweep
+          // never abandoned early.
+          _recordCustomResponseSuccess();
         }
-        // Any answered request is proof the link is alive, whether or not it is
-        // the one currently being waited on.
-        _recordCustomResponseSuccess();
       }
 
       if (value[0] == 0x80) {

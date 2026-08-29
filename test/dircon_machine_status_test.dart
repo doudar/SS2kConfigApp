@@ -629,6 +629,79 @@ void main() {
       deviceData.dispose();
     });
 
+    // The log stream is the primary progress channel. If its enable cannot be
+    // confirmed and neither FTMS channel is live, nothing could observe the
+    // run — it must fail now, in its own stage, not sit out an eight-minute
+    // timeout. CalibrationStartStage.logStreamEnable used to be unreachable
+    // because writeToSS2k swallowed the failure.
+    test('log-enable failure with no other live channel → failedToStart/logStreamEnable', () async {
+      final session = FakeDirConSession()
+        ..failWritesFor(ccUUID)
+        ..failCharacteristic(ftmsIndoorBikeDataUUID)
+        ..failCharacteristic(_machineStatusUuid)
+        ..failCharacteristic(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(milliseconds: 50),
+      );
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(monitor.phase, CalibrationPhase.failedToStart);
+      expect(monitor.startFailureStage, CalibrationStartStage.logStreamEnable);
+      expect(monitor.startFailure, isNot(contains('accept')));
+      expect(
+        monitor.transcript.map((e) => e.message).join('\n'),
+        contains('log stream enable failed'),
+      );
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // The same failed log enable, but Machine Status is live: the run has an
+    // evidence channel, so it proceeds — and the cleanup disable is still
+    // attempted on the way out even though it too will fail.
+    test('log-enable failure with Machine Status live → run continues, cleanup attempted', () async {
+      final session = FakeDirConSession()..failWritesFor(ccUUID);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(monitor.phase, isNot(CalibrationPhase.failedToStart));
+
+      // The firmware's answer on receipt.
+      session.emitNotification(_machineStatusUuid, [
+        FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+        FTMSSpinDownStatus.SPIN_DOWN_REQUESTED,
+      ]);
+      await _settle();
+      expect(monitor.acknowledged, isTrue);
+
+      // Cleanup runs on teardown; the disable write (0x02 to ref 0x30) is
+      // attempted even though writes to the custom characteristic fail.
+      monitor.dispose();
+      await _settle();
+      expect(
+        session.writesFor(ccUUID).any((w) => w.length >= 2 && w[0] == 0x02 && w[1] == 0x30),
+        isTrue,
+        reason: 'the log-stream disable must still be attempted',
+      );
+
+      deviceData.dispose();
+    });
+
     // A retry after a finished run has to be able to fail. The tracker refuses
     // to move off a terminal phase, so start() resets run state before its
     // first fallible step — otherwise the previous run's verdict would still be
