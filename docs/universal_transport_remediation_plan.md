@@ -1,290 +1,92 @@
 # Universal Transport Remediation Plan
 
-**Status:** In progress — Plans 1 and 2 complete; Plan 3 ready
-**Reviewed:** Codex investigation plus independent Claude Opus plan review  
-**Firmware baseline:** SmartSpin2k `develop` firmware inspected August 2026
+**Status:** Plans 1 and 2 complete; Plan 3 ready
+**Firmware baseline:** SmartSpin2k `develop`, inspected August 2026
 **Progress updated:** August 23, 2026
 
-## 1. Objective
+## Objective
 
-Restore workout ERG control over DIRCON and finish the proven gaps left by the universal-transport migration without turning the work into an app-wide rewrite.
+Complete the proven gaps left by the universal-transport migration without
+turning the work into an app-wide transport abstraction.
 
-The program is complete when:
+The program is complete when workout control, calibration evidence, reconnect
+behavior, and the relevant UI consumers work consistently over BLE and DIRCON,
+while BLE-specific scanning, RSSI, OTA, and GATT recovery remain BLE-specific.
 
-- Workout target-power and simulation commands reach SmartSpin2k over BLE and DIRCON.
-- An active, unchanged ERG target is redelivered after either same-transport reconnect or transport fallback.
-- Calibration receives FTMS Machine Status notifications over BLE and DIRCON.
-- Reconnect-sensitive UI behavior observes transport-neutral state.
-- A stalled connection cannot create an unbounded workout-command backlog.
-- BLE-specific scanning, RSSI, OTA, and GATT recovery remain BLE-specific.
+## Completed work
 
-## 2. Confirmed Current-State Findings
+### Plan 1 — Workout control repair and bounded scheduling
 
-1. `FtmsData.targetERG` invokes callbacks when its value changes, but those callbacks are installed only in the BLE connection-setup path. DIRCON setup never installs them, so workout targets update in the app without reaching SmartSpin2k.
-2. Workout simulation reset checks for a BLE FTMS characteristic and uses the legacy BLE-only writer. It silently does nothing during DIRCON sessions.
-3. DIRCON subscribes to the custom characteristic and FTMS Indoor Bike Data, but not FTMS Machine Status `0x2ADA`. Calibration therefore misses its trusted spin-down/homing status stream.
-4. `transportRevision` changes only around DIRCON attach/detach. It does not represent BLE reconnects, logical connection phase, or same-transport connection generations.
-5. The workout loop runs every 100 ms. Sending or retrying directly from every tick can grow the shared serialized write queue during a stalled transport.
-6. The firmware already supports Set Target Power, Indoor Bike Simulation Parameters, spin-down control, and Machine Status notification forwarding through DIRCON's FTMS service.
+Workout target-power and simulation commands now use transport-neutral FTMS
+encoders and reach either BLE or DIRCON through `DeviceData`. The dedicated
+workout-control lane coalesces rapid requests, bounds queued work, rejects stale
+connection epochs, retries without multiplying timers, and redelivers the
+latest desired target after reconnect or fallback.
 
-## 3. Delivery Structure
+`DeviceTransportState` now represents transport kind, connection phase, and a
+monotonic connected-session epoch. Workout control uses that epoch to prevent
+commands captured for an old session from reaching a new one.
 
-Implement the work as three independently reviewable changes followed by one release gate:
+The ten currently unused BLE-only writers in `FTMSControlPoint` are retained
+intentionally as FTMS specification coverage. They are not evidence of firmware
+support. Before one is used by a universal feature, extract a pure command
+encoder and route it through `DeviceData.writeFtmsControlPointCommand`.
 
-1. **Workout control repair and bounded scheduler — complete**
-2. **DIRCON calibration parity and fakeable session seam — complete**
-3. **Focused transport-state consumer migration**
-4. **Cross-transport validation and release gate**
+### Plan 2 — DIRCON calibration parity
 
-The first change closed the reported workout defect without waiting for the UI migration. Its 39 focused encoder, scheduler, epoch, transport-control, target-clamping, and DIRCON timeout-handling tests pass.
+`DirConSession` and its injectable connector provide deterministic transport
+tests. DIRCON now discovers FTMS Machine Status independently, forwards it to
+the shared machine-status stream, and keeps Machine Status, Indoor Bike Data,
+and Control Point notifications on the same refcounted block lifecycle.
 
-The second change added the injectable session seam, subscribed DIRCON to FTMS Machine Status, and converted the previously untested transport-selection code into 16 passing tests.
+Calibration waits for bounded notification readiness, records readiness and
+Machine Status evidence, and retains its log and characteristic fallbacks.
+Optional-characteristic discovery distinguishes a missing characteristic from
+a dead DIRCON session so transport failure can fall back to BLE.
 
-## 4. Plan 1 — Workout Control Repair (Complete)
+Focused tests cover BLE/DIRCON command parity, pre-bootstrap DIRCON control,
+notification lifecycle and races, fallback behavior, calibration dispatch, and
+transport failure classification.
 
-Completed on the `universal-transport-workouts` branch. Follow-up review fixes cover transport-state transitions, Wi-Fi/BLE handoff behavior, DIRCON timeout handling, ERG keep-alive behavior, and target clamping. The unused BLE-only FTMS instance writers are retained as FTMS specification coverage for potential future use; they are not a Plan 1 completion blocker or a Plan 2 prerequisite.
+One known correctness defect remains outside these completed plans: a timed-out
+DIRCON→BLE setup can continue mutating state after its caller abandons it. It is
+tracked in [fallback_setup_cancellation_todo.md](fallback_setup_cancellation_todo.md).
 
-Sections 4.1–4.4 retain the delivered design requirements as an implementation record.
-
-### 4.1 FTMS command encoding (Delivered)
-
-Add pure encoders to `FTMSControlPoint`:
-
-```dart
-static Uint8List targetPowerCommand(int watts);
-
-static Uint8List indoorBikeSimulationCommand({
-  required double windSpeed,
-  required double grade,
-  required double crr,
-  required double cw,
-});
-```
-
-The encoders own FTMS opcode, scaling, signed-value, and little-endian rules. Replace the existing target-power and simulation BLE writers used by workouts. Retain the other currently unused FTMS methods as specification coverage for potential future features.
-
-Remove `DeviceData.writeFtmsControlPoint` after its workout call sites are migrated. Keep `writeFtmsControlPointCommand` for general already-encoded universal FTMS operations such as calibration.
-
-### 4.2 Explicit workout-control API (Delivered)
-
-Make `FtmsData.targetERG` passive model/display state. Remove `onTargetPowerChanged` and `onModeChanged` transport side effects.
-
-Add these fire-and-coalesce APIs to `DeviceData`:
-
-```dart
-void setWorkoutTargetPower(int watts, {bool force = false});
-void resetWorkoutSimulation();
-```
-
-Behavior:
-
-- `setWorkoutTargetPower` updates `ftmsData.targetERG` synchronously.
-- A positive target schedules one Set Target Power command.
-- A zero target schedules one command batch containing Set Target Power `0 W`, then zero-grade Indoor Bike Simulation.
-- `resetWorkoutSimulation` supersedes pending workout targets with a zero-grade simulation command.
-- Play and resume call `setWorkoutTargetPower(..., force: true)` immediately.
-- Normal workout ticks call it without `force`; unchanged, successfully delivered targets are ignored.
-- Ramp calculations may request targets every 100 ms, but only the newest pending rounded watt value is retained.
-- Load and workout completion call `resetWorkoutSimulation` through the universal path.
-
-### 4.3 Bounded control scheduler (Delivered)
-
-Use a dedicated workout-control lane inside `DeviceData`, still sharing the existing low-level serialized transport queue.
-
-The scheduler must enforce:
-
-- At most one workout-control batch is queued or in flight.
-- At most one additional batch is pending; a newer request replaces it.
-- Repeating the same pending target does not create another batch.
-- Every batch captures a monotonically increasing request generation and the current connection epoch.
-- Generation and epoch are checked inside the serialized operation immediately before each physical write.
-- A stale batch completes without writing and without updating delivery state.
-- Only a successful write for the current generation and epoch updates the last-delivered target.
-- A failure while still connected creates exactly one retry timer with a one-second delay.
-- A newer target replaces the retry payload. No additional retry timer is created.
-- A disconnect cancels the retry timer but retains only the newest desired workout state.
-- Reconnection drains that newest state; it never replays the historical queue.
-
-If a new target arrives after the first command of a zero-target batch, re-check the generation before sending the simulation command. This prevents a stale mode switch after a newer ERG target has superseded it.
-
-### 4.4 Connection epoch foundation (Delivered)
-
-Introduce the state model required for safe delivery:
-
-```dart
-enum DeviceTransportKind { none, bluetooth, dircon }
-
-enum DeviceTransportPhase {
-  disconnected,
-  connecting,
-  connected,
-  reconnecting,
-}
-
-@immutable
-class DeviceTransportState {
-  final DeviceTransportKind transport;
-  final DeviceTransportPhase phase;
-  final int epoch;
-}
-```
-
-Expose it from `DeviceData` as a `ValueListenable<DeviceTransportState>`. Initialize the epoch to zero.
-
-Centralize transitions in idempotent private methods rather than assigning connection fields at individual call sites:
-
-- A newly established BLE or DIRCON physical session changes phase to `connected` and increments the epoch exactly once.
-- A same-transport reconnect increments the epoch.
-- DIRCON-to-BLE fallback and BLE-to-DIRCON promotion increment the epoch.
-- Disconnecting or entering `reconnecting` does not increment it.
-- Explicit user disconnect produces `transport: none, phase: disconnected`.
-- While reconnecting, retain the last or currently attempted transport for diagnostics.
-- Derive `isTransportActive`, `isDirConConnected`, and `activeTransportName` from this state.
-
-The workout controller observes connected epoch changes. If a workout is playing, it force-requests the current target. Its next normal tick remains a fallback, and scheduler deduplication guarantees exactly one delivery.
-
-## 5. Plan 2 — DIRCON Calibration Parity (Complete)
-
-Delivered on the `dircon-calibration-parity` branch, rebased onto `develop` after Plan 1 merged. `DirConSession` and `DirConConnector` live in `lib/utils/dircon_client.dart`; `DeviceData` takes the connector through its constructor and defaults to `DirConClient.connect`. DIRCON now subscribes to FTMS Machine Status `0x2ADA` independently of Indoor Bike Data, and both transports publish through one disposal-guarded `_forwardMachineStatus`.
-
-One requirement was tightened during implementation: the subscription is created **before** notifications are enabled. `characteristicNotifications` filters a broadcast stream with no replay, so enabling first would drop any frame the device emitted while the enable request was still in flight. A test pins that ordering and fails if it is reversed.
-
-**Interaction with the FTMS notification blocker.** `develop` gained a refcounted pair — now `blockFtmsNotifications` / `unblockFtmsNotifications` — that suppresses FTMS notifications during OTA, the settings bootstrap, and a ten-second post-connection window.
-
-An earlier revision of this plan exempted Machine Status from that block, on the reasoning that the block exists to throttle high-rate Indoor Bike Data telemetry while Machine Status is a handful of event-driven frames per run. **Review reversed that exemption and it is no longer in force.** A second stream outside the block is a second thing that can be live while the transport is meant to be quiet, and the exemption also left Machine Status on a lifecycle of its own — subscribed inside BLE service discovery, never torn down by a block, never re-established by an unblock.
-
-Both characteristics now share one lifecycle on both transports:
-
-- Connection setup discovers both but subscribes neither while a block is held.
-- `blockFtmsNotifications` cancels all four subscriptions (two characteristics × two transports) and disables both on the wire. Over DIRCON that means an actual `setNotifications(uuid, false)` through the new `DirConSession` method; previously the DIRCON block only cancelled the local listener while the device kept notifying into the socket.
-- The outermost `unblockFtmsNotifications` re-establishes both independently.
-- Every cancellation and wire operation is individually guarded — both methods run `unawaited` from the post-connection timer and must not complete with an error.
-- Both transports listen before enabling, and an enable superseded by a new block **undoes itself** rather than merely declining to publish. Returning early would leave a characteristic notifying with nothing listening, because a block that saw nothing enabled scheduled no disable for it.
-
-What the exemption used to buy is now provided explicitly: calibration waits on `DeviceData.awaitFtmsNotificationsReady`, which reports `ready`, `timedOut`, `unavailable`, or `disposed`. Readiness means a published listener plus a successful wire-level enable on the current session — not merely that the refcount reached zero. The wait is bounded (15 s by default) and never releases a block owned by settings or OTA; on a non-ready outcome the run proceeds on the log and `hMax` paths and the verdict is recorded in the calibration report.
-
-**Failure classification during optional setup.** Review found that the helper's catch block treated every failure as "firmware does not expose this characteristic", including a response timeout or socket error. Because `DirConClient` invalidates itself on those, `DeviceData` could be left reporting DIRCON/connected over a closed session — and since `startConnectionMonitor` short-circuits on `isDirConConnected`, that also suppressed the BLE reconnect path. Three changes close it, each with its own regression test:
-
-- The `disconnected` listener is registered immediately after the session is assigned, before any optional discovery. It is a broadcast stream with no replay, so a failure raised mid-discovery previously fired into a stream nobody was listening to yet.
-- The helper rethrows when `session.isConnected` is false. Liveness rather than exception type is the discriminator: `DirConClient` raises a bare `StateError` both for a genuinely absent characteristic and for protocol-level request failures, while every transport-fatal path invalidates the session first. This also covers invalidations that publish nothing — `close()` never emits, and `_closeWithError` is one-shot via `_disconnectEmitted`.
-- FTMS subscriptions are held in locals and only assigned after a staleness check, so a teardown that ran during discovery cannot be overwritten with live subscriptions on a dead session. During the initial connect `connectPreferred` owns the fallback, so `_handleDirConDisconnect` now defers to it via `_initialConnectionInProgress` rather than racing a second BLE connect — the same guard `startConnectionMonitor` already uses.
-
-Sections 5.1–5.2 retain the delivered design requirements as an implementation record.
-
-### 5.0 Resolved precondition — FTMS specification methods
-
-The project maintainer confirmed that the ten currently unused FTMS methods documented in `docs/ftms_control_point_cleanup_todo.md` should remain because they cover operations from the FTMS specification that may be needed later. Their retention is API/specification coverage, not evidence that every method has been exercised against firmware, and it does not block Plan 2. Any future use must be reviewed for universal-transport compatibility: new workout or DIRCON-capable control paths must not call a BLE-only writer directly, while a deliberately BLE-only feature may use an existing writer when that transport restriction is explicit and tested.
-
-### 5.1 Fakeable DIRCON session
-
-Define a narrow `DirConSession` interface containing only the operations `DeviceData` uses:
-
-- connection status and disconnect stream;
-- initialization and characteristic discovery/enablement;
-- characteristic writes;
-- characteristic notification streams;
-- close.
-
-`DirConClient` implements the interface. Inject a connector into `DeviceData`, defaulting to the production `DirConClient.connect`, so tests can provide a deterministic fake session. Do not generalize BLE behind this interface.
-
-### 5.2 Machine Status subscription
-
-During DIRCON connection setup:
-
-1. Discover FTMS Machine Status `0x2ADA` independently of Indoor Bike Data.
-2. Leave enablement to the FTMS notification block lifecycle rather than to discovery, so the two characteristics come up and go down together.
-3. Forward notification payloads to the existing `machineStatusStream`.
-4. Track the subscription separately from custom and Indoor Bike Data subscriptions.
-5. Cancel it on disconnect, fallback, reconnect, and disposal.
-
-Failures are isolated:
-
-- Missing Machine Status does not disable configuration or Indoor Bike Data.
-- Missing Indoor Bike Data does not prevent Machine Status setup.
-- Calibration retains its existing fallback behavior for firmware variants without Machine Status.
-
-DIRCON FTMS control must remain usable before the general settings bootstrap marks `_dirConSetupComplete`; settings initialization is not a gate for target-power writes.
-
-## 6. Plan 3 — Focused State-Consumer Migration
+## Plan 3 — Focused state-consumer migration
 
 Migrate only consumers with demonstrated transport-neutral behavior:
 
-- **Device header:** render connection phase, active transport, and signal presentation from `DeviceTransportState`. RSSI remains BLE-only.
-- **Shifter:** on each new connected epoch, invalidate optimistic writes and request the authoritative shifter position exactly once, regardless of BLE, DIRCON, or fallback.
-- **Log screen:** react to disconnect/reconnect for either transport while preserving the user's intent to stream logs. Re-enable once after a new connected epoch.
-- **Workout screen:** remove its raw BLE listener when the listener only triggers `setState`; workout/controller notifiers remain authoritative.
-- **Settings screen:** remove its raw BLE rebuild listener; characteristic and readiness notifiers remain authoritative.
-- **Power-table screen:** delete the no-op BLE connection listener rather than migrating it.
+- **Device header:** render connection phase and active transport from
+  `DeviceTransportState`; keep RSSI BLE-only.
+- **Shifter:** on each new connected epoch, invalidate optimistic writes and
+  request the authoritative shifter position exactly once.
+- **Log screen:** preserve the user's intent to stream logs across either
+  transport and re-enable exactly once after a new connected epoch.
+- **Workout screen:** remove the raw BLE listener used only to trigger rebuilds;
+  keep workout/controller notifiers authoritative.
+- **Settings screen:** remove the raw BLE rebuild listener; keep characteristic
+  and readiness notifiers authoritative.
+- **Power-table screen:** delete the no-op BLE connection listener.
 
-Do not migrate these deliberately BLE-specific areas:
+Do not migrate deliberately BLE-specific behavior:
 
 - scanning and scan-result connection display;
 - BLE RSSI;
-- BLE OTA progress/disconnect handling;
+- BLE OTA progress and disconnect handling;
 - GATT characteristic and CCCD health recovery.
 
-## 7. Test Plan
-
-Plan 1's focused encoder, scheduler, epoch, transport-control, target-clamping, and DIRCON timeout-handling suites pass.
-
-Plan 2 closed the transport-selection test debt in `test/dircon_machine_status_test.dart`, `test/dircon_transport_dispatch_test.dart`, and `test/ftms_control_point_transport_parity_test.dart`, backed by the fake in `test/support/fake_dircon_session.dart`. BLE/DIRCON command parity is proven against a real `BluetoothCharacteristic.write()` driven by a fake `FlutterBluePlusPlatform`; that fake binds to the isolate permanently, so it must stay in its own test file.
-
-One item is pinned by outcome rather than by exception: `requestSettings` catches every write failure individually, so no current code path lets `setupConnection` throw over a live link. The test asserts what the `connectPreferred` guard exists to protect — a wholly failed bootstrap leaves the DIRCON transport connected and still able to carry FTMS control — and says so in place.
-
-Remaining before the release gate: §7.4's shifter/log per-epoch reinitialization and screen-listener items belong to Plan 3, and §7.5's hardware matrix to Plan 4.
-
-### 7.1 Encoding tests
-
-- Target-power opcode and signed little-endian encoding, including zero and boundary values.
-- Indoor Bike Simulation opcode, field order, scaling, signed fields, and zero reset.
-
-### 7.2 Workout scheduler tests
-
-- BLE and DIRCON receive identical encoded target commands.
-- A steady target produces one successful write per epoch.
-- `force: true` redelivers an unchanged target.
-- An epoch bump redelivers the same numeric target exactly once.
-- Rapid ramp requests retain only the newest pending target.
-- A blocked writer never produces more than one in-flight and one pending batch.
-- A failure schedules one delayed retry rather than one retry per workout tick.
-- Newer targets replace the retry payload.
-- Disconnect followed by reconnect sends only the latest desired target.
-- A command captured before reconnect is rejected inside the serialized operation.
-- A zero-target batch does not send its simulation command after being superseded.
-- Reset supersedes pending target commands.
-- Target power can be delivered while DIRCON settings bootstrap is incomplete.
-
-### 7.3 Calibration tests
-
-- DIRCON discovers and enables Machine Status notifications.
-- Machine Status payloads reach `machineStatusStream` and the calibration tracker.
-- Indoor Bike Data and Machine Status setup failures are independent.
-- Disconnect, fallback, reconnect, and disposal cancel the correct subscription.
-- Firmware without Machine Status continues through existing fallback behavior.
-
-Shared-lifecycle cases, on both transports:
-
-- Neither stream has a listener or enabled notifications while the refcount is positive.
-- Only the outermost unblock releases them, and it attempts both independently.
-- Re-blocking cancels both listeners and leaves both *currently* disabled on the wire — asserted against current state, not against "was ever enabled", which cannot detect an enable that leaked past a block.
-- An enable superseded by a new block undoes itself.
-- One absent characteristic does not prevent the other from working.
-- A dead transport aborts the resubscribe pass rather than being read as characteristic absence; nothing stays attached to the abandoned session.
-- Calibration withholds its homing command until readiness resolves, then receives `0x2ADA`.
-- Each non-ready readiness outcome still starts the run and is named in the report.
-
-The BLE half of these lives in `test/ftms_control_point_transport_parity_test.dart`, because a real `BluetoothCharacteristic` needs the platform fake that file installs, and that fake binds to the isolate permanently. Its `setNotifyValue` override returns `false` for "no CCCD", which is the branch where `flutter_blue_plus` skips waiting for an `OnDescriptorWritten` event; it also has to override `onDescriptorWritten` with a controller that never closes, since `setNotifyValue` takes `.first` on that stream before it learns whether a CCCD exists.
-
-### 7.4 Transport-state tests
+### Plan 3 tests
 
 - Initial BLE and DIRCON connections each create one epoch.
-- Same-transport reconnect creates one new epoch.
-- DIRCON-to-BLE fallback and BLE-to-DIRCON promotion create one new epoch.
-- Reconnecting phase changes do not themselves increment the epoch.
-- Shifter and log reinitialize exactly once per new epoch.
-- Removed screen listeners do not regress characteristic-driven updates.
+- Same-transport reconnect, DIRCON→BLE fallback, and BLE→DIRCON promotion each
+  create exactly one new epoch.
+- Entering `reconnecting` does not itself increment the epoch.
+- Shifter and log reinitialize exactly once per new connected epoch.
+- Removing raw BLE screen listeners does not regress notifier- or
+  characteristic-driven updates.
+- No non-BLE-specific screen relies on raw BLE events for reconnect behavior.
 
-### 7.5 Hardware acceptance matrix
+## Plan 4 — Cross-transport release gate
 
 Validate on SmartSpin2k hardware:
 
@@ -293,40 +95,47 @@ Validate on SmartSpin2k hardware:
 3. Ramp workout on both transports.
 4. Zero-watt/free-ride transition on both transports.
 5. Same-transport reconnect during an unchanged steady target.
-6. DIRCON-to-BLE fallback during an interval.
+6. DIRCON→BLE fallback during an interval.
 7. Stalled DIRCON recovery without delayed-target flooding.
 8. Calibration homing with FTMS Machine Status over DIRCON.
 
-**Item 8 needs positive evidence, not a green result.** Calibration tracks homing from three redundant sources — the device log over `ccUUID`, `hMax`/`hMin` characteristic changes, and Machine Status `0x2ADA` — so a run that completes over DIRCON does not show which one carried it. That redundancy is why the missing subscription went unnoticed in the first place.
+Item 8 requires positive evidence, not merely a successful calibration. The
+calibration report must identify DIRCON and list received `0x2ADA` frames,
+because log and `hMax`/`hMin` evidence can otherwise mask a missing Machine
+Status subscription.
 
-The calibration screen's **Copy Log** button is the artefact. Its report names the transport and lists every `0x2ADA` frame the run received, decoded and stamped; when none arrived it says so explicitly rather than omitting the section. On the firmware side `DirConManager::notifyCharacteristic` defaults to `onlySubscribers`, so a DIRCON run reporting no frames means the subscription never took and the log path did all the work.
+Also verify the shared notification block on hardware:
 
-Two further checks belong with it, both covering the reversal of the exemption recorded in §5. Their expectation is the opposite of what it was while the exemption stood — Machine Status no longer keeps flowing through a block, it waits with Indoor Bike Data:
+- Starting calibration during a settings refresh waits for the block to clear,
+  reports `readiness: ready`, and then records `0x2ADA` frames.
+- Starting calibration during the post-connection block behaves the same way.
+- Opening and leaving the firmware-update screen releases its block so a later
+  calibration readiness wait resolves.
 
-- Start a calibration during a settings refresh. `requestSettings` holds the block for the whole poll, so both streams go quiet; the run must show "getting ready", start once the poll finishes, and report `readiness: ready` with `0x2ADA` frames listed.
-- Start one inside the ten-second post-connection block, with the same expectation.
+At the release gate, run the complete Flutter test suite and static analysis.
+Record failures reproducible on the untouched baseline separately; no new
+failure is acceptable.
 
-A third confirms the wait is bounded rather than open-ended: open the firmware update screen, back out without updating, then calibrate. That proves the OTA block is released and readiness resolves rather than sitting until the timeout.
+## Non-goals
 
-For the transport-failure classification, `DIRCON_MAX_CLIENTS` is 3 and the firmware handles exhaustion by accepting the socket and immediately stopping it. Occupying all three slots and then connecting the app exercises the fallback, though which `await` the failure lands on is timing-dependent. The `DirConConnector` seam is the precise instrument: a debug-only connector that delegates to `DirConClient` and kills the session on the `0x2ADA` `ensureCharacteristic` call hits the exact branch.
+- Do not invent custom-characteristic substitutes for FTMS control or Machine
+  Status.
+- Do not change firmware unless hardware results contradict the inspected
+  behavior.
+- Do not abstract every BLE operation or migrate scanning, RSSI, OTA, or GATT
+  recovery to a universal transport layer.
+- Do not redesign unrelated screens or change workout timing/export behavior.
+- Factory reset remains an intentional BLE recovery path because it removes
+  Wi-Fi configuration and therefore DIRCON availability.
 
-Run focused tests after each child plan. At the final gate, run the complete Flutter test suite and static analysis. Record any failure reproducible on the untouched baseline separately; no new failure is acceptable.
+## Completion criteria
 
-## 8. Firmware Compatibility and Non-Goals
-
-- Use the FTMS service exposed through DIRCON. Do not invent custom-characteristic substitutes for target power, simulation, or Machine Status.
-- No firmware change is planned unless hardware results contradict the inspected firmware behavior.
-- Factory reset is not a migration defect: it erases Wi-Fi configuration, removes DIRCON availability, and therefore intentionally recovers through BLE.
-- This program does not abstract all BLE operations, redesign every screen, change workout timing/export behavior, or modify OTA transport policy.
-
-## 9. Completion Criteria
-
-The program is finished only when:
-
-- All four delivery stages have passed their stated tests.
-- Both transports pass the hardware workout matrix.
-- Calibration completes using DIRCON Machine Status.
+- Plan 3 tests pass and relevant UI consumers no longer depend on raw BLE
+  reconnect events.
+- Both transports pass the workout hardware matrix.
+- Calibration reports positive DIRCON Machine Status evidence.
 - Same-target reconnect and transport fallback have explicit passing evidence.
-- Queue-bound tests demonstrate that a stalled transport cannot accumulate workout commands.
-- No remaining non-BLE-specific screen relies on raw BLE connection events for reconnect behavior.
-- The full test and analysis gates introduce no new failures.
+- Queue-bound tests continue proving a stalled transport cannot accumulate
+  workout commands.
+- The complete Flutter test suite and static analysis introduce no new
+  failures.

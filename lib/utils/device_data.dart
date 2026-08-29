@@ -1304,10 +1304,6 @@ class DeviceData {
   /// Scoped to the fallback's own epoch. A later reconnect publishes a new
   /// epoch, and this stops claiming anything about it.
   ///
-  // TODO(dircon-calibration-parity): corroborate the half-open-socket cause
-  // before naming it — a failed-CCCD probe or a transport-epoch change would
-  // let callers distinguish it from a genuinely wedged firmware. Tracked in
-  // docs/fallback_setup_cancellation_todo.md.
   bool get isDirConFallbackSilent =>
       _dirConFallbackEpoch != null &&
       _dirConFallbackEpoch == _transportStateController.value.epoch &&

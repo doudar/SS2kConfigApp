@@ -1371,11 +1371,6 @@ class CalibrationMonitor extends ChangeNotifier {
       // let a delayed Control Point response, 0x2ADA frame or homing log line
       // from a *previous* run acknowledge this one while it was still queued
       // behind other transport work.
-      //
-      // TODO(dircon-calibration-parity): a fuller dispatch receipt — transport
-      // epoch + timestamp correlated to a run generation — so a frame from an
-      // earlier transport epoch cannot acknowledge this run even after
-      // dispatch. See docs/fallback_setup_cancellation_todo.md.
       onDispatch: () {
         _tracker.markRequestSent();
         _dispatchedAt = DateTime.now();
