@@ -885,6 +885,100 @@ void main() {
       deviceData.dispose();
     });
   });
+
+  // `_note` writes `[app]` lines into the same transcript the device log fills.
+  // Two checks used to read a non-empty transcript as proof the *device* spoke:
+  // `ackChannelsLive` and the log-silence timer. On every real run `_startRun`
+  // writes a readiness note before those checks arm, so the transcript is
+  // already non-empty and both were effectively hard-wired. Evidence now comes
+  // from `_deviceLogSeen`, set only by a real device log line.
+  group('app transcript notes are not device evidence', () {
+    // No FTMS characteristic subscribes and no device log line arrives, yet the
+    // readiness note has already populated the transcript.
+    test(
+      'dead channels + no device log → logStreamSilent, ackChannelsLive false '
+      'despite app notes',
+      () async {
+        final session = FakeDirConSession()
+          ..failCharacteristic(ftmsIndoorBikeDataUUID)
+          ..failCharacteristic(_machineStatusUuid)
+          ..failCharacteristic(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID);
+        final connector = FakeDirConConnector([session]);
+        final deviceData = await _connect(connector, device);
+        final monitor = CalibrationMonitor(
+          deviceData: deviceData,
+          device: device,
+          notificationsReadyTimeout: const Duration(milliseconds: 50),
+          logSilenceTimeout: const Duration(milliseconds: 80),
+        );
+
+        final started = monitor.start();
+        await _settle();
+        await deviceData.unblockFtmsNotifications(device);
+        await started;
+
+        // The app narrated its own progress...
+        expect(monitor.transcript, isNotEmpty);
+        // ...but no channel could have carried an acknowledgement.
+        expect(monitor.notificationsReadiness, isNot(FtmsNotificationsReadiness.ready));
+        expect(deviceData.controlPointNotificationsLive, isFalse);
+        expect(monitor.ackChannelsLive, isFalse);
+
+        await _until(() => monitor.logStreamSilent, 'log silence should latch');
+
+        monitor.dispose();
+        deviceData.dispose();
+      },
+    );
+
+    // A retry begins by resetting run state. `_deviceLogSeen` must be part of
+    // that reset — a device that fell silent on the second run must read as
+    // silent, not inherit the first run's log line.
+    test('_deviceLogSeen does not survive into a retry run', () async {
+      final session = FakeDirConSession()
+        ..failCharacteristic(ftmsIndoorBikeDataUUID)
+        ..failCharacteristic(_machineStatusUuid)
+        ..failCharacteristic(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(milliseconds: 50),
+        logSilenceTimeout: const Duration(milliseconds: 80),
+      );
+
+      final firstRun = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await firstRun;
+
+      // A real device log line on the custom characteristic (ref 0x30).
+      session.emitNotification(ccUUID, [
+        0x80,
+        0x30,
+        ...'(Main) homing tap 1'.codeUnits,
+      ]);
+      await _until(() => monitor.ackChannelsLive, 'a device log line is evidence');
+      expect(monitor.logStreamSilent, isFalse);
+
+      // Retry. Nothing comes back this time. No FTMS block is outstanding, so
+      // the readiness wait resolves on its own bounded timeout.
+      final retry = monitor.start();
+      await _settle();
+      await retry;
+
+      expect(
+        monitor.ackChannelsLive,
+        isFalse,
+        reason: 'the retry must not inherit the previous run\'s log evidence',
+      );
+      await _until(() => monitor.logStreamSilent, 'silence latches on the retry');
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+  });
 }
 
 Future<DeviceData> _connect(

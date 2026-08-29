@@ -236,7 +236,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           acknowledgedAfter: _monitor.acknowledgedAfter,
           ackChannelsLive: _monitor.ackChannelsLive,
           ackSource: _monitor.ackSource,
-          transportStalled: _monitor.transportStalled,
+          fallbackFtmsSilent: _monitor.transportStalled,
           startFailure: _monitor.startFailure,
           transport: deviceData.activeTransportName,
           phase: _monitor.phase,
@@ -641,7 +641,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         // and cannot claim the device did anything.
         return _monitor.ackChannelsLive ? 'The SmartSpin2k did not respond' : 'Couldn\'t confirm calibration started';
       case CalibrationPhase.failedTransportStalled:
-        return 'Restart your SmartSpin2k';
+        return 'The SmartSpin2k stopped responding';
       case CalibrationPhase.failedNeverStarted:
         return 'The SmartSpin2k never started homing';
       case CalibrationPhase.failedAborted:
@@ -668,9 +668,13 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             : 'The command was sent, but nothing came back on any channel, so there is no '
                   'way to tell whether the SmartSpin2k started. Reconnect and try again.';
       case CalibrationPhase.failedTransportStalled:
-        // handling of wifi connectivity loss.
-        return 'Your SmartSpin2k lost its Wi-Fi connection and has stopped responding. '
-            'Turn it off and back on, then try again.';
+        // Observational: no FTMS data has arrived since the connection fell back
+        // to Bluetooth. A half-open Wi-Fi socket is the most common cause, but
+        // the app cannot confirm it from the outside — so recommend the restart
+        // as the first recovery step rather than asserting the cause.
+        return 'No calibration data has come back since the connection dropped '
+            'to Bluetooth. Turn the SmartSpin2k off and back on, then try again. '
+            'If it keeps happening, check its Wi-Fi.';
       case CalibrationPhase.failedNeverStarted:
         return 'The SmartSpin2k accepted the calibration command but never began homing. '
             'It waits to see a couple of seconds of steady pedaling first, and it can only '

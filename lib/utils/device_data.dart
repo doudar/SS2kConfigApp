@@ -1221,19 +1221,28 @@ class DeviceData {
   /// True when this session fell back from DIRCON to BLE and the BLE transport
   /// it brought up has never delivered a single FTMS frame.
   ///
-  /// That combination is the app-visible signature of a SmartSpin2k wedged on a
-  /// half-open DirCon socket: pulling Wi-Fi sends no FIN, so the device still
-  /// believes its TCP client is there and blocks its main loop writing to it.
-  /// Everything on the synchronous custom-characteristic path keeps working —
-  /// settings, shifting, the log stream — while every FTMS write sits unread in
-  /// the firmware's cache and no Indoor Bike Data or Machine Status comes back.
+  /// This is an *observation*, not a diagnosis. No FTMS Indoor Bike Data or
+  /// Machine Status has arrived since the fallback, even though the synchronous
+  /// custom-characteristic path (settings, shifting, the log stream) is working.
+  /// The most common cause is a SmartSpin2k wedged on a half-open DirCon socket:
+  /// pulling Wi-Fi sends no FIN, so the device still believes its TCP client is
+  /// there and blocks its main loop writing to it. But the same signature is
+  /// also produced by failed CCCD setup, a missing Indoor Bike Data
+  /// characteristic, or an abandoned setup continuation — the app cannot tell
+  /// them apart from the outside.
   ///
-  /// Nothing the app can send repairs this, so a flow that would otherwise
-  /// offer a retry should say so instead. The device has to drop the stale
-  /// socket first: restart it, or restore Wi-Fi so the connection is reaped.
+  /// For the half-open-socket case, restarting the SmartSpin2k or restoring
+  /// Wi-Fi is what clears it. A flow that would otherwise offer a bare retry
+  /// should surface the observation and recommend the restart as the first
+  /// recovery step.
   ///
   /// Scoped to the fallback's own epoch. A later reconnect publishes a new
   /// epoch, and this stops claiming anything about it.
+  ///
+  // TODO(dircon-calibration-parity): corroborate the half-open-socket cause
+  // before naming it — a failed-CCCD probe or a transport-epoch change would
+  // let callers distinguish it from a genuinely wedged firmware. Tracked in
+  // docs/fallback_setup_cancellation_todo.md.
   bool get isDirConFallbackSilent =>
       _dirConFallbackEpoch != null &&
       _dirConFallbackEpoch == _transportStateController.value.epoch &&

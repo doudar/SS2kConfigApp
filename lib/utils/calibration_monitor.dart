@@ -868,7 +868,7 @@ String buildCalibrationReport({
   Duration? acknowledgedAfter,
   bool ackChannelsLive = false,
   CalibrationAckSource? ackSource,
-  bool transportStalled = false,
+  bool fallbackFtmsSilent = false,
   String? startFailure,
   String? transport,
   String? firmwareVersion,
@@ -913,12 +913,12 @@ String buildCalibrationReport({
       '  ackChannelsLive: $ackChannelsLive',
     );
 
-  // Only when true, and only ever set on a run that ended in silence: it names
-  // the one cause of that silence the app can identify from the outside.
-  if (transportStalled) {
+  // Only ever set on a run that ended in silence: no FTMS frame has arrived
+  // since the DIRCON->BLE fallback. That is an observation, not a diagnosis —
+  // the most common cause is a half-open socket, but not the only one.
+  if (fallbackFtmsSilent) {
     buffer.writeln(
-      'transportStalled: true (no FTMS frame since the DIRCON->BLE fallback; '
-      'device wedged on the dropped connection)',
+      'fallbackFtmsSilent: true (no FTMS frame since the DIRCON->BLE fallback)',
     );
   }
 
@@ -1060,6 +1060,12 @@ class CalibrationMonitor extends ChangeNotifier {
 
   bool _showPedalHint = false;
   bool _logStreamSilent = false;
+
+  /// Set only when the *device* log stream carries a real line — never by
+  /// [_note], which writes app-authored `[app]` lines into the same transcript.
+  /// A non-empty [_transcript] is not proof the device spoke; this is. Reset in
+  /// [start] so a retry cannot inherit the previous run's evidence.
+  bool _deviceLogSeen = false;
   bool _disposed = false;
   bool _refreshSent = false;
   bool _logStreamingStarted = false;
@@ -1084,7 +1090,7 @@ class CalibrationMonitor extends ChangeNotifier {
   bool get ackChannelsLive =>
       _notificationsReadiness == FtmsNotificationsReadiness.ready ||
       deviceData.controlPointNotificationsLive ||
-      _transcript.isNotEmpty;
+      _deviceLogSeen;
 
   /// A short, user-facing reason this run could not be started, or null. The
   /// underlying exception goes to the transcript and report, never here.
@@ -1193,6 +1199,7 @@ class CalibrationMonitor extends ChangeNotifier {
     _runStartedAt = DateTime.now();
     _showPedalHint = false;
     _logStreamSilent = false;
+    _deviceLogSeen = false;
     _refreshSent = false;
     _logDisableSent = false;
     _awaitingNotifications = false;
@@ -1329,7 +1336,7 @@ class CalibrationMonitor extends ChangeNotifier {
       _safeNotify();
     });
     _logSilenceTimer = Timer(logSilenceTimeout, () {
-      if (_transcript.isNotEmpty) return;
+      if (_deviceLogSeen) return;
       _logStreamSilent = true;
       _safeNotify();
     });
@@ -1445,8 +1452,7 @@ class CalibrationMonitor extends ChangeNotifier {
       _note(
         _transportStalled
             ? 'no acknowledgement within ${logSilenceTimeout.inSeconds}s; '
-                  'no FTMS frame has arrived since the DIRCON fallback, so the '
-                  'device is wedged on the dropped connection'
+                  'no FTMS frame has arrived since the DIRCON->BLE fallback'
             : 'no acknowledgement within ${logSilenceTimeout.inSeconds}s '
                   '(${ackChannelsLive ? 'an evidence channel was live' : 'no evidence channel was live'})',
       );
@@ -1484,7 +1490,9 @@ class CalibrationMonitor extends ChangeNotifier {
   void _handleLogMessage(String message) {
     if (message.isEmpty || message == "1") return;
 
-    // The device is talking after all.
+    // The device is talking after all. The only place this is set: an [_note]
+    // line in the transcript is the app narrating itself, not evidence.
+    _deviceLogSeen = true;
     _logSilenceTimer?.cancel();
     _logSilenceTimer = null;
     _logStreamSilent = false;

@@ -1067,7 +1067,7 @@ void main() {
       int droppedStatusFrames = 0,
       FtmsNotificationsReadiness machineStatusReadiness =
           FtmsNotificationsReadiness.ready,
-      bool transportStalled = false,
+      bool fallbackFtmsSilent = false,
       String? transport = 'Bluetooth',
       String? firmwareVersion = '24.1.3',
       String? bikeType = 'Most spin bikes',
@@ -1080,7 +1080,7 @@ void main() {
       machineStatus: machineStatus ?? const [],
       droppedStatusFrames: droppedStatusFrames,
       machineStatusReadiness: machineStatusReadiness,
-      transportStalled: transportStalled,
+      fallbackFtmsSilent: fallbackFtmsSilent,
       transport: transport,
       phase: phase,
       minFound: minFound,
@@ -1095,25 +1095,32 @@ void main() {
       homingMax: homingMax,
     );
 
-    // The stalled-transport attribution has to survive into the report: it is
-    // the difference between "the device refused" and "the device never heard
-    // it", and the transcript alone cannot show that.
-    test('the stalled-transport attribution appears only when it applies', () {
+    // The fallback-silent observation has to survive into the report: it is the
+    // difference between "the device refused" and "no FTMS frame has arrived",
+    // and the transcript alone cannot show that. The wording is observational —
+    // the report must not assert a firmware cause it cannot confirm.
+    test('the fallback-silent observation appears only when it applies', () {
+      final text = report(
+        phase: CalibrationPhase.failedTransportStalled,
+        fallbackFtmsSilent: true,
+      );
       expect(
-        report(
-          phase: CalibrationPhase.failedTransportStalled,
-          transportStalled: true,
-        ),
+        text,
         allOf(
           contains('phase: failedTransportStalled'),
-          contains('transportStalled: true'),
+          contains('fallbackFtmsSilent: true'),
           contains('DIRCON->BLE fallback'),
         ),
+      );
+      expect(
+        text,
+        isNot(contains('wedged')),
+        reason: 'the report describes the observation, not a diagnosed cause',
       );
 
       expect(
         report(phase: CalibrationPhase.failedNoAcknowledgement),
-        isNot(contains('transportStalled')),
+        isNot(contains('fallbackFtmsSilent')),
       );
     });
 
