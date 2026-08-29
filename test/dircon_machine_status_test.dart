@@ -478,9 +478,11 @@ void main() {
     final session = connector.first;
     final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
 
-    // The automatic post-connection block is still held. Machine Status is
-    // suspended with it, so the homing command must not go out yet — the run's
-    // own acknowledgement frames would land before anything was listening.
+    // An FTMS notification block is held. Machine Status is suspended with it,
+    // so the homing command must not go out yet — the run's own acknowledgement
+    // frames would land before anything was listening. (The lease ends the
+    // automatic post-connection settle block, so hold one explicitly.)
+    await deviceData.blockFtmsNotifications();
     final started = monitor.start();
     await _settle();
     expect(session.writesFor(ftmsControlPointUUID), isEmpty);
@@ -529,6 +531,9 @@ void main() {
         notificationsReadyTimeout: const Duration(milliseconds: 50),
       );
 
+      // A block that is never released — the lease ends the settle block, so
+      // hold an explicit one that outlives the run.
+      await deviceData.blockFtmsNotifications();
       await monitor.start();
 
       expect(monitor.notificationsReadiness, FtmsNotificationsReadiness.timedOut);
@@ -584,6 +589,7 @@ void main() {
         notificationsReadyTimeout: const Duration(milliseconds: 50),
       );
 
+      await deviceData.blockFtmsNotifications();
       final started = monitor.start();
       await _settle();
       expect(monitor.awaitingNotifications, isTrue);
@@ -833,6 +839,7 @@ void main() {
       final deviceData = await _connect(connector, device);
       final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
 
+      await deviceData.blockFtmsNotifications();
       final started = monitor.start();
       await _settle();
       monitor.dispose();
@@ -1049,6 +1056,96 @@ void main() {
       await _until(() => monitor.logStreamSilent, 'silence latches on the retry');
 
       monitor.dispose();
+      deviceData.dispose();
+    });
+  });
+
+  // A background settings sweep takes its own refcount on the FTMS notification
+  // block and holds it for its whole ~80 s duration. A calibration run holds a
+  // lease so the sweep is deferred instead — but the lease has to be released
+  // on every terminal path or the sweep never runs again.
+  group('interactive FTMS lease', () {
+    test('the lease is held during a run and released on the verdict', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      await deviceData.blockFtmsNotifications();
+      final started = monitor.start();
+      await _settle();
+      expect(deviceData.hasInteractiveFtmsSession, isTrue);
+
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      for (final param in [
+        FTMSSpinDownStatus.MAX_SEARCH_STARTED,
+        FTMSSpinDownStatus.SUCCESS,
+      ]) {
+        session.emitNotification(_machineStatusUuid, [
+          FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+          param,
+        ]);
+        await _settle();
+      }
+      expect(monitor.phase, CalibrationPhase.complete);
+      expect(deviceData.hasInteractiveFtmsSession, isFalse);
+
+      // Double cleanup is a no-op, not a double release into some other run.
+      monitor.stopWatching();
+      monitor.dispose();
+      expect(deviceData.hasInteractiveFtmsSession, isFalse);
+
+      deviceData.dispose();
+    });
+
+    test('the lease is released on a start failure and a retry re-takes exactly one', () async {
+      final session = FakeDirConSession()
+        ..failWritesFor(ftmsControlPointUUID, StateError('transport gone'));
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      await monitor.start();
+      expect(monitor.phase, CalibrationPhase.failedToStart);
+      expect(deviceData.hasInteractiveFtmsSession, isFalse);
+
+      // The retry holds one lease again — never two.
+      final retry = monitor.start();
+      expect(deviceData.hasInteractiveFtmsSession, isTrue);
+      await retry;
+      expect(deviceData.hasInteractiveFtmsSession, isFalse);
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    test('an in-flight settings sweep yields to the lease and its work is deferred', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+
+      // Lease taken first: the very next requestSettings breaks before writing.
+      final token = deviceData.beginInteractiveFtmsSession(device);
+      final writesBefore = session.writesFor(ccUUID).length;
+      await deviceData.requestSettings(device);
+
+      expect(
+        session.writesFor(ccUUID).length,
+        writesBefore,
+        reason: 'the sweep yielded to the lease before any read',
+      );
+      // The block it took is released on the way out.
+      expect(deviceData.isFtmsNotificationsBlocked, isFalse);
+
+      // Releasing the last lease runs the deferred sweep against the same device.
+      deviceData.endInteractiveFtmsSession(token);
+      await _until(
+        () => session.writesFor(ccUUID).length > writesBefore,
+        'the deferred sweep should run once the lease is released',
+      );
+
       deviceData.dispose();
     });
   });

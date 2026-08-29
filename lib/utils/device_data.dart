@@ -307,6 +307,10 @@ class DeviceData {
   bool get isTransportActive =>
       _transportStateController.value.phase == DeviceTransportPhase.connected;
   bool get isFtmsNotificationsBlocked => _ftmsNotificationBlocks > 0;
+
+  /// Whether any interactive FTMS lease is held. See
+  /// [beginInteractiveFtmsSession].
+  bool get hasInteractiveFtmsSession => _interactiveFtmsSessions.isNotEmpty;
   String get activeTransportName =>
       switch (_transportStateController.value.transport) {
         DeviceTransportKind.dircon => 'DIRCON',
@@ -717,6 +721,13 @@ class DeviceData {
     // The timeout freed the caller, not the work. Bound only what the fallback
     // actually needs — discovery and the FTMS characteristics — and sweep
     // settings at the end, off this budget.
+    //
+    // TODO(dircon-calibration-parity): `Future.timeout` does not cancel. A
+    // continuation that completes after this 10 s bound keeps mutating shared
+    // BLE state (characteristics, subscriptions, the FTMS block) while the
+    // fallback bookkeeping below is skipped. Needs generation/epoch gating on
+    // every post-await publication. See
+    // docs/fallback_setup_cancellation_todo.md.
     await setupConnection(
       device,
       markTransportConnected: false,
@@ -761,6 +772,17 @@ class DeviceData {
   /// instead of starting a second one against the same characteristics.
   void _sweepSettingsInBackground(BluetoothDevice device) {
     if (isSimulated) return;
+    // An interactive FTMS session (a calibration run) holds its own lease on
+    // the FTMS notification block. The sweep would take a *second* refcount and
+    // keep Machine Status and Control Point responses suspended for its whole
+    // ~80 s duration — blinding the run. Coalesce to one pending sweep and run
+    // it when the last lease is released; do not drop it, or settings stay
+    // stale after every fallback.
+    if (_interactiveFtmsSessions.isNotEmpty) {
+      _pendingSweepDevice = device;
+      print('[transport] settings sweep deferred: interactive FTMS session held');
+      return;
+    }
     if (_lastRequestStopwatch.isRunning) {
       _lastRequestStopwatch.reset();
     } else {
@@ -771,6 +793,49 @@ class DeviceData {
         print('[transport] background settings sweep failed: $error');
       }),
     );
+  }
+
+  /// Live interactive FTMS leases. A `Set` rather than a counter: release is
+  /// then naturally idempotent and a double-release is a no-op, which matters
+  /// because [CalibrationMonitor] releases from several paths that can overlap
+  /// (`_finishRun`, the `start()` failure path, `stopWatching`, `dispose`).
+  final Set<Object> _interactiveFtmsSessions = <Object>{};
+
+  /// A settings sweep that [_sweepSettingsInBackground] or an in-flight
+  /// [requestSettings] deferred while a lease was held. Coalesced, not queued —
+  /// the sweep is idempotent, so one run after the last release is enough.
+  BluetoothDevice? _pendingSweepDevice;
+
+  /// Claims a lease on the FTMS notification block for an interactive run.
+  ///
+  /// While any lease is held the background settings sweep is deferred rather
+  /// than run, so it cannot take a second refcount and suspend the FTMS streams
+  /// the run is listening on. Also ends the post-connection settle block early
+  /// so a fresh-GATT fallback's 10 s window does not stack on top.
+  ///
+  /// The returned token is the only handle to this lease; pass it to
+  /// [endInteractiveFtmsSession]. Holding more than one token per caller is a
+  /// bug, but the `Set` makes it survivable.
+  Object beginInteractiveFtmsSession(BluetoothDevice device) {
+    final token = Object();
+    _interactiveFtmsSessions.add(token);
+    _endFtmsPostConnectionBlock(device);
+    return token;
+  }
+
+  /// Releases a lease claimed by [beginInteractiveFtmsSession]. Idempotent: a
+  /// token already released, or never issued, is ignored. When the last lease
+  /// is released, any sweep deferred while leases were held runs now, against
+  /// the device that deferred it.
+  void endInteractiveFtmsSession(Object token) {
+    if (!_interactiveFtmsSessions.remove(token)) return;
+    if (_interactiveFtmsSessions.isNotEmpty) return;
+    final pending = _pendingSweepDevice;
+    _pendingSweepDevice = null;
+    if (pending != null) {
+      print('[transport] running deferred settings sweep: last lease released');
+      _sweepSettingsInBackground(pending);
+    }
   }
 
   /// Reconnect callbacks are advisory: they refresh UI, re-read RSSI, redeliver
@@ -2645,6 +2710,16 @@ class DeviceData {
           break;
         }
 
+        // A calibration run took the FTMS lease after this sweep began. Yield
+        // now: the sweep holds the notification block for its whole duration,
+        // and the run is waiting on it. Its unfinished work becomes the pending
+        // sweep, run when the last lease releases.
+        if (_interactiveFtmsSessions.isNotEmpty) {
+          print('[transport] settings sweep yielded: interactive FTMS session started');
+          _pendingSweepDevice = device;
+          break;
+        }
+
         try {
           await writeCustomCharacteristic(device, [
             0x01,
@@ -3207,12 +3282,21 @@ class DeviceData {
     );
   }
 
-  Future<void> _writeFtmsControlPointCommandNow(List<int> command) async {
+  /// [onDispatch] fires once, *after* transport validation and immediately
+  /// before the command reaches the wire — never on a path that then throws
+  /// `'FTMS Control Point is not ready'`. It is the point a caller may treat
+  /// the command as sent; anything keyed off "sent" before this could be
+  /// acknowledged by a stale frame from a previous run.
+  Future<void> _writeFtmsControlPointCommandNow(
+    List<int> command, [
+    void Function()? onDispatch,
+  ]) async {
     final dirConSession = _dirConSession;
     if (_transportStateController.value.transport ==
             DeviceTransportKind.dircon &&
         dirConSession != null &&
         dirConSession.isConnected) {
+      onDispatch?.call();
       await dirConSession.writeCharacteristic(ftmsControlPointUUID, command);
       return;
     }
@@ -3224,6 +3308,7 @@ class DeviceData {
         !characteristic.device.isConnected) {
       throw StateError('FTMS Control Point is not ready');
     }
+    onDispatch?.call();
     await characteristic.write(command);
   }
 
@@ -3232,12 +3317,15 @@ class DeviceData {
   /// DIRCON sessions intentionally do not create FlutterBluePlus
   /// characteristics, so commands whose only input is a cached BLE
   /// characteristic can never reach the device while DIRCON is active.
-  Future<void> writeFtmsControlPointCommand(List<int> command) async {
+  Future<void> writeFtmsControlPointCommand(
+    List<int> command, {
+    void Function()? onDispatch,
+  }) async {
     if (isSimulated) return;
     final stopwatch = Stopwatch()..start();
     try {
       await _queueBleOperation(
-        () => _writeFtmsControlPointCommandNow(command),
+        () => _writeFtmsControlPointCommandNow(command, onDispatch),
         priority: TransportOpPriority.control,
         label: 'FTMS control point',
       );

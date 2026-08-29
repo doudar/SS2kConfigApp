@@ -1068,6 +1068,12 @@ class CalibrationMonitor extends ChangeNotifier {
   /// [start] so a retry cannot inherit the previous run's evidence.
   bool _deviceLogSeen = false;
   bool _disposed = false;
+
+  /// The interactive FTMS lease this run holds, or null. One per monitor: while
+  /// it is held the background settings sweep is deferred instead of taking a
+  /// second refcount on the FTMS notification block and blinding the run.
+  /// Released from every terminal path — see [_releaseFtmsSession].
+  Object? _ftmsSessionToken;
   bool _refreshSent = false;
   bool _logStreamingStarted = false;
 
@@ -1201,6 +1207,11 @@ class CalibrationMonitor extends ChangeNotifier {
   /// reports a homing problem that never happened.
   Future<void> start() async {
     _cancelTimers();
+    // A retry can still be holding the previous run's lease if that run ended
+    // by disposal rather than a verdict. Release it before claiming a fresh
+    // one so the registry never holds two tokens for this monitor.
+    _releaseFtmsSession();
+    _acquireFtmsSession();
     _transcript.clear();
     _droppedLines = 0;
     _machineStatusLog.clear();
@@ -1244,6 +1255,7 @@ class CalibrationMonitor extends ChangeNotifier {
       debugPrint('[Calibration] start failed: $error\n$stackTrace');
       _cancelTimers();
       unawaited(_stopLogStreaming());
+      _releaseFtmsSession();
       _tracker.markStartFailed();
       _safeNotify();
     }
@@ -1341,14 +1353,26 @@ class CalibrationMonitor extends ChangeNotifier {
     _startRunWatchdogs();
 
     _startFailureStage = CalibrationStartStage.dispatch;
-    _tracker.markRequestSent();
-    _dispatchedAt = DateTime.now();
     await _dispatchSpinDown();
   }
 
   Future<void> _dispatchSpinDown() async {
     await deviceData.writeFtmsControlPointCommand(
       FTMSControlPoint.spinDownCommand(true),
+      // The dispatch boundary is the command reaching the wire, not the
+      // enqueue. Marking the request sent before `_dispatchSpinDown` awaited
+      // let a delayed Control Point response, 0x2ADA frame or homing log line
+      // from a *previous* run acknowledge this one while it was still queued
+      // behind other transport work.
+      //
+      // TODO(dircon-calibration-parity): a fuller dispatch receipt — transport
+      // epoch + timestamp correlated to a run generation — so a frame from an
+      // earlier transport epoch cannot acknowledge this run even after
+      // dispatch. See docs/fallback_setup_cancellation_todo.md.
+      onDispatch: () {
+        _tracker.markRequestSent();
+        _dispatchedAt = DateTime.now();
+      },
     );
     if (_disposed) return;
     _note('spin-down dispatched');
@@ -1624,11 +1648,27 @@ class CalibrationMonitor extends ChangeNotifier {
   }
 
   /// Performs the cleanup shared by every terminal path. Successful runs also
-  /// read their final limits back, but all outcomes release the log stream.
+  /// read their final limits back, but all outcomes release the log stream and
+  /// the FTMS lease — which lets any deferred settings sweep run.
   void _finishRun() {
     _cancelTimers();
     _refreshHomingValues();
     unawaited(_stopLogStreaming());
+    _releaseFtmsSession();
+  }
+
+  /// Claims the interactive FTMS lease if this run does not already hold one.
+  void _acquireFtmsSession() {
+    _ftmsSessionToken ??= deviceData.beginInteractiveFtmsSession(device);
+  }
+
+  /// Releases the interactive FTMS lease. Idempotent — safe to call from every
+  /// terminal path, and [DeviceData.endInteractiveFtmsSession] no-ops a token
+  /// it has already seen.
+  void _releaseFtmsSession() {
+    final token = _ftmsSessionToken;
+    _ftmsSessionToken = null;
+    if (token != null) deviceData.endInteractiveFtmsSession(token);
   }
 
   Future<void> _stopLogStreaming() async {
@@ -1739,6 +1779,7 @@ class CalibrationMonitor extends ChangeNotifier {
     _controlPointSubscription = null;
 
     unawaited(_stopLogStreaming());
+    _releaseFtmsSession();
   }
 
   @override

@@ -758,6 +758,50 @@ void main() {
     });
   });
 
+  group('control point dispatch boundary', () {
+    // onDispatch marks the calibration request sent. It must fire only after
+    // transport validation and immediately before the write — never on a path
+    // that then rejects the command, which would let a stale frame from a
+    // previous run acknowledge this one.
+    test('onDispatch does not fire when the control point is not ready', () async {
+      final harness = await _BleHarness.connect(blePlatform);
+      // No control point characteristic assigned: the write is rejected.
+      harness.deviceData.ftmsControlPointCharacteristic = null;
+
+      var dispatched = false;
+      await expectLater(
+        harness.deviceData.writeFtmsControlPointCommand(
+          FTMSControlPoint.spinDownCommand(true),
+          onDispatch: () => dispatched = true,
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(dispatched, isFalse);
+      harness.dispose();
+    });
+
+    test('onDispatch fires once, adjacent to a successful write', () async {
+      final harness = await _BleHarness.connect(blePlatform);
+      harness.deviceData.ftmsControlPointCharacteristic = BluetoothCharacteristic(
+        remoteId: harness.device.remoteId,
+        serviceUuid: Guid(ftmsServiceUUID),
+        characteristicUuid: Guid(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID),
+      );
+      blePlatform.writes.clear();
+
+      var dispatchCount = 0;
+      await harness.deviceData.writeFtmsControlPointCommand(
+        FTMSControlPoint.spinDownCommand(true),
+        onDispatch: () => dispatchCount++,
+      );
+
+      expect(dispatchCount, 1);
+      expect(blePlatform.writes, isNotEmpty);
+      harness.dispose();
+    });
+  });
+
   group('readiness is bounded', () {
     // The unblocked branch used to await ensureFtmsNotifications untimed, so a
     // caller's 15 s budget bought nothing once setup itself stalled.
