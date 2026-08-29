@@ -14,6 +14,7 @@ import 'package:flutter_blue_plus_platform_interface/flutter_blue_plus_platform_
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/ble_connection_retry.dart';
 import 'package:ss2kconfigapp/utils/bleConstants.dart';
+import 'package:ss2kconfigapp/utils/calibration_monitor.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/device_transport_state.dart';
@@ -304,6 +305,196 @@ void main() {
       );
 
       deviceData.stopConnectionMonitor();
+      deviceData.dispose();
+    });
+
+    // The 2026-08-25 failure end to end: the fallback ran, the post-fallback
+    // settings sweep found a response-silent device, and a calibration started
+    // immediately afterwards — *while the sweep was still mid-read*. The sweep
+    // must yield to the calibration lease and release the FTMS block on the way
+    // out, so the run is not deaf to its own acknowledgement, and the verdict
+    // must never be the false "did not respond".
+    //
+    // Determinism hinges on ordering: `answerCustomRequests` goes false *before*
+    // the DIRCON drop, so the sweep is provably still in flight (block held, a
+    // `[0x01]` read on the wire, no answer coming) when `monitor.start()` takes
+    // the lease. Because the run starts during the sweep's *first* unanswered
+    // read — one strike, breaker still closed — the sweep exits via
+    // `settings sweep yielded`, not `abandoned`.
+    test('a calibration right after a response-silent fallback is not blinded', () async {
+      await FlutterBluePlus.isSupported;
+      blePlatform.reset();
+
+      final connector = FakeDirConConnector();
+      final device = BluetoothDevice.fromId('00:00:00:00:00:F7');
+      late final DeviceData deviceData;
+
+      // The whole body runs under print capture: the fallback fires from a
+      // DIRCON disconnect listener registered during `connectPreferred`, so the
+      // `[transport] settings sweep …` lines are only in this zone if the
+      // `.listen()` happened here too.
+      final transportLog = <String>[];
+      await _withPrintCapture(transportLog, () async {
+        deviceData = DeviceData(dirConConnector: connector.call)
+          ..advertisedIpAddress = '192.168.1.50';
+
+        blePlatform.markConnected(device.remoteId);
+        await deviceData.connectPreferred(device, waitForSetup: true);
+
+        // Response-silent from here on. The fallback's own `setupConnection`
+        // runs with `sweepSettings: false`, so it needs no custom responses;
+        // only the background sweep it launches at the end does.
+        blePlatform.answerCustomRequests = false;
+        blePlatform.writes.clear();
+
+        connector.first.dropConnection();
+        await _waitUntil(
+          () =>
+              deviceData.transportState.value.transport ==
+                  DeviceTransportKind.bluetooth &&
+              deviceData.transportState.value.phase ==
+                  DeviceTransportPhase.connected,
+        );
+
+        // The post-fallback sweep is genuinely in flight: it took the FTMS
+        // block — so Machine Status is *down* — and a `[0x01]` read is on the
+        // wire with no answer coming. This is the state the captured session
+        // hit, and the run must start from here. (Waiting for Machine Status to
+        // come up first, as the pre-rewrite test did, would wait out the whole
+        // sweep and defeat the point.)
+        await _waitUntil(
+          () =>
+              deviceData.isFtmsNotificationsBlocked &&
+              blePlatform.writes.any((w) => w.length >= 2 && w[0] == 0x01),
+        );
+
+        final monitor = CalibrationMonitor(
+          deviceData: deviceData,
+          device: device,
+          notificationsReadyTimeout: const Duration(seconds: 10),
+        );
+        await monitor.start();
+
+        // The sweep did not hold the FTMS block hostage through the run...
+        await _waitUntil(() => !deviceData.isFtmsNotificationsBlocked);
+        expect(monitor.phase, isNot(CalibrationPhase.failedToStart));
+        expect(
+          monitor.notificationsReadiness,
+          FtmsNotificationsReadiness.ready,
+          reason: 'Machine Status was re-enabled over BLE by the fallback',
+        );
+        // ...and the spin-down reached the BLE control point.
+        final spinDown = FTMSControlPoint.spinDownCommand(true);
+        expect(
+          blePlatform.writes.any(
+            (w) =>
+                w.length == spinDown.length &&
+                w[0] == spinDown[0] &&
+                w[1] == spinDown[1],
+          ),
+          isTrue,
+        );
+
+        // A Machine Status frame then acknowledges the run — the evidence
+        // channel the captured session never had.
+        blePlatform.emitNotification(
+          device.remoteId,
+          _machineStatusUuid,
+          const [0x14, 0x01],
+        );
+        await _waitUntil(() => monitor.acknowledged);
+
+        monitor.dispose();
+      });
+
+      // The run started during the first unanswered read, so the sweep yielded
+      // to the lease rather than grinding to the breaker. Diagnostic
+      // confirmation of the path, per the plan — its absence is how the
+      // pre-rewrite test slipped through.
+      expect(
+        transportLog.where((l) => l.contains('settings sweep yielded')),
+        isNotEmpty,
+        reason: 'expected the loop-level yield, not "abandoned"',
+      );
+
+      deviceData.dispose();
+    });
+
+    // The other fallback shape: DIRCON was never paralleled by a live GATT
+    // link, so the fallback opens a *fresh* connection and `_markTransport
+    // Connected` is reached with `settle: true` — a 10 s post-connection quiet
+    // window during which the FTMS streams are held down. A calibration started
+    // in that window must not wait the window out: taking the interactive lease
+    // ends the settle block early (beginInteractiveFtmsSession ->
+    // _endFtmsPostConnectionBlock). This is the only test that exercises the
+    // `settle: true` branch.
+    test('a calibration during a fresh-GATT fallbacks settle window is not stalled', () async {
+      await FlutterBluePlus.isSupported;
+      blePlatform.reset();
+
+      final connector = FakeDirConConnector();
+      final device = BluetoothDevice.fromId('00:00:00:00:00:F9');
+      final deviceData = DeviceData(dirConConnector: connector.call)
+        ..advertisedIpAddress = '192.168.1.50';
+
+      // No markConnected: connectPreferred reaches DIRCON without a BLE GATT
+      // session, so device.isConnected is false at fallback time and
+      // _connectBleAfterDirConLoss connects fresh with settle: true.
+      await deviceData.connectPreferred(device, waitForSetup: true);
+      expect(
+        deviceData.transportState.value.transport,
+        DeviceTransportKind.dircon,
+      );
+
+      connector.first.dropConnection();
+      await _waitUntil(
+        () =>
+            deviceData.transportState.value.transport ==
+                DeviceTransportKind.bluetooth &&
+            deviceData.transportState.value.phase ==
+                DeviceTransportPhase.connected,
+      );
+
+      // A real GATT connect happened — exactly one, not a promotion of an
+      // existing session.
+      expect(
+        blePlatform.connectCalls.where((c) => c.remoteId == device.remoteId),
+        hasLength(1),
+      );
+      // The settle block is up: nothing FTMS is on the wire yet.
+      expect(deviceData.isFtmsNotificationsBlocked, isTrue);
+
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        // Well under the 10 s settle window: if the lease did not end it early,
+        // readiness would stall past this and the run would not be `ready`.
+        notificationsReadyTimeout: const Duration(seconds: 3),
+      );
+      await monitor.start();
+
+      expect(monitor.phase, isNot(CalibrationPhase.failedToStart));
+      expect(
+        monitor.notificationsReadiness,
+        FtmsNotificationsReadiness.ready,
+        reason: 'the lease should have ended the settle block early',
+      );
+      expect(deviceData.isFtmsNotificationsBlocked, isFalse);
+      expect(blePlatform.enabledNow(_indoorBikeUuid), isTrue);
+      expect(blePlatform.enabledNow(_machineStatusUuid), isTrue);
+
+      final spinDown = FTMSControlPoint.spinDownCommand(true);
+      expect(
+        blePlatform.writes.any(
+          (w) =>
+              w.length == spinDown.length &&
+              w[0] == spinDown[0] &&
+              w[1] == spinDown[1],
+        ),
+        isTrue,
+      );
+
+      monitor.dispose();
       deviceData.dispose();
     });
   });
@@ -729,6 +920,56 @@ void main() {
 
       harness.dispose();
     });
+
+    // The loop-level yield in requestSettings: a calibration lease taken while
+    // a sweep is already mid-read. The sweep must break before its next read
+    // and release the FTMS block on the way out, so the run is not blinded on
+    // Machine Status; the abandoned remainder runs when the last lease is
+    // released. The DIRCON sibling could not host this — FakeDirConSession's
+    // write is synchronous, so a whole sweep completes before a poll observes
+    // its first write. The BLE write gate parks the sweep provably mid-read.
+    test('a lease taken mid-sweep abandons the remaining reads and frees the block', () async {
+      final harness = await _BleHarness.connect(blePlatform);
+      final deviceData = harness.deviceData;
+      await deviceData.unblockFtmsNotifications(harness.device);
+
+      bool isRead(List<int> w) => w.length >= 2 && w[0] == 0x01;
+
+      blePlatform.holdWriteGate(ccUUID);
+      blePlatform.writes.clear();
+
+      final sweep = deviceData.requestSettings(harness.device);
+
+      // The sweep took the block and is parked on its first read at the wire.
+      await _waitUntil(() => blePlatform.writeGateWaiters(ccUUID) == 1);
+      expect(deviceData.isFtmsNotificationsBlocked, isTrue);
+      expect(
+        blePlatform.writes.where(isRead),
+        isEmpty,
+        reason: 'the read is parked before it reaches the wire',
+      );
+
+      final token = deviceData.beginInteractiveFtmsSession(harness.device);
+
+      blePlatform.releaseWriteGate(ccUUID);
+      await sweep;
+
+      // Exactly the one read that was already in flight — the loop broke
+      // before issuing a second.
+      expect(blePlatform.writes.where(isRead), hasLength(1));
+      await _waitUntil(() => !deviceData.isFtmsNotificationsBlocked);
+      await _waitUntil(() => blePlatform.enabledNow(_machineStatusUuid));
+
+      // Releasing the last lease runs the deferred remainder against the same
+      // device.
+      final afterYield = blePlatform.writes.where(isRead).length;
+      deviceData.endInteractiveFtmsSession(token);
+      await _waitUntil(
+        () => blePlatform.writes.where(isRead).length > afterYield,
+      );
+
+      harness.dispose();
+    });
   });
 
   group('strict vs. tolerant custom writes', () {
@@ -752,6 +993,43 @@ void main() {
       await expectLater(
         deviceData.writeToSS2k(harness.device, logChar, s: '1'),
         completes,
+      );
+
+      harness.dispose();
+    });
+
+    // The powerTableData branch writes one packet per row and now `return`s
+    // after the loop. An unconfirmed first row must abort the whole upload —
+    // a half-written power table was never a good outcome — and no trailing
+    // header-only [0x02, reference] packet may follow.
+    test('a power-table upload stops on the first unconfirmed row', () async {
+      final harness = await _BleHarness.connect(blePlatform);
+      final deviceData = harness.deviceData;
+      final powerTable = deviceData.customCharacteristic.firstWhere(
+        (c) => c['vName'] == powerTableDataVname,
+      );
+
+      blePlatform.answerCustomRequests = false;
+      blePlatform.writes.clear();
+
+      // `s` is ignored by the powerTableData branch but must be non-null to
+      // clear the "use the saved value" guard at the top of the method.
+      await expectLater(
+        deviceData.writeToSS2kStrict(harness.device, powerTable, s: '1'),
+        throwsA(isA<TransportResponseUnconfirmed>()),
+      );
+
+      // A row packet is [0x02, reference, rowIndex, ...38 little-endian pairs].
+      final rowWrites = blePlatform.writes
+          .where((w) => w.length > 3 && w[0] == 0x02)
+          .toList();
+      expect(rowWrites, hasLength(1), reason: 'only the first row went out');
+      expect(rowWrites.single[2], 0, reason: 'row index 0');
+      // The trailing generic write would be a bare two-byte header.
+      expect(
+        blePlatform.writes.any((w) => w.length == 2 && w[0] == 0x02),
+        isFalse,
+        reason: 'no stray header-only packet after the aborted loop',
       );
 
       harness.dispose();
@@ -800,6 +1078,75 @@ void main() {
       expect(blePlatform.writes, isNotEmpty);
       harness.dispose();
     });
+
+    // Composes the three pieces that keep a stale frame off a queued run: the
+    // transport scheduler (a control command cannot preempt the op already
+    // running), the `onDispatch` boundary inside `_writeFtmsControlPointCommand
+    // Now` (fires adjacent to the wire write, not at enqueue), and
+    // CalibrationPhaseTracker's pre-dispatch guard (`!_requestSent` rejects
+    // everything).
+    //
+    // It does NOT cover CalibrationMonitor's own spin-down path. Per the plan:
+    // `onDispatch` fires before the write with no await between, so no gate can
+    // park the monitor's dispatch there, and holding the custom-write gate
+    // stalls the monitor's *log-enable* so it never reaches dispatch at all. A
+    // monitor-level test would need an injectable dispatch seam that exists
+    // only for tests. The monitor wiring is four lines; the tracker gates it
+    // depends on have unit coverage in calibration_monitor_test.dart.
+    test('a Machine Status frame cannot acknowledge a spin-down still queued behind other work', () async {
+      final harness = await _BleHarness.connect(blePlatform);
+      harness.deviceData.ftmsControlPointCharacteristic = BluetoothCharacteristic(
+        remoteId: harness.device.remoteId,
+        serviceUuid: Guid(ftmsServiceUUID),
+        characteristicUuid: Guid(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID),
+      );
+      blePlatform.writes.clear();
+
+      final tracker = CalibrationPhaseTracker()..start();
+      final spinDown = FTMSControlPoint.spinDownCommand(true);
+      bool spinDownOnWire() => blePlatform.writes.any(
+        (w) => w.length >= 2 && w[0] == spinDown[0] && w[1] == spinDown[1],
+      );
+
+      // Occupy the pump with a custom write parked in flight.
+      blePlatform.holdWriteGate(ccUUID);
+      final busy = harness.deviceData
+          .writeCustomCharacteristic(harness.device, [0x01, 1])
+          .catchError((Object _) {});
+      await _waitUntil(() => blePlatform.writeGateWaiters(ccUUID) == 1);
+
+      // The spin-down is genuinely queued behind it.
+      final dispatch = harness.deviceData.writeFtmsControlPointCommand(
+        spinDown,
+        onDispatch: tracker.markRequestSent,
+      );
+      await _settle();
+      expect(spinDownOnWire(), isFalse, reason: 'still queued, not written');
+
+      // A frame arriving in this window belongs to a previous run: the command
+      // has not dispatched, so `markRequestSent` has not fired.
+      expect(
+        tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED),
+        isFalse,
+      );
+      expect(tracker.acknowledged, isFalse);
+      expect(tracker.ackSource, isNull);
+
+      // Drain the pump; the spin-down reaches the wire and `onDispatch` fires
+      // adjacent to it.
+      blePlatform.releaseWriteGate(ccUUID);
+      await _waitUntil(spinDownOnWire);
+      await dispatch;
+      await busy;
+
+      // The identical frame now acknowledges — the gate was the dispatch,
+      // nothing else.
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      expect(tracker.acknowledged, isTrue);
+      expect(tracker.ackSource, CalibrationAckSource.machineStatus);
+
+      harness.dispose();
+    });
   });
 
   group('readiness is bounded', () {
@@ -828,6 +1175,45 @@ void main() {
       expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
 
       blePlatform.releaseNotifyGate(_indoorBikeUuid);
+      harness.dispose();
+    });
+  });
+
+  // The DIRCON version of this lives in dircon_machine_status_test.dart. Over
+  // BLE the log-stream enable rides `_writeCustomCharacteristic`, which now
+  // surfaces an unconfirmed response instead of swallowing it — so
+  // CalibrationStartStage.logStreamEnable is reachable on this transport too.
+  group('calibration start over BLE', () {
+    test('a log-enable failure with no other live channel fails to start', () async {
+      final harness = await _BleHarness.connect(
+        blePlatform,
+        withMachineStatus: false,
+      );
+      final deviceData = harness.deviceData;
+
+      // The device answers no custom request, and the FTMS block is held for
+      // the whole run so no notification channel — Machine Status or Control
+      // Point — is live. Nothing could observe the run.
+      blePlatform.answerCustomRequests = false;
+      await deviceData.blockFtmsNotifications();
+      expect(deviceData.controlPointNotificationsLive, isFalse);
+
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: harness.device,
+        notificationsReadyTimeout: const Duration(milliseconds: 200),
+      );
+      await monitor.start();
+
+      expect(monitor.phase, CalibrationPhase.failedToStart);
+      expect(
+        monitor.startFailureStage,
+        CalibrationStartStage.logStreamEnable,
+      );
+      expect(monitor.ackChannelsLive, isFalse);
+      expect(deviceData.controlPointNotificationsLive, isFalse);
+
+      monitor.dispose();
       harness.dispose();
     });
   });
@@ -1016,6 +1402,31 @@ final class _FakeBlePlatform extends FlutterBluePlusPlatform {
   final Map<String, Completer<void>> _notifyGates = {};
   final Map<String, int> _notifyGateWaiters = {};
 
+  /// Every `connect` request the platform received, in order. A fresh GATT
+  /// connect on the DIRCON->BLE fallback is only observable here — the
+  /// `markConnected` shortcut the other tests use bypasses `connect` entirely.
+  final List<BmConnectRequest> connectCalls = [];
+
+  /// Parks a `writeCharacteristic` for [uuid] until [releaseWriteGate]. Unlike
+  /// the notify gate this holds an operation *in flight*, which is what keeps
+  /// the transport pump occupied: `TransportOpPriority.control` preempts only
+  /// queued work, never the op currently running.
+  final Map<String, Completer<void>> _writeGates = {};
+  final Map<String, int> _writeGateWaiters = {};
+
+  void holdWriteGate(String uuid) {
+    _writeGates[_key(uuid)] = Completer<void>();
+    _writeGateWaiters[_key(uuid)] = 0;
+  }
+
+  void releaseWriteGate(String uuid) {
+    final gate = _writeGates.remove(_key(uuid));
+    if (gate != null && !gate.isCompleted) gate.complete();
+  }
+
+  /// How many `writeCharacteristic` calls are currently parked on [uuid]'s gate.
+  int writeGateWaiters(String uuid) => _writeGateWaiters[_key(uuid)] ?? 0;
+
   /// Current wire state per characteristic. `isNotifying` on the real
   /// characteristic reads a CCCD descriptor cache this fake does not populate,
   /// so this is the only place the block's effect is observable.
@@ -1092,8 +1503,16 @@ final class _FakeBlePlatform extends FlutterBluePlusPlatform {
     writes.clear();
     notifyCalls.clear();
     _notifyState.clear();
+    // Complete before clearing: a test that failed mid-hold must not strand a
+    // parked write or enable into the next test's run.
+    for (final gate in [..._notifyGates.values, ..._writeGates.values]) {
+      if (!gate.isCompleted) gate.complete();
+    }
     _notifyGates.clear();
     _notifyGateWaiters.clear();
+    _writeGates.clear();
+    _writeGateWaiters.clear();
+    connectCalls.clear();
     discoveryIncludesMachineStatus = true;
     discoveryCount = 0;
     answerCustomRequests = true;
@@ -1223,6 +1642,13 @@ final class _FakeBlePlatform extends FlutterBluePlusPlatform {
   Future<bool> writeCharacteristic(
     BmWriteCharacteristicRequest request,
   ) async {
+    final gateKey = _key(request.characteristicUuid.str);
+    final gate = _writeGates[gateKey];
+    if (gate != null) {
+      _writeGateWaiters[gateKey] = (_writeGateWaiters[gateKey] ?? 0) + 1;
+      await gate.future;
+      _writeGateWaiters[gateKey] = (_writeGateWaiters[gateKey] ?? 1) - 1;
+    }
     writes.add(List<int>.from(request.value));
     // The real firmware answers every `[0x01, reference]` read with a
     // `[0x80, reference, ...]` notification, and _writeCustomCharacteristic
@@ -1276,6 +1702,47 @@ final class _FakeBlePlatform extends FlutterBluePlusPlatform {
       ),
     );
   }
+
+  void markDisconnected(DeviceIdentifier remoteId) {
+    _connectionStates.add(
+      BmConnectionStateResponse(
+        remoteId: remoteId,
+        connectionState: BmConnectionStateEnum.disconnected,
+        disconnectReasonCode: null,
+        disconnectReasonString: null,
+      ),
+    );
+  }
+
+  // The real plugin resolves `connect()` first and only then publishes the
+  // connected state on its event stream, as a separate asynchronous step.
+  // `device.connect()` subscribes to that stream before awaiting our return,
+  // so a synchronous add would not actually be lost — deferring it a microtask
+  // is about staying faithful to the plugin's ordering (connect completes,
+  // then the state event lands), not about preventing event loss.
+  @override
+  Future<bool> connect(BmConnectRequest request) async {
+    connectCalls.add(request);
+    scheduleMicrotask(() => markConnected(request.remoteId));
+    return true;
+  }
+}
+
+/// Runs [body] with every `print` line also appended to [sink], so a test can
+/// assert on a specific transport log line without silencing normal output.
+Future<void> _withPrintCapture(
+  List<String> sink,
+  Future<void> Function() body,
+) {
+  return runZoned(
+    body,
+    zoneSpecification: ZoneSpecification(
+      print: (self, parent, zone, line) {
+        sink.add(line);
+        parent.print(zone, line);
+      },
+    ),
+  );
 }
 
 Future<void> _waitUntil(

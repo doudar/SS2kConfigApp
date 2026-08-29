@@ -440,13 +440,13 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     // Neither is implicated when the search never ran, so offer the retry the
     // verdict body has just asked for rather than routing the user to advice
     // that cannot apply.
-    // The one failure where a retry is known to be pointless: the SmartSpin2k
-    // is wedged on a connection that went away, so nothing the app sends
-    // reaches it until the device drops that connection itself. Leading with
-    // "Try Again" would contradict the verdict body, which has just said so —
-    // the retry stays available underneath, for after the restart.
-    final deviceWedged = phase == CalibrationPhase.failedTransportStalled;
-    final retryOnly = !succeeded && !deviceWedged && _preHomingFailures.contains(phase);
+    // One failure is presented differently: no FTMS data has arrived since the
+    // connection fell back to Bluetooth. The app cannot see why from the
+    // outside, but restarting the SmartSpin2k is the recommended first recovery
+    // step — so lead with "Close" and keep "Try Again" underneath, for after
+    // the restart, rather than making an immediate retry the primary action.
+    final fallbackAppearsStalled = phase == CalibrationPhase.failedTransportStalled;
+    final retryOnly = !succeeded && !fallbackAppearsStalled && _preHomingFailures.contains(phase);
 
     return _CalibrationPage(
       primaryLabel: !_showVerdict
@@ -455,7 +455,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           ? needsVisualConfirmation
                 ? 'Yes, done'
                 : 'Done'
-          : deviceWedged
+          : fallbackAppearsStalled
           ? 'Close'
           : retryOnly
           ? 'Try Again'
@@ -464,7 +464,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           ? null
           : succeeded
           ? _finish
-          : deviceWedged
+          : fallbackAppearsStalled
           ? () => Navigator.of(context).pop()
           : retryOnly
           ? _startRunPressed
@@ -473,14 +473,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           ? null
           : needsVisualConfirmation
           ? 'No, something looked wrong'
-          : deviceWedged
+          : fallbackAppearsStalled
           ? 'Try Again'
           : null,
       onSecondary: !_showVerdict
           ? null
           : needsVisualConfirmation
           ? () => _goTo(2)
-          : deviceWedged
+          : fallbackAppearsStalled
           ? _startRunPressed
           : null,
       children: [
@@ -641,7 +641,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         // and cannot claim the device did anything.
         return _monitor.ackChannelsLive ? 'The SmartSpin2k did not respond' : 'Couldn\'t confirm calibration started';
       case CalibrationPhase.failedTransportStalled:
-        return 'The SmartSpin2k stopped responding';
+        return 'Calibration data stopped arriving';
       case CalibrationPhase.failedNeverStarted:
         return 'The SmartSpin2k never started homing';
       case CalibrationPhase.failedAborted:

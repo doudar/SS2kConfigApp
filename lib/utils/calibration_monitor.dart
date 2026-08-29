@@ -64,21 +64,23 @@ enum CalibrationPhase {
   /// acted on.
   failedNoAcknowledgement,
 
-  /// Same silence as [failedNoAcknowledgement], but the app can name the cause:
-  /// the SmartSpin2k is wedged behind a connection that went away without
-  /// closing.
+  /// Same silence as [failedNoAcknowledgement], reached when no FTMS evidence
+  /// has arrived on the BLE link the app fell back to after losing DIRCON.
   ///
-  /// After the app falls back from DIRCON to BLE and not one FTMS frame arrives
-  /// on the new link, the device is almost certainly still blocked writing to
-  /// the TCP client that vanished when Wi-Fi dropped. Its main loop never gets
-  /// back to the queue the spin-down is sitting in, so the request is not
-  /// refused — it is never read.
+  /// Legacy name. "Transport stalled" was the original guess at the cause: a
+  /// SmartSpin2k wedged on a half-open DirCon socket — pulling Wi-Fi sends no
+  /// FIN, so the firmware can keep blocking its main loop on the vanished TCP
+  /// client and never read the queued spin-down. That is still the most likely
+  /// explanation, but the app cannot prove it from the outside; failed CCCD
+  /// setup, a missing Indoor Bike Data characteristic, or an abandoned setup
+  /// continuation produce the same signature. See
+  /// [DeviceData.isDirConFallbackSilent].
   ///
-  /// Separate from [failedNoAcknowledgement] because the advice inverts. That
-  /// verdict says "the device didn't accept the request" and offers a retry;
-  /// here the device accepted nothing because it was never asked, and a retry
-  /// is guaranteed to fail identically. Only restarting the SmartSpin2k or
-  /// restoring Wi-Fi clears it. See [DeviceData.isDirConFallbackSilent].
+  /// Separate from [failedNoAcknowledgement] only so the advice can differ:
+  /// that verdict offers a plain retry, while a retry on this same silent link
+  /// would most likely repeat — so the recovery step to surface first is
+  /// restarting the SmartSpin2k (or restoring Wi-Fi). Nothing here is asserted
+  /// as certain.
   failedTransportStalled,
 
   /// The device acknowledged the request and homing never began.
@@ -605,10 +607,12 @@ class CalibrationPhaseTracker {
   /// Ends a run the device never acknowledged. Ordinary [_fail] semantics: a
   /// verdict that already arrived wins.
   ///
-  /// [transportStalled] picks the sharper of the two silence verdicts. Same
-  /// evidence — nothing came back — but the caller has established *why*, so
-  /// the run gets [CalibrationPhase.failedTransportStalled] and its advice
-  /// rather than the generic "the device did not respond".
+  /// [transportStalled] routes to [CalibrationPhase.failedTransportStalled]
+  /// instead of the generic silence verdict. Same evidence — nothing came back
+  /// — but the caller has seen the post-fallback-silent signature
+  /// ([DeviceData.isDirConFallbackSilent]), so the run gets that phase's more
+  /// specific advice rather than the bare "the device did not respond". It is a
+  /// categorisation, not a proven cause.
   bool markNoAcknowledgement({bool transportStalled = false}) => _fail(
     transportStalled
         ? CalibrationPhase.failedTransportStalled
@@ -1095,13 +1099,17 @@ class CalibrationMonitor extends ChangeNotifier {
   DateTime? _dispatchedAt;
   Duration? _acknowledgedAfter;
 
-  /// Whether any channel could have carried an acknowledgement at all.
+  /// Whether some channel can observe this run — the single definition of that.
   ///
   /// The difference matters: with a live channel and no acknowledgement the
   /// device demonstrably ignored the request, while with no channel at all the
   /// app was simply blind. Those need different words and different advice, and
   /// "did not respond" claims knowledge the app does not have in the second
   /// case.
+  ///
+  /// `_deviceLogSeen` counts here even when the log-stream enable was never
+  /// confirmed: a log line that has already arrived is direct proof the log
+  /// channel is live, whatever happened to the enable response.
   bool get ackChannelsLive =>
       _notificationsReadiness == FtmsNotificationsReadiness.ready ||
       deviceData.controlPointNotificationsLive ||
@@ -1121,10 +1129,12 @@ class CalibrationMonitor extends ChangeNotifier {
   /// How long the acknowledgement took, or null if none arrived.
   Duration? get acknowledgedAfter => _acknowledgedAfter;
 
-  /// Whether this run's silence was attributed to a SmartSpin2k wedged on a
-  /// connection that went away. Latched at the acknowledgement deadline, so it
+  /// Whether this run's post-fallback silence was categorised as
+  /// [CalibrationPhase.failedTransportStalled] rather than the generic
+  /// no-acknowledgement verdict. Latched at the acknowledgement deadline, so it
   /// stays true for the verdict and the report even if the transport recovers
-  /// afterwards. See [CalibrationPhase.failedTransportStalled].
+  /// afterwards. Drives wording and advice; it does not assert a proven cause —
+  /// see [CalibrationPhase.failedTransportStalled].
   bool get transportStalled => _transportStalled;
 
   /// Which channel carried the acknowledgement. See [CalibrationAckSource].
@@ -1335,13 +1345,10 @@ class CalibrationMonitor extends ChangeNotifier {
     );
 
     // The log stream is the primary progress channel. If its enable went
-    // unconfirmed *and* neither FTMS channel is live, nothing could observe
-    // this run — dispatching the homing command would only end in an
-    // eight-minute timeout. Fail it now, in its own stage.
-    final anotherChannelIsLive =
-        _notificationsReadiness == FtmsNotificationsReadiness.ready ||
-        deviceData.controlPointNotificationsLive;
-    if (!_logStreamAvailable && !anotherChannelIsLive) {
+    // unconfirmed *and* no other channel is live, nothing could observe this
+    // run — dispatching the homing command would only end in an eight-minute
+    // timeout. Fail it now, in its own stage.
+    if (!_logStreamAvailable && !ackChannelsLive) {
       _startFailureStage = CalibrationStartStage.logStreamEnable;
       throw StateError('no channel could observe this run');
     }

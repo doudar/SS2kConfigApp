@@ -2686,6 +2686,17 @@ class DeviceData {
   Future requestSettings(BluetoothDevice device) async {
     if (this.isSimulated) return;
 
+    // An interactive FTMS lease (a calibration run) is listening on Machine
+    // Status and Control Point. Taking the notification block here — even for
+    // the moment before the loop below defers on its first iteration — suspends
+    // those streams and opens a transient blind window in the run. Defer the
+    // whole sweep without ever blocking; the last lease release runs it.
+    if (_interactiveFtmsSessions.isNotEmpty) {
+      print('[transport] settings sweep deferred: interactive FTMS session held');
+      _pendingSweepDevice = device;
+      return;
+    }
+
     await blockFtmsNotifications();
     var unconfirmed = 0;
     try {
@@ -2965,7 +2976,12 @@ class DeviceData {
           // half-written power table was never a good outcome.
           await writeCustomCharacteristic(device, rowToSend);
         }
-        break;
+        // Every row has been sent. Returning here — rather than breaking — skips
+        // the trailing generic write below, which would otherwise put an extra
+        // header-only [0x02, reference] packet on the wire; an unconfirmed
+        // response to that packet can now make a completed upload report
+        // failure.
+        return;
 
       default:
       //value = [0xff];

@@ -1337,6 +1337,78 @@ void main() {
     });
   });
 
+  // The dispatch boundary is `markRequestSent()`, which CalibrationMonitor now
+  // calls from the `onDispatch` callback — fired adjacent to the write, not when
+  // the command is enqueued. In the window between `start()` and that callback
+  // the command is still queued behind other transport work, and every frame
+  // the device sends belongs to a *previous* run. None of it may touch this one.
+  group('traffic arriving before the command is dispatched is not this run\'s', () {
+    test('a leftover control point response does not acknowledge a queued run', () {
+      tracker.start();
+      // No markRequestSent() yet: the spin-down is still in the transport queue.
+
+      expect(
+        tracker.onControlPointResponse(const [
+          0x80,
+          0x13,
+          0x01,
+          0x20,
+          0x03,
+          0x60,
+          0x09,
+        ]),
+        isFalse,
+      );
+      expect(tracker.acknowledged, isFalse);
+      expect(tracker.ackSource, isNull);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+
+      // Once the command actually reaches the wire, the identical frame is this
+      // run's acknowledgement — proving the gate is the dispatch, nothing else.
+      tracker.markRequestSent();
+      tracker.onControlPointResponse(const [0x80, 0x13, 0x01, 0x20, 0x03, 0x60, 0x09]);
+      expect(tracker.acknowledged, isTrue);
+      expect(tracker.ackSource, CalibrationAckSource.controlPoint);
+    });
+
+    test('a leftover spin-down status frame does not advance a queued run', () {
+      tracker.start();
+
+      expect(
+        tracker.onSpinDownStatus(FTMSSpinDownStatus.MAX_SEARCH_STARTED),
+        isFalse,
+      );
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+      expect(tracker.minFound, isFalse);
+      expect(tracker.homingStarted, isFalse);
+    });
+
+    test('leftover homing log lines do not start a queued run', () {
+      tracker.start();
+
+      feed([
+        '(FTMS_SERVER): Spin Down Requested',
+        'Starting homing procedure...',
+        'Min position found and set to 0.',
+      ]);
+
+      expect(tracker.homingStarted, isFalse);
+      expect(tracker.minFound, isFalse);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+    });
+
+    test('a leftover homing-characteristic notification proves nothing yet', () {
+      tracker.start(hMaxBaseline: 27000);
+
+      expect(
+        tracker.onHomingValueChanged(isMax: true, value: 24800),
+        isFalse,
+      );
+      expect(tracker.maxFound, isFalse);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+    });
+  });
+
   group('a device wedged on a connection that went away', () {
     // Same evidence as failedNoAcknowledgement — nothing came back — but the
     // caller has established why, and the advice inverts: no retry can reach a

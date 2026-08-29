@@ -671,6 +671,61 @@ void main() {
       deviceData.dispose();
     });
 
+    // The log enable is unconfirmed and neither FTMS channel is live, but a real
+    // device log line has already arrived on the custom characteristic. That is
+    // direct proof the log channel is carrying this run, so it must not fail as
+    // logStreamEnable — `_deviceLogSeen`, not the enable response, is the
+    // evidence that matters here.
+    test('log-enable failure with a live device log line lets the run continue', () async {
+      final session = FakeDirConSession()
+        ..failWritesFor(ccUUID)
+        ..failCharacteristic(ftmsIndoorBikeDataUUID)
+        ..failCharacteristic(_machineStatusUuid)
+        ..failCharacteristic(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(seconds: 5),
+      );
+
+      // An extra block so the readiness wait parks rather than resolving before
+      // the log line has propagated — the race a real run does not have.
+      await deviceData.blockFtmsNotifications();
+      final started = monitor.start();
+      await _settle();
+      // A real log line on the custom characteristic (ref 0x30).
+      session.emitNotification(ccUUID, [
+        0x80,
+        0x30,
+        ...'(Main) homing tap 1'.codeUnits,
+      ]);
+      await _until(
+        () => monitor.transcript.any((e) => e.message.contains('homing tap 1')),
+        'the device log line should reach the monitor',
+      );
+
+      // Now let the start sequence run its "could anything observe this?" check.
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(monitor.notificationsReadiness, isNot(FtmsNotificationsReadiness.ready));
+      expect(deviceData.controlPointNotificationsLive, isFalse);
+      // Only `_deviceLogSeen` is carrying it, and that is enough.
+      expect(monitor.phase, isNot(CalibrationPhase.failedToStart));
+      expect(monitor.startFailure, isNull);
+      expect(monitor.ackChannelsLive, isTrue);
+      // The run got past the log-enable gate and dispatched.
+      expect(
+        session.writesFor(ftmsControlPointUUID),
+        contains(orderedEquals(FTMSControlPoint.spinDownCommand(true))),
+      );
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
     // The same failed log enable, but Machine Status is live: the run has an
     // evidence channel, so it proceeds — and the cleanup disable is still
     // attempted on the way out even though it too will fail.
@@ -1121,33 +1176,50 @@ void main() {
       deviceData.dispose();
     });
 
-    test('an in-flight settings sweep yields to the lease and its work is deferred', () async {
+    // Finding 1: the early guard in `requestSettings` must return *before*
+    // `blockFtmsNotifications()`. A lease that is already held when a sweep is
+    // requested must cost zero notification work — no disable, no resubscribe —
+    // or the run gets a transient blind window on Machine Status even though the
+    // sweep never actually polled anything.
+    test('a sweep requested while a lease is held touches no notifications', () async {
       final connector = FakeDirConConnector();
       final deviceData = await _connect(connector, device);
       final session = connector.first;
 
-      // Lease taken first: the very next requestSettings breaks before writing.
+      // Both FTMS streams fully up — the state a calibration run depends on.
+      await deviceData.unblockFtmsNotifications(device);
+      expect(session.isListening(_machineStatusUuid), isTrue);
+
       final token = deviceData.beginInteractiveFtmsSession(device);
-      final writesBefore = session.writesFor(ccUUID).length;
+      final notifyCallsBefore = session.notificationCalls.length;
+      final statusCancelsBefore = session.cancellationsFor(_machineStatusUuid);
+      final bikeCancelsBefore = session.cancellationsFor(ftmsIndoorBikeDataUUID);
+
       await deviceData.requestSettings(device);
 
+      // Nothing on the notification lifecycle moved, and both streams are still
+      // listening on the wire.
+      expect(session.notificationCalls.length, notifyCallsBefore);
+      expect(session.cancellationsFor(_machineStatusUuid), statusCancelsBefore);
       expect(
-        session.writesFor(ccUUID).length,
-        writesBefore,
-        reason: 'the sweep yielded to the lease before any read',
+        session.cancellationsFor(ftmsIndoorBikeDataUUID),
+        bikeCancelsBefore,
       );
-      // The block it took is released on the way out.
+      expect(session.isListening(_machineStatusUuid), isTrue);
+      expect(session.notificationsEnabledNow(_machineStatusUuid), isTrue);
+      // The block was never taken, so there is nothing to release.
       expect(deviceData.isFtmsNotificationsBlocked, isFalse);
 
-      // Releasing the last lease runs the deferred sweep against the same device.
       deviceData.endInteractiveFtmsSession(token);
-      await _until(
-        () => session.writesFor(ccUUID).length > writesBefore,
-        'the deferred sweep should run once the lease is released',
-      );
-
+      await _settle();
       deviceData.dispose();
     });
+
+    // The loop-level yield — a lease acquired *after* a sweep is already
+    // running — needs an operation parked in flight to hold the pump open long
+    // enough to take the lease, which the synchronous DIRCON write fake cannot
+    // provide. It lives in ftms_control_point_transport_parity_test.dart, on
+    // the BLE platform fake's write gate.
   });
 }
 

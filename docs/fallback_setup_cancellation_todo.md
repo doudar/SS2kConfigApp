@@ -83,3 +83,64 @@ happen once".
 The **cancellable / generation-gated fallback setup** the review response
 scoped out: a `beginInteractiveFtmsSession`-style seam is in place, but the
 fallback's own setup is not yet cancellable. Item 1 is the concrete first step.
+
+---
+
+## Additional cleanup (Codex round-2 review of `dircon-calibration-parity`)
+
+Round 2 landed the test-correctness pass (the headline regression test now
+reproduces the race it guards; the mislabeled DIRCON "in-flight sweep" test
+moved to `ftms_control_point_transport_parity_test.dart` on a real write gate;
+new coverage for the `settle: true` fallback and the queued-spin-down dispatch
+boundary). These three items were consciously left for later.
+
+### 4. Move the transport value-exceptions out of `ble_connection_retry.dart` (finding 5a)
+
+[`TransportNotConnected`](../lib/utils/ble_connection_retry.dart) and
+[`TransportResponseUnconfirmed`](../lib/utils/ble_connection_retry.dart) are
+transport-layer result types thrown and caught all over `device_data.dart`
+(the settings sweep, the strict custom write, the calibration log-stream
+enable). They have nothing to do with *connection retry* and only live in that
+file for historical reasons — every consumer imports the retry helper solely
+for them.
+
+- Move both classes (and, arguably, `BleConnectionAttemptsExhausted`) into a
+  dedicated `lib/utils/transport_exceptions.dart`.
+- `ble_connection_retry.dart` re-exports or imports from it, so
+  `retryBleConnection` callers are unaffected.
+- Pure relocation: no behaviour change, no new test beyond the suite staying
+  green and `flutter analyze` staying clean.
+
+### 5. The existing fallback-cancellation TODO — see item 1
+
+The `// TODO(dircon-calibration-parity)` at the
+[`setupConnection(...).timeout(10s)`](../lib/utils/device_data.dart) site is the
+same work as **item 1** above (a `Future.timeout` that frees the caller without
+cancelling the wrapped setup). Not a separate task — listed here only so the
+in-code TODO has a home to point at.
+
+### 6. Full dispatch-receipt for the spin-down (calibration_monitor.dart)
+
+`CalibrationMonitor._dispatchSpinDown` now marks the request sent from
+`onDispatch`, fired adjacent to the wire write, so a frame from a *previous
+run* cannot acknowledge a spin-down still queued behind other transport work.
+The [`// TODO(dircon-calibration-parity)`](../lib/utils/calibration_monitor.dart)
+there asks for the stronger guarantee:
+
+- Correlate each dispatch to a **transport epoch + run generation + timestamp**,
+  not just "a write has gone out".
+- A frame produced under an *earlier transport epoch* (e.g. one buffered on the
+  DIRCON socket before a BLE fallback) must not acknowledge a run dispatched
+  after the epoch change — even though `onDispatch` has fired by then.
+- Acceptance test: dispatch a run over BLE after a DIRCON→BLE fallback, inject a
+  spin-down frame stamped with the pre-fallback epoch, assert it does **not**
+  acknowledge; inject one from the current epoch, assert it does.
+- Depends on the epoch/generation plumbing from item 1, which is why it is
+  deferred with it.
+
+### `logs/` is not part of the repo
+
+The serial captures and hand-written homing notes under `logs/` are working
+material for this investigation, not deliverables. `.gitignore` now excludes
+`logs/` so it stays untracked; the two root `HANDOFF-*.md` notes remain
+untracked and superseded by this document.

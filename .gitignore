@@ -111,6 +111,9 @@ test_output.txt
 # Coverage artifacts
 /coverage/
 
+# Investigation working material — serial captures, hand-written homing notes
+/logs/
+
 #Extensions
 .claude/
 .docs/
