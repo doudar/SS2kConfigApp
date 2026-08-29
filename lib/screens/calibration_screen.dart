@@ -180,6 +180,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     );
   }
 
+  /// The button handler. `_startRun` returns a future, and passing it straight
+  /// to a `VoidCallback` silently dropped it — so a start failure was an
+  /// unhandled async error rather than a verdict on screen.
+  ///
+  /// `CalibrationMonitor.start` reports failures as a terminal phase instead of
+  /// throwing, so this only has to make the discarded future explicit.
+  void _startRunPressed() => unawaited(_startRun());
+
   Future<void> _startRun() async {
     _clearVerdict();
     _symptom = null;
@@ -253,6 +261,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           machineStatus: _monitor.machineStatusLog,
           droppedStatusFrames: _monitor.droppedStatusFrames,
           machineStatusReadiness: _monitor.notificationsReadiness,
+          acknowledged: _monitor.acknowledged,
+          acknowledgedAfter: _monitor.acknowledgedAfter,
+          ackChannelsLive: _monitor.ackChannelsLive,
+          ackSource: _monitor.ackSource,
+          startFailure: _monitor.startFailure,
           transport: deviceData.activeTransportName,
           phase: _monitor.phase,
           minFound: _monitor.minFound,
@@ -367,7 +380,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       primaryLabel: _isBikePlus
           ? 'Start with resistance data'
           : 'Start Calibration',
-      onPrimary: needsSetup ? null : _startRun,
+      onPrimary: needsSetup ? null : _startRunPressed,
       children: [
         _Callout(
           icon: Icons.info_outline,
@@ -462,6 +475,15 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   // ===== Page 2: the run, and the verdict it ends on =====
 
+  /// Failures that landed before homing ever began. Every one of them has a
+  /// specific cause in its verdict body, and none of them is a homing-force
+  /// problem.
+  static const Set<CalibrationPhase> _preHomingFailures = {
+    CalibrationPhase.failedToStart,
+    CalibrationPhase.failedNoAcknowledgement,
+    CalibrationPhase.failedNeverStarted,
+  };
+
   Widget _buildRunningPage() {
     final phase = _monitor.phase;
     final gauge = _monitor.gaugeReading;
@@ -471,6 +493,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     final showCadence = !_cadenceDetected;
     final succeeded = phase == CalibrationPhase.complete;
     final needsVisualConfirmation = succeeded && _endStopsApply;
+    // The troubleshooting page is entirely about homing force and end stops.
+    // Neither is implicated when the search never ran, so offer the retry the
+    // verdict body has just asked for rather than routing the user to advice
+    // that cannot apply.
+    final retryOnly = !succeeded && _preHomingFailures.contains(phase);
 
     return _CalibrationPage(
       primaryLabel: !_showVerdict
@@ -479,8 +506,16 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           ? needsVisualConfirmation
                 ? 'Yes, done'
                 : 'Done'
+          : retryOnly
+          ? 'Try Again'
           : 'Show me how to fix it',
-      onPrimary: !_showVerdict ? null : (succeeded ? _finish : () => _goTo(2)),
+      onPrimary: !_showVerdict
+          ? null
+          : succeeded
+          ? _finish
+          : retryOnly
+          ? _startRunPressed
+          : () => _goTo(2),
       secondaryLabel: _showVerdict && needsVisualConfirmation
           ? 'No, something looked wrong'
           : null,
@@ -498,6 +533,25 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             body:
                 'Waiting for SmartSpin2k to finish settling before the homing '
                 'command goes out. This normally takes a few seconds.',
+          ),
+          const SizedBox(height: 16),
+        ],
+        // The run goes ahead without Machine Status — the log and hMax paths
+        // still track it — but the rider deserves to know the screen is working
+        // from fewer sources than usual, and to be told *before* the pedal
+        // prompt rather than after a verdict that cannot explain itself.
+        if (!preparing &&
+            !_showVerdict &&
+            _monitor.notificationsReadiness !=
+                FtmsNotificationsReadiness.ready) ...[
+          _Callout(
+            icon: Icons.warning_amber,
+            color: Colors.amber.shade800,
+            title: 'Limited progress reporting',
+            body:
+                'SmartSpin2k is not confirming each homing step on this '
+                'connection, so this screen has less to go on. The calibration '
+                'will still run — watch the knob and follow the prompts.',
           ),
           const SizedBox(height: 16),
         ],
@@ -632,6 +686,17 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   String _failureTitle(CalibrationPhase phase) {
     switch (phase) {
+      case CalibrationPhase.failedToStart:
+        return 'Calibration could not be started';
+      case CalibrationPhase.failedNoAcknowledgement:
+        // Two genuinely different diagnoses. With an evidence channel live the
+        // device demonstrably ignored the request; with none, the app was blind
+        // and cannot claim the device did anything.
+        return _monitor.ackChannelsLive
+            ? 'The SmartSpin2k did not respond'
+            : 'Couldn\'t confirm calibration started';
+      case CalibrationPhase.failedNeverStarted:
+        return 'The SmartSpin2k never started homing';
       case CalibrationPhase.failedAborted:
         return 'Calibration was aborted';
       case CalibrationPhase.failedUnsupported:
@@ -647,6 +712,21 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   String _failureBody(CalibrationPhase phase) {
     switch (phase) {
+      case CalibrationPhase.failedToStart:
+        return '${_monitor.startFailure ?? 'The calibration command could not be sent.'} '
+            'Check that the SmartSpin2k is still connected, then try again.';
+      case CalibrationPhase.failedNoAcknowledgement:
+        return _monitor.ackChannelsLive
+            ? 'The calibration command was sent but the SmartSpin2k never acknowledged it. '
+                  'It normally answers straight away, before you start pedalling. Try '
+                  'restarting the SmartSpin2k, then calibrate again.'
+            : 'The command was sent, but nothing came back on any channel, so there is no '
+                  'way to tell whether the SmartSpin2k started. Reconnect and try again.';
+      case CalibrationPhase.failedNeverStarted:
+        return 'The SmartSpin2k accepted the calibration command but never began homing. '
+            'It waits to see a couple of seconds of steady pedaling first, and it can only '
+            'see that through a connected power meter or cadence sensor. Check that yours is '
+            'paired and reporting, then try again.';
       case CalibrationPhase.failedAborted:
         return 'The shifter moved during homing, which the SmartSpin2k treats as a cancel. '
             'Leave the shifter alone and try again.';
@@ -675,7 +755,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         primaryLabel: 'Done',
         onPrimary: () => Navigator.of(context).pop(),
         secondaryLabel: 'Try Again',
-        onSecondary: _startRun,
+        onSecondary: _startRunPressed,
         children: [
           _Callout(
             icon: Icons.pedal_bike,
@@ -721,7 +801,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
     return _CalibrationPage(
       primaryLabel: 'Try Again',
-      onPrimary: _startRun,
+      onPrimary: _startRunPressed,
       secondaryLabel: 'Done',
       onSecondary: () => Navigator.of(context).pop(),
       children: [

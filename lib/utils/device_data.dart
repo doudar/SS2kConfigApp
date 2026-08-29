@@ -199,6 +199,50 @@ class FtmsData {
   }) : _targetERG = targetERG;
 }
 
+/// How urgent a transport operation is, relative to everything already queued.
+///
+/// The queue is shared by BLE *and* DIRCON work, and by traffic with wildly
+/// different urgency: a calibration command the user is waiting on, and a
+/// forty-entry settings sweep that can afford to wait. Ordering by arrival
+/// alone is what let the sweep bury the command.
+enum TransportOpPriority {
+  /// Commands the device acts on and the user is waiting for: FTMS control
+  /// point. Overtakes everything queued.
+  control,
+
+  /// User-initiated writes and workout target delivery.
+  interactive,
+
+  /// Settings sweeps and periodic polls. Nothing is waiting on these.
+  background,
+}
+
+class _PendingTransportOp {
+  _PendingTransportOp(this.priority, this.label, this.run);
+
+  final TransportOpPriority priority;
+  final String label;
+  final Future<void> Function() run;
+  final DateTime queuedAt = DateTime.now();
+}
+
+/// FTMS discovery results for one connection epoch. See
+/// [DeviceData._ftmsCapabilitiesForEpoch] for why this is scoped per epoch.
+class _FtmsCapabilities {
+  _FtmsCapabilities(this.epoch);
+
+  final int epoch;
+
+  /// Whether an FTMS service with characteristics was found at all.
+  bool discoveryRan = false;
+
+  /// Whether 0x2ADA was among them.
+  bool machineStatusPresent = false;
+
+  /// Whether the one permitted re-probe has already been spent on this epoch.
+  bool reprobed = false;
+}
+
 class DeviceData {
   DeviceData({DirConConnector? dirConConnector})
     : _dirConConnector = dirConConnector ?? _connectDirConClient {
@@ -220,6 +264,7 @@ class DeviceData {
   StreamSubscription<List<int>>? _dirConNotificationSubscription;
   StreamSubscription<List<int>>? _dirConFtmsSubscription;
   StreamSubscription<List<int>>? _dirConMachineStatusSubscription;
+  StreamSubscription<List<int>>? _dirConControlPointSubscription;
   StreamSubscription<void>? _dirConDisconnectedSubscription;
   bool _dirConSetupComplete = false;
   bool _dirConReconnectInProgress = false;
@@ -237,6 +282,8 @@ class DeviceData {
   /// absent, the enable may have failed, the session may have died — so this is
   /// what [awaitFtmsNotificationsReady] answers from rather than the counter.
   bool _machineStatusNotificationsLive = false;
+  bool _controlPointNotificationsLive = false;
+  _FtmsCapabilities? _ftmsCapabilities;
 
   /// Waiters for the current block cycle. Created on the outermost 0 -> 1
   /// transition and completed by the final unblock; see
@@ -299,36 +346,48 @@ class DeviceData {
     // Guard against duplicate subscriptions
     if (_reconnectSubscription != null) return;
 
-    _reconnectSubscription = device.connectionState.listen((state) async {
-      // A DIRCON session deliberately leaves the Android BLE GATT connection
-      // disconnected. Do not let that idle BLE state overwrite the active
-      // network transport or start a competing reconnect loop.
-      if (isDirConConnected) return;
+    // `Stream.listen` discards the future an async callback returns, so an
+    // uncaught throw in here is an unhandled async error with no owner: silent
+    // in release, an isolate pause in debug. This one drives reconnection, so
+    // it is also the callback least able to afford dying quietly.
+    _reconnectSubscription = device.connectionState.listen(
+      (state) async {
+        try {
+          // A DIRCON session deliberately leaves the Android BLE GATT
+          // connection disconnected. Do not let that idle BLE state overwrite
+          // the active network transport or start a competing reconnect loop.
+          if (isDirConConnected) return;
 
-      if (state == BluetoothConnectionState.connected) {
-        _markTransportConnected(DeviceTransportKind.bluetooth, device);
-        return;
-      }
+          if (state == BluetoothConnectionState.connected) {
+            _markTransportConnected(DeviceTransportKind.bluetooth, device);
+            return;
+          }
 
-      if (state == BluetoothConnectionState.disconnected) {
-        if (isUserDisconnect) {
-          _markTransportDisconnected(explicit: true);
-          return;
+          if (state == BluetoothConnectionState.disconnected) {
+            if (isUserDisconnect) {
+              _markTransportDisconnected(explicit: true);
+              return;
+            }
+            if (_initialConnectionInProgress) return;
+
+            _markTransportReconnecting(DeviceTransportKind.bluetooth);
+
+            // Reset connection-specific state so the next setupConnection
+            // performs a full re-bootstrap (re-discover services, re-subscribe
+            // to notifications, etc.).  Without this, stale references to the
+            // old connection's characteristics remain and no data flows after
+            // reconnection.
+            _resetConnectionState();
+
+            await reconnectAndSetup(device);
+          }
+        } catch (error) {
+          print('[AutoReconnect] connection state handler failed: $error');
         }
-        if (_initialConnectionInProgress) return;
-
-        _markTransportReconnecting(DeviceTransportKind.bluetooth);
-
-        // Reset connection-specific state so the next setupConnection
-        // performs a full re-bootstrap (re-discover services, re-subscribe
-        // to notifications, etc.).  Without this, stale references to the
-        // old connection's characteristics remain and no data flows after
-        // reconnection.
-        _resetConnectionState();
-
-        await reconnectAndSetup(device);
-      }
-    });
+      },
+      onError: (Object error) =>
+          print('[AutoReconnect] connectionState stream error: $error'),
+    );
   }
 
   /// Connect using the IP advertised by SmartSpin2k whenever its DIRCON
@@ -447,6 +506,23 @@ class DeviceData {
       label: 'FTMS Machine Status',
       enable: !blocked,
     );
+    // The control point's own responses. Failures here are swallowed rather
+    // than rethrown: this is an evidence channel, not a transport requirement,
+    // and the two subscriptions above have already established that the session
+    // is usable. A transport that dies at this exact moment is the disconnect
+    // listener's problem.
+    StreamSubscription<List<int>>? controlPointSubscription;
+    try {
+      controlPointSubscription = await _subscribeDirConNotifications(
+        session,
+        FTMS_CONTROL_POINT_CHARACTERISTIC_UUID,
+        _forwardControlPointResponse,
+        label: 'FTMS Control Point',
+        enable: !blocked,
+      );
+    } catch (error) {
+      print('[DIRCON] FTMS Control Point subscribe failed: $error');
+    }
 
     // The disconnect handler above may have torn this session down while
     // discovery was in flight, which nulls the subscription fields. Assigning
@@ -455,11 +531,14 @@ class DeviceData {
     if (_dirConSession != session) {
       await ftmsSubscription?.cancel();
       await machineStatusSubscription?.cancel();
+      await controlPointSubscription?.cancel();
       throw StateError('DIRCON session was lost during FTMS setup');
     }
     _dirConFtmsSubscription = ftmsSubscription;
     _dirConMachineStatusSubscription = machineStatusSubscription;
+    _dirConControlPointSubscription = controlPointSubscription;
     _machineStatusNotificationsLive = machineStatusSubscription != null;
+    _controlPointNotificationsLive = controlPointSubscription != null;
 
     print('[DIRCON] Connected to $ipAddress');
     if (waitForSetup) {
@@ -558,6 +637,21 @@ class DeviceData {
     _machineStatusController.add(value);
   }
 
+  /// Publishes a raw FTMS Control Point response frame from either transport.
+  ///
+  /// `0x2AD9` is `WRITE | NOTIFY` on this firmware and the response is sent
+  /// **unconditionally** — `BLE_Fitness_Machine_Service.cpp:353-354` notifies
+  /// without checking for a subscriber, on the reasoning that a write request
+  /// is what triggered it. That makes this the most reliable acknowledgement
+  /// channel the protocol offers, and strictly more reliable than `0x2ADA`,
+  /// which the same handler only re-notifies when the status value actually
+  /// *changed* (`:361`) — so a repeated spin-down request produces no Machine
+  /// Status frame at all.
+  void _forwardControlPointResponse(List<int> value) {
+    if (_isDisposed || _controlPointController.isClosed) return;
+    _controlPointController.add(value);
+  }
+
   void _setupConnectionInBackground(BluetoothDevice device) {
     unawaited(
       setupConnection(device).catchError((Object error, StackTrace stackTrace) {
@@ -600,7 +694,8 @@ class DeviceData {
   Future<void> _connectBleAfterDirConLoss(BluetoothDevice device) async {
     _markTransportConnecting(DeviceTransportKind.bluetooth);
     final stopwatch = Stopwatch()..start();
-    if (device.isConnected) {
+    final reusedSession = device.isConnected;
+    if (reusedSession) {
       print('[DIRCON][FALLBACK] reusing connected BLE GATT session');
     } else {
       print('[DIRCON][FALLBACK] connecting BLE GATT session');
@@ -616,19 +711,42 @@ class DeviceData {
     if (ftmsControlPointCharacteristic == null || !device.isConnected) {
       throw StateError('BLE FTMS Control Point is not ready after DIRCON loss');
     }
-    _markTransportConnected(DeviceTransportKind.bluetooth, device);
+    // The FTMS setup inside `setupConnection` above ran while this transport was
+    // still `connecting`, so it bailed on `!isTransportActive`. Nothing else
+    // will drive it now that the settle block is skipped, so drive it here.
+    _markTransportConnected(
+      DeviceTransportKind.bluetooth,
+      device,
+      settle: !reusedSession,
+    );
     print(
       '[DIRCON][FALLBACK] BLE ready epoch=${_transportStateController.value.epoch} '
-      'duration=${stopwatch.elapsedMilliseconds}ms; redelivering target.',
+      'duration=${stopwatch.elapsedMilliseconds}ms '
+      'settle=${!reusedSession}; redelivering target.',
     );
+    if (reusedSession) {
+      await ensureFtmsNotifications(device);
+    }
     await _runReconnectedCallbacks();
   }
 
-  Future<void> _runReconnectedCallbacks() async {
-    for (final callback in List<Future<void> Function()>.from(
-      _onReconnectedCallbacks,
-    )) {
-      await callback();
+  /// Reconnect callbacks are advisory: they refresh UI, re-read RSSI, redeliver
+  /// a workout target. Restoring the transport is the transaction; none of this
+  /// is part of it. A failing callback must not skip its siblings, and must not
+  /// turn a successfully restored link into a failed reconnect attempt — which
+  /// is what an unisolated throw here used to do at the `[AutoReconnect]` catch.
+  Future<void> _runReconnectedCallbacks([
+    Future<void> Function()? only,
+  ]) async {
+    final callbacks = only != null
+        ? <Future<void> Function()>[only]
+        : List<Future<void> Function()>.from(_onReconnectedCallbacks);
+    for (final callback in callbacks) {
+      try {
+        await callback();
+      } catch (error) {
+        print('[Reconnect] callback failed (ignored): $error');
+      }
     }
   }
 
@@ -686,12 +804,15 @@ class DeviceData {
     }
     _workoutControlLane.onAvailabilityChanged();
     _machineStatusNotificationsLive = false;
+    _controlPointNotificationsLive = false;
     await _dirConNotificationSubscription?.cancel();
     _dirConNotificationSubscription = null;
     await _dirConFtmsSubscription?.cancel();
     _dirConFtmsSubscription = null;
     await _dirConMachineStatusSubscription?.cancel();
     _dirConMachineStatusSubscription = null;
+    await _dirConControlPointSubscription?.cancel();
+    _dirConControlPointSubscription = null;
     await _dirConDisconnectedSubscription?.cancel();
     _dirConDisconnectedSubscription = null;
     if (session != null) await session.close();
@@ -709,17 +830,29 @@ class DeviceData {
     _transportStateController.markReconnecting(transport);
   }
 
+  /// [settle] false skips the post-connection quiet window. It exists to let a
+  /// *newly established* GATT link settle before notifications are enabled; a
+  /// session that has been up for minutes and is merely being promoted to the
+  /// active transport has nothing to settle, and the block would only leave the
+  /// FTMS streams down for another ten seconds.
   void _markTransportConnected(
     DeviceTransportKind transport,
-    BluetoothDevice device,
-  ) {
+    BluetoothDevice device, {
+    bool settle = true,
+  }) {
     if (_isDisposed) return;
     final wasAlreadyConnected =
         _transportStateController.value.transport == transport &&
         _transportStateController.value.phase == DeviceTransportPhase.connected;
     _transportStateController.markConnected(transport);
-    if (!wasAlreadyConnected) {
+    if (!wasAlreadyConnected && settle) {
       _startFtmsPostConnectionBlock(device);
+    } else if (!settle) {
+      // A settle block outstanding from the *previous* transport blocks this
+      // one's setup until its original deadline expires. Same reasoning as
+      // skipping the window: the link has been up, there is nothing to settle,
+      // and leaving the block in place is what keeps the FTMS streams down.
+      _endFtmsPostConnectionBlock(device);
     }
   }
 
@@ -734,6 +867,17 @@ class DeviceData {
       _ftmsPostConnectionBlockActive = false;
       unawaited(unblockFtmsNotifications(device));
     });
+  }
+
+  /// Releases the settle block now instead of at its deadline. The refcount is
+  /// decremented synchronously, so a caller may drive setup immediately after.
+  void _endFtmsPostConnectionBlock(BluetoothDevice device) {
+    _ftmsPostConnectionTimer?.cancel();
+    _ftmsPostConnectionTimer = null;
+    if (!_ftmsPostConnectionBlockActive) return;
+    _ftmsPostConnectionBlockActive = false;
+    print('[FTMS] settle block ended early: transport promoted');
+    unawaited(unblockFtmsNotifications(device));
   }
 
   void _markTransportDisconnected({required bool explicit}) {
@@ -815,15 +959,7 @@ class DeviceData {
               );
               await _connectDirCon(device, ipAddress, waitForSetup: true);
 
-              if (onReconnected != null) {
-                await onReconnected();
-              } else {
-                for (final callback in List<Future<void> Function()>.from(
-                  _onReconnectedCallbacks,
-                )) {
-                  await callback();
-                }
-              }
+              await _runReconnectedCallbacks(onReconnected);
 
               success = true;
               print('[AutoReconnect] Reconnected via DIRCON successfully.');
@@ -859,15 +995,7 @@ class DeviceData {
             throw Exception('Device disconnected during setup.');
           }
 
-          if (onReconnected != null) {
-            await onReconnected();
-          } else {
-            for (final callback in List<Future<void> Function()>.from(
-              _onReconnectedCallbacks,
-            )) {
-              await callback();
-            }
-          }
+          await _runReconnectedCallbacks(onReconnected);
 
           success = true;
           print('[AutoReconnect] Reconnected successfully.');
@@ -912,6 +1040,10 @@ class DeviceData {
     _pendingCustomResponse = null;
     _pendingCustomResponseReference = null;
     _customReadRequestCoalescer.clear();
+    // The breaker describes a link that no longer exists; the next one starts
+    // with a clean record.
+    _consecutiveCustomResponseTimeouts = 0;
+    customResponsesDegraded.value = false;
     subscribed = false;
     charReceived.value = false;
     _myCharacteristic = null;
@@ -926,6 +1058,9 @@ class DeviceData {
     _machineStatusSubscription?.cancel();
     _machineStatusSubscription = null;
     _machineStatusNotificationsLive = false;
+    _controlPointSubscription?.cancel();
+    _controlPointSubscription = null;
+    _controlPointNotificationsLive = false;
     _inUpdateLoop = false;
     _lastRequestStopwatch.reset();
     _cachedCharacteristicMap = null;
@@ -1002,6 +1137,7 @@ class DeviceData {
   BluetoothCharacteristic? indoorBikeCharacteristic;
   BluetoothCharacteristic? machineStatusCharacteristic;
   StreamSubscription<List<int>>? _machineStatusSubscription;
+  StreamSubscription<List<int>>? _controlPointSubscription;
   Completer<void>? _discoverServicesCompleter;
   final ConnectionSetupCoordinator _setupCoordinator =
       ConnectionSetupCoordinator();
@@ -1026,6 +1162,18 @@ class DeviceData {
   final StreamController<List<int>> _machineStatusController =
       StreamController<List<int>>.broadcast();
   Stream<List<int>> get machineStatusStream => _machineStatusController.stream;
+
+  // Raw FTMS Control Point (0x2AD9) response frames. See
+  // [_forwardControlPointResponse] for why this channel is more dependable than
+  // 0x2ADA for "the device processed my command".
+  final StreamController<List<int>> _controlPointController =
+      StreamController<List<int>>.broadcast();
+  Stream<List<int>> get controlPointResponseStream =>
+      _controlPointController.stream;
+
+  /// Whether an FTMS Control Point response listener is published and its
+  /// wire-level enable succeeded on the current session.
+  bool get controlPointNotificationsLive => _controlPointNotificationsLive;
 
   String simulatedTargetWatts = "";
   String simulatedFTMSmode = "";
@@ -1205,10 +1353,13 @@ class DeviceData {
       final stale = <StreamSubscription<List<int>>?>[
         _ftmsSubscription,
         _machineStatusSubscription,
+        _controlPointSubscription,
       ];
       _ftmsSubscription = null;
       _machineStatusSubscription = null;
+      _controlPointSubscription = null;
       _machineStatusNotificationsLive = false;
+      _controlPointNotificationsLive = false;
       _ftmsBlockGeneration++;
       for (final subscription in stale) {
         await _safeCancel(subscription, 'FTMS');
@@ -1318,15 +1469,20 @@ class DeviceData {
       }
 
       // ftms
-      BluetoothService ftmsService = services.first;
+      //
+      // Scoped to its own list rather than reusing `characteristics`: that
+      // local still holds the firmware service's characteristics, so a device
+      // with no FTMS service used to scan *those* — matching nothing, but
+      // leaving no way to tell "FTMS absent" from "FTMS scanned and empty".
+      List<BluetoothCharacteristic> ftmsCharacteristics =
+          const <BluetoothCharacteristic>[];
       for (BluetoothService s in services) {
         if (s.uuid == Guid(ftmsServiceUUID)) {
-          ftmsService = s;
-          characteristics = ftmsService.characteristics;
+          ftmsCharacteristics = s.characteristics;
           break;
         }
       }
-      for (BluetoothCharacteristic c in characteristics) {
+      for (BluetoothCharacteristic c in ftmsCharacteristics) {
         if (c.uuid == Guid(ftmsIndoorBikeDataUUID)) {
           // Discovery only records the characteristic. Notification lifecycle
           // is owned exclusively by the FTMS block/subscription methods.
@@ -1343,12 +1499,39 @@ class DeviceData {
         }
       }
 
+      final capabilities = _ftmsCapabilitiesForEpoch();
+      capabilities.discoveryRan = ftmsCharacteristics.isNotEmpty;
+      capabilities.machineStatusPresent = machineStatusCharacteristic != null;
+      print(
+        '[FTMS] discovery epoch=${capabilities.epoch} '
+        'ftmsService=${capabilities.discoveryRan} '
+        'indoorBike=${indoorBikeCharacteristic != null} '
+        'controlPoint=${ftmsControlPointCharacteristic != null} '
+        'machineStatus=${capabilities.machineStatusPresent}',
+      );
+
       charReceived.value = _myCharacteristic != null;
       _workoutControlLane.onAvailabilityChanged();
     } catch (e) {
+      print('[BLE] characteristic discovery failed: $e');
       charReceived.value = false;
       _workoutControlLane.onAvailabilityChanged();
     }
+  }
+
+  /// What FTMS discovery found on one connection epoch.
+  ///
+  /// A missed 0x2ADA has to be re-probed exactly once per connection. Never
+  /// re-probing makes the miss permanent for the life of the link — which is the
+  /// A6 failure mode, since neither `needsBootstrap` nor
+  /// [_ensureFtmsNotifications] keys rediscovery off Machine Status. Re-probing
+  /// unconditionally would re-run service discovery forever on firmware that
+  /// legitimately has no Machine Status characteristic.
+  _FtmsCapabilities _ftmsCapabilitiesForEpoch() {
+    final epoch = _transportStateController.value.epoch;
+    final existing = _ftmsCapabilities;
+    if (existing != null && existing.epoch == epoch) return existing;
+    return _ftmsCapabilities = _FtmsCapabilities(epoch);
   }
 
   ///Data Helpers****************************************************************
@@ -1454,27 +1637,112 @@ class DeviceData {
 
   Future<void> _ensureFtmsNotifications(BluetoothDevice device) async {
     // A queued pass can start well after it was requested.
-    if (_isDisposed) return;
-    if (isFtmsNotificationsBlocked) return;
+    if (_isDisposed) {
+      print('[FTMS] setup skipped: disposed');
+      return;
+    }
+    if (isFtmsNotificationsBlocked) {
+      print('[FTMS] setup skipped: blocked($_ftmsNotificationBlocks)');
+      return;
+    }
 
     // The DIRCON session subscribes to FTMS during transport setup. Avoid
     // attempting BLE service discovery merely because a screen wants to make
     // sure the live stream is active.
-    if (!isTransportActive || isDirConConnected) return;
+    if (!isTransportActive || isDirConConnected) {
+      final state = _transportStateController.value;
+      print(
+        '[FTMS] setup skipped: '
+        '${isDirConConnected ? 'dircon owns FTMS' : 'transport inactive'} '
+        '(${state.transport.name}/${state.phase.name})',
+      );
+      return;
+    }
 
     // Both characteristics come out of the same `_findChar` pass, so Indoor
     // Bike Data being present is proof discovery has run. Keying off a null
     // Machine Status instead would re-discover on every call for firmware that
     // simply does not have it.
+    bool discoveredThisPass = false;
     if (indoorBikeCharacteristic == null) {
       await _discoverServices(device);
       if (isFtmsNotificationsBlocked) return;
       if (services.length > 1) {
         await _findChar();
+        discoveredThisPass = true;
       }
     }
 
-    await _subscribeBleNotifications(
+    // ...which leaves the case discovery cannot distinguish on its own: Indoor
+    // Bike Data present, Machine Status absent. That is either firmware without
+    // 0x2ADA or a discovery pass that missed it, and the difference decides
+    // whether calibration has an evidence channel. Spend exactly one forced
+    // re-probe per connection epoch settling it; after that the answer is
+    // recorded and believed.
+    final capabilities = _ftmsCapabilitiesForEpoch();
+    if (machineStatusCharacteristic == null &&
+        !capabilities.reprobed &&
+        !discoveredThisPass) {
+      capabilities.reprobed = true;
+      print(
+        '[FTMS] Machine Status absent on epoch ${capabilities.epoch}; '
+        're-probing services once',
+      );
+      await _discoverServices(device, forceRefresh: true);
+      if (_isDisposed || isFtmsNotificationsBlocked || !isTransportActive) {
+        return;
+      }
+      if (services.length > 1) {
+        await _findChar();
+      }
+      print(
+        '[FTMS] re-probe result: machineStatus='
+        '${machineStatusCharacteristic != null}',
+      );
+    }
+
+    var stale = await _subscribeFtmsCharacteristics(device);
+
+    // The other way discovery goes wrong, and the one Run D exposed: the
+    // characteristic object is *not* null, so the branch above never fires, but
+    // the platform's own service cache no longer contains 0x1826 and the enable
+    // comes back `primary service not found '1826'`. Cached characteristics
+    // outlive the services they were found in across a reconnect, so the only
+    // repair is to discover again and re-subscribe against the fresh objects.
+    //
+    // Deliberately drawing on the same one-per-epoch budget: both branches are
+    // asking the same question of the same connection, and a device that keeps
+    // failing the enable must not be able to drive service discovery in a loop.
+    if (stale && !capabilities.reprobed) {
+      capabilities.reprobed = true;
+      print(
+        '[FTMS] enable failed against a stale service cache on epoch '
+        '${capabilities.epoch}; re-probing services once',
+      );
+      await _discoverServices(device, forceRefresh: true);
+      if (_isDisposed || isFtmsNotificationsBlocked || !isTransportActive) {
+        return;
+      }
+      if (services.length > 1) {
+        await _findChar();
+      }
+      stale = await _subscribeFtmsCharacteristics(device);
+      print(
+        '[FTMS] stale-cache re-probe result: '
+        '${stale ? 'enable still failing' : 'recovered'}',
+      );
+    }
+  }
+
+  /// Subscribes the three FTMS notification characteristics, returning whether
+  /// any enable failed in a way that points at stale platform discovery.
+  ///
+  /// All three are attempted regardless of what the others do — firmware that
+  /// exposes one but not another must still deliver what it has.
+  Future<bool> _subscribeFtmsCharacteristics(BluetoothDevice device) async {
+    var stale = false;
+
+    stale |= await _subscribeBleNotifications(
       device,
       indoorBikeCharacteristic,
       _decodeIndoorBikeData,
@@ -1483,7 +1751,7 @@ class DeviceData {
       previous: _ftmsSubscription,
     );
 
-    await _subscribeBleNotifications(
+    stale |= await _subscribeBleNotifications(
       device,
       machineStatusCharacteristic,
       _forwardMachineStatus,
@@ -1494,7 +1762,45 @@ class DeviceData {
       },
       previous: _machineStatusSubscription,
     );
+
+    // The control point's responses. Not part of the readiness verdict — that
+    // question is specifically about 0x2ADA — but the channel calibration's
+    // acknowledgement stage trusts most. See [_forwardControlPointResponse].
+    stale |= await _subscribeBleNotifications(
+      device,
+      ftmsControlPointCharacteristic,
+      _forwardControlPointResponse,
+      label: 'FTMS Control Point',
+      publish: (subscription) {
+        _controlPointSubscription = subscription;
+        _controlPointNotificationsLive = subscription != null;
+      },
+      previous: _controlPointSubscription,
+    );
+
+    return stale;
   }
+
+  /// Whether a failed CCCD write says the platform's service cache is stale
+  /// rather than that the device refused.
+  ///
+  /// Both the Darwin and Android plugins phrase this identically —
+  /// `primary service not found '<uuid>'`, `secondary service not found`,
+  /// `characteristic not found in service` — raised when their own
+  /// `locateCharacteristic` walks a cached service list that no longer holds
+  /// the service. Matching on message text is unlovely, but the plugins give a
+  /// bare `PlatformException`/`FlutterBluePlusException` with no code that
+  /// separates this from a device-side refusal.
+  static bool _looksLikeStaleDiscovery(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('service not found') ||
+        text.contains('characteristic not found in service');
+  }
+
+  /// Upper bound on a single CCCD write. Without it one wedged enable holds the
+  /// shared transport queue for as long as the platform takes to give up, which
+  /// is what turns a stalled device into a stalled app.
+  static const Duration _notifyEnableTimeout = Duration(seconds: 5);
 
   /// Subscribes one BLE FTMS characteristic, listening *before* enabling.
   ///
@@ -1507,7 +1813,12 @@ class DeviceData {
   /// *undone* rather than merely abandoned. Returning early would leave the
   /// characteristic notifying with nothing listening — a block that had seen
   /// `isNotifying == false` would have scheduled no disable for it.
-  Future<void> _subscribeBleNotifications(
+  ///
+  /// Returns true when the enable failed in a way that points at a stale
+  /// platform service cache, which the caller can repair. Every other outcome —
+  /// success, an absent characteristic, a held block, a device-side refusal —
+  /// returns false, because none of them is fixed by discovering again.
+  Future<bool> _subscribeBleNotifications(
     BluetoothDevice device,
     BluetoothCharacteristic? characteristic,
     void Function(List<int>) onData, {
@@ -1525,9 +1836,14 @@ class DeviceData {
       // calibration gets told the stream is ready with no listener behind it.
       await _safeCancel(previous, label);
       publish(null);
-      return;
+      return false;
     }
-    if (isFtmsNotificationsBlocked) return;
+    if (isFtmsNotificationsBlocked) {
+      print(
+        '[BLE] $label subscribe skipped: blocked($_ftmsNotificationBlocks)',
+      );
+      return false;
+    }
 
     final generation = _ftmsBlockGeneration;
     await _safeCancel(previous, label);
@@ -1539,27 +1855,55 @@ class DeviceData {
     );
 
     bool enabled = false;
+    // Already-notifying is the invisible case: no CCCD write reaches the wire,
+    // so a serial capture shows nothing at all for this characteristic even
+    // though the subscription is healthy.
+    final needsWire = !characteristic.isNotifying;
     try {
-      if (!characteristic.isNotifying) {
-        await _queueBleOperation(() => characteristic.setNotifyValue(true));
+      if (needsWire) {
+        // The timeout goes *inside* the queued operation, not around the queue
+        // future: bounding the wait alone would free this caller while the slot
+        // stayed occupied by the wedged write.
+        await _queueBleOperation(
+          () => characteristic
+              .setNotifyValue(true)
+              .timeout(_notifyEnableTimeout),
+        );
       }
       enabled = true;
     } catch (e) {
       await _safeCancel(subscription, label);
-      print('[BLE] failed to enable $label notify: $e');
-      return;
+      final stale = _looksLikeStaleDiscovery(e);
+      print(
+        '[BLE] failed to enable $label notify'
+        '${stale ? ' (stale service cache)' : ''}: $e',
+      );
+      return stale;
     }
 
     if (_isDisposed ||
         generation != _ftmsBlockGeneration ||
         isFtmsNotificationsBlocked) {
+      print(
+        '[BLE] $label subscribe discarded: '
+        '${_isDisposed
+            ? 'disposed'
+            : generation != _ftmsBlockGeneration
+            ? 'generation $generation != $_ftmsBlockGeneration'
+            : 'blocked($_ftmsNotificationBlocks)'}',
+      );
       await _safeCancel(subscription, label);
       if (enabled) await _disableBleNotifications(characteristic, label);
-      return;
+      return false;
     }
 
     device.cancelWhenDisconnected(subscription);
     publish(subscription);
+    print(
+      '[BLE] $label subscribed '
+      '(${needsWire ? 'CCCD write issued' : 'already notifying, no CCCD write'})',
+    );
+    return false;
   }
 
   /// Cancels a notification subscription without letting a failing cancel cost
@@ -1617,16 +1961,22 @@ class DeviceData {
     final generation = ++_ftmsBlockGeneration;
     _machineStatusNotificationsLive = false;
 
+    _controlPointNotificationsLive = false;
+
     final subscriptions = <StreamSubscription<List<int>>?>[
       _ftmsSubscription,
       _machineStatusSubscription,
+      _controlPointSubscription,
       _dirConFtmsSubscription,
       _dirConMachineStatusSubscription,
+      _dirConControlPointSubscription,
     ];
     _ftmsSubscription = null;
     _machineStatusSubscription = null;
+    _controlPointSubscription = null;
     _dirConFtmsSubscription = null;
     _dirConMachineStatusSubscription = null;
+    _dirConControlPointSubscription = null;
     for (final subscription in subscriptions) {
       await _safeCancel(subscription, 'FTMS');
     }
@@ -1643,15 +1993,21 @@ class DeviceData {
       return;
     }
 
-    for (final (characteristic, label) in <(BluetoothCharacteristic?, String)>[
-      (indoorBikeCharacteristic, 'FTMS Indoor Bike Data'),
-      (machineStatusCharacteristic, 'FTMS Machine Status'),
-    ]) {
+    for (final (characteristic, label) in _bleFtmsNotificationCharacteristics) {
       if (!stillBlocking()) return;
       if (characteristic == null) continue;
       await _disableBleNotifications(characteristic, label);
     }
   }
+
+  /// The BLE characteristics the FTMS notification block owns, in setup order.
+  /// A getter rather than a field: these are re-assigned by every `_findChar`.
+  List<(BluetoothCharacteristic?, String)>
+  get _bleFtmsNotificationCharacteristics => [
+    (indoorBikeCharacteristic, 'FTMS Indoor Bike Data'),
+    (machineStatusCharacteristic, 'FTMS Machine Status'),
+    (ftmsControlPointCharacteristic, 'FTMS Control Point'),
+  ];
 
   /// Releases one block. The outermost release brings both streams back.
   Future<void> unblockFtmsNotifications(BluetoothDevice device) async {
@@ -1660,6 +2016,10 @@ class DeviceData {
     if (_ftmsNotificationBlocks > 0) return;
 
     _ftmsBlockGeneration++;
+    // Whether a setup pass actually ran on a live transport. A DIRCON pass that
+    // runs and fails still counts: `unavailable` is then the truth. Only a pass
+    // that never happened at all must stay silent.
+    bool setupAttempted = true;
     final dirConSession = _dirConSession;
     if (isDirConConnected && dirConSession != null) {
       // Same helper the initial setup uses, so the resubscribe also listens
@@ -1671,9 +2031,7 @@ class DeviceData {
           subscription = await _subscribeDirConNotifications(
             dirConSession,
             uuid,
-            uuid == ftmsIndoorBikeDataUUID
-                ? _decodeIndoorBikeData
-                : _forwardMachineStatus,
+            _dirConFtmsHandlerFor(uuid),
             label: label,
           );
         } catch (error) {
@@ -1711,28 +2069,67 @@ class DeviceData {
           await _safeCancel(subscription, label);
           break;
         }
-        if (uuid == ftmsIndoorBikeDataUUID) {
-          _dirConFtmsSubscription = subscription;
-        } else {
-          _dirConMachineStatusSubscription = subscription;
-          _machineStatusNotificationsLive = subscription != null;
-        }
+        _publishDirConFtmsSubscription(uuid, subscription);
       }
-    } else {
+    } else if (isTransportActive) {
       await ensureFtmsNotifications(device);
+    } else {
+      // The DIRCON->BLE fallback releases the settings-bootstrap block while
+      // the transport is still `connecting`, so this is a real state, not a
+      // defensive branch. `ensureFtmsNotifications` would bail on
+      // `!isTransportActive` and the release below would then hand every waiter
+      // an `unavailable` for a setup pass that never ran.
+      setupAttempted = false;
+      print(
+        '[FTMS] unblock: no setup attempted, transport inactive '
+        '(${_transportStateController.value.transport.name}/'
+        '${_transportStateController.value.phase.name}); '
+        'leaving readiness waiters pending',
+      );
     }
 
     // A block taken while the resubscribe was in flight invalidates this
     // attempt: leave the waiters pending for that cycle's own release rather
-    // than reporting a readiness the block just revoked.
-    if (_ftmsNotificationBlocks == 0) _releaseFtmsReadyWaiters();
+    // than reporting a readiness the block just revoked. Likewise, a pass that
+    // never ran must not be reported as a readiness verdict — the waiter's own
+    // deadline bounds the wait, and _markTransportDisconnected(explicit: true)
+    // releases it if the transport is never coming back.
+    if (_ftmsNotificationBlocks == 0 && setupAttempted) {
+      _releaseFtmsReadyWaiters();
+    }
   }
 
-  /// The two characteristics the FTMS notification block owns, in setup order.
+  /// The characteristics the FTMS notification block owns, in setup order.
   static final List<(String, String)> _ftmsNotificationCharacteristics = [
     (ftmsIndoorBikeDataUUID, 'FTMS Indoor Bike Data'),
     (FTMS_MACHINE_STATUS_CHARACTERISTIC_UUID, 'FTMS Machine Status'),
+    (FTMS_CONTROL_POINT_CHARACTERISTIC_UUID, 'FTMS Control Point'),
   ];
+
+  /// Not a `switch`: the UUID constants are `final`, not `const`, so they
+  /// cannot be pattern-matched.
+  void Function(List<int>) _dirConFtmsHandlerFor(String uuid) {
+    if (uuid == ftmsIndoorBikeDataUUID) return _decodeIndoorBikeData;
+    if (uuid == FTMS_CONTROL_POINT_CHARACTERISTIC_UUID) {
+      return _forwardControlPointResponse;
+    }
+    return _forwardMachineStatus;
+  }
+
+  void _publishDirConFtmsSubscription(
+    String uuid,
+    StreamSubscription<List<int>>? subscription,
+  ) {
+    if (uuid == ftmsIndoorBikeDataUUID) {
+      _dirConFtmsSubscription = subscription;
+    } else if (uuid == FTMS_CONTROL_POINT_CHARACTERISTIC_UUID) {
+      _dirConControlPointSubscription = subscription;
+      _controlPointNotificationsLive = subscription != null;
+    } else {
+      _dirConMachineStatusSubscription = subscription;
+      _machineStatusNotificationsLive = subscription != null;
+    }
+  }
 
   void _releaseFtmsReadyWaiters() {
     final completer = _ftmsReadyCompleter;
@@ -1750,26 +2147,64 @@ class DeviceData {
   ///
   /// Never touches the refcount. A caller waiting on this must not be able to
   /// revoke a block that OTA or the settings bootstrap is holding.
+  /// One deadline is spent across both concerns — waiting out a held block and
+  /// driving setup — so the caller's budget bounds the whole call. The previous
+  /// `if blocked / else if not-live` shape could return `unavailable` having
+  /// never attempted setup at all: a block that drained while the transport was
+  /// still `connecting` released the waiter, and the fall-through then reported
+  /// on a pass that never ran.
+  ///
+  /// Note what the deadline does and does not buy. Timing out
+  /// [ensureFtmsNotifications] frees *this* caller; it does not cancel the pass,
+  /// which stays on `_ftmsSetupQueue` and may still hold a transport-queue slot.
+  /// A UI timeout cannot repair a poisoned shared queue — the bounded
+  /// `setNotifyValue` in [_subscribeBleNotifications] and the
+  /// `_ftmsBlockGeneration` staleness check are what keep a wedged pass from
+  /// holding the queue forever or publishing onto a superseded connection.
   Future<FtmsNotificationsReadiness> awaitFtmsNotificationsReady(
     BluetoothDevice device, {
     required Duration timeout,
   }) async {
     if (_isDisposed) return FtmsNotificationsReadiness.disposed;
 
-    if (isFtmsNotificationsBlocked) {
-      final completer = (_ftmsReadyCompleter ??= Completer<void>());
-      try {
-        await completer.future.timeout(timeout);
-      } on TimeoutException {
-        return FtmsNotificationsReadiness.timedOut;
+    final deadline = DateTime.now().add(timeout);
+    Duration remaining() => deadline.difference(DateTime.now());
+
+    // A block retaken while setup was in flight sends us round again. Capped so
+    // a pathological block/unblock cycle cannot spin here; the deadline is the
+    // real bound.
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (isFtmsNotificationsBlocked) {
+        final budget = remaining();
+        if (budget <= Duration.zero) return FtmsNotificationsReadiness.timedOut;
+        final completer = (_ftmsReadyCompleter ??= Completer<void>());
+        try {
+          await completer.future.timeout(budget);
+        } on TimeoutException {
+          return FtmsNotificationsReadiness.timedOut;
+        }
+        if (_isDisposed) return FtmsNotificationsReadiness.disposed;
       }
-      if (_isDisposed) return FtmsNotificationsReadiness.disposed;
-    } else if (!_machineStatusNotificationsLive) {
+
+      if (_machineStatusNotificationsLive) break;
+
       // Unblocked but not yet subscribed is a real state: screens kick setup off
       // unawaited, so this can be the exact moment a caller asks. Drive it
       // rather than reporting a readiness that only happens to be pending.
-      await ensureFtmsNotifications(device);
-      if (_isDisposed) return FtmsNotificationsReadiness.disposed;
+      if (!isFtmsNotificationsBlocked) {
+        final budget = remaining();
+        if (budget <= Duration.zero) return FtmsNotificationsReadiness.timedOut;
+        try {
+          await ensureFtmsNotifications(device).timeout(budget);
+        } on TimeoutException {
+          return FtmsNotificationsReadiness.timedOut;
+        }
+        if (_isDisposed) return FtmsNotificationsReadiness.disposed;
+      }
+
+      // Setup ran to completion and nothing retook a block: this verdict is
+      // final, whatever it is.
+      if (!isFtmsNotificationsBlocked) break;
     }
 
     return _machineStatusNotificationsLive && isTransportActive
@@ -1951,24 +2386,15 @@ class DeviceData {
 
       try {
         if (indoorBikeCharacteristic != null && device.isConnected) {
-          // Toggle notifications to reset the stream
-          await _queueBleOperation(
-            () => indoorBikeCharacteristic!.setNotifyValue(false),
-          );
-          await Future.delayed(const Duration(milliseconds: 200));
-
-          if (!device.isConnected) {
-            print('[FTMS Recovery] Device disconnected during recovery.');
-            _triggerReconnect(device);
-            return;
-          }
-
-          await _queueBleOperation(
-            () => indoorBikeCharacteristic!.setNotifyValue(true),
-          );
-
-          // Force internal tracking update
-          lastFtmsUpdate = DateTime.now(); // Reset to avoid loop
+          await _recycleFtmsNotifications(device);
+          // Deliberately *not* resetting lastFtmsUpdate here. Recovery
+          // returning is not evidence that data is flowing —
+          // ensureFtmsNotifications returns normally after an individual enable
+          // failure — and a reset would report a recovery that did not happen
+          // and push the next attempt out by a full watchdog period.
+          // _lastFtmsRecoveryAttempt already supplies the cooldown that stops
+          // this becoming a tight loop; the timestamp stays stale until real
+          // Indoor Bike Data arrives and _decodeIndoorBikeData moves it.
         }
       } catch (e) {
         print('Error attempting FTMS recovery: $e');
@@ -1980,6 +2406,34 @@ class DeviceData {
         _ftmsRecoveryInProgress = false;
       }
     }
+  }
+
+  /// Cycles both FTMS notification streams off and back on.
+  ///
+  /// The old recovery wrote the CCCD on `indoorBikeCharacteristic` directly.
+  /// That repaired the *wire* and nothing else: it never republished
+  /// `_ftmsSubscription`, so a stream whose Dart listener had been cancelled
+  /// came back enabled with nobody reading it — a permanent stall/recover loop —
+  /// and it never touched Machine Status at all, leaving calibration's only
+  /// evidence channel down.
+  ///
+  /// Going through [ensureFtmsNotifications] keeps the wire-level kick and adds
+  /// the listener republish, symmetrically for both characteristics.
+  Future<void> _recycleFtmsNotifications(BluetoothDevice device) async {
+    for (final (characteristic, label) in _bleFtmsNotificationCharacteristics) {
+      if (characteristic == null) continue;
+      await _disableBleNotifications(characteristic, label);
+    }
+
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    if (!device.isConnected) {
+      print('[FTMS Recovery] Device disconnected during recovery.');
+      _triggerReconnect(device);
+      return;
+    }
+
+    await ensureFtmsNotifications(device);
   }
 
   /// Proactively trigger auto-reconnect when we detect disconnection through
@@ -2057,9 +2511,19 @@ class DeviceData {
           continue;
         }
 
-        // Do not poll for BLE logging as it floods the connection. We rely on notifications for this.
+        // Do not poll for BLE logging as it floods the connection. We rely on
+        // notifications for this.
         if (c["vName"] == BLE_logStreamVname) {
           continue;
+        }
+
+        // Once the device has stopped answering, every remaining entry costs a
+        // full response timeout and buys nothing. Abandoning the sweep also
+        // releases the FTMS block below far sooner, which is what lets a
+        // calibration run get its notifications back.
+        if (customResponsesDegraded.value) {
+          print('[transport] settings sweep abandoned: link degraded');
+          break;
         }
 
         try {
@@ -2076,6 +2540,8 @@ class DeviceData {
         }
       }
     } finally {
+      // Always, on every exit path — a sweep that abandoned early must not keep
+      // FTMS notifications suspended behind it.
       await unblockFtmsNotifications(device);
     }
   }
@@ -2091,6 +2557,10 @@ class DeviceData {
     for (final c in customCharacteristic) {
       if (c["isSetting"] != true || c["settingType"] != settingType) {
         continue;
+      }
+      if (customResponsesDegraded.value) {
+        print('[transport] settings request abandoned: link degraded');
+        break;
       }
 
       try {
@@ -2282,19 +2752,73 @@ class DeviceData {
       //value = [0xff];
     }
     try {
-      await writeCustomCharacteristic(device, value);
+      // A setting the user just changed, or a run enabling its log stream.
+      // Something is waiting on it, unlike the background settings sweep.
+      await writeCustomCharacteristic(
+        device,
+        value,
+        priority: TransportOpPriority.interactive,
+      );
     } catch (e) {
       Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
   }
 
-  Future<void> _writeQueue = Future.value();
+  final List<_PendingTransportOp> _pendingTransportOps = [];
+  bool _transportPumpRunning = false;
   DateTime? _lastBleWriteCompletedAt;
   Completer<void>? _pendingCustomResponse;
   int? _pendingCustomResponseReference;
   final CustomReadRequestCoalescer _customReadRequestCoalescer =
       CustomReadRequestCoalescer();
   static const Duration _customResponseTimeout = Duration(seconds: 2);
+
+  /// How many consecutive unanswered requests it takes to call the link
+  /// degraded. Two is within normal jitter; three in a row is a pattern.
+  static const int _customResponseFailureThreshold = 3;
+  int _consecutiveCustomResponseTimeouts = 0;
+
+  /// True while the device has stopped answering custom-characteristic
+  /// requests.
+  ///
+  /// A `ValueNotifier` because [DeviceData] is a plain class, not a
+  /// `ChangeNotifier` — the same idiom as `transportRevision` and
+  /// `charReceived`.
+  ///
+  /// Scope is deliberately narrow: only BLE response timeouts trip it. DIRCON
+  /// is request/response with its own timeout and no pending-response completer,
+  /// so it never contributes.
+  final ValueNotifier<bool> customResponsesDegraded = ValueNotifier<bool>(false);
+
+  void _recordCustomResponseTimeout() {
+    _consecutiveCustomResponseTimeouts++;
+    if (_consecutiveCustomResponseTimeouts < _customResponseFailureThreshold ||
+        customResponsesDegraded.value) {
+      return;
+    }
+    customResponsesDegraded.value = true;
+    print(
+      '[transport] link degraded: $_consecutiveCustomResponseTimeouts '
+      'consecutive unanswered requests; suspending background polling',
+    );
+    // One message on the edge, not one per request — a full sweep would
+    // otherwise stack forty identical snackbars.
+    Snackbar.show(
+      ABC.c,
+      'SmartSpin2k has stopped responding. Background updates paused.',
+      success: false,
+    );
+  }
+
+  /// Any answered request clears the breaker. Called from [_decodeCustomValue],
+  /// which is the one place a response is positively identified.
+  void _recordCustomResponseSuccess() {
+    _consecutiveCustomResponseTimeouts = 0;
+    if (customResponsesDegraded.value) {
+      customResponsesDegraded.value = false;
+      print('[transport] link recovered: background polling resumed');
+    }
+  }
   final Object _bleOperationZoneKey = Object();
   final Set<Object> _activeBleOperationTokens = <Object>{};
 
@@ -2306,9 +2830,22 @@ class DeviceData {
   Duration get _bleWriteGuardInterval =>
       Platform.isAndroid ? const Duration(milliseconds: 35) : Duration.zero;
 
+  /// Serializes one transport operation, ahead of lower-priority queued work.
+  ///
+  /// What this does and does not guarantee. A [TransportOpPriority.control]
+  /// operation overtakes every *queued* background operation — which is the
+  /// case that mattered: a calibration spin-down used to queue behind a
+  /// forty-entry settings sweep, each entry costing up to
+  /// [_customResponseTimeout] against a device that had stopped answering, for
+  /// well over a minute of delay. It cannot preempt the operation already
+  /// running. An in-flight service discovery, CCCD write or DIRCON round trip
+  /// can exceed two seconds and some have no explicit bound, so the honest
+  /// worst case is one in-flight operation, not a fixed number of seconds.
   Future<T> _queueBleOperation<T>(
     Future<T> Function() operation, {
     bool allowInline = true,
+    TransportOpPriority priority = TransportOpPriority.background,
+    String label = 'transport op',
   }) {
     // Some queued operations perform discovery, and discovery may enable CCCD
     // notifications. Running nested queue work inline avoids self-deadlocking
@@ -2322,51 +2859,101 @@ class DeviceData {
       return operation();
     }
 
-    final queued = _writeQueue.catchError((_) {}).then((_) async {
-      final lastWrite = _lastBleWriteCompletedAt;
-      final guard = _bleWriteGuardInterval;
-      if (lastWrite != null && guard > Duration.zero) {
-        final elapsed = DateTime.now().difference(lastWrite);
-        if (elapsed < guard) {
-          await Future.delayed(guard - elapsed);
+    final completer = Completer<T>();
+    _pendingTransportOps.add(
+      _PendingTransportOp(priority, label, () async {
+        try {
+          completer.complete(await _runTransportOperation(operation));
+        } catch (error, stackTrace) {
+          // Captured rather than thrown: the pump must outlive a failing
+          // operation, and the error still reaches whoever awaited this call.
+          completer.completeError(error, stackTrace);
         }
-      }
+      }),
+    );
+    unawaited(_pumpTransportQueue());
+    return completer.future;
+  }
 
-      final token = Object();
-      _activeBleOperationTokens.add(token);
-      try {
-        return await runZoned(
-          operation,
-          zoneValues: {_bleOperationZoneKey: token},
-        );
-      } finally {
-        _activeBleOperationTokens.remove(token);
-        _lastBleWriteCompletedAt = DateTime.now();
+  /// Runs one operation with the Android spacing guard and the reentrancy token.
+  Future<T> _runTransportOperation<T>(Future<T> Function() operation) async {
+    final lastWrite = _lastBleWriteCompletedAt;
+    final guard = _bleWriteGuardInterval;
+    if (lastWrite != null && guard > Duration.zero) {
+      final elapsed = DateTime.now().difference(lastWrite);
+      if (elapsed < guard) {
+        await Future.delayed(guard - elapsed);
       }
-    });
+    }
 
-    _writeQueue = queued.then<void>((_) {}, onError: (_) {});
-    return queued;
+    final token = Object();
+    _activeBleOperationTokens.add(token);
+    try {
+      return await runZoned(operation, zoneValues: {_bleOperationZoneKey: token});
+    } finally {
+      _activeBleOperationTokens.remove(token);
+      _lastBleWriteCompletedAt = DateTime.now();
+    }
+  }
+
+  Future<void> _pumpTransportQueue() async {
+    if (_transportPumpRunning) return;
+    _transportPumpRunning = true;
+    try {
+      while (_pendingTransportOps.isNotEmpty) {
+        final next = _takeNextTransportOp();
+        final waited = DateTime.now().difference(next.queuedAt);
+        // Queue wait is the difference between "the device is slow" and "the
+        // app never sent it", which is precisely what the 2026-08-25 capture
+        // could not distinguish.
+        if (next.priority == TransportOpPriority.control ||
+            waited > const Duration(seconds: 1)) {
+          print(
+            '[transport] ${next.label} (${next.priority.name}) ran after '
+            '${waited.inMilliseconds}ms, ${_pendingTransportOps.length} still queued',
+          );
+        }
+        await next.run();
+      }
+    } finally {
+      // Synchronous with the loop's exit check, so an operation enqueued from
+      // another microtask either sees the pump running or starts a new one.
+      _transportPumpRunning = false;
+    }
+  }
+
+  /// Highest priority first, FIFO within a priority.
+  _PendingTransportOp _takeNextTransportOp() {
+    var index = 0;
+    for (var i = 1; i < _pendingTransportOps.length; i++) {
+      if (_pendingTransportOps[i].priority.index <
+          _pendingTransportOps[index].priority.index) {
+        index = i;
+      }
+    }
+    return _pendingTransportOps.removeAt(index);
   }
 
   /// Writes to the SmartSpin2k custom characteristic and does not complete
   /// until the server returns the matching response (or the response times out).
   Future<void> writeCustomCharacteristic(
     BluetoothDevice device,
-    List<int> value,
-  ) {
+    List<int> value, {
+    TransportOpPriority priority = TransportOpPriority.background,
+  }) {
     if (isSimulated) return Future<void>.value();
     return _customReadRequestCoalescer.schedule(
       value,
-      (packet) => _writeCustomCharacteristic(device, packet),
+      (packet) => _writeCustomCharacteristic(device, packet, priority),
     );
   }
 
   Future<void> _writeCustomCharacteristic(
     BluetoothDevice device,
     List<int> value,
+    TransportOpPriority priority,
   ) async {
-    return _queueBleOperation(() async {
+    return _queueBleOperation(priority: priority, label: 'custom char', () async {
       final dirConSession = _dirConSession;
       if (dirConSession != null && dirConSession.isConnected) {
         try {
@@ -2406,12 +2993,19 @@ class DeviceData {
           if (expectedReference != null) {
             await response.future.timeout(_customResponseTimeout);
           }
+        } on TimeoutException {
+          // This is the wait that holds the queue: against a device that has
+          // stopped answering, every request costs the full timeout, and a
+          // forty-entry sweep turns into well over a minute of dead queue.
+          _recordCustomResponseTimeout();
         } catch (e) {
-          Snackbar.show(
-            ABC.c,
-            "Failed to write to SmartSpin2k $e",
-            success: false,
-          );
+          if (!customResponsesDegraded.value) {
+            Snackbar.show(
+              ABC.c,
+              "Failed to write to SmartSpin2k $e",
+              success: false,
+            );
+          }
         } finally {
           if (identical(_pendingCustomResponse, response)) {
             _pendingCustomResponse = null;
@@ -2461,13 +3055,21 @@ class DeviceData {
     WorkoutControlBatch batch,
     bool Function() isCurrent,
   ) {
-    return _queueBleOperation(() async {
-      for (final command in batch.commands) {
-        if (!isCurrent()) return false;
-        await _writeFtmsControlPointCommandNow(command);
-      }
-      return isCurrent();
-    }, allowInline: false);
+    return _queueBleOperation(
+      () async {
+        for (final command in batch.commands) {
+          if (!isCurrent()) return false;
+          await _writeFtmsControlPointCommandNow(command);
+        }
+        return isCurrent();
+      },
+      // Not `control`: a workout redelivering its target must not be able to
+      // starve a calibration command the user is waiting on. It still outranks
+      // the settings sweep.
+      allowInline: false,
+      priority: TransportOpPriority.interactive,
+      label: 'workout control batch',
+    );
   }
 
   Future<void> _writeFtmsControlPointCommandNow(List<int> command) async {
@@ -2497,7 +3099,24 @@ class DeviceData {
   /// characteristic can never reach the device while DIRCON is active.
   Future<void> writeFtmsControlPointCommand(List<int> command) async {
     if (isSimulated) return;
-    return _queueBleOperation(() => _writeFtmsControlPointCommandNow(command));
+    final stopwatch = Stopwatch()..start();
+    try {
+      await _queueBleOperation(
+        () => _writeFtmsControlPointCommandNow(command),
+        priority: TransportOpPriority.control,
+        label: 'FTMS control point',
+      );
+      print(
+        '[transport] FTMS control point delivered in '
+        '${stopwatch.elapsedMilliseconds}ms',
+      );
+    } catch (error) {
+      print(
+        '[transport] FTMS control point failed after '
+        '${stopwatch.elapsedMilliseconds}ms: $error',
+      );
+      rethrow;
+    }
   }
 
   void decode(BluetoothDevice device) {
@@ -2539,6 +3158,9 @@ class DeviceData {
             value[1] == _pendingCustomResponseReference) {
           pendingResponse.complete();
         }
+        // Any answered request is proof the link is alive, whether or not it is
+        // the one currently being waited on.
+        _recordCustomResponseSuccess();
       }
 
       if (value[0] == 0x80) {
@@ -2752,6 +3374,7 @@ class DeviceData {
     // against an object that will never answer. The disposal flag turns that
     // into `disposed` rather than a spurious `ready`.
     _machineStatusNotificationsLive = false;
+    _controlPointNotificationsLive = false;
     _releaseFtmsReadyWaiters();
     _transportStateController.removeListener(_handleTransportStateChanged);
     _workoutControlLane.dispose();
@@ -2764,5 +3387,8 @@ class DeviceData {
     _machineStatusSubscription?.cancel();
     _machineStatusSubscription = null;
     _machineStatusController.close();
+    _controlPointSubscription?.cancel();
+    _controlPointSubscription = null;
+    _controlPointController.close();
   }
 }

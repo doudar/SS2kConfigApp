@@ -596,6 +596,295 @@ void main() {
       deviceData.dispose();
     });
   });
+
+  // A run that cannot be started, and a run the device never acted on, used to
+  // look identical from the screen: nothing happened, and eight minutes later
+  // the overall timeout blamed homing force. Both now end promptly, in their
+  // own phase, with copy that matches what actually went wrong.
+  group('calibration reports a verdict instead of hanging', () {
+    test('a control-point write that throws ends the run as failedToStart', () async {
+      final session = FakeDirConSession()
+        ..failWritesFor(ftmsControlPointUUID, StateError('transport gone'));
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(monitor.phase, CalibrationPhase.failedToStart);
+      expect(monitor.startFailureStage, CalibrationStartStage.dispatch);
+      expect(monitor.startFailure, isNotNull);
+      // The raw exception belongs in the report, never in the sanitized string
+      // the screen renders.
+      expect(monitor.startFailure, isNot(contains('StateError')));
+      expect(
+        monitor.transcript.map((e) => e.message).join('\n'),
+        contains('transport gone'),
+      );
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // A retry after a finished run has to be able to fail. The tracker refuses
+    // to move off a terminal phase, so start() resets run state before its
+    // first fallible step — otherwise the previous run's verdict would still be
+    // standing when the new run failed, and the failure would go unrecorded
+    // behind a stale "complete".
+    test('a retry after a completed run can still report failedToStart', () async {
+      final session = FakeDirConSession();
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      final first = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await first;
+
+      // Drive the first run all the way to a terminal verdict.
+      for (final param in [
+        FTMSSpinDownStatus.MAX_SEARCH_STARTED,
+        FTMSSpinDownStatus.SUCCESS,
+      ]) {
+        session.emitNotification(_machineStatusUuid, [
+          FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+          param,
+        ]);
+        await _settle();
+      }
+      expect(monitor.phase, CalibrationPhase.complete);
+
+      // The retry cannot reach the device at all.
+      session.failWritesFor(ftmsControlPointUUID, StateError('transport gone'));
+      await monitor.start();
+
+      expect(monitor.phase, CalibrationPhase.failedToStart);
+      expect(monitor.startFailureStage, CalibrationStartStage.dispatch);
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // The forced transition itself: [markStartFailed] deliberately overrides a
+    // terminal phase, unlike every other transition, so a start failure that
+    // lands before the run reset is still recorded.
+    test('markStartFailed overrides a terminal verdict', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      expect(tracker.markTimedOut(), isTrue);
+      expect(tracker.phase, CalibrationPhase.failedNeverStarted);
+
+      // An ordinary failure is refused...
+      expect(tracker.markNoAcknowledgement(), isFalse);
+      expect(tracker.phase, CalibrationPhase.failedNeverStarted);
+
+      // ...the forced one is not.
+      expect(tracker.markStartFailed(), isTrue);
+      expect(tracker.phase, CalibrationPhase.failedToStart);
+    });
+
+    // The two diagnoses the overall timeout has to keep apart. Homing force is
+    // only implicated once the search actually ran; before that the device took
+    // the command and never acted on it, which is a cadence-source problem.
+    test('the overall timeout splits on whether homing ever started', () {
+      final neverStarted = CalibrationPhaseTracker()..start();
+      neverStarted.markRequestSent();
+      neverStarted.onControlPointResponse(const [0x80, 0x13, 0x01]);
+      expect(neverStarted.acknowledged, isTrue);
+      expect(neverStarted.homingStarted, isFalse);
+      expect(neverStarted.markTimedOut(), isTrue);
+      expect(neverStarted.phase, CalibrationPhase.failedNeverStarted);
+
+      final searched = CalibrationPhaseTracker()..start();
+      searched.markRequestSent();
+      searched.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      searched.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      expect(searched.homingStarted, isTrue);
+      expect(searched.markTimedOut(), isTrue);
+      expect(searched.phase, CalibrationPhase.failedTimeout);
+    });
+
+    // The control point is the only channel this firmware sends
+    // unconditionally: 0x2ADA is suppressed when the status value did not
+    // change, and log lines are dropped when the firmware's buffer overflows.
+    test('a control point response acknowledges the run on its own', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      tracker.markRequestSent();
+
+      // Not this run's opcode, and not a response frame at all.
+      expect(tracker.onControlPointResponse(const [0x80, 0x05, 0x01]), isFalse);
+      expect(tracker.acknowledged, isFalse);
+      expect(tracker.onControlPointResponse(const [0x13, 0x01]), isFalse);
+      expect(tracker.acknowledged, isFalse);
+
+      // The real thing: `80 13 01` plus the mandatory target-speed parameters.
+      expect(
+        tracker.onControlPointResponse(const [
+          0x80,
+          0x13,
+          0x01,
+          0x20,
+          0x03,
+          0x60,
+          0x09,
+        ]),
+        // Acknowledgement is not progress: homing has not begun.
+        isFalse,
+      );
+      expect(tracker.acknowledged, isTrue);
+      expect(tracker.ackSource, CalibrationAckSource.controlPoint);
+      expect(tracker.controlPointResult, FTMSResultCodes.SUCCESS);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+    });
+
+    // Nothing before markRequestSent belongs to this run — a response left over
+    // from a workout control write would otherwise acknowledge a run that has
+    // not dispatched yet.
+    test('a control point response before dispatch is ignored', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      expect(tracker.onControlPointResponse(const [0x80, 0x13, 0x01]), isFalse);
+      expect(tracker.acknowledged, isFalse);
+      expect(tracker.ackSource, isNull);
+    });
+
+    // Disposal is cancellation: the screen is gone and there is nobody to show
+    // a verdict to. Reporting failedToStart here would be noise in the report of
+    // a run the user themselves ended.
+    test('disposal during start is cancellation, not a failure', () async {
+      final session = FakeDirConSession()
+        ..failWritesFor(ftmsControlPointUUID, StateError('transport gone'));
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      final started = monitor.start();
+      await _settle();
+      monitor.dispose();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(monitor.phase, isNot(CalibrationPhase.failedToStart));
+
+      deviceData.dispose();
+    });
+
+    // The write completing means the *stack* accepted it. Against a firmware
+    // whose main loop is wedged the command is delivered and never processed —
+    // exactly the 2026-08-25 session — and the device answers a spin-down on
+    // receipt, so silence past the budget is a real verdict.
+    test('a delivered but unacknowledged command ends the run promptly', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        logSilenceTimeout: const Duration(milliseconds: 100),
+      );
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      // Delivered...
+      expect(
+        session.writesFor(ftmsControlPointUUID),
+        contains(orderedEquals(FTMSControlPoint.spinDownCommand(true))),
+      );
+      // ...and then nothing comes back.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+
+      expect(monitor.phase, CalibrationPhase.failedNoAcknowledgement);
+      expect(monitor.acknowledged, isFalse);
+      // Machine Status was live, so the device demonstrably ignored the
+      // request rather than the app being blind.
+      expect(monitor.ackChannelsLive, isTrue);
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    test('an acknowledged command leaves the run to the homing timers', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        logSilenceTimeout: const Duration(milliseconds: 100),
+      );
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      // The firmware's answer on receipt, before any pedalling. One frame is
+      // deliberately not enough to confirm homing — but it is the
+      // acknowledgement.
+      session.emitNotification(_machineStatusUuid, [
+        FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+        FTMSSpinDownStatus.SPIN_DOWN_REQUESTED,
+      ]);
+      await _settle();
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+
+      expect(monitor.acknowledged, isTrue);
+      expect(monitor.acknowledgedAfter, isNotNull);
+      expect(monitor.phase, isNot(CalibrationPhase.failedNoAcknowledgement));
+      expect(monitor.phase, CalibrationPhase.waitingForCadence);
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // The readiness verdict is the difference between a diagnosable report and
+    // a guess, and it used to appear only as a parenthetical inside the
+    // machine-status section header.
+    test('the readiness verdict reaches the transcript and the report', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(
+        monitor.transcript.map((e) => e.message).join('\n'),
+        contains('FTMS readiness: ready'),
+      );
+
+      final report = buildCalibrationReport(
+        transcript: monitor.transcript,
+        droppedLines: monitor.droppedLines,
+        phase: monitor.phase,
+        minFound: monitor.minFound,
+        maxFound: monitor.maxFound,
+        usedFtmsPath: monitor.usedFtmsPath,
+        sweepTimedOut: monitor.sweepTimedOut,
+        logStreamSilent: monitor.logStreamSilent,
+        machineStatus: monitor.machineStatusLog,
+        droppedStatusFrames: monitor.droppedStatusFrames,
+        machineStatusReadiness: monitor.notificationsReadiness,
+        acknowledged: monitor.acknowledged,
+        acknowledgedAfter: monitor.acknowledgedAfter,
+        ackChannelsLive: monitor.ackChannelsLive,
+        startFailure: monitor.startFailure,
+      );
+
+      expect(report, contains('machineStatusReadiness: ready'));
+      expect(report, contains('acknowledged: false'));
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+  });
 }
 
 Future<DeviceData> _connect(

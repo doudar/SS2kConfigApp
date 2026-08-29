@@ -47,6 +47,50 @@ enum CalibrationPhase {
 
   /// No stepper, or a board that cannot home at all.
   failedUnsupported,
+
+  /// The run never got off the ground: enabling the log stream, waiting for
+  /// notifications, or the control-point write itself threw. Distinct from
+  /// every other failure because the device was never asked to do anything.
+  failedToStart,
+
+  /// The command was handed to the transport and the device never acknowledged
+  /// it. The firmware answers a spin-down request synchronously — a status
+  /// frame and a log line — before any pedalling, so silence past the
+  /// acknowledgement budget means the request was not processed.
+  ///
+  /// This is the verdict that used to be an eight-minute wait ending in
+  /// `failedTimeout`, which blamed homing force for a command that was never
+  /// acted on.
+  failedNoAcknowledgement,
+
+  /// The device acknowledged the request and homing never began.
+  ///
+  /// The firmware acts on a spin-down only after it sees roughly two seconds of
+  /// cadence between 10 and 200 rpm, and it can only see cadence through a
+  /// connected power meter or cadence sensor. With none paired the run waits
+  /// forever however hard the rider pedals — which is a wiring problem, not the
+  /// homing-force problem [failedTimeout] describes.
+  failedNeverStarted,
+}
+
+/// Which channel carried the device's acknowledgement of the spin-down request.
+/// Latched to the first one to arrive: that is the one worth knowing about when
+/// diagnosing a channel that went missing.
+enum CalibrationAckSource {
+  /// An FTMS Control Point `0x2AD9` response. The firmware answers a write
+  /// unconditionally, without checking for a subscriber, so this is the channel
+  /// least able to go missing.
+  controlPoint,
+
+  /// An FTMS Machine Status `0x2ADA` `SpinDownStatus` frame. Only sent when the
+  /// status *value changed*, so a repeated request produces nothing here.
+  machineStatus,
+
+  /// The firmware's own `-> Spin Down Requested` log line.
+  log,
+
+  /// Homing demonstrably began, which is acknowledgement by consequence.
+  homingStarted,
 }
 
 extension CalibrationPhaseX on CalibrationPhase {
@@ -59,10 +103,17 @@ extension CalibrationPhaseX on CalibrationPhase {
       this == CalibrationPhase.failedTimeout ||
       this == CalibrationPhase.failedUnstable ||
       this == CalibrationPhase.failedAborted ||
-      this == CalibrationPhase.failedUnsupported;
+      this == CalibrationPhase.failedUnsupported ||
+      this == CalibrationPhase.failedToStart ||
+      this == CalibrationPhase.failedNoAcknowledgement ||
+      this == CalibrationPhase.failedNeverStarted;
 
   bool get isTerminal => this == CalibrationPhase.complete || isFailure;
 }
+
+/// Which step of [CalibrationMonitor.start] failed. Recorded so a start failure
+/// says which collaborator broke rather than only that one did.
+enum CalibrationStartStage { logStreamEnable, notificationsReady, dispatch }
 
 enum HomingGaugeMode { ftmsResistance, endStopStallGuard }
 
@@ -135,6 +186,8 @@ class CalibrationPhaseTracker {
   bool _requestLogSeen = false;
   int _spinDownRequestedCount = 0;
   bool _homingStarted = false;
+  CalibrationAckSource? _ackSource;
+  int? _controlPointResult;
   HomingGaugeReading? _gaugeReading;
 
   /// The hMax the device already had before this run. Anything equal to it is
@@ -189,6 +242,8 @@ class CalibrationPhaseTracker {
     _requestLogSeen = false;
     _spinDownRequestedCount = 0;
     _homingStarted = false;
+    _ackSource = null;
+    _controlPointResult = null;
     _gaugeReading = null;
     _hMaxBaseline = hMaxBaseline;
     _foundMin = null;
@@ -228,6 +283,7 @@ class CalibrationPhaseTracker {
     if (m.contains('spin down requested')) {
       if (!_requestSent) return false;
       _requestLogSeen = true;
+      _latchAck(CalibrationAckSource.log);
       return false;
     }
 
@@ -436,6 +492,7 @@ class CalibrationPhaseTracker {
     switch (param) {
       case FTMSSpinDownStatus.SPIN_DOWN_REQUESTED:
         _spinDownRequestedCount++;
+        _latchAck(CalibrationAckSource.machineStatus);
         if (_spinDownRequestedCount < 2) return false;
         return _confirmHomingStarted();
 
@@ -447,6 +504,7 @@ class CalibrationPhaseTracker {
             !_minFound ||
             _phase != CalibrationPhase.searchingMax;
         _homingStarted = true;
+        _latchAck(CalibrationAckSource.homingStarted);
         _minFound = true;
         _phase = CalibrationPhase.searchingMax;
         return changed;
@@ -470,7 +528,77 @@ class CalibrationPhaseTracker {
     }
   }
 
-  bool markTimedOut() => _fail(CalibrationPhase.failedTimeout);
+  /// Feeds one FTMS Control Point `0x2AD9` response frame in.
+  ///
+  /// Layout is `[0x80, requestOpCode, resultCode, ...params]`. Reports no
+  /// progress: the response says the request was *processed*, which is a
+  /// different claim from homing having begun.
+  ///
+  /// A non-success result code is still an acknowledgement — the device
+  /// considered the request and refused it — and is recorded rather than turned
+  /// into its own verdict, because this firmware hardcodes `Success` for
+  /// `SpinDownControl` (`BLE_Fitness_Machine_Service.cpp:320`) and cannot
+  /// produce one.
+  bool onControlPointResponse(List<int> value) {
+    if (_phase.isTerminal || _phase == CalibrationPhase.idle || !_requestSent) {
+      return false;
+    }
+    if (value.length < 3) return false;
+    if (value[0] != FTMSOpCodes.RESPONSE_CODE) return false;
+    if (value[1] != FTMSOpCodes.SPIN_DOWN_CONTROL) return false;
+    _controlPointResult = value[2];
+    _latchAck(CalibrationAckSource.controlPoint);
+    return false;
+  }
+
+  /// Ends a run the overall timeout caught.
+  ///
+  /// Homing having started is what separates the two diagnoses. With it, the
+  /// search ran and never found an end stop — the homing-force problem
+  /// [CalibrationPhase.failedTimeout] describes. Without it, the device took
+  /// the command and never acted on it, which homing force has nothing to do
+  /// with.
+  bool markTimedOut() => _fail(
+    _homingStarted
+        ? CalibrationPhase.failedTimeout
+        : CalibrationPhase.failedNeverStarted,
+  );
+
+  /// Whether the device has acknowledged this run's request.
+  ///
+  /// The firmware answers a spin-down on receipt, before any pedalling: a
+  /// control-point response, a `SpinDownStatus` frame, and a matching log line.
+  /// Any is proof the command was processed; homing having started is proof by
+  /// consequence.
+  bool get acknowledged => _ackSource != null;
+
+  /// Which channel carried the acknowledgement, or null if none did.
+  CalibrationAckSource? get ackSource => _ackSource;
+
+  /// The `resultCode` byte of the control-point response, or null if none
+  /// arrived. `0x01` is success.
+  int? get controlPointResult => _controlPointResult;
+
+  /// Records the first channel to carry the acknowledgement. Later channels are
+  /// corroboration, not news.
+  void _latchAck(CalibrationAckSource source) => _ackSource ??= source;
+
+  /// Ends a run the device never acknowledged. Ordinary [_fail] semantics: a
+  /// verdict that already arrived wins.
+  bool markNoAcknowledgement() =>
+      _fail(CalibrationPhase.failedNoAcknowledgement);
+
+  /// Ends a run that could not be started, *overriding* a terminal phase.
+  ///
+  /// Unlike every other transition this one is forced. [start] resets run state
+  /// before its first fallible step, but a throw from the previous run's
+  /// cleanup can land before that reset — leaving the old run's verdict in
+  /// place, which plain [_fail] would refuse to move off, and the start failure
+  /// would go unrecorded.
+  bool markStartFailed() {
+    _phase = CalibrationPhase.failedToStart;
+    return true;
+  }
 
   static final RegExp _ftmsGaugeLine = RegExp(
     r'homing to (min|max) resistance.*?current:\s*(-?\d+(?:\.\d+)?).*?target:\s*(-?\d+(?:\.\d+)?)',
@@ -607,6 +735,7 @@ class CalibrationPhaseTracker {
   bool _confirmHomingStarted() {
     if (_homingStarted) return false;
     _homingStarted = true;
+    _latchAck(CalibrationAckSource.homingStarted);
     return _advanceTo(CalibrationPhase.searchingMin);
   }
 
@@ -709,6 +838,11 @@ String buildCalibrationReport({
   required List<CalibrationLogEntry> machineStatus,
   required int droppedStatusFrames,
   required FtmsNotificationsReadiness machineStatusReadiness,
+  bool acknowledged = false,
+  Duration? acknowledgedAfter,
+  bool ackChannelsLive = false,
+  CalibrationAckSource? ackSource,
+  String? startFailure,
   String? transport,
   String? firmwareVersion,
   String? bikeType,
@@ -738,7 +872,23 @@ String buildCalibrationReport({
     ..writeln(
       'ftmsPath: $usedFtmsPath  sweepTimedOut: $sweepTimedOut  logSilent: $logStreamSilent',
     )
-    ..writeln('homingForce: ${orUnknown(homingForce)}');
+    ..writeln('homingForce: ${orUnknown(homingForce)}')
+    // Hoisted out of the machine-status section: readiness explains the run's
+    // whole evidence picture, not just whether that one list is empty.
+    ..writeln('machineStatusReadiness: ${machineStatusReadiness.name}')
+    // The device acknowledges a spin-down on receipt, before any pedalling, so
+    // this separates "never asked" from "asked and ignored" from "asked and
+    // acted on" — which the phase alone cannot.
+    ..writeln(
+      'acknowledged: $acknowledged'
+      '${acknowledgedAfter == null ? '' : ' after ${acknowledgedAfter.inMilliseconds}ms'}'
+      '${ackSource == null ? '' : ' via ${ackSource.name}'}'
+      '  ackChannelsLive: $ackChannelsLive',
+    );
+
+  if (startFailure != null) {
+    buffer.writeln('startFailure: $startFailure');
+  }
 
   if (machineStatus.isEmpty) {
     // The negative result is the interesting one: it means the 0x2ADA
@@ -863,10 +1013,12 @@ class CalibrationMonitor extends ChangeNotifier {
   StreamSubscription<String>? _logSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicSubscription;
   StreamSubscription<List<int>>? _machineStatusSubscription;
+  StreamSubscription<List<int>>? _controlPointSubscription;
   Timer? _overallTimer;
   Timer? _stallTimer;
   Timer? _pedalHintTimer;
   Timer? _logSilenceTimer;
+  Timer? _ackTimer;
   Timer? _completionTimer;
   final List<Timer> _demoTimers = [];
 
@@ -879,6 +1031,40 @@ class CalibrationMonitor extends ChangeNotifier {
   bool _awaitingNotifications = false;
   FtmsNotificationsReadiness _notificationsReadiness =
       FtmsNotificationsReadiness.unavailable;
+  String? _startFailure;
+  CalibrationStartStage? _startFailureStage;
+  bool _acknowledged = false;
+  DateTime? _dispatchedAt;
+  Duration? _acknowledgedAfter;
+
+  /// Whether any channel could have carried an acknowledgement at all.
+  ///
+  /// The difference matters: with a live channel and no acknowledgement the
+  /// device demonstrably ignored the request, while with no channel at all the
+  /// app was simply blind. Those need different words and different advice, and
+  /// "did not respond" claims knowledge the app does not have in the second
+  /// case.
+  bool get ackChannelsLive =>
+      _notificationsReadiness == FtmsNotificationsReadiness.ready ||
+      deviceData.controlPointNotificationsLive ||
+      _transcript.isNotEmpty;
+
+  /// A short, user-facing reason this run could not be started, or null. The
+  /// underlying exception goes to the transcript and report, never here.
+  String? get startFailure => _startFailure;
+
+  /// Which step of [start] failed, or null.
+  CalibrationStartStage? get startFailureStage => _startFailureStage;
+
+  /// Whether the device acknowledged this run's request. See
+  /// [CalibrationPhaseTracker.acknowledged].
+  bool get acknowledged => _acknowledged;
+
+  /// How long the acknowledgement took, or null if none arrived.
+  Duration? get acknowledgedAfter => _acknowledgedAfter;
+
+  /// Which channel carried the acknowledgement. See [CalibrationAckSource].
+  CalibrationAckSource? get ackSource => _tracker.ackSource;
 
   /// True while [start] is waiting for FTMS notifications to come up. The screen
   /// shows this instead of the cadence prompt — nothing the rider does affects
@@ -948,10 +1134,14 @@ class CalibrationMonitor extends ChangeNotifier {
   /// How many frames fell out of [machineStatusLog] at [_maxStatusFrames].
   int get droppedStatusFrames => _droppedStatusFrames;
 
+  /// Runs a calibration, reporting a verdict rather than throwing.
+  ///
+  /// Every failure mode ends in a phase the screen can render. The callers pass
+  /// this as a `VoidCallback`, so a throw out of here would be an unhandled
+  /// async error: invisible in release, an isolate pause in debug, and either
+  /// way a screen that sits on the run page until the eight-minute timeout
+  /// reports a homing problem that never happened.
   Future<void> start() async {
-    // A retry can begin before the previous run's asynchronous cleanup has
-    // reached the BLE queue. Queue its stop before enabling the new stream.
-    await _stopLogStreaming();
     _cancelTimers();
     _transcript.clear();
     _droppedLines = 0;
@@ -963,13 +1153,46 @@ class CalibrationMonitor extends ChangeNotifier {
     _refreshSent = false;
     _logDisableSent = false;
     _awaitingNotifications = false;
+    _startFailure = null;
+    _startFailureStage = null;
+    _acknowledged = false;
+    _dispatchedAt = null;
+    _acknowledgedAfter = null;
     _notificationsReadiness = FtmsNotificationsReadiness.unavailable;
+    // Before the first fallible step, so a throw below always lands on a
+    // tracker that belongs to *this* run — see [markStartFailed].
     _tracker.start(
       hMaxBaseline: int.tryParse(deviceData.getVnameValue(BLE_hMaxVname)),
     );
     notifyListeners();
 
     _listen();
+
+    try {
+      await _startRun();
+    } catch (error, stackTrace) {
+      // Disposal is cancellation, not failure: the screen is gone and there is
+      // nobody to show a verdict to.
+      if (_disposed) return;
+      _startFailureStage ??= CalibrationStartStage.dispatch;
+      _startFailure = _describeStartFailure(_startFailureStage!);
+      _note(
+        'calibration could not be started '
+        '(${_startFailureStage!.name}): $error',
+      );
+      debugPrint('[Calibration] start failed: $error\n$stackTrace');
+      _cancelTimers();
+      unawaited(_stopLogStreaming());
+      _tracker.markStartFailed();
+      _safeNotify();
+    }
+  }
+
+  Future<void> _startRun() async {
+    // A retry can begin before the previous run's asynchronous cleanup has
+    // reached the BLE queue. Queue its stop before enabling the new stream.
+    _startFailureStage = CalibrationStartStage.logStreamEnable;
+    await _stopLogStreaming();
 
     _overallTimer = Timer(overallTimeout, () {
       if (_tracker.markTimedOut()) {
@@ -1001,8 +1224,10 @@ class CalibrationMonitor extends ChangeNotifier {
     // the homing command has to wait for it — otherwise the run's own
     // acknowledgement frames land before anything is listening. The wait never
     // releases a block it does not own; it only observes one draining.
+    _startFailureStage = CalibrationStartStage.notificationsReady;
     _awaitingNotifications = true;
     _safeNotify();
+    final readinessWait = Stopwatch()..start();
     try {
       _notificationsReadiness = await deviceData.awaitFtmsNotificationsReady(
         device,
@@ -1011,10 +1236,19 @@ class CalibrationMonitor extends ChangeNotifier {
     } finally {
       // In a finally so a disposal or an unexpected error cannot strand the
       // screen on "getting ready" with no way out.
+      readinessWait.stop();
       _awaitingNotifications = false;
       _safeNotify();
     }
     if (_disposed || !_logStreamingStarted) return;
+
+    // The run proceeds either way — a run without 0x2ADA is still tracked by
+    // the log and hMax paths — but which of the three channels was live is the
+    // difference between a diagnosable report and a guess.
+    _note(
+      'FTMS readiness: ${_notificationsReadiness.name} '
+      '(waited ${readinessWait.elapsedMilliseconds}ms)',
+    );
 
     // Deliberately started here rather than with the overall timer: a pedal
     // hint counting down through the readiness wait would prompt the rider for
@@ -1022,10 +1256,23 @@ class CalibrationMonitor extends ChangeNotifier {
     // about the run.
     _startRunWatchdogs();
 
+    _startFailureStage = CalibrationStartStage.dispatch;
     _tracker.markRequestSent();
+    _dispatchedAt = DateTime.now();
+    await _dispatchSpinDown();
+  }
+
+  Future<void> _dispatchSpinDown() async {
     await deviceData.writeFtmsControlPointCommand(
       FTMSControlPoint.spinDownCommand(true),
     );
+    if (_disposed) return;
+    _note('spin-down dispatched');
+    // The write completing means the *stack* accepted it. Whether the device
+    // processed it is a separate question, and against a wedged firmware the
+    // answer is no — which is the whole reason this deadline exists.
+    _armAcknowledgementDeadline();
+    _checkAcknowledged();
   }
 
   /// The stall/prompt timers that only make sense once the run is under way.
@@ -1048,6 +1295,7 @@ class CalibrationMonitor extends ChangeNotifier {
     _logSubscription?.cancel();
     _characteristicSubscription?.cancel();
     _machineStatusSubscription?.cancel();
+    _controlPointSubscription?.cancel();
 
     _logSubscription = deviceData.logStream.listen(_handleLogMessage);
     _characteristicSubscription = deviceData.characteristicChanges.listen((event) {
@@ -1065,6 +1313,21 @@ class CalibrationMonitor extends ChangeNotifier {
       if (progressed || (_tracker.foundMin, _tracker.foundMax) != before)
         _safeNotify();
     });
+    // The protocol's own acknowledgement. Subscribed alongside the other two
+    // because none of the three is dependable on its own: 0x2ADA is only sent
+    // when the status value changed, and the log stream drops lines under load.
+    _controlPointSubscription = deviceData.controlPointResponseStream.listen((
+      value,
+    ) {
+      final progressed = _tracker.onControlPointResponse(value);
+      // Always checked: a control-point response moves no phase along, so this
+      // acknowledgement would otherwise never be seen.
+      _checkAcknowledged();
+      if (progressed) {
+        _afterProgress();
+        _safeNotify();
+      }
+    });
     _machineStatusSubscription = deviceData.machineStatusStream.listen((value) {
       // Recorded before the filters below, so a frame the tracker ignores is
       // still visible as proof the subscription is live. "Arrived but was not
@@ -1072,11 +1335,82 @@ class CalibrationMonitor extends ChangeNotifier {
       _recordMachineStatus(value);
       if (value.length < 2) return;
       if (value[0] != FTMSStatusOpCodes.SPIN_DOWN_STATUS) return;
-      if (_tracker.onSpinDownStatus(value[1])) {
+      final progressed = _tracker.onSpinDownStatus(value[1]);
+      // Checked whether or not the tracker reports progress: the first
+      // SpinDown_SpinDownRequested is deliberately not progress — it takes two
+      // to confirm homing — but it *is* the acknowledgement.
+      _checkAcknowledged();
+      if (progressed) {
         _afterProgress();
         _safeNotify();
       }
     });
+  }
+
+  /// Plain-language reason for a start failure. Deliberately not the exception
+  /// text: that names Dart types and characteristic UUIDs, and goes to the
+  /// transcript and report where it is useful instead.
+  String _describeStartFailure(CalibrationStartStage stage) => switch (stage) {
+    CalibrationStartStage.logStreamEnable =>
+      "The SmartSpin2k didn't accept the request to start reporting.",
+    CalibrationStartStage.notificationsReady =>
+      "The connection couldn't be prepared for a calibration run.",
+    CalibrationStartStage.dispatch =>
+      "The calibration command couldn't be sent to the SmartSpin2k.",
+  };
+
+  /// Appends a line the *app* wrote to the run transcript.
+  ///
+  /// Deliberately not counted as device traffic: it does not feed the tracker,
+  /// does not clear log silence, and does not make [ackChannelsLive] true. The
+  /// app narrating its own progress is not evidence the device is talking.
+  void _note(String message) {
+    final startedAt = _runStartedAt;
+    _transcript.add((
+      at: startedAt == null
+          ? Duration.zero
+          : DateTime.now().difference(startedAt),
+      message: '[app] $message',
+    ));
+    while (_transcript.length > _maxTranscriptLines) {
+      _transcript.removeAt(0);
+      _droppedLines++;
+    }
+  }
+
+  /// Starts the acknowledgement deadline.
+  ///
+  /// Anchored on the dispatch *completing* rather than on the run watchdogs
+  /// starting: a command still queued behind other transport work has not been
+  /// ignored, and judging it before it reached the wire would report a device
+  /// fault for an app-side delay.
+  void _armAcknowledgementDeadline() {
+    _ackTimer?.cancel();
+    _ackTimer = Timer(logSilenceTimeout, () {
+      _ackTimer = null;
+      if (_disposed) return;
+      _checkAcknowledged();
+      if (_acknowledged) return;
+      if (!_tracker.markNoAcknowledgement()) return;
+      _note(
+        'no acknowledgement within ${logSilenceTimeout.inSeconds}s '
+        '(${ackChannelsLive ? 'an evidence channel was live' : 'no evidence channel was live'})',
+      );
+      _finishRun();
+      _safeNotify();
+    });
+  }
+
+  /// Latches the acknowledgement the moment any channel carries it.
+  void _checkAcknowledged() {
+    if (_acknowledged || !_tracker.acknowledged) return;
+    _acknowledged = true;
+    final dispatchedAt = _dispatchedAt;
+    _acknowledgedAfter = dispatchedAt == null
+        ? null
+        : DateTime.now().difference(dispatchedAt);
+    _ackTimer?.cancel();
+    _ackTimer = null;
   }
 
   void _recordMachineStatus(List<int> value) {
@@ -1114,6 +1448,9 @@ class CalibrationMonitor extends ChangeNotifier {
     }
 
     final changed = _tracker.onLogMessage(message);
+    // The firmware's "Spin Down Requested" line is the log-side acknowledgement,
+    // and it moves no phase along, so this cannot be folded into `changed`.
+    _checkAcknowledged();
 
     // Proof the run is alive, which includes the progress chatter that moves no
     // phase along. Deliberately not "any line at all": the device streams
@@ -1273,11 +1610,13 @@ class CalibrationMonitor extends ChangeNotifier {
     _stallTimer?.cancel();
     _pedalHintTimer?.cancel();
     _logSilenceTimer?.cancel();
+    _ackTimer?.cancel();
     _completionTimer?.cancel();
     _overallTimer = null;
     _stallTimer = null;
     _pedalHintTimer = null;
     _logSilenceTimer = null;
+    _ackTimer = null;
     _completionTimer = null;
     for (final timer in _demoTimers) {
       timer.cancel();
@@ -1301,6 +1640,8 @@ class CalibrationMonitor extends ChangeNotifier {
     _characteristicSubscription = null;
     _machineStatusSubscription?.cancel();
     _machineStatusSubscription = null;
+    _controlPointSubscription?.cancel();
+    _controlPointSubscription = null;
 
     unawaited(_stopLogStreaming());
   }

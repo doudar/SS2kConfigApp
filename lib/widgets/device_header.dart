@@ -74,31 +74,41 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     );
 
     // Listen for connection state changes to update UI (e.g. RSSI, services)
+    // The whole body is guarded. `Stream.listen` discards the future an async
+    // callback returns, so anything that throws in here becomes an unhandled
+    // async error — silent in release, an isolate pause in debug. `readRssi` is
+    // the one that actually bit: a disconnect racing this callback throws, and
+    // there is no `onError` to catch it.
     _connectionStateSubscription ??= this.widget.device.connectionState.listen((
       state,
     ) async {
-      if (this.deviceData.isDirConConnected) return;
-      if (state == BluetoothConnectionState.connected) {
-        this.deviceData.rssi.value = await this.widget.device.readRssi();
-        if (widget.customRefreshEnabled) {
-          if (widget.firmwareOnlyRefresh) {
-            await this.deviceData.ensureCustomCharacteristicStream(
-              this.widget.device,
-            );
-          } else {
-            await this.deviceData.setupConnection(this.widget.device);
+      try {
+        if (this.deviceData.isDirConConnected) return;
+        if (state == BluetoothConnectionState.connected) {
+          await _readRssiInto();
+          if (!mounted) return;
+          if (widget.customRefreshEnabled) {
+            if (widget.firmwareOnlyRefresh) {
+              await this.deviceData.ensureCustomCharacteristicStream(
+                this.widget.device,
+              );
+            } else {
+              await this.deviceData.setupConnection(this.widget.device);
+            }
+            if (!_isRefreshing) {
+              await _refreshDeviceInfo();
+            }
           }
-          if (!_isRefreshing) {
-            await _refreshDeviceInfo();
-          }
+        } else {
+          this.deviceData.rssi.value = 0;
         }
-      } else {
-        this.deviceData.rssi.value = 0;
+      } catch (e) {
+        print('[DeviceHeader] connection state handler failed: $e');
       }
       if (mounted) {
         setState(() {});
       }
-    });
+    }, onError: (Object e) => print('[DeviceHeader] connectionState: $e'));
     startTimer();
   }
 
@@ -142,40 +152,59 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     super.dispose();
   }
 
+  /// Reads RSSI without letting a disconnect race become a thrown error.
+  ///
+  /// The read is inherently racy: the device can go away between the
+  /// `isConnected` check and the reply. Every caller here treats a failed read
+  /// as "no signal", never as a reason to abandon what it was doing.
+  Future<void> _readRssiInto() async {
+    if (!this.widget.device.isConnected) {
+      this.deviceData.rssi.value = 0;
+      return;
+    }
+    try {
+      this.deviceData.rssi.value = await this.widget.device.readRssi();
+    } catch (e) {
+      this.deviceData.rssi.value = 0;
+    }
+  }
+
   Future<void> _handleReconnected() async {
     if (!mounted) return;
-    if (this.widget.device.isConnected) {
-      this.deviceData.rssi.value = await this.widget.device.readRssi();
-    }
+    // This runs as a reconnect callback. DeviceData isolates a throw from here
+    // now, but it should not need to: a signal-strength read is not part of
+    // restoring the transport.
+    await _readRssiInto();
     if (widget.customRefreshEnabled && !_isRefreshing) {
       await _refreshDeviceInfo();
     }
     if (mounted) setState(() {});
   }
 
+  // Both bodies are guarded for the same reason as the connection-state
+  // listener: a timer callback's future is discarded, so a throw here is an
+  // unhandled async error with no owner.
   startTimer() async {
     rssiTimer = Timer.periodic(Duration(seconds: 20), (timer) async {
-      print("*********UPDATE TIMER**************");
-      _updateRssi();
+      try {
+        await _updateRssi();
+      } catch (e) {
+        print('[DeviceHeader] RSSI poll failed: $e');
+      }
     });
     // Keep monitoring FTMS health without repeatedly restarting GATT setup.
     setupTimer = Timer.periodic(Duration(seconds: 5), (timer) async {
-      if (mounted && deviceData.isTransportActive) {
+      if (!mounted || !deviceData.isTransportActive) return;
+      try {
         await deviceData.checkFtmsHealth(this.widget.device);
+      } catch (e) {
+        print('[DeviceHeader] FTMS health check failed: $e');
       }
     });
   }
 
   Future<void> _updateRssi() async {
-    if (this.widget.device.isConnected) {
-      try {
-        this.deviceData.rssi.value = await this.widget.device.readRssi();
-      } catch (e) {
-        this.deviceData.rssi.value = 0;
-      }
-    } else {
-      this.deviceData.rssi.value = 0;
-    }
+    await _readRssiInto();
     if (widget.customRefreshEnabled && deviceData.isTransportActive) {
       deviceData.requestSetting(this.widget.device, fwVname);
     }

@@ -176,6 +176,10 @@ class PowerTableChartState extends State<PowerTableChart>
         timer.cancel();
         return;
       }
+      // Suspended while the device has stopped answering. The device header's
+      // 20 s firmware poll stays exempt and is what proves recovery, so the
+      // breaker can always clear itself.
+      if (widget.deviceData.customResponsesDegraded.value) return;
       if (mounted && widget.deviceData.isTransportActive) {
         widget.deviceData.requestSetting(widget.device, targetPositionVname);
       }
