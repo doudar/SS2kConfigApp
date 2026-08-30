@@ -51,6 +51,8 @@
 	<string>This app requires Bluetooth to communicate with the SmartSpin2k.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>This app requires Bluetooth to communicate with the SmartSpin2k.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>SmartSpin2k may use the camera when you choose to capture media for workout-related features.</string>
 	<key>NSDocumentsUsageDescription</key>
 	<string>We need access to save your workout files.</string>
 	<key>NSMicrophoneUsageDescription</key>
