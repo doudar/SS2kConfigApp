@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import 'ble_connection_retry.dart';
 import 'bleConstants.dart';
 import 'device_data.dart';
 import 'constants.dart';
@@ -47,6 +48,69 @@ enum CalibrationPhase {
 
   /// No stepper, or a board that cannot home at all.
   failedUnsupported,
+
+  /// The run never got off the ground: enabling the log stream, waiting for
+  /// notifications, or the control-point write itself threw. Distinct from
+  /// every other failure because the device was never asked to do anything.
+  failedToStart,
+
+  /// The command was handed to the transport and the device never acknowledged
+  /// it. The firmware answers a spin-down request synchronously — a status
+  /// frame and a log line — before any pedalling, so silence past the
+  /// acknowledgement budget means the request was not processed.
+  ///
+  /// This is the verdict that used to be an eight-minute wait ending in
+  /// `failedTimeout`, which blamed homing force for a command that was never
+  /// acted on.
+  failedNoAcknowledgement,
+
+  /// Same silence as [failedNoAcknowledgement], reached when no FTMS evidence
+  /// has arrived on the BLE link the app fell back to after losing DIRCON.
+  ///
+  /// Legacy name. "Transport stalled" was the original guess at the cause: a
+  /// SmartSpin2k wedged on a half-open DirCon socket — pulling Wi-Fi sends no
+  /// FIN, so the firmware can keep blocking its main loop on the vanished TCP
+  /// client and never read the queued spin-down. That is still the most likely
+  /// explanation, but the app cannot prove it from the outside; failed CCCD
+  /// setup, a missing Indoor Bike Data characteristic, or an abandoned setup
+  /// continuation produce the same signature. See
+  /// [DeviceData.isDirConFallbackSilent].
+  ///
+  /// Separate from [failedNoAcknowledgement] only so the advice can differ:
+  /// that verdict offers a plain retry, while a retry on this same silent link
+  /// would most likely repeat — so the recovery step to surface first is
+  /// restarting the SmartSpin2k (or restoring Wi-Fi). Nothing here is asserted
+  /// as certain.
+  failedTransportStalled,
+
+  /// The device acknowledged the request and homing never began.
+  ///
+  /// The firmware acts on a spin-down only after it sees roughly two seconds of
+  /// cadence between 10 and 200 rpm, and it can only see cadence through a
+  /// connected power meter or cadence sensor. With none paired the run waits
+  /// forever however hard the rider pedals — which is a wiring problem, not the
+  /// homing-force problem [failedTimeout] describes.
+  failedNeverStarted,
+}
+
+/// Which channel carried the device's acknowledgement of the spin-down request.
+/// Latched to the first one to arrive: that is the one worth knowing about when
+/// diagnosing a channel that went missing.
+enum CalibrationAckSource {
+  /// An FTMS Control Point `0x2AD9` response. The firmware answers a write
+  /// unconditionally, without checking for a subscriber, so this is the channel
+  /// least able to go missing.
+  controlPoint,
+
+  /// An FTMS Machine Status `0x2ADA` `SpinDownStatus` frame. Only sent when the
+  /// status *value changed*, so a repeated request produces nothing here.
+  machineStatus,
+
+  /// The firmware's own `-> Spin Down Requested` log line.
+  log,
+
+  /// Homing demonstrably began, which is acknowledgement by consequence.
+  homingStarted,
 }
 
 extension CalibrationPhaseX on CalibrationPhase {
@@ -59,10 +123,18 @@ extension CalibrationPhaseX on CalibrationPhase {
       this == CalibrationPhase.failedTimeout ||
       this == CalibrationPhase.failedUnstable ||
       this == CalibrationPhase.failedAborted ||
-      this == CalibrationPhase.failedUnsupported;
+      this == CalibrationPhase.failedUnsupported ||
+      this == CalibrationPhase.failedToStart ||
+      this == CalibrationPhase.failedNoAcknowledgement ||
+      this == CalibrationPhase.failedTransportStalled ||
+      this == CalibrationPhase.failedNeverStarted;
 
   bool get isTerminal => this == CalibrationPhase.complete || isFailure;
 }
+
+/// Which step of [CalibrationMonitor.start] failed. Recorded so a start failure
+/// says which collaborator broke rather than only that one did.
+enum CalibrationStartStage { logStreamEnable, notificationsReady, dispatch }
 
 enum HomingGaugeMode { ftmsResistance, endStopStallGuard }
 
@@ -135,6 +207,8 @@ class CalibrationPhaseTracker {
   bool _requestLogSeen = false;
   int _spinDownRequestedCount = 0;
   bool _homingStarted = false;
+  CalibrationAckSource? _ackSource;
+  int? _controlPointResult;
   HomingGaugeReading? _gaugeReading;
 
   /// The hMax the device already had before this run. Anything equal to it is
@@ -189,6 +263,8 @@ class CalibrationPhaseTracker {
     _requestLogSeen = false;
     _spinDownRequestedCount = 0;
     _homingStarted = false;
+    _ackSource = null;
+    _controlPointResult = null;
     _gaugeReading = null;
     _hMaxBaseline = hMaxBaseline;
     _foundMin = null;
@@ -228,6 +304,7 @@ class CalibrationPhaseTracker {
     if (m.contains('spin down requested')) {
       if (!_requestSent) return false;
       _requestLogSeen = true;
+      _latchAck(CalibrationAckSource.log);
       return false;
     }
 
@@ -436,6 +513,7 @@ class CalibrationPhaseTracker {
     switch (param) {
       case FTMSSpinDownStatus.SPIN_DOWN_REQUESTED:
         _spinDownRequestedCount++;
+        _latchAck(CalibrationAckSource.machineStatus);
         if (_spinDownRequestedCount < 2) return false;
         return _confirmHomingStarted();
 
@@ -447,6 +525,7 @@ class CalibrationPhaseTracker {
             !_minFound ||
             _phase != CalibrationPhase.searchingMax;
         _homingStarted = true;
+        _latchAck(CalibrationAckSource.homingStarted);
         _minFound = true;
         _phase = CalibrationPhase.searchingMax;
         return changed;
@@ -470,7 +549,87 @@ class CalibrationPhaseTracker {
     }
   }
 
-  bool markTimedOut() => _fail(CalibrationPhase.failedTimeout);
+  /// Feeds one FTMS Control Point `0x2AD9` response frame in.
+  ///
+  /// Layout is `[0x80, requestOpCode, resultCode, ...params]`. Reports no
+  /// progress: the response says the request was *processed*, which is a
+  /// different claim from homing having begun.
+  ///
+  /// A non-success result code is still an acknowledgement — the device
+  /// considered the request and refused it — and is recorded rather than turned
+  /// into its own verdict, because this firmware hardcodes `Success` for
+  /// `SpinDownControl` (`BLE_Fitness_Machine_Service.cpp:320`) and cannot
+  /// produce one.
+  bool onControlPointResponse(List<int> value) {
+    if (_phase.isTerminal || _phase == CalibrationPhase.idle || !_requestSent) {
+      return false;
+    }
+    if (value.length < 3) return false;
+    if (value[0] != FTMSOpCodes.RESPONSE_CODE) return false;
+    if (value[1] != FTMSOpCodes.SPIN_DOWN_CONTROL) return false;
+    _controlPointResult = value[2];
+    _latchAck(CalibrationAckSource.controlPoint);
+    return false;
+  }
+
+  /// Ends a run the overall timeout caught.
+  ///
+  /// Homing having started is what separates the two diagnoses. With it, the
+  /// search ran and never found an end stop — the homing-force problem
+  /// [CalibrationPhase.failedTimeout] describes. Without it, the device took
+  /// the command and never acted on it, which homing force has nothing to do
+  /// with.
+  bool markTimedOut() => _fail(
+    _homingStarted
+        ? CalibrationPhase.failedTimeout
+        : CalibrationPhase.failedNeverStarted,
+  );
+
+  /// Whether the device has acknowledged this run's request.
+  ///
+  /// The firmware answers a spin-down on receipt, before any pedalling: a
+  /// control-point response, a `SpinDownStatus` frame, and a matching log line.
+  /// Any is proof the command was processed; homing having started is proof by
+  /// consequence.
+  bool get acknowledged => _ackSource != null;
+
+  /// Which channel carried the acknowledgement, or null if none did.
+  CalibrationAckSource? get ackSource => _ackSource;
+
+  /// The `resultCode` byte of the control-point response, or null if none
+  /// arrived. `0x01` is success.
+  int? get controlPointResult => _controlPointResult;
+
+  /// Records the first channel to carry the acknowledgement. Later channels are
+  /// corroboration, not news.
+  void _latchAck(CalibrationAckSource source) => _ackSource ??= source;
+
+  /// Ends a run the device never acknowledged. Ordinary [_fail] semantics: a
+  /// verdict that already arrived wins.
+  ///
+  /// [transportStalled] routes to [CalibrationPhase.failedTransportStalled]
+  /// instead of the generic silence verdict. Same evidence — nothing came back
+  /// — but the caller has seen the post-fallback-silent signature
+  /// ([DeviceData.isDirConFallbackSilent]), so the run gets that phase's more
+  /// specific advice rather than the bare "the device did not respond". It is a
+  /// categorisation, not a proven cause.
+  bool markNoAcknowledgement({bool transportStalled = false}) => _fail(
+    transportStalled
+        ? CalibrationPhase.failedTransportStalled
+        : CalibrationPhase.failedNoAcknowledgement,
+  );
+
+  /// Ends a run that could not be started, *overriding* a terminal phase.
+  ///
+  /// Unlike every other transition this one is forced. [start] resets run state
+  /// before its first fallible step, but a throw from the previous run's
+  /// cleanup can land before that reset — leaving the old run's verdict in
+  /// place, which plain [_fail] would refuse to move off, and the start failure
+  /// would go unrecorded.
+  bool markStartFailed() {
+    _phase = CalibrationPhase.failedToStart;
+    return true;
+  }
 
   static final RegExp _ftmsGaugeLine = RegExp(
     r'homing to (min|max) resistance.*?current:\s*(-?\d+(?:\.\d+)?).*?target:\s*(-?\d+(?:\.\d+)?)',
@@ -607,6 +766,7 @@ class CalibrationPhaseTracker {
   bool _confirmHomingStarted() {
     if (_homingStarted) return false;
     _homingStarted = true;
+    _latchAck(CalibrationAckSource.homingStarted);
     return _advanceTo(CalibrationPhase.searchingMin);
   }
 
@@ -675,6 +835,28 @@ String _elapsed(Duration at) {
 /// directly, and so the caller decides what it knows. Fields with no value are
 /// rendered as `unknown` rather than dropped — every report has the same shape,
 /// which matters when someone is skimming a pasted one.
+/// Renders a raw `0x2ADA` frame as hex plus, where it is one, the spin-down
+/// status the firmware meant by it.
+///
+/// The names come from [FTMSSpinDownStatus], which documents why the FTMS
+/// spec labels do not describe what the SmartSpin2k does with them.
+String describeMachineStatusFrame(List<int> value) {
+  final hex = value
+      .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+      .join(' ');
+  if (value.length < 2 || value[0] != FTMSStatusOpCodes.SPIN_DOWN_STATUS) {
+    return '$hex  (not a spin-down status)';
+  }
+  final meaning = switch (value[1]) {
+    FTMSSpinDownStatus.SPIN_DOWN_REQUESTED => 'spin-down requested',
+    FTMSSpinDownStatus.SUCCESS => 'success',
+    FTMSSpinDownStatus.ERROR => 'error',
+    FTMSSpinDownStatus.MAX_SEARCH_STARTED => 'max search started',
+    _ => 'unknown parameter',
+  };
+  return '$hex  $meaning';
+}
+
 String buildCalibrationReport({
   required List<CalibrationLogEntry> transcript,
   required int droppedLines,
@@ -684,6 +866,16 @@ String buildCalibrationReport({
   required bool usedFtmsPath,
   required bool sweepTimedOut,
   required bool logStreamSilent,
+  required List<CalibrationLogEntry> machineStatus,
+  required int droppedStatusFrames,
+  required FtmsNotificationsReadiness machineStatusReadiness,
+  bool acknowledged = false,
+  Duration? acknowledgedAfter,
+  bool ackChannelsLive = false,
+  CalibrationAckSource? ackSource,
+  bool fallbackFtmsSilent = false,
+  String? startFailure,
+  String? transport,
   String? firmwareVersion,
   String? bikeType,
   String? homingForce,
@@ -702,13 +894,62 @@ String buildCalibrationReport({
     ..writeln(
       'firmware: ${orUnknown(firmwareVersion)}   bike: ${orUnknown(bikeType)}',
     )
+    // The transport is what makes the machine-status section below readable:
+    // no 0x2ADA frames is unremarkable on one transport and a defect on the
+    // other.
+    ..writeln('transport: ${orUnknown(transport)}')
     ..writeln(
       'phase: ${phase.name}  min: $minFound  max: $maxFound  range: $range',
     )
     ..writeln(
       'ftmsPath: $usedFtmsPath  sweepTimedOut: $sweepTimedOut  logSilent: $logStreamSilent',
     )
-    ..writeln('homingForce: ${orUnknown(homingForce)}');
+    ..writeln('homingForce: ${orUnknown(homingForce)}')
+    // Hoisted out of the machine-status section: readiness explains the run's
+    // whole evidence picture, not just whether that one list is empty.
+    ..writeln('machineStatusReadiness: ${machineStatusReadiness.name}')
+    // The device acknowledges a spin-down on receipt, before any pedalling, so
+    // this separates "never asked" from "asked and ignored" from "asked and
+    // acted on" — which the phase alone cannot.
+    ..writeln(
+      'acknowledged: $acknowledged'
+      '${acknowledgedAfter == null ? '' : ' after ${acknowledgedAfter.inMilliseconds}ms'}'
+      '${ackSource == null ? '' : ' via ${ackSource.name}'}'
+      '  ackChannelsLive: $ackChannelsLive',
+    );
+
+  // Only ever set on a run that ended in silence: no FTMS frame has arrived
+  // since the DIRCON->BLE fallback. That is an observation, not a diagnosis —
+  // the most common cause is a half-open socket, but not the only one.
+  if (fallbackFtmsSilent) {
+    buffer.writeln(
+      'fallbackFtmsSilent: true (no FTMS frame since the DIRCON->BLE fallback)',
+    );
+  }
+
+  if (startFailure != null) {
+    buffer.writeln('startFailure: $startFailure');
+  }
+
+  if (machineStatus.isEmpty) {
+    // The negative result is the interesting one: it means the 0x2ADA
+    // subscription never took and the log path carried the whole run. The
+    // readiness verdict is what separates "this firmware has no Machine Status"
+    // from "the notification block had not lifted yet".
+    buffer.writeln(
+      '--- FTMS machine status 0x2ADA (no frames received, '
+      'readiness: ${machineStatusReadiness.name}) ---',
+    );
+  } else {
+    buffer.writeln(
+      '--- FTMS machine status 0x2ADA (${machineStatus.length} frames, '
+      '$droppedStatusFrames dropped, '
+      'readiness: ${machineStatusReadiness.name}) ---',
+    );
+    for (final entry in machineStatus) {
+      buffer.writeln('[${_elapsed(entry.at)}] ${entry.message}');
+    }
+  }
 
   if (transcript.isEmpty) {
     // Worth reporting in its own right: a run where the device never spoke.
@@ -741,6 +982,7 @@ class CalibrationMonitor extends ChangeNotifier {
     this.pedalHintDelay = const Duration(seconds: 20),
     this.logSilenceTimeout = const Duration(seconds: 15),
     this.completionGrace = const Duration(seconds: 10),
+    this.notificationsReadyTimeout = const Duration(seconds: 15),
   });
 
   final DeviceData deviceData;
@@ -774,6 +1016,16 @@ class CalibrationMonitor extends ChangeNotifier {
   /// word. Without this the last row spins for ever.
   final Duration completionGrace;
 
+  /// How long to wait for FTMS Machine Status `0x2ADA` before starting anyway.
+  ///
+  /// Machine Status honours the FTMS notification block, so a run started
+  /// inside the ten-second post-connection window or during a settings refresh
+  /// would otherwise send its homing command into a stream that is still
+  /// suspended. Bounded rather than open-ended on purpose: a leaked block count
+  /// must not make calibration unstartable. On expiry the run proceeds on the
+  /// log and `hMax` paths and [notificationsReadiness] records what happened.
+  final Duration notificationsReadyTimeout;
+
   /// How many lines the on-screen tail shows. The full run is kept separately
   /// in [_transcript] for [buildCalibrationReport].
   static const int _maxRecentMessages = 6;
@@ -783,27 +1035,122 @@ class CalibrationMonitor extends ChangeNotifier {
   /// counted in [_droppedLines] rather than passing silently.
   static const int _maxTranscriptLines = 1000;
 
+  /// A run emits a handful of status frames. This is a runaway guard, not a
+  /// working limit; overflow is counted in [_droppedStatusFrames].
+  static const int _maxStatusFrames = 200;
+
   final CalibrationPhaseTracker _tracker = CalibrationPhaseTracker();
   final List<CalibrationLogEntry> _transcript = [];
+
+  /// Deliberately not merged into [_transcript]: the log-silence timer treats a
+  /// non-empty transcript as proof the device is talking, and a status frame is
+  /// not evidence about the *log* stream. A run where `0x2ADA` flows while the
+  /// log is dead must still report `logStreamSilent`.
+  final List<CalibrationLogEntry> _machineStatusLog = [];
   DateTime? _runStartedAt;
   int _droppedLines = 0;
+  int _droppedStatusFrames = 0;
 
   StreamSubscription<String>? _logSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicSubscription;
   StreamSubscription<List<int>>? _machineStatusSubscription;
+  StreamSubscription<List<int>>? _controlPointSubscription;
   Timer? _overallTimer;
   Timer? _stallTimer;
   Timer? _pedalHintTimer;
   Timer? _logSilenceTimer;
+  Timer? _ackTimer;
   Timer? _completionTimer;
   final List<Timer> _demoTimers = [];
 
   bool _showPedalHint = false;
   bool _logStreamSilent = false;
+
+  /// Set only when the *device* log stream carries a real line — never by
+  /// [_note], which writes app-authored `[app]` lines into the same transcript.
+  /// A non-empty [_transcript] is not proof the device spoke; this is. Reset in
+  /// [start] so a retry cannot inherit the previous run's evidence.
+  bool _deviceLogSeen = false;
   bool _disposed = false;
+
+  /// The interactive FTMS lease this run holds, or null. One per monitor: while
+  /// it is held the background settings sweep is deferred instead of taking a
+  /// second refcount on the FTMS notification block and blinding the run.
+  /// Released from every terminal path — see [_releaseFtmsSession].
+  Object? _ftmsSessionToken;
   bool _refreshSent = false;
   bool _logStreamingStarted = false;
+
+  /// Whether the log-stream enable write was *confirmed* by the device. An
+  /// unconfirmed write ([TransportResponseUnconfirmed]) leaves this false but
+  /// does not clear [_logStreamingStarted] — streaming may well be on, and
+  /// cleanup must still run. "Attempted but not confirmed" vs. "not attempted"
+  /// is distinguished by whether a `log stream enable …` note is in the
+  /// transcript.
+  bool _logStreamAvailable = false;
   bool _logDisableSent = false;
+  bool _awaitingNotifications = false;
+  FtmsNotificationsReadiness _notificationsReadiness =
+      FtmsNotificationsReadiness.unavailable;
+  String? _startFailure;
+  CalibrationStartStage? _startFailureStage;
+  bool _acknowledged = false;
+  bool _transportStalled = false;
+  DateTime? _dispatchedAt;
+  Duration? _acknowledgedAfter;
+
+  /// Whether some channel can observe this run — the single definition of that.
+  ///
+  /// The difference matters: with a live channel and no acknowledgement the
+  /// device demonstrably ignored the request, while with no channel at all the
+  /// app was simply blind. Those need different words and different advice, and
+  /// "did not respond" claims knowledge the app does not have in the second
+  /// case.
+  ///
+  /// `_deviceLogSeen` counts here even when the log-stream enable was never
+  /// confirmed: a log line that has already arrived is direct proof the log
+  /// channel is live, whatever happened to the enable response.
+  bool get ackChannelsLive =>
+      _notificationsReadiness == FtmsNotificationsReadiness.ready ||
+      deviceData.controlPointNotificationsLive ||
+      _deviceLogSeen;
+
+  /// A short, user-facing reason this run could not be started, or null. The
+  /// underlying exception goes to the transcript and report, never here.
+  String? get startFailure => _startFailure;
+
+  /// Which step of [start] failed, or null.
+  CalibrationStartStage? get startFailureStage => _startFailureStage;
+
+  /// Whether the device acknowledged this run's request. See
+  /// [CalibrationPhaseTracker.acknowledged].
+  bool get acknowledged => _acknowledged;
+
+  /// How long the acknowledgement took, or null if none arrived.
+  Duration? get acknowledgedAfter => _acknowledgedAfter;
+
+  /// Whether this run's post-fallback silence was categorised as
+  /// [CalibrationPhase.failedTransportStalled] rather than the generic
+  /// no-acknowledgement verdict. Latched at the acknowledgement deadline, so it
+  /// stays true for the verdict and the report even if the transport recovers
+  /// afterwards. Drives wording and advice; it does not assert a proven cause —
+  /// see [CalibrationPhase.failedTransportStalled].
+  bool get transportStalled => _transportStalled;
+
+  /// Which channel carried the acknowledgement. See [CalibrationAckSource].
+  CalibrationAckSource? get ackSource => _tracker.ackSource;
+
+  /// True while [start] is waiting for FTMS notifications to come up. The screen
+  /// shows this instead of the cadence prompt — nothing the rider does affects
+  /// it, so asking them to pedal yet would be misleading.
+  bool get awaitingNotifications => _awaitingNotifications;
+
+  /// Whether FTMS Machine Status was live when this run's homing command went
+  /// out, and if not, why. Reported rather than acted on: the run continues
+  /// either way, but a run without `0x2ADA` was tracked by the log and `hMax`
+  /// paths alone, and the report is the only place that distinction survives.
+  FtmsNotificationsReadiness get notificationsReadiness =>
+      _notificationsReadiness;
 
   CalibrationPhase get phase => _tracker.phase;
   bool get minFound => _tracker.minFound;
@@ -844,18 +1191,58 @@ class CalibrationMonitor extends ChangeNotifier {
   /// [_maxTranscriptLines]. Reported rather than truncating silently.
   int get droppedLines => _droppedLines;
 
+  /// Every FTMS Machine Status `0x2ADA` frame this run received, decoded and
+  /// stamped with when it arrived.
+  ///
+  /// Recorded for its evidential value rather than for the UI. Calibration
+  /// tracks homing from three redundant sources — the device log, `hMax`/`hMin`
+  /// characteristic changes, and these frames — so a run that completes proves
+  /// nothing about which one carried it. Over DIRCON that ambiguity is the
+  /// whole question: the firmware only forwards `0x2ADA` to clients that
+  /// subscribed (`DirConManager::notifyCharacteristic(..., onlySubscribers)`),
+  /// so an empty list here after a DIRCON run means the subscription never
+  /// took and the log path did the work.
+  List<CalibrationLogEntry> get machineStatusLog =>
+      List.unmodifiable(_machineStatusLog);
+
+  /// How many frames fell out of [machineStatusLog] at [_maxStatusFrames].
+  int get droppedStatusFrames => _droppedStatusFrames;
+
+  /// Runs a calibration, reporting a verdict rather than throwing.
+  ///
+  /// Every failure mode ends in a phase the screen can render. The callers pass
+  /// this as a `VoidCallback`, so a throw out of here would be an unhandled
+  /// async error: invisible in release, an isolate pause in debug, and either
+  /// way a screen that sits on the run page until the eight-minute timeout
+  /// reports a homing problem that never happened.
   Future<void> start() async {
-    // A retry can begin before the previous run's asynchronous cleanup has
-    // reached the BLE queue. Queue its stop before enabling the new stream.
-    await _stopLogStreaming();
     _cancelTimers();
+    // A retry can still be holding the previous run's lease if that run ended
+    // by disposal rather than a verdict. Release it before claiming a fresh
+    // one so the registry never holds two tokens for this monitor.
+    _releaseFtmsSession();
+    _acquireFtmsSession();
     _transcript.clear();
     _droppedLines = 0;
+    _machineStatusLog.clear();
+    _droppedStatusFrames = 0;
     _runStartedAt = DateTime.now();
     _showPedalHint = false;
     _logStreamSilent = false;
+    _deviceLogSeen = false;
     _refreshSent = false;
+    _logStreamAvailable = false;
     _logDisableSent = false;
+    _awaitingNotifications = false;
+    _startFailure = null;
+    _startFailureStage = null;
+    _acknowledged = false;
+    _transportStalled = false;
+    _dispatchedAt = null;
+    _acknowledgedAfter = null;
+    _notificationsReadiness = FtmsNotificationsReadiness.unavailable;
+    // Before the first fallible step, so a throw below always lands on a
+    // tracker that belongs to *this* run — see [markStartFailed].
     _tracker.start(
       hMaxBaseline: int.tryParse(deviceData.getVnameValue(BLE_hMaxVname)),
     );
@@ -863,24 +1250,43 @@ class CalibrationMonitor extends ChangeNotifier {
 
     _listen();
 
+    try {
+      await _startRun();
+    } catch (error, stackTrace) {
+      // Disposal is cancellation, not failure: the screen is gone and there is
+      // nobody to show a verdict to.
+      if (_disposed) return;
+      _startFailureStage ??= CalibrationStartStage.dispatch;
+      _startFailure = _describeStartFailure(_startFailureStage!);
+      _note(
+        'calibration could not be started '
+        '(${_startFailureStage!.name}): $error',
+      );
+      debugPrint('[Calibration] start failed: $error\n$stackTrace');
+      _cancelTimers();
+      unawaited(_stopLogStreaming());
+      _releaseFtmsSession();
+      _tracker.markStartFailed();
+      _safeNotify();
+    }
+  }
+
+  Future<void> _startRun() async {
+    // A retry can begin before the previous run's asynchronous cleanup has
+    // reached the BLE queue. Queue its stop before enabling the new stream.
+    _startFailureStage = CalibrationStartStage.logStreamEnable;
+    await _stopLogStreaming();
+
     _overallTimer = Timer(overallTimeout, () {
       if (_tracker.markTimedOut()) {
         _finishRun();
         _safeNotify();
       }
     });
-    _pedalHintTimer = Timer(pedalHintDelay, () {
-      if (_tracker.phase != CalibrationPhase.waitingForCadence) return;
-      _showPedalHint = true;
-      _safeNotify();
-    });
-    _logSilenceTimer = Timer(logSilenceTimeout, () {
-      if (_transcript.isNotEmpty) return;
-      _logStreamSilent = true;
-      _safeNotify();
-    });
 
     if (deviceData.isSimulated) {
+      _notificationsReadiness = FtmsNotificationsReadiness.ready;
+      _startRunWatchdogs();
       _tracker.markRequestSent();
       _runDemoScript();
       return;
@@ -892,21 +1298,114 @@ class CalibrationMonitor extends ChangeNotifier {
       orElse: () => {"vName": BLE_logStreamVname, "value": ""},
     );
     // Set this before awaiting so disposal during the acknowledged write still
-    // queues the matching disable behind it.
+    // queues the matching disable behind it — and left set even when the write
+    // goes unconfirmed, so [_stopLogStreaming] still runs.
     _logStreamingStarted = true;
-    await deviceData.writeToSS2k(device, logCharacteristic, s: "1");
+    try {
+      await deviceData.writeToSS2kStrict(device, logCharacteristic, s: "1");
+      _logStreamAvailable = true;
+    } on TransportResponseUnconfirmed {
+      // The write may well have enabled streaming; the app just cannot confirm
+      // it. Not a start failure on its own — only if no other channel can
+      // observe the run either (checked below).
+      _note('log stream enable not confirmed');
+    } catch (error) {
+      _note('log stream enable failed: $error');
+    }
     if (_disposed || !_logStreamingStarted) return;
 
-    _tracker.markRequestSent();
+    // Machine Status is suspended while any FTMS notification block is held, so
+    // the homing command has to wait for it — otherwise the run's own
+    // acknowledgement frames land before anything is listening. The wait never
+    // releases a block it does not own; it only observes one draining.
+    _startFailureStage = CalibrationStartStage.notificationsReady;
+    _awaitingNotifications = true;
+    _safeNotify();
+    final readinessWait = Stopwatch()..start();
+    try {
+      _notificationsReadiness = await deviceData.awaitFtmsNotificationsReady(
+        device,
+        timeout: notificationsReadyTimeout,
+      );
+    } finally {
+      // In a finally so a disposal or an unexpected error cannot strand the
+      // screen on "getting ready" with no way out.
+      readinessWait.stop();
+      _awaitingNotifications = false;
+      _safeNotify();
+    }
+    if (_disposed || !_logStreamingStarted) return;
+
+    // The run proceeds either way — a run without 0x2ADA is still tracked by
+    // the log and hMax paths — but which of the three channels was live is the
+    // difference between a diagnosable report and a guess.
+    _note(
+      'FTMS readiness: ${_notificationsReadiness.name} '
+      '(waited ${readinessWait.elapsedMilliseconds}ms)',
+    );
+
+    // The log stream is the primary progress channel. If its enable went
+    // unconfirmed *and* no other channel is live, nothing could observe this
+    // run — dispatching the homing command would only end in an eight-minute
+    // timeout. Fail it now, in its own stage.
+    if (!_logStreamAvailable && !ackChannelsLive) {
+      _startFailureStage = CalibrationStartStage.logStreamEnable;
+      throw StateError('no channel could observe this run');
+    }
+
+    // Deliberately started here rather than with the overall timer: a pedal
+    // hint counting down through the readiness wait would prompt the rider for
+    // something that cannot help, and log silence during the wait says nothing
+    // about the run.
+    _startRunWatchdogs();
+
+    _startFailureStage = CalibrationStartStage.dispatch;
+    await _dispatchSpinDown();
+  }
+
+  Future<void> _dispatchSpinDown() async {
     await deviceData.writeFtmsControlPointCommand(
       FTMSControlPoint.spinDownCommand(true),
+      // The dispatch boundary is the command reaching the wire, not the
+      // enqueue. Marking the request sent before `_dispatchSpinDown` awaited
+      // let a delayed Control Point response, 0x2ADA frame or homing log line
+      // from a *previous* run acknowledge this one while it was still queued
+      // behind other transport work.
+      onDispatch: () {
+        _tracker.markRequestSent();
+        _dispatchedAt = DateTime.now();
+      },
     );
+    if (_disposed) return;
+    _note('spin-down dispatched');
+    // The write completing means the *stack* accepted it. Whether the device
+    // processed it is a separate question, and against a wedged firmware the
+    // answer is no — which is the whole reason this deadline exists.
+    _armAcknowledgementDeadline();
+    _checkAcknowledged();
+  }
+
+  /// The stall/prompt timers that only make sense once the run is under way.
+  void _startRunWatchdogs() {
+    _pedalHintTimer?.cancel();
+    _logSilenceTimer?.cancel();
+    _pedalHintTimer = Timer(pedalHintDelay, () {
+      if (_tracker.phase != CalibrationPhase.waitingForCadence) return;
+      _showPedalHint = true;
+      _safeNotify();
+    });
+    _logSilenceTimer = Timer(logSilenceTimeout, () {
+      if (_deviceLogSeen) return;
+      _logStreamSilent = true;
+      _safeNotify();
+    });
   }
 
   void _listen() {
     _logSubscription?.cancel();
     _characteristicSubscription?.cancel();
     _machineStatusSubscription?.cancel();
+    _controlPointSubscription?.cancel();
 
     _logSubscription = deviceData.logStream.listen(_handleLogMessage);
     _characteristicSubscription = deviceData.characteristicChanges.listen((event) {
@@ -924,20 +1423,135 @@ class CalibrationMonitor extends ChangeNotifier {
       if (progressed || (_tracker.foundMin, _tracker.foundMax) != before)
         _safeNotify();
     });
+    // The protocol's own acknowledgement. Subscribed alongside the other two
+    // because none of the three is dependable on its own: 0x2ADA is only sent
+    // when the status value changed, and the log stream drops lines under load.
+    _controlPointSubscription = deviceData.controlPointResponseStream.listen((
+      value,
+    ) {
+      final progressed = _tracker.onControlPointResponse(value);
+      // Always checked: a control-point response moves no phase along, so this
+      // acknowledgement would otherwise never be seen.
+      _checkAcknowledged();
+      if (progressed) {
+        _afterProgress();
+        _safeNotify();
+      }
+    });
     _machineStatusSubscription = deviceData.machineStatusStream.listen((value) {
+      // Recorded before the filters below, so a frame the tracker ignores is
+      // still visible as proof the subscription is live. "Arrived but was not
+      // a spin-down status" and "never arrived" are different diagnoses.
+      _recordMachineStatus(value);
       if (value.length < 2) return;
       if (value[0] != FTMSStatusOpCodes.SPIN_DOWN_STATUS) return;
-      if (_tracker.onSpinDownStatus(value[1])) {
+      final progressed = _tracker.onSpinDownStatus(value[1]);
+      // Checked whether or not the tracker reports progress: the first
+      // SpinDown_SpinDownRequested is deliberately not progress — it takes two
+      // to confirm homing — but it *is* the acknowledgement.
+      _checkAcknowledged();
+      if (progressed) {
         _afterProgress();
         _safeNotify();
       }
     });
   }
 
+  /// Plain-language reason for a start failure. Deliberately not the exception
+  /// text: that names Dart types and characteristic UUIDs, and goes to the
+  /// transcript and report where it is useful instead.
+  String _describeStartFailure(CalibrationStartStage stage) => switch (stage) {
+    CalibrationStartStage.logStreamEnable =>
+      "The app couldn't confirm that log reporting started.",
+    CalibrationStartStage.notificationsReady =>
+      "The connection couldn't be prepared for a calibration run.",
+    CalibrationStartStage.dispatch =>
+      "The calibration command couldn't be sent to the SmartSpin2k.",
+  };
+
+  /// Appends a line the *app* wrote to the run transcript.
+  ///
+  /// Deliberately not counted as device traffic: it does not feed the tracker,
+  /// does not clear log silence, and does not make [ackChannelsLive] true. The
+  /// app narrating its own progress is not evidence the device is talking.
+  void _note(String message) {
+    final startedAt = _runStartedAt;
+    _transcript.add((
+      at: startedAt == null
+          ? Duration.zero
+          : DateTime.now().difference(startedAt),
+      message: '[app] $message',
+    ));
+    while (_transcript.length > _maxTranscriptLines) {
+      _transcript.removeAt(0);
+      _droppedLines++;
+    }
+  }
+
+  /// Starts the acknowledgement deadline.
+  ///
+  /// Anchored on the dispatch *completing* rather than on the run watchdogs
+  /// starting: a command still queued behind other transport work has not been
+  /// ignored, and judging it before it reached the wire would report a device
+  /// fault for an app-side delay.
+  void _armAcknowledgementDeadline() {
+    _ackTimer?.cancel();
+    _ackTimer = Timer(logSilenceTimeout, () {
+      _ackTimer = null;
+      if (_disposed) return;
+      _checkAcknowledged();
+      if (_acknowledged) return;
+      // Read once, here, and carried into the report: the verdict and the
+      // report must agree about which failure this was, and the underlying
+      // transport state can move between the two reads.
+      _transportStalled = deviceData.isDirConFallbackSilent;
+      if (!_tracker.markNoAcknowledgement(transportStalled: _transportStalled)) {
+        return;
+      }
+      _note(
+        _transportStalled
+            ? 'no acknowledgement within ${logSilenceTimeout.inSeconds}s; '
+                  'no FTMS frame has arrived since the DIRCON->BLE fallback'
+            : 'no acknowledgement within ${logSilenceTimeout.inSeconds}s '
+                  '(${ackChannelsLive ? 'an evidence channel was live' : 'no evidence channel was live'})',
+      );
+      _finishRun();
+      _safeNotify();
+    });
+  }
+
+  /// Latches the acknowledgement the moment any channel carries it.
+  void _checkAcknowledged() {
+    if (_acknowledged || !_tracker.acknowledged) return;
+    _acknowledged = true;
+    final dispatchedAt = _dispatchedAt;
+    _acknowledgedAfter = dispatchedAt == null
+        ? null
+        : DateTime.now().difference(dispatchedAt);
+    _ackTimer?.cancel();
+    _ackTimer = null;
+  }
+
+  void _recordMachineStatus(List<int> value) {
+    final startedAt = _runStartedAt;
+    _machineStatusLog.add((
+      at: startedAt == null
+          ? Duration.zero
+          : DateTime.now().difference(startedAt),
+      message: describeMachineStatusFrame(value),
+    ));
+    while (_machineStatusLog.length > _maxStatusFrames) {
+      _machineStatusLog.removeAt(0);
+      _droppedStatusFrames++;
+    }
+  }
+
   void _handleLogMessage(String message) {
     if (message.isEmpty || message == "1") return;
 
-    // The device is talking after all.
+    // The device is talking after all. The only place this is set: an [_note]
+    // line in the transcript is the app narrating itself, not evidence.
+    _deviceLogSeen = true;
     _logSilenceTimer?.cancel();
     _logSilenceTimer = null;
     _logStreamSilent = false;
@@ -955,6 +1569,9 @@ class CalibrationMonitor extends ChangeNotifier {
     }
 
     final changed = _tracker.onLogMessage(message);
+    // The firmware's "Spin Down Requested" line is the log-side acknowledgement,
+    // and it moves no phase along, so this cannot be folded into `changed`.
+    _checkAcknowledged();
 
     // Proof the run is alive, which includes the progress chatter that moves no
     // phase along. Deliberately not "any line at all": the device streams
@@ -1033,11 +1650,27 @@ class CalibrationMonitor extends ChangeNotifier {
   }
 
   /// Performs the cleanup shared by every terminal path. Successful runs also
-  /// read their final limits back, but all outcomes release the log stream.
+  /// read their final limits back, but all outcomes release the log stream and
+  /// the FTMS lease — which lets any deferred settings sweep run.
   void _finishRun() {
     _cancelTimers();
     _refreshHomingValues();
     unawaited(_stopLogStreaming());
+    _releaseFtmsSession();
+  }
+
+  /// Claims the interactive FTMS lease if this run does not already hold one.
+  void _acquireFtmsSession() {
+    _ftmsSessionToken ??= deviceData.beginInteractiveFtmsSession(device);
+  }
+
+  /// Releases the interactive FTMS lease. Idempotent — safe to call from every
+  /// terminal path, and [DeviceData.endInteractiveFtmsSession] no-ops a token
+  /// it has already seen.
+  void _releaseFtmsSession() {
+    final token = _ftmsSessionToken;
+    _ftmsSessionToken = null;
+    if (token != null) deviceData.endInteractiveFtmsSession(token);
   }
 
   Future<void> _stopLogStreaming() async {
@@ -1114,11 +1747,13 @@ class CalibrationMonitor extends ChangeNotifier {
     _stallTimer?.cancel();
     _pedalHintTimer?.cancel();
     _logSilenceTimer?.cancel();
+    _ackTimer?.cancel();
     _completionTimer?.cancel();
     _overallTimer = null;
     _stallTimer = null;
     _pedalHintTimer = null;
     _logSilenceTimer = null;
+    _ackTimer = null;
     _completionTimer = null;
     for (final timer in _demoTimers) {
       timer.cancel();
@@ -1142,8 +1777,11 @@ class CalibrationMonitor extends ChangeNotifier {
     _characteristicSubscription = null;
     _machineStatusSubscription?.cancel();
     _machineStatusSubscription = null;
+    _controlPointSubscription?.cancel();
+    _controlPointSubscription = null;
 
     unawaited(_stopLogStreaming());
+    _releaseFtmsSession();
   }
 
   @override

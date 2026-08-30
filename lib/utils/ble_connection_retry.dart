@@ -17,6 +17,39 @@ class BleConnectionAttemptsExhausted implements Exception {
   String toString() => message;
 }
 
+/// A custom-characteristic write never left the app: no live DIRCON session and
+/// no connected BLE characteristic to write to.
+///
+/// Distinct from [TransportResponseUnconfirmed] on purpose — these are
+/// different facts and callers must be able to tell them apart. A settings
+/// sweep aborts immediately on this one; the rest of the sweep would only
+/// throw identically.
+class TransportNotConnected implements Exception {
+  const TransportNotConnected([this.detail]);
+
+  final String? detail;
+
+  @override
+  String toString() => detail == null
+      ? 'SmartSpin2k is not connected.'
+      : 'SmartSpin2k is not connected: $detail';
+}
+
+/// A custom-characteristic write went out over a connected transport, but no
+/// response bearing the matching reference arrived within the response timeout.
+///
+/// The write may still have landed — the device may simply be slow or its log
+/// buffer full. The three-strike [DeviceData.customResponsesDegraded] breaker
+/// is the arbiter of whether the link is actually dead; a single one of these
+/// is within normal jitter and a sweep continues past it.
+class TransportResponseUnconfirmed implements Exception {
+  const TransportResponseUnconfirmed();
+
+  @override
+  String toString() =>
+      'SmartSpin2k did not confirm the write within the response timeout.';
+}
+
 /// Retries establishment of a physical BLE connection.
 ///
 /// Returns false when the owning connection flow is cancelled. Connection

@@ -107,6 +107,45 @@ List<Map<String, dynamic>> createCustomCharacteristicFramework() {
       .toList();
 }
 
+/// The firmware snapshot normally uses the characteristic vName without its
+/// `BLE_` prefix. A descriptor can provide `settingsSnapshotKey` only when a
+/// legacy firmware JSON key does not follow that convention.
+String? settingsSnapshotKeyForCharacteristic(Map characteristic) {
+  final override = characteristic['settingsSnapshotKey'];
+  if (override is String) return override;
+
+  final vName = characteristic['vName']?.toString();
+  if (vName == null || !vName.startsWith('BLE_')) return null;
+  return vName.substring(4);
+}
+
+/// Resolves snapshot JSON through the canonical characteristic descriptors.
+/// New conventionally named characteristics need no snapshot-specific entry.
+Map<int, dynamic> settingsSnapshotValuesByReference(
+  Map<String, dynamic> snapshot,
+  Iterable<Map> characteristics,
+) {
+  final referencesByKey = <String, int>{};
+  for (final characteristic in characteristics) {
+    final key = settingsSnapshotKeyForCharacteristic(characteristic);
+    final referenceText = characteristic['reference']?.toString();
+    if (key == null || referenceText == null) continue;
+
+    final reference = int.parse(referenceText);
+    final previous = referencesByKey[key];
+    if (previous != null && previous != reference) {
+      throw StateError('Duplicate settings snapshot key: $key');
+    }
+    referencesByKey[key] = reference;
+  }
+
+  return <int, dynamic>{
+    for (final entry in snapshot.entries)
+      if (referencesByKey[entry.key] case final reference?)
+        reference: entry.value,
+  };
+}
+
 // Refactored customCharacteristicFramework to directly use Dart map
 final dynamic customCharacteristicFramework = [
   {
@@ -125,6 +164,7 @@ final dynamic customCharacteristicFramework = [
   {
     "vName": fwVname,
     "reference": "0x25",
+    "settingsSnapshotKey": "firmwareVersion",
     "isSetting": false,
     "settingType": SettingType.basic,
     "type": "string",
@@ -536,6 +576,7 @@ final dynamic customCharacteristicFramework = [
   {
     "vName": minBrakeWattsVname,
     "reference": "0x21",
+    "settingsSnapshotKey": "minWatts",
     "isSetting": true,
     "settingType": SettingType.advanced,
     "type": "int",
@@ -549,6 +590,7 @@ final dynamic customCharacteristicFramework = [
   {
     "vName": maxBrakeWattsVname,
     "reference": "0x22",
+    "settingsSnapshotKey": "maxWatts",
     "isSetting": true,
     "settingType": SettingType.advanced,
     "type": "int",
@@ -660,6 +702,7 @@ final dynamic customCharacteristicFramework = [
   {
     "vName": BLE_hMinVname,
     "reference": "0x2A",
+    "settingsSnapshotKey": "hMin",
     "isSetting": false,
     "settingType": SettingType.advanced,
     // int32 on the wire (BLE_Custom_Characteristic.cpp:755-769). "int" would
@@ -674,6 +717,7 @@ final dynamic customCharacteristicFramework = [
   {
     "vName": BLE_hMaxVname,
     "reference": "0x2B",
+    "settingsSnapshotKey": "hMax",
     "isSetting": false,
     "settingType": SettingType.advanced,
     // int32 on the wire (BLE_Custom_Characteristic.cpp:772-789), as hMin above.
@@ -700,6 +744,7 @@ final dynamic customCharacteristicFramework = [
   {
     "vName": pTab4pwrVname,
     "reference": "0x2D",
+    "settingsSnapshotKey": "pTab4Pwr",
     "isSetting": true,
     "settingType": SettingType.advanced,
     "type": "bool",

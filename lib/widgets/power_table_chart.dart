@@ -6,6 +6,10 @@ import '../utils/device_data.dart';
 import '../utils/constants.dart';
 import '../utils/power_table_painter.dart';
 
+class _LivePositionRepaint extends ChangeNotifier {
+  void markNeedsPaint() => notifyListeners();
+}
+
 class PowerTableChart extends StatefulWidget {
   static const List<Color> lineColors = <Color>[
     Colors.purple,
@@ -65,6 +69,8 @@ class PowerTableChartState extends State<PowerTableChart>
 
   // Trail tracking
   final List<Map<String, double>> _positionHistory = [];
+  final _LivePositionRepaint _livePositionRepaint = _LivePositionRepaint();
+  late List<List<double?>> _cachedPowerTableData;
   static const int maxTrailLength = 10;
   DateTime _lastPositionUpdate = DateTime.now();
   Timer? _homingValuesTimer;
@@ -73,6 +79,7 @@ class PowerTableChartState extends State<PowerTableChart>
   Timer? _initialDataLoadTimer;
   StreamSubscription<CharacteristicChangeEvent>?
   _characteristicChangeSubscription;
+  StreamSubscription<FtmsData>? _ftmsDataSubscription;
 
   List<Color> get colors => PowerTableChart.lineColors;
   List<int> get cadences => PowerTableChart.cadenceTicks;
@@ -87,6 +94,7 @@ class PowerTableChartState extends State<PowerTableChart>
       duration: const Duration(seconds: 3),
       vsync: this,
     )..repeat(reverse: true);
+    _refreshPowerTableCache(notify: false);
 
     _loadAxisPreference();
 
@@ -119,8 +127,17 @@ class PowerTableChartState extends State<PowerTableChart>
         .listen((event) {
           if (event.vName == BLE_hMinVname || event.vName == BLE_hMaxVname) {
             _updateHomingFromCache();
+          } else if (event.vName == powerTableDataVname) {
+            _refreshPowerTableCache();
+          } else if (event.vName == targetPositionVname) {
+            _livePositionRepaint.markNeedsPaint();
           }
         });
+    _ftmsDataSubscription = widget.deviceData.ftmsDataChanges.listen((_) {
+      _updatePositionHistoryFromDevice();
+      _updatePulseSpeed();
+      _livePositionRepaint.markNeedsPaint();
+    });
   }
 
   @override
@@ -131,6 +148,8 @@ class PowerTableChartState extends State<PowerTableChart>
     _targetPositionTimer?.cancel();
     _cadenceLinesTimer?.cancel();
     _characteristicChangeSubscription?.cancel();
+    _ftmsDataSubscription?.cancel();
+    _livePositionRepaint.dispose();
     super.dispose();
   }
 
@@ -176,6 +195,10 @@ class PowerTableChartState extends State<PowerTableChart>
         timer.cancel();
         return;
       }
+      // Suspended while the device has stopped answering. The device header's
+      // 20 s firmware poll stays exempt and is what proves recovery, so the
+      // breaker can always clear itself.
+      if (widget.deviceData.customResponsesDegraded.value) return;
       if (mounted && widget.deviceData.isTransportActive) {
         widget.deviceData.requestSetting(widget.device, targetPositionVname);
       }
@@ -234,16 +257,49 @@ class PowerTableChartState extends State<PowerTableChart>
     }
   }
 
-  double calculateMaxResistance() {
+  double _calculateMaxResistance(List<List<double?>> powerTableData) {
     double maxRes = 0;
-    for (var row in widget.deviceData.powerTableData) {
-      for (int i = 0; i < row.length; i++) {
-        if (row[i] != null && row[i]! > maxRes) {
-          maxRes = row[i]!.toDouble();
+    for (final row in powerTableData) {
+      for (final value in row) {
+        if (value != null && value > maxRes) {
+          maxRes = value;
         }
       }
     }
     return maxRes;
+  }
+
+  void _refreshPowerTableCache({bool notify = true}) {
+    final converted = widget.deviceData.powerTableData
+        .map((row) => row.map((value) => value?.toDouble()).toList())
+        .toList();
+    final convertedMaxResistance = _calculateMaxResistance(converted);
+
+    if (notify && mounted) {
+      setState(() {
+        _cachedPowerTableData = converted;
+        maxResistance = convertedMaxResistance;
+      });
+    } else {
+      _cachedPowerTableData = converted;
+      maxResistance = convertedMaxResistance;
+    }
+  }
+
+  void _updatePositionHistoryFromDevice() {
+    if (widget.deviceData.ftmsData.watts <= 0 ||
+        widget.deviceData.ftmsData.watts > 1000 ||
+        maxResistance <= 0) {
+      return;
+    }
+
+    final targetPosition =
+        double.tryParse(widget.deviceData.getVnameValue(targetPositionVname)) ??
+        0;
+    _updatePositionHistory(
+      widget.deviceData.ftmsData.watts.toDouble(),
+      targetPosition,
+    );
   }
 
   void _updatePositionHistory(double x, double y) {
@@ -276,53 +332,77 @@ class PowerTableChartState extends State<PowerTableChart>
 
   @override
   Widget build(BuildContext context) {
-    // Recalculate max resistance and update history on build
-    maxResistance = calculateMaxResistance();
-
-    if (widget.deviceData.ftmsData.watts > 0 &&
-        widget.deviceData.ftmsData.watts <= 1000 &&
-        maxResistance > 0) {
-      double targetPosition =
-          double.tryParse(widget.deviceData.getVnameValue(targetPositionVname)) ??
-          0;
-      _updatePositionHistory(
-        widget.deviceData.ftmsData.watts.toDouble(),
-        targetPosition,
-      );
-    }
-
     return LayoutBuilder(
       builder: (context, constraints) {
-        return AnimatedBuilder(
-          animation: _pulseController,
-          builder: (context, child) {
-            return CustomPaint(
-              size: Size(constraints.maxWidth, constraints.maxHeight),
-              painter: PowerTablePainter(
-                powerTableData: widget.deviceData.powerTableData
-                    .map(
-                      (row) => row.map((value) => value?.toDouble()).toList(),
-                    )
-                    .toList(),
-                cadences: cadences,
-                colors: colors,
-                maxResistance: maxResistance,
-                homingMin: homingMin,
-                homingMax: homingMax,
-                currentWatts: widget.deviceData.ftmsData.watts.toDouble(),
-                currentResistance:
-                    double.tryParse(
-                      widget.deviceData.getVnameValue(targetPositionVname),
-                    ) ??
-                    0,
-                currentCadence: widget.deviceData.ftmsData.cadence,
-                positionHistory: _positionHistory,
-                tableDivisor: widget.deviceData.tableDivisor,
-                swapAxes: _swapAxes,
-                animationValue: _pulseController.value,
+        final chartSize = Size(constraints.maxWidth, constraints.maxHeight);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            RepaintBoundary(
+              child: CustomPaint(
+                size: chartSize,
+                painter: PowerTableOverlayPainter(
+                  repaint: _pulseController,
+                  animation: _pulseController,
+                  colors: colors,
+                  maxResistance: maxResistance,
+                  homingMin: homingMin,
+                  homingMax: homingMax,
+                  currentWatts: () =>
+                      widget.deviceData.ftmsData.watts.toDouble(),
+                  currentResistance: () =>
+                      double.tryParse(
+                        widget.deviceData.getVnameValue(targetPositionVname),
+                      ) ??
+                      0,
+                  currentCadence: () => widget.deviceData.ftmsData.cadence,
+                  positionHistory: _positionHistory,
+                  tableDivisor: widget.deviceData.tableDivisor,
+                  swapAxes: _swapAxes,
+                  drawPosition: false,
+                ),
               ),
-            );
-          },
+            ),
+            RepaintBoundary(
+              child: CustomPaint(
+                size: chartSize,
+                painter: PowerTablePainter(
+                  powerTableData: _cachedPowerTableData,
+                  cadences: cadences,
+                  colors: colors,
+                  maxResistance: maxResistance,
+                  homingMin: homingMin,
+                  homingMax: homingMax,
+                  swapAxes: _swapAxes,
+                ),
+              ),
+            ),
+            RepaintBoundary(
+              child: CustomPaint(
+                size: chartSize,
+                painter: PowerTableOverlayPainter(
+                  repaint: _livePositionRepaint,
+                  animation: _pulseController,
+                  colors: colors,
+                  maxResistance: maxResistance,
+                  homingMin: homingMin,
+                  homingMax: homingMax,
+                  currentWatts: () =>
+                      widget.deviceData.ftmsData.watts.toDouble(),
+                  currentResistance: () =>
+                      double.tryParse(
+                        widget.deviceData.getVnameValue(targetPositionVname),
+                      ) ??
+                      0,
+                  currentCadence: () => widget.deviceData.ftmsData.cadence,
+                  positionHistory: _positionHistory,
+                  tableDivisor: widget.deviceData.tableDivisor,
+                  swapAxes: _swapAxes,
+                  drawAxisEffects: false,
+                ),
+              ),
+            ),
+          ],
         );
       },
     );

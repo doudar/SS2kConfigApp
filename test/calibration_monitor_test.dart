@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/bleConstants.dart';
 import 'package:ss2kconfigapp/utils/calibration_monitor.dart';
+import 'package:ss2kconfigapp/utils/device_data.dart';
 
 /// Every string fed in here is a literal `SS2K_LOG` call from the firmware's
 /// `src/Stepper.cpp`, with the `%d`/`%s` placeholders filled in the way the
@@ -1062,6 +1063,12 @@ void main() {
       bool usedFtmsPath = false,
       bool sweepTimedOut = false,
       bool logStreamSilent = false,
+      List<CalibrationLogEntry>? machineStatus,
+      int droppedStatusFrames = 0,
+      FtmsNotificationsReadiness machineStatusReadiness =
+          FtmsNotificationsReadiness.ready,
+      bool fallbackFtmsSilent = false,
+      String? transport = 'Bluetooth',
       String? firmwareVersion = '24.1.3',
       String? bikeType = 'Most spin bikes',
       String? homingForce = '55',
@@ -1070,6 +1077,11 @@ void main() {
     }) => buildCalibrationReport(
       transcript: transcript ?? const [],
       droppedLines: droppedLines,
+      machineStatus: machineStatus ?? const [],
+      droppedStatusFrames: droppedStatusFrames,
+      machineStatusReadiness: machineStatusReadiness,
+      fallbackFtmsSilent: fallbackFtmsSilent,
+      transport: transport,
       phase: phase,
       minFound: minFound,
       maxFound: maxFound,
@@ -1082,6 +1094,35 @@ void main() {
       homingMin: homingMin,
       homingMax: homingMax,
     );
+
+    // The fallback-silent observation has to survive into the report: it is the
+    // difference between "the device refused" and "no FTMS frame has arrived",
+    // and the transcript alone cannot show that. The wording is observational —
+    // the report must not assert a firmware cause it cannot confirm.
+    test('the fallback-silent observation appears only when it applies', () {
+      final text = report(
+        phase: CalibrationPhase.failedTransportStalled,
+        fallbackFtmsSilent: true,
+      );
+      expect(
+        text,
+        allOf(
+          contains('phase: failedTransportStalled'),
+          contains('fallbackFtmsSilent: true'),
+          contains('DIRCON->BLE fallback'),
+        ),
+      );
+      expect(
+        text,
+        isNot(contains('wedged')),
+        reason: 'the report describes the observation, not a diagnosed cause',
+      );
+
+      expect(
+        report(phase: CalibrationPhase.failedNoAcknowledgement),
+        isNot(contains('fallbackFtmsSilent')),
+      );
+    });
 
     test('a completed run carries the header and every line in order', () {
       final text = report(
@@ -1111,6 +1152,90 @@ void main() {
         lessThan(text.indexOf('Homing procedure complete')),
         reason: 'lines keep the order the device sent them',
       );
+    });
+
+    // The report is the hardware-validation artefact for DIRCON Machine
+    // Status: calibration tracks homing from three redundant sources, so a run
+    // that completed says nothing about which one carried it.
+    test('machine status frames are decoded and stamped', () {
+      final text = report(
+        transport: 'DIRCON',
+        machineStatus: entries([
+          (ms: 900, message: describeMachineStatusFrame([0x14, 0x01])),
+          (ms: 4200, message: describeMachineStatusFrame([0x14, 0x04])),
+          (ms: 61000, message: describeMachineStatusFrame([0x14, 0x02])),
+        ]),
+      );
+
+      expect(text, contains('transport: DIRCON'));
+      expect(
+        text,
+        contains(
+          '--- FTMS machine status 0x2ADA (3 frames, 0 dropped, '
+          'readiness: ready) ---',
+        ),
+      );
+      expect(text, contains('[00:00.9] 14 01  spin-down requested'));
+      expect(text, contains('[00:04.2] 14 04  max search started'));
+      expect(text, contains('[01:01.0] 14 02  success'));
+    });
+
+    // The negative result is the one that matters: over DIRCON it means the
+    // subscription never took and the log path did all the work.
+    test('an absence of machine status frames is stated, not omitted', () {
+      final text = report(
+        transport: 'DIRCON',
+        transcript: entries([
+          (ms: 500, message: 'Homing procedure complete.'),
+        ]),
+      );
+
+      expect(
+        text,
+        contains(
+          '--- FTMS machine status 0x2ADA (no frames received, '
+          'readiness: ready) ---',
+        ),
+      );
+    });
+
+    // Silence plus a readiness verdict is a diagnosis; silence alone is not.
+    // "This firmware has no Machine Status" and "the notification block had not
+    // lifted yet" produce the same empty section and want different replies.
+    test('an empty section names why the stream was not ready', () {
+      for (final readiness in FtmsNotificationsReadiness.values) {
+        expect(
+          report(machineStatusReadiness: readiness),
+          contains('readiness: ${readiness.name}'),
+          reason: readiness.name,
+        );
+      }
+    });
+
+    // A dead log stream is exactly when the status frames are the only
+    // evidence, so the empty-transcript early return must not skip them.
+    test('machine status survives a run where the device log said nothing', () {
+      final text = report(
+        transport: 'DIRCON',
+        logStreamSilent: true,
+        machineStatus: entries([
+          (ms: 1000, message: describeMachineStatusFrame([0x14, 0x04])),
+        ]),
+      );
+
+      expect(text, contains('[00:01.0] 14 04  max search started'));
+      expect(text, contains('--- device log (no lines received) ---'));
+    });
+
+    test('a frame the tracker ignores is still recorded as arriving', () {
+      // Proof the subscription is live even when nothing advances the phase —
+      // a different diagnosis from no frames at all.
+      expect(
+        describeMachineStatusFrame([0x08, 0x01]),
+        '08 01  (not a spin-down status)',
+      );
+      expect(describeMachineStatusFrame([0x14]), '14  (not a spin-down status)');
+      expect(describeMachineStatusFrame([0x14, 0x7f]), '14 7f  unknown parameter');
     });
 
     test('the travel range is carried, and named as unknown when it is', () {
@@ -1189,6 +1314,7 @@ void main() {
         CalibrationPhase.failedUnstable,
         CalibrationPhase.failedAborted,
         CalibrationPhase.failedUnsupported,
+        CalibrationPhase.failedTransportStalled,
       ]) {
         expect(phase.isFailure, isTrue, reason: '$phase');
         expect(phase.isTerminal, isTrue, reason: '$phase');
@@ -1197,6 +1323,122 @@ void main() {
 
       expect(CalibrationPhase.complete.isTerminal, isTrue);
       expect(CalibrationPhase.complete.isFailure, isFalse);
+    });
+
+    // The list above is hand-maintained, so it cannot catch the next phase
+    // someone adds. This can: a `failed*` value left out of [isFailure] is
+    // also left out of [isTerminal], and a run that ends on it never stops.
+    test('every failure phase is classified as one', () {
+      for (final phase in CalibrationPhase.values) {
+        if (!phase.name.startsWith('failed')) continue;
+        expect(phase.isFailure, isTrue, reason: '$phase');
+        expect(phase.isTerminal, isTrue, reason: '$phase');
+      }
+    });
+  });
+
+  // The dispatch boundary is `markRequestSent()`, which CalibrationMonitor now
+  // calls from the `onDispatch` callback — fired adjacent to the write, not when
+  // the command is enqueued. In the window between `start()` and that callback
+  // the command is still queued behind other transport work, and every frame
+  // the device sends belongs to a *previous* run. None of it may touch this one.
+  group('traffic arriving before the command is dispatched is not this run\'s', () {
+    test('a leftover control point response does not acknowledge a queued run', () {
+      tracker.start();
+      // No markRequestSent() yet: the spin-down is still in the transport queue.
+
+      expect(
+        tracker.onControlPointResponse(const [
+          0x80,
+          0x13,
+          0x01,
+          0x20,
+          0x03,
+          0x60,
+          0x09,
+        ]),
+        isFalse,
+      );
+      expect(tracker.acknowledged, isFalse);
+      expect(tracker.ackSource, isNull);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+
+      // Once the command actually reaches the wire, the identical frame is this
+      // run's acknowledgement — proving the gate is the dispatch, nothing else.
+      tracker.markRequestSent();
+      tracker.onControlPointResponse(const [0x80, 0x13, 0x01, 0x20, 0x03, 0x60, 0x09]);
+      expect(tracker.acknowledged, isTrue);
+      expect(tracker.ackSource, CalibrationAckSource.controlPoint);
+    });
+
+    test('a leftover spin-down status frame does not advance a queued run', () {
+      tracker.start();
+
+      expect(
+        tracker.onSpinDownStatus(FTMSSpinDownStatus.MAX_SEARCH_STARTED),
+        isFalse,
+      );
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+      expect(tracker.minFound, isFalse);
+      expect(tracker.homingStarted, isFalse);
+    });
+
+    test('leftover homing log lines do not start a queued run', () {
+      tracker.start();
+
+      feed([
+        '(FTMS_SERVER): Spin Down Requested',
+        'Starting homing procedure...',
+        'Min position found and set to 0.',
+      ]);
+
+      expect(tracker.homingStarted, isFalse);
+      expect(tracker.minFound, isFalse);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+    });
+
+    test('a leftover homing-characteristic notification proves nothing yet', () {
+      tracker.start(hMaxBaseline: 27000);
+
+      expect(
+        tracker.onHomingValueChanged(isMax: true, value: 24800),
+        isFalse,
+      );
+      expect(tracker.maxFound, isFalse);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+    });
+  });
+
+  group('a device wedged on a connection that went away', () {
+    // Same evidence as failedNoAcknowledgement — nothing came back — but the
+    // caller has established why, and the advice inverts: no retry can reach a
+    // device that is blocked writing to a TCP peer that vanished.
+    test('the caller can name the cause of the silence', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      tracker.markRequestSent();
+
+      expect(tracker.markNoAcknowledgement(transportStalled: true), isTrue);
+      expect(tracker.phase, CalibrationPhase.failedTransportStalled);
+      expect(tracker.acknowledged, isFalse);
+    });
+
+    test('without that evidence the generic verdict still stands', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      tracker.markRequestSent();
+
+      expect(tracker.markNoAcknowledgement(), isTrue);
+      expect(tracker.phase, CalibrationPhase.failedNoAcknowledgement);
+    });
+
+    // Ordinary _fail semantics: a verdict that already arrived wins, so a
+    // late-firing deadline cannot relabel a run the device did answer.
+    test('it does not overwrite a verdict that already landed', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      tracker.markRequestSent();
+      expect(tracker.markTimedOut(), isTrue);
+
+      expect(tracker.markNoAcknowledgement(transportStalled: true), isFalse);
+      expect(tracker.phase, CalibrationPhase.failedNeverStarted);
     });
   });
 }

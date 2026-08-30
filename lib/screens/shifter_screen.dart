@@ -60,7 +60,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
     // Subscribe before requesting so a fast response cannot be missed.
     _subscribeToDeviceUpdates();
-    unawaited(deviceData.updateIndoorBikeData(widget.device));
+    unawaited(deviceData.ensureFtmsNotifications(widget.device));
     unawaited(_refreshAuthoritativeShifterValue());
   }
 

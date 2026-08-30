@@ -41,7 +41,50 @@ class DirConFrameParser {
   }
 }
 
-class DirConClient {
+/// The DIRCON operations [DeviceData] actually uses, and nothing more.
+///
+/// Narrow on purpose: it exists so tests can drive the DIRCON transport without
+/// a socket. BLE is deliberately not generalized behind it — the two transports
+/// stay distinct everywhere except the FTMS command payloads they carry.
+abstract interface class DirConSession {
+  String get host;
+  bool get isConnected;
+  Stream<void> get disconnected;
+
+  Future<void> initialize({
+    required String serviceUuid,
+    required String characteristicUuid,
+  });
+
+  Future<void> ensureCharacteristic({
+    required String serviceUuid,
+    required String characteristicUuid,
+    bool enableNotifications = false,
+  });
+
+  /// Turns wire-level notifications for [characteristicUuid] on or off.
+  ///
+  /// Exposed separately from [ensureCharacteristic] because the FTMS
+  /// notification block has to *disable* a characteristic it already
+  /// discovered, and because a stale enable has to undo itself. Cancelling the
+  /// local stream subscription alone leaves the device notifying into a socket
+  /// nobody is reading.
+  Future<void> setNotifications(String characteristicUuid, bool enabled);
+
+  Future<List<int>> writeCharacteristic(
+    String characteristicUuid,
+    List<int> value,
+  );
+
+  Stream<List<int>> characteristicNotifications(String characteristicUuid);
+
+  Future<void> close();
+}
+
+/// Opens a [DirConSession] to [host]. Production supplies [DirConClient.connect].
+typedef DirConConnector = Future<DirConSession> Function(String host);
+
+class DirConClient implements DirConSession {
   DirConClient._(this.host, this._socket, {required this.responseTimeout});
 
   static const int port = 8081;
@@ -56,6 +99,8 @@ class DirConClient {
     'dart.vm.product',
   );
   static const int _wifiPasswordReference = 0x13;
+  static const int _settingsSnapshotReference = 0x31;
+  static const int _settingsSnapshotHeaderLength = 7;
 
   final String host;
   final Socket _socket;
@@ -193,6 +238,7 @@ class DirConClient {
     ];
   }
 
+  @override
   Future<void> setNotifications(String characteristicUuid, bool enabled) async {
     await _request(enableNotificationsMessage, [
       ..._uuidBytes(characteristicUuid),
@@ -379,6 +425,17 @@ class DirConClient {
         body[17] == _wifiPasswordReference) {
       visible = body.sublist(0, 18);
       suffix = ' <password payload redacted>';
+    } else if ((identifier == writeCharacteristicMessage ||
+            identifier == notificationMessage) &&
+        body.length >= 18 &&
+        body[17] == _settingsSnapshotReference) {
+      // Keep the UUID and version/chunk framing visible, but never log the
+      // snapshot JSON because it contains the Wi-Fi password.
+      final visibleLength = body.length < 16 + _settingsSnapshotHeaderLength
+          ? body.length
+          : 16 + _settingsSnapshotHeaderLength;
+      visible = body.sublist(0, visibleLength);
+      suffix = ' <settings snapshot payload redacted>';
     } else if (body.length > 96) {
       visible = body.sublist(0, 96);
       suffix = ' ...(+${body.length - visible.length}B)';

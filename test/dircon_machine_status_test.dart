@@ -1,0 +1,1252 @@
+// FTMS Machine Status (0x2ADA) parity over DIRCON — plan §5.2 / §7.3.
+//
+// Every test drives DeviceData through the injected DirConSession seam, so the
+// real transport-selection code runs without a socket.
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:ss2kconfigapp/utils/bleConstants.dart';
+import 'package:ss2kconfigapp/utils/calibration_monitor.dart';
+import 'package:ss2kconfigapp/utils/constants.dart';
+import 'package:ss2kconfigapp/utils/device_data.dart';
+import 'package:ss2kconfigapp/utils/device_transport_state.dart';
+import 'package:ss2kconfigapp/utils/ftmsControlPoint.dart';
+
+import 'support/fake_dircon_session.dart';
+
+const _machineStatusUuid = FTMS_MACHINE_STATUS_CHARACTERISTIC_UUID;
+const _ipAddress = '192.168.1.50';
+
+void main() {
+  // DeviceData reports write failures through Snackbar, which reads a
+  // GlobalKey and therefore needs a binding even in a pure-logic test.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late BluetoothDevice device;
+
+  setUp(() {
+    device = BluetoothDevice.fromId('00:00:00:00:00:2A');
+  });
+
+  group('DIRCON FTMS subscription setup', () {
+    // Both FTMS streams share one lifecycle. An earlier revision exempted
+    // Machine Status from the block so calibration could never be blinded;
+    // review reversed that, and calibration now waits for readiness instead.
+    test('neither FTMS stream starts while the post-connection block is held', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+
+      expect(deviceData.isFtmsNotificationsBlocked, isTrue);
+
+      // Both discovered, neither listening, neither enabled on the wire.
+      for (final uuid in [ftmsIndoorBikeDataUUID, _machineStatusUuid]) {
+        expect(session.discovered(uuid), isTrue, reason: uuid);
+        expect(session.notificationsEnabledNow(uuid), isFalse, reason: uuid);
+        expect(session.isListening(uuid), isFalse, reason: uuid);
+      }
+
+      await deviceData.unblockFtmsNotifications(device);
+
+      for (final uuid in [ftmsIndoorBikeDataUUID, _machineStatusUuid]) {
+        expect(session.notificationsEnabledNow(uuid), isTrue, reason: uuid);
+        expect(session.isListening(uuid), isTrue, reason: uuid);
+      }
+
+      deviceData.dispose();
+    });
+
+    test('a nested block only releases both streams on the final unblock', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+
+      // Post-connection block plus one more.
+      await deviceData.blockFtmsNotifications();
+      await deviceData.unblockFtmsNotifications(device);
+
+      expect(deviceData.isFtmsNotificationsBlocked, isTrue);
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
+
+      await deviceData.unblockFtmsNotifications(device);
+
+      expect(session.isListening(_machineStatusUuid), isTrue);
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isTrue);
+
+      deviceData.dispose();
+    });
+
+    test('re-blocking cancels and disables both streams', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+      await deviceData.unblockFtmsNotifications(device);
+
+      await deviceData.blockFtmsNotifications();
+
+      for (final uuid in [ftmsIndoorBikeDataUUID, _machineStatusUuid]) {
+        expect(session.isListening(uuid), isFalse, reason: uuid);
+        // Current wire state, not "was ever enabled" — an enable that leaked
+        // past a block is invisible to the historical check.
+        expect(session.notificationsEnabledNow(uuid), isFalse, reason: uuid);
+      }
+
+      deviceData.dispose();
+    });
+
+    // A block taken while an enable is still in flight would otherwise leave
+    // the device notifying with nothing listening: the block saw nothing
+    // enabled, so it scheduled no disable, and the enable landed afterwards.
+    test('an enable superseded by a new block undoes itself', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+
+      session.holdNotificationGate(_machineStatusUuid);
+      final unblock = deviceData.unblockFtmsNotifications(device);
+      await _settle();
+
+      // The enable is parked mid-flight; take the block that supersedes it.
+      // Not awaited before the release: the block's own disable queues behind
+      // the same gate, so awaiting it here would deadlock the test.
+      final block = deviceData.blockFtmsNotifications();
+      await _settle();
+      session.releaseNotificationGate(_machineStatusUuid);
+      await unblock;
+      await block;
+      await _settle();
+
+      expect(session.notificationsEnabledNow(_machineStatusUuid), isFalse);
+      expect(session.isListening(_machineStatusUuid), isFalse);
+
+      deviceData.dispose();
+    });
+
+    test('forwards a Machine Status payload to machineStatusStream', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      await deviceData.unblockFtmsNotifications(device);
+      final received = <List<int>>[];
+      final subscription = deviceData.machineStatusStream.listen(received.add);
+
+      connector.first.emitNotification(_machineStatusUuid, [
+        FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+        FTMSSpinDownStatus.MAX_SEARCH_STARTED,
+      ]);
+      await _settle();
+
+      expect(received, [
+        [FTMSStatusOpCodes.SPIN_DOWN_STATUS, FTMSSpinDownStatus.MAX_SEARCH_STARTED],
+      ]);
+
+      await subscription.cancel();
+      deviceData.dispose();
+    });
+
+    // The notification stream is a broadcast with no replay. If setup enabled
+    // notifications before listening, a frame the device sent in that window
+    // would be dropped on the floor.
+    test('delivers a frame emitted while notifications are being enabled', () async {
+      final session = FakeDirConSession()
+        ..emitDuringEnable(_machineStatusUuid, [
+          FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+          FTMSSpinDownStatus.SPIN_DOWN_REQUESTED,
+        ]);
+      final connector = FakeDirConConnector([session]);
+
+      final deviceData = DeviceData(dirConConnector: connector.call)
+        ..advertisedIpAddress = _ipAddress;
+      final received = <List<int>>[];
+      final subscription = deviceData.machineStatusStream.listen(received.add);
+
+      await deviceData.connectPreferred(device, waitForSetup: true);
+      // The enable that matters is the one the unblock performs; the block held
+      // during connect never turns notifications on at all.
+      await deviceData.unblockFtmsNotifications(device);
+      await _settle();
+
+      expect(received, [
+        [FTMSStatusOpCodes.SPIN_DOWN_STATUS, FTMSSpinDownStatus.SPIN_DOWN_REQUESTED],
+      ]);
+
+      await subscription.cancel();
+      deviceData.dispose();
+    });
+  });
+
+  group('FTMS setup failures are isolated', () {
+    test('missing Indoor Bike Data does not stop Machine Status', () async {
+      final session = FakeDirConSession()
+        ..failCharacteristic(ftmsIndoorBikeDataUUID);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+
+      expect(deviceData.isDirConConnected, isTrue);
+
+      // Lifting the block must not resurrect a characteristic the firmware
+      // does not have, must not throw out of the timer that calls it, and must
+      // not let the first characteristic's absence skip the second.
+      await deviceData.unblockFtmsNotifications(device);
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
+      expect(session.isListening(_machineStatusUuid), isTrue);
+      expect(session.notificationsEnabledNow(_machineStatusUuid), isTrue);
+
+      deviceData.dispose();
+    });
+
+    test('missing Machine Status does not stop Indoor Bike Data', () async {
+      final session = FakeDirConSession()..failCharacteristic(_machineStatusUuid);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+
+      expect(deviceData.isDirConConnected, isTrue);
+      expect(session.isListening(_machineStatusUuid), isFalse);
+
+      await deviceData.unblockFtmsNotifications(device);
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isTrue);
+      expect(session.notificationsEnabledNow(ftmsIndoorBikeDataUUID), isTrue);
+      // Cancelled rather than leaked: the helper listens first, then unwinds
+      // its own subscription when enablement fails.
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.cancellationsFor(_machineStatusUuid), 1);
+
+      deviceData.dispose();
+    });
+
+    // "The firmware lacks this characteristic" and "the socket just died" reach
+    // the same catch. Only the first may continue to the other characteristic:
+    // subscribing to a dead session achieves nothing and would leave a listener
+    // attached to it.
+    //
+    // Abandoning the pass is only half the job. The session here is invalidated
+    // *silently* — DirConSession.close() never publishes on `disconnected` and
+    // _closeWithError is one-shot — so nothing else is coming to notice. If the
+    // catch only breaks, DeviceData keeps reporting DIRCON/connected over a
+    // dead socket, which also wedges BLE recovery: startConnectionMonitor
+    // short-circuits on isDirConConnected.
+    test('a transport failure mid-resubscribe abandons the pass and the transport', () async {
+      final session = FakeDirConSession();
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+
+      session.failCharacteristicWithTransportLoss(
+        ftmsIndoorBikeDataUUID,
+        emitDisconnect: false,
+      );
+      await deviceData.unblockFtmsNotifications(device);
+
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
+      // Not attempted at all — the pass gave up on the dead session.
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.notificationsEnabledNow(_machineStatusUuid), isFalse);
+
+      await _until(
+        () => !deviceData.isDirConConnected,
+        'DIRCON stayed connected over a silently closed session',
+      );
+      // Stops the BLE half of the failover, which has no platform in this
+      // isolate. The assertions below are about releasing DIRCON, not about
+      // what replaces it.
+      deviceData.isUserDisconnect = true;
+      await _settle();
+
+      expect(deviceData.isTransportActive, isFalse);
+      expect(session.isClosed, isTrue);
+      expect(session.isListening(ccUUID), isFalse);
+      // Deliberately not asserting a specific phase: automatic recovery passes
+      // through DIRCON/reconnecting and then Bluetooth/connecting, and
+      // none/disconnected is reserved for an explicit user disconnect.
+
+      deviceData.dispose();
+    });
+
+    // Regression: "the firmware lacks this characteristic" and "the socket just
+    // died" arrive at the same catch block. Downgrading the second to the first
+    // leaves DeviceData reporting DIRCON/connected over a closed session — and
+    // because startConnectionMonitor short-circuits on isDirConConnected, that
+    // also wedges the BLE reconnect path.
+    test('a transport failure during Machine Status setup abandons DIRCON', () async {
+      final session = FakeDirConSession()
+        ..failCharacteristicWithTransportLoss(_machineStatusUuid);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = DeviceData(dirConConnector: connector.call)
+        ..advertisedIpAddress = _ipAddress;
+
+      final connect = deviceData.connectPreferred(device, waitForSetup: true);
+      // connectPreferred falls back to BLE, which has no platform in this
+      // isolate. Cancel its retry loop as soon as the DIRCON half has given up
+      // so the test asserts on the handoff rather than on ten real attempts.
+      await _until(
+        () => !deviceData.isDirConConnected,
+        'DIRCON stayed connected over a dead session',
+      );
+      deviceData.isUserDisconnect = true;
+      await connect.catchError((Object _) {});
+
+      expect(deviceData.isDirConConnected, isFalse);
+      expect(deviceData.isTransportActive, isFalse);
+      expect(session.isClosed, isTrue);
+      // Nothing is left subscribed to the abandoned session.
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
+      expect(session.isListening(ccUUID), isFalse);
+
+      deviceData.dispose();
+    });
+
+    // The same abandonment must hold when the session dies *silently*. Not
+    // every DirConClient invalidation publishes on `disconnected`:
+    // `close()` never does, and `_closeWithError` is one-shot via
+    // `_disconnectEmitted`. Listening earlier does not help here — isConnected
+    // is the only evidence, so the catch block has to consult it.
+    test('a silent session close during Machine Status setup abandons DIRCON', () async {
+      final session = FakeDirConSession()
+        ..failCharacteristicWithTransportLoss(
+          _machineStatusUuid,
+          emitDisconnect: false,
+        );
+      final connector = FakeDirConConnector([session]);
+      final deviceData = DeviceData(dirConConnector: connector.call)
+        ..advertisedIpAddress = _ipAddress;
+
+      final connect = deviceData.connectPreferred(device, waitForSetup: true);
+      await _until(
+        () => !deviceData.isDirConConnected,
+        'DIRCON stayed connected over a silently closed session',
+      );
+      deviceData.isUserDisconnect = true;
+      await connect.catchError((Object _) {});
+
+      expect(deviceData.isDirConConnected, isFalse);
+      expect(deviceData.isTransportActive, isFalse);
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.isListening(ccUUID), isFalse);
+
+      deviceData.dispose();
+    });
+
+    // Discovery succeeds and *then* the socket dies, so there is no exception
+    // for the catch block to inspect — only the `disconnected` event. It is a
+    // broadcast stream with no replay, so this is caught only if the listener
+    // was already attached when the event fired.
+    test('a session lost after Machine Status discovery abandons DIRCON', () async {
+      final session = FakeDirConSession()
+        ..dropConnectionAfterEnsure(_machineStatusUuid);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = DeviceData(dirConConnector: connector.call)
+        ..advertisedIpAddress = _ipAddress;
+
+      final connect = deviceData.connectPreferred(device, waitForSetup: true);
+      await _until(
+        () => !deviceData.isDirConConnected,
+        'DIRCON stayed connected after the session was lost mid-setup',
+      );
+      deviceData.isUserDisconnect = true;
+      await connect.catchError((Object _) {});
+
+      expect(deviceData.isDirConConnected, isFalse);
+      expect(deviceData.isTransportActive, isFalse);
+      expect(session.isClosed, isTrue);
+      // The staleness guard must unwind the subscriptions it opened after
+      // _closeDirCon had already cleared the fields.
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
+      expect(session.isListening(ccUUID), isFalse);
+
+      deviceData.dispose();
+    });
+
+    test('firmware without either characteristic still connects for configuration', () async {
+      final session = FakeDirConSession()
+        ..failCharacteristic(ftmsIndoorBikeDataUUID)
+        ..failCharacteristic(_machineStatusUuid);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final received = <List<int>>[];
+      final subscription = deviceData.machineStatusStream.listen(received.add);
+
+      expect(deviceData.isDirConConnected, isTrue);
+      expect(deviceData.charReceived.value, isTrue);
+      // Configuration traffic still flows; calibration falls back to the log.
+      expect(session.writesFor(ccUUID), isNotEmpty);
+
+      session.emitNotification(_machineStatusUuid, [
+        FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+        FTMSSpinDownStatus.SUCCESS,
+      ]);
+      await _settle();
+      expect(received, isEmpty);
+
+      await subscription.cancel();
+      deviceData.dispose();
+    });
+  });
+
+  group('teardown cancels the Machine Status subscription', () {
+    test('explicit disconnect', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+
+      await deviceData.disconnectPreferred(device);
+
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.isClosed, isTrue);
+      expect(deviceData.isTransportActive, isFalse);
+
+      deviceData.dispose();
+    });
+
+    test('dispose', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+
+      deviceData.dispose();
+      await _settle();
+
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.isClosed, isTrue);
+      // A frame that races disposal must not land on the closed controller.
+      expect(
+        () => session.emitNotification(_machineStatusUuid, [
+          FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+          FTMSSpinDownStatus.SUCCESS,
+        ]),
+        returnsNormally,
+      );
+      await _settle();
+    });
+
+    // An unexpected drop runs _handleDirConDisconnect, which tears the session
+    // down through _closeDirCon and then attempts the BLE half of the failover.
+    // Only the teardown is asserted here: _connectBleAfterDirConLoss needs a
+    // connected BLE device, and is covered by the Plan 1 fallback tests and by
+    // hardware acceptance item 6.
+    test('unexpected transport drop', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+
+      session.dropConnection();
+      await _settle();
+
+      expect(session.isListening(_machineStatusUuid), isFalse);
+      expect(session.isListening(ftmsIndoorBikeDataUUID), isFalse);
+      expect(deviceData.isDirConConnected, isFalse);
+
+      deviceData.dispose();
+    });
+
+    test('reconnect tears down the old session and subscribes the new one', () async {
+      final first = FakeDirConSession(host: _ipAddress);
+      final second = FakeDirConSession(host: _ipAddress);
+      final connector = FakeDirConConnector([first, second]);
+      final deviceData = await _connect(connector, device);
+
+      await deviceData.connectPreferred(device, waitForSetup: true);
+
+      expect(connector.issued, hasLength(2));
+      expect(first.isListening(_machineStatusUuid), isFalse);
+      expect(first.isClosed, isTrue);
+      expect(deviceData.isDirConConnected, isTrue);
+
+      // The new session gets its own post-connection block, so it comes up only
+      // once that is released — same lifecycle as the first connection.
+      expect(second.isListening(_machineStatusUuid), isFalse);
+      await deviceData.unblockFtmsNotifications(device);
+      expect(second.isListening(_machineStatusUuid), isTrue);
+
+      final received = <List<int>>[];
+      final subscription = deviceData.machineStatusStream.listen(received.add);
+      second.emitNotification(_machineStatusUuid, [
+        FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+        FTMSSpinDownStatus.SUCCESS,
+      ]);
+      await _settle();
+      expect(received, hasLength(1));
+
+      await subscription.cancel();
+      deviceData.dispose();
+    });
+  });
+
+  test('calibration waits for the block, then follows homing from DIRCON '
+      'Machine Status', () async {
+    final connector = FakeDirConConnector();
+    final deviceData = await _connect(connector, device);
+    final session = connector.first;
+    final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+    // An FTMS notification block is held. Machine Status is suspended with it,
+    // so the homing command must not go out yet — the run's own acknowledgement
+    // frames would land before anything was listening. (The lease ends the
+    // automatic post-connection settle block, so hold one explicitly.)
+    await deviceData.blockFtmsNotifications();
+    final started = monitor.start();
+    await _settle();
+    expect(session.writesFor(ftmsControlPointUUID), isEmpty);
+    expect(monitor.awaitingNotifications, isTrue);
+
+    await deviceData.unblockFtmsNotifications(device);
+    await started;
+
+    expect(monitor.awaitingNotifications, isFalse);
+    expect(monitor.notificationsReadiness, FtmsNotificationsReadiness.ready);
+    // Log streaming is enabled over the custom characteristic first, so the
+    // spin-down command is never the first write on the session.
+    expect(
+      session.writesFor(ftmsControlPointUUID),
+      contains(orderedEquals(FTMSControlPoint.spinDownCommand(true))),
+    );
+
+    session.emitNotification(_machineStatusUuid, [
+      FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+      FTMSSpinDownStatus.MAX_SEARCH_STARTED,
+    ]);
+    await _settle();
+
+    expect(monitor.phase, CalibrationPhase.searchingMax);
+    expect(monitor.minFound, isTrue);
+
+    // The run's own evidence that DIRCON carried it, which is what the
+    // copied calibration report exists to show on hardware.
+    expect(monitor.machineStatusLog.single.message, '14 04  max search started');
+
+    monitor.dispose();
+    deviceData.dispose();
+  });
+
+  group('calibration readiness is bounded', () {
+    // A leaked block count must not make calibration unstartable. The run goes
+    // ahead on the log and hMax paths, and the report says the stream was not
+    // there rather than leaving the reader to infer it.
+    test('a block that never lifts still starts the run, and says so', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(milliseconds: 50),
+      );
+
+      // A block that is never released — the lease ends the settle block, so
+      // hold an explicit one that outlives the run.
+      await deviceData.blockFtmsNotifications();
+      await monitor.start();
+
+      expect(monitor.notificationsReadiness, FtmsNotificationsReadiness.timedOut);
+      expect(monitor.awaitingNotifications, isFalse);
+      expect(
+        session.writesFor(ftmsControlPointUUID),
+        contains(orderedEquals(FTMSControlPoint.spinDownCommand(true))),
+      );
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // Firmware without the characteristic is not a stuck block: the count did
+    // drain, there is simply nothing to subscribe to. The two must not report
+    // the same thing.
+    test('firmware without Machine Status reports unavailable, not timedOut', () async {
+      final session = FakeDirConSession()..failCharacteristic(_machineStatusUuid);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(seconds: 5),
+      );
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(
+        monitor.notificationsReadiness,
+        FtmsNotificationsReadiness.unavailable,
+      );
+      expect(
+        session.writesFor(ftmsControlPointUUID),
+        contains(orderedEquals(FTMSControlPoint.spinDownCommand(true))),
+      );
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // The flag is cleared in a finally, so nothing can strand the screen on
+    // "getting ready" with no way out.
+    test('disposal during the wait clears the waiting flag', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(milliseconds: 50),
+      );
+
+      await deviceData.blockFtmsNotifications();
+      final started = monitor.start();
+      await _settle();
+      expect(monitor.awaitingNotifications, isTrue);
+
+      monitor.dispose();
+      await started;
+
+      expect(monitor.awaitingNotifications, isFalse);
+
+      deviceData.dispose();
+    });
+  });
+
+  // A run that cannot be started, and a run the device never acted on, used to
+  // look identical from the screen: nothing happened, and eight minutes later
+  // the overall timeout blamed homing force. Both now end promptly, in their
+  // own phase, with copy that matches what actually went wrong.
+  group('calibration reports a verdict instead of hanging', () {
+    test('a control-point write that throws ends the run as failedToStart', () async {
+      final session = FakeDirConSession()
+        ..failWritesFor(ftmsControlPointUUID, StateError('transport gone'));
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(monitor.phase, CalibrationPhase.failedToStart);
+      expect(monitor.startFailureStage, CalibrationStartStage.dispatch);
+      expect(monitor.startFailure, isNotNull);
+      // The raw exception belongs in the report, never in the sanitized string
+      // the screen renders.
+      expect(monitor.startFailure, isNot(contains('StateError')));
+      expect(
+        monitor.transcript.map((e) => e.message).join('\n'),
+        contains('transport gone'),
+      );
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // The log stream is the primary progress channel. If its enable cannot be
+    // confirmed and neither FTMS channel is live, nothing could observe the
+    // run — it must fail now, in its own stage, not sit out an eight-minute
+    // timeout. CalibrationStartStage.logStreamEnable used to be unreachable
+    // because writeToSS2k swallowed the failure.
+    test('log-enable failure with no other live channel → failedToStart/logStreamEnable', () async {
+      final session = FakeDirConSession()
+        ..failWritesFor(ccUUID)
+        ..failCharacteristic(ftmsIndoorBikeDataUUID)
+        ..failCharacteristic(_machineStatusUuid)
+        ..failCharacteristic(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(milliseconds: 50),
+      );
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(monitor.phase, CalibrationPhase.failedToStart);
+      expect(monitor.startFailureStage, CalibrationStartStage.logStreamEnable);
+      expect(monitor.startFailure, isNot(contains('accept')));
+      expect(
+        monitor.transcript.map((e) => e.message).join('\n'),
+        contains('log stream enable failed'),
+      );
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // The log enable is unconfirmed and neither FTMS channel is live, but a real
+    // device log line has already arrived on the custom characteristic. That is
+    // direct proof the log channel is carrying this run, so it must not fail as
+    // logStreamEnable — `_deviceLogSeen`, not the enable response, is the
+    // evidence that matters here.
+    test('log-enable failure with a live device log line lets the run continue', () async {
+      final session = FakeDirConSession()
+        ..failWritesFor(ccUUID)
+        ..failCharacteristic(ftmsIndoorBikeDataUUID)
+        ..failCharacteristic(_machineStatusUuid)
+        ..failCharacteristic(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(seconds: 5),
+      );
+
+      // An extra block so the readiness wait parks rather than resolving before
+      // the log line has propagated — the race a real run does not have.
+      await deviceData.blockFtmsNotifications();
+      final started = monitor.start();
+      await _settle();
+      // A real log line on the custom characteristic (ref 0x30).
+      session.emitNotification(ccUUID, [
+        0x80,
+        0x30,
+        ...'(Main) homing tap 1'.codeUnits,
+      ]);
+      await _until(
+        () => monitor.transcript.any((e) => e.message.contains('homing tap 1')),
+        'the device log line should reach the monitor',
+      );
+
+      // Now let the start sequence run its "could anything observe this?" check.
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(monitor.notificationsReadiness, isNot(FtmsNotificationsReadiness.ready));
+      expect(deviceData.controlPointNotificationsLive, isFalse);
+      // Only `_deviceLogSeen` is carrying it, and that is enough.
+      expect(monitor.phase, isNot(CalibrationPhase.failedToStart));
+      expect(monitor.startFailure, isNull);
+      expect(monitor.ackChannelsLive, isTrue);
+      // The run got past the log-enable gate and dispatched.
+      expect(
+        session.writesFor(ftmsControlPointUUID),
+        contains(orderedEquals(FTMSControlPoint.spinDownCommand(true))),
+      );
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // The same failed log enable, but Machine Status is live: the run has an
+    // evidence channel, so it proceeds — and the cleanup disable is still
+    // attempted on the way out even though it too will fail.
+    test('log-enable failure with Machine Status live → run continues, cleanup attempted', () async {
+      final session = FakeDirConSession()..failWritesFor(ccUUID);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(monitor.phase, isNot(CalibrationPhase.failedToStart));
+
+      // The firmware's answer on receipt.
+      session.emitNotification(_machineStatusUuid, [
+        FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+        FTMSSpinDownStatus.SPIN_DOWN_REQUESTED,
+      ]);
+      await _settle();
+      expect(monitor.acknowledged, isTrue);
+
+      // Cleanup runs on teardown; the disable write (0x02 to ref 0x30) is
+      // attempted even though writes to the custom characteristic fail.
+      monitor.dispose();
+      await _settle();
+      expect(
+        session.writesFor(ccUUID).any((w) => w.length >= 2 && w[0] == 0x02 && w[1] == 0x30),
+        isTrue,
+        reason: 'the log-stream disable must still be attempted',
+      );
+
+      deviceData.dispose();
+    });
+
+    // A retry after a finished run has to be able to fail. The tracker refuses
+    // to move off a terminal phase, so start() resets run state before its
+    // first fallible step — otherwise the previous run's verdict would still be
+    // standing when the new run failed, and the failure would go unrecorded
+    // behind a stale "complete".
+    test('a retry after a completed run can still report failedToStart', () async {
+      final session = FakeDirConSession();
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      final first = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await first;
+
+      // Drive the first run all the way to a terminal verdict.
+      for (final param in [
+        FTMSSpinDownStatus.MAX_SEARCH_STARTED,
+        FTMSSpinDownStatus.SUCCESS,
+      ]) {
+        session.emitNotification(_machineStatusUuid, [
+          FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+          param,
+        ]);
+        await _settle();
+      }
+      expect(monitor.phase, CalibrationPhase.complete);
+
+      // The retry cannot reach the device at all.
+      session.failWritesFor(ftmsControlPointUUID, StateError('transport gone'));
+      await monitor.start();
+
+      expect(monitor.phase, CalibrationPhase.failedToStart);
+      expect(monitor.startFailureStage, CalibrationStartStage.dispatch);
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // The forced transition itself: [markStartFailed] deliberately overrides a
+    // terminal phase, unlike every other transition, so a start failure that
+    // lands before the run reset is still recorded.
+    test('markStartFailed overrides a terminal verdict', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      expect(tracker.markTimedOut(), isTrue);
+      expect(tracker.phase, CalibrationPhase.failedNeverStarted);
+
+      // An ordinary failure is refused...
+      expect(tracker.markNoAcknowledgement(), isFalse);
+      expect(tracker.phase, CalibrationPhase.failedNeverStarted);
+
+      // ...the forced one is not.
+      expect(tracker.markStartFailed(), isTrue);
+      expect(tracker.phase, CalibrationPhase.failedToStart);
+    });
+
+    // The two diagnoses the overall timeout has to keep apart. Homing force is
+    // only implicated once the search actually ran; before that the device took
+    // the command and never acted on it, which is a cadence-source problem.
+    test('the overall timeout splits on whether homing ever started', () {
+      final neverStarted = CalibrationPhaseTracker()..start();
+      neverStarted.markRequestSent();
+      neverStarted.onControlPointResponse(const [0x80, 0x13, 0x01]);
+      expect(neverStarted.acknowledged, isTrue);
+      expect(neverStarted.homingStarted, isFalse);
+      expect(neverStarted.markTimedOut(), isTrue);
+      expect(neverStarted.phase, CalibrationPhase.failedNeverStarted);
+
+      final searched = CalibrationPhaseTracker()..start();
+      searched.markRequestSent();
+      searched.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      searched.onSpinDownStatus(FTMSSpinDownStatus.SPIN_DOWN_REQUESTED);
+      expect(searched.homingStarted, isTrue);
+      expect(searched.markTimedOut(), isTrue);
+      expect(searched.phase, CalibrationPhase.failedTimeout);
+    });
+
+    // The control point is the only channel this firmware sends
+    // unconditionally: 0x2ADA is suppressed when the status value did not
+    // change, and log lines are dropped when the firmware's buffer overflows.
+    test('a control point response acknowledges the run on its own', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      tracker.markRequestSent();
+
+      // Not this run's opcode, and not a response frame at all.
+      expect(tracker.onControlPointResponse(const [0x80, 0x05, 0x01]), isFalse);
+      expect(tracker.acknowledged, isFalse);
+      expect(tracker.onControlPointResponse(const [0x13, 0x01]), isFalse);
+      expect(tracker.acknowledged, isFalse);
+
+      // The real thing: `80 13 01` plus the mandatory target-speed parameters.
+      expect(
+        tracker.onControlPointResponse(const [
+          0x80,
+          0x13,
+          0x01,
+          0x20,
+          0x03,
+          0x60,
+          0x09,
+        ]),
+        // Acknowledgement is not progress: homing has not begun.
+        isFalse,
+      );
+      expect(tracker.acknowledged, isTrue);
+      expect(tracker.ackSource, CalibrationAckSource.controlPoint);
+      expect(tracker.controlPointResult, FTMSResultCodes.SUCCESS);
+      expect(tracker.phase, CalibrationPhase.waitingForCadence);
+    });
+
+    // Nothing before markRequestSent belongs to this run — a response left over
+    // from a workout control write would otherwise acknowledge a run that has
+    // not dispatched yet.
+    test('a control point response before dispatch is ignored', () {
+      final tracker = CalibrationPhaseTracker()..start();
+      expect(tracker.onControlPointResponse(const [0x80, 0x13, 0x01]), isFalse);
+      expect(tracker.acknowledged, isFalse);
+      expect(tracker.ackSource, isNull);
+    });
+
+    // Disposal is cancellation: the screen is gone and there is nobody to show
+    // a verdict to. Reporting failedToStart here would be noise in the report of
+    // a run the user themselves ended.
+    test('disposal during start is cancellation, not a failure', () async {
+      final session = FakeDirConSession()
+        ..failWritesFor(ftmsControlPointUUID, StateError('transport gone'));
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      await deviceData.blockFtmsNotifications();
+      final started = monitor.start();
+      await _settle();
+      monitor.dispose();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(monitor.phase, isNot(CalibrationPhase.failedToStart));
+
+      deviceData.dispose();
+    });
+
+    // The write completing means the *stack* accepted it. Against a firmware
+    // whose main loop is wedged the command is delivered and never processed —
+    // exactly the 2026-08-25 session — and the device answers a spin-down on
+    // receipt, so silence past the budget is a real verdict.
+    test('a delivered but unacknowledged command ends the run promptly', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        logSilenceTimeout: const Duration(milliseconds: 100),
+      );
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      // Delivered...
+      expect(
+        session.writesFor(ftmsControlPointUUID),
+        contains(orderedEquals(FTMSControlPoint.spinDownCommand(true))),
+      );
+      // ...and then nothing comes back.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+
+      expect(monitor.phase, CalibrationPhase.failedNoAcknowledgement);
+      expect(monitor.acknowledged, isFalse);
+      // Machine Status was live, so the device demonstrably ignored the
+      // request rather than the app being blind.
+      expect(monitor.ackChannelsLive, isTrue);
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    test('an acknowledged command leaves the run to the homing timers', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        logSilenceTimeout: const Duration(milliseconds: 100),
+      );
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      // The firmware's answer on receipt, before any pedalling. One frame is
+      // deliberately not enough to confirm homing — but it is the
+      // acknowledgement.
+      session.emitNotification(_machineStatusUuid, [
+        FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+        FTMSSpinDownStatus.SPIN_DOWN_REQUESTED,
+      ]);
+      await _settle();
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+
+      expect(monitor.acknowledged, isTrue);
+      expect(monitor.acknowledgedAfter, isNotNull);
+      expect(monitor.phase, isNot(CalibrationPhase.failedNoAcknowledgement));
+      expect(monitor.phase, CalibrationPhase.waitingForCadence);
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // The readiness verdict is the difference between a diagnosable report and
+    // a guess, and it used to appear only as a parenthetical inside the
+    // machine-status section header.
+    test('the readiness verdict reaches the transcript and the report', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      final started = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      expect(
+        monitor.transcript.map((e) => e.message).join('\n'),
+        contains('FTMS readiness: ready'),
+      );
+
+      final report = buildCalibrationReport(
+        transcript: monitor.transcript,
+        droppedLines: monitor.droppedLines,
+        phase: monitor.phase,
+        minFound: monitor.minFound,
+        maxFound: monitor.maxFound,
+        usedFtmsPath: monitor.usedFtmsPath,
+        sweepTimedOut: monitor.sweepTimedOut,
+        logStreamSilent: monitor.logStreamSilent,
+        machineStatus: monitor.machineStatusLog,
+        droppedStatusFrames: monitor.droppedStatusFrames,
+        machineStatusReadiness: monitor.notificationsReadiness,
+        acknowledged: monitor.acknowledged,
+        acknowledgedAfter: monitor.acknowledgedAfter,
+        ackChannelsLive: monitor.ackChannelsLive,
+        startFailure: monitor.startFailure,
+      );
+
+      expect(report, contains('machineStatusReadiness: ready'));
+      expect(report, contains('acknowledged: false'));
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+  });
+
+  // `_note` writes `[app]` lines into the same transcript the device log fills.
+  // Two checks used to read a non-empty transcript as proof the *device* spoke:
+  // `ackChannelsLive` and the log-silence timer. On every real run `_startRun`
+  // writes a readiness note before those checks arm, so the transcript is
+  // already non-empty and both were effectively hard-wired. Evidence now comes
+  // from `_deviceLogSeen`, set only by a real device log line.
+  group('app transcript notes are not device evidence', () {
+    // No FTMS characteristic subscribes and no device log line arrives, yet the
+    // readiness note has already populated the transcript.
+    test(
+      'dead channels + no device log → logStreamSilent, ackChannelsLive false '
+      'despite app notes',
+      () async {
+        final session = FakeDirConSession()
+          ..failCharacteristic(ftmsIndoorBikeDataUUID)
+          ..failCharacteristic(_machineStatusUuid)
+          ..failCharacteristic(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID);
+        final connector = FakeDirConConnector([session]);
+        final deviceData = await _connect(connector, device);
+        final monitor = CalibrationMonitor(
+          deviceData: deviceData,
+          device: device,
+          notificationsReadyTimeout: const Duration(milliseconds: 50),
+          logSilenceTimeout: const Duration(milliseconds: 80),
+        );
+
+        final started = monitor.start();
+        await _settle();
+        await deviceData.unblockFtmsNotifications(device);
+        await started;
+
+        // The app narrated its own progress...
+        expect(monitor.transcript, isNotEmpty);
+        // ...but no channel could have carried an acknowledgement.
+        expect(monitor.notificationsReadiness, isNot(FtmsNotificationsReadiness.ready));
+        expect(deviceData.controlPointNotificationsLive, isFalse);
+        expect(monitor.ackChannelsLive, isFalse);
+
+        await _until(() => monitor.logStreamSilent, 'log silence should latch');
+
+        monitor.dispose();
+        deviceData.dispose();
+      },
+    );
+
+    // A retry begins by resetting run state. `_deviceLogSeen` must be part of
+    // that reset — a device that fell silent on the second run must read as
+    // silent, not inherit the first run's log line.
+    test('_deviceLogSeen does not survive into a retry run', () async {
+      final session = FakeDirConSession()
+        ..failCharacteristic(ftmsIndoorBikeDataUUID)
+        ..failCharacteristic(_machineStatusUuid)
+        ..failCharacteristic(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID);
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(
+        deviceData: deviceData,
+        device: device,
+        notificationsReadyTimeout: const Duration(milliseconds: 50),
+        logSilenceTimeout: const Duration(milliseconds: 80),
+      );
+
+      final firstRun = monitor.start();
+      await _settle();
+      await deviceData.unblockFtmsNotifications(device);
+      await firstRun;
+
+      // A real device log line on the custom characteristic (ref 0x30).
+      session.emitNotification(ccUUID, [
+        0x80,
+        0x30,
+        ...'(Main) homing tap 1'.codeUnits,
+      ]);
+      await _until(() => monitor.ackChannelsLive, 'a device log line is evidence');
+      expect(monitor.logStreamSilent, isFalse);
+
+      // Retry. Nothing comes back this time. No FTMS block is outstanding, so
+      // the readiness wait resolves on its own bounded timeout.
+      final retry = monitor.start();
+      await _settle();
+      await retry;
+
+      expect(
+        monitor.ackChannelsLive,
+        isFalse,
+        reason: 'the retry must not inherit the previous run\'s log evidence',
+      );
+      await _until(() => monitor.logStreamSilent, 'silence latches on the retry');
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+  });
+
+  // A background settings sweep takes its own refcount on the FTMS notification
+  // block and holds it for its whole ~80 s duration. A calibration run holds a
+  // lease so the sweep is deferred instead — but the lease has to be released
+  // on every terminal path or the sweep never runs again.
+  group('interactive FTMS lease', () {
+    test('the lease is held during a run and released on the verdict', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      await deviceData.blockFtmsNotifications();
+      final started = monitor.start();
+      await _settle();
+      expect(deviceData.hasInteractiveFtmsSession, isTrue);
+
+      await deviceData.unblockFtmsNotifications(device);
+      await started;
+
+      for (final param in [
+        FTMSSpinDownStatus.MAX_SEARCH_STARTED,
+        FTMSSpinDownStatus.SUCCESS,
+      ]) {
+        session.emitNotification(_machineStatusUuid, [
+          FTMSStatusOpCodes.SPIN_DOWN_STATUS,
+          param,
+        ]);
+        await _settle();
+      }
+      expect(monitor.phase, CalibrationPhase.complete);
+      expect(deviceData.hasInteractiveFtmsSession, isFalse);
+
+      // Double cleanup is a no-op, not a double release into some other run.
+      monitor.stopWatching();
+      monitor.dispose();
+      expect(deviceData.hasInteractiveFtmsSession, isFalse);
+
+      deviceData.dispose();
+    });
+
+    test('the lease is released on a start failure and a retry re-takes exactly one', () async {
+      final session = FakeDirConSession()
+        ..failWritesFor(ftmsControlPointUUID, StateError('transport gone'));
+      final connector = FakeDirConConnector([session]);
+      final deviceData = await _connect(connector, device);
+      final monitor = CalibrationMonitor(deviceData: deviceData, device: device);
+
+      await monitor.start();
+      expect(monitor.phase, CalibrationPhase.failedToStart);
+      expect(deviceData.hasInteractiveFtmsSession, isFalse);
+
+      // The retry holds one lease again — never two.
+      final retry = monitor.start();
+      expect(deviceData.hasInteractiveFtmsSession, isTrue);
+      await retry;
+      expect(deviceData.hasInteractiveFtmsSession, isFalse);
+
+      monitor.dispose();
+      deviceData.dispose();
+    });
+
+    // Finding 1: the early guard in `requestSettings` must return *before*
+    // `blockFtmsNotifications()`. A lease that is already held when a sweep is
+    // requested must cost zero notification work — no disable, no resubscribe —
+    // or the run gets a transient blind window on Machine Status even though the
+    // sweep never actually polled anything.
+    test('a sweep requested while a lease is held touches no notifications', () async {
+      final connector = FakeDirConConnector();
+      final deviceData = await _connect(connector, device);
+      final session = connector.first;
+
+      // Both FTMS streams fully up — the state a calibration run depends on.
+      await deviceData.unblockFtmsNotifications(device);
+      expect(session.isListening(_machineStatusUuid), isTrue);
+
+      final token = deviceData.beginInteractiveFtmsSession(device);
+      final notifyCallsBefore = session.notificationCalls.length;
+      final statusCancelsBefore = session.cancellationsFor(_machineStatusUuid);
+      final bikeCancelsBefore = session.cancellationsFor(ftmsIndoorBikeDataUUID);
+
+      await deviceData.requestSettings(device);
+
+      // Nothing on the notification lifecycle moved, and both streams are still
+      // listening on the wire.
+      expect(session.notificationCalls.length, notifyCallsBefore);
+      expect(session.cancellationsFor(_machineStatusUuid), statusCancelsBefore);
+      expect(
+        session.cancellationsFor(ftmsIndoorBikeDataUUID),
+        bikeCancelsBefore,
+      );
+      expect(session.isListening(_machineStatusUuid), isTrue);
+      expect(session.notificationsEnabledNow(_machineStatusUuid), isTrue);
+      // The block was never taken, so there is nothing to release.
+      expect(deviceData.isFtmsNotificationsBlocked, isFalse);
+
+      deviceData.endInteractiveFtmsSession(token);
+      await _settle();
+      deviceData.dispose();
+    });
+
+    // The loop-level yield — a lease acquired *after* a sweep is already
+    // running — needs an operation parked in flight to hold the pump open long
+    // enough to take the lease, which the synchronous DIRCON write fake cannot
+    // provide. It lives in ftms_control_point_transport_parity_test.dart, on
+    // the BLE platform fake's write gate.
+  });
+}
+
+Future<DeviceData> _connect(
+  FakeDirConConnector connector,
+  BluetoothDevice device,
+) async {
+  final deviceData = DeviceData(dirConConnector: connector.call)
+    ..advertisedIpAddress = _ipAddress;
+  await deviceData.connectPreferred(device, waitForSetup: true);
+  expect(
+    deviceData.transportState.value.transport,
+    DeviceTransportKind.dircon,
+    reason: 'fixture should have taken the DIRCON path',
+  );
+  return deviceData;
+}
+
+/// Lets broadcast-stream deliveries and pending teardown microtasks run.
+Future<void> _settle() => Future<void>.delayed(Duration.zero);
+
+/// Waits for [condition], failing with [reason] instead of hanging until the
+/// suite-level timeout when the behaviour under test regresses.
+Future<void> _until(bool Function() condition, String reason) async {
+  for (var attempt = 0; attempt < 400; attempt++) {
+    if (condition()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+  fail(reason);
+}

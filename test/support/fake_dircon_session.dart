@@ -1,0 +1,322 @@
+import 'dart:async';
+import 'dart:collection';
+
+import 'package:ss2kconfigapp/utils/dircon_client.dart';
+
+/// A [DirConSession] that behaves like the real client's protocol surface
+/// without a socket.
+///
+/// UUIDs are normalized exactly as `DirConClient` normalizes them, so a test
+/// may use either the lowercase spelling from `constants.dart` or the uppercase
+/// spelling from `bleConstants.dart` and still match what `DeviceData` sent.
+class FakeDirConSession implements DirConSession {
+  FakeDirConSession({this.host = '192.168.1.50'});
+
+  @override
+  final String host;
+
+  bool _isConnected = true;
+  bool isClosed = false;
+
+  /// Every `initialize` argument pair, in call order.
+  String? initializedServiceUuid;
+  String? initializedCharacteristicUuid;
+  Object? initializeFailure;
+
+  final List<({String uuid, bool enableNotifications})> ensureCalls = [];
+  final List<({String uuid, List<int> value})> writes = [];
+
+  /// Every notification state change, in order, from either
+  /// `ensureCharacteristic(enableNotifications: true)` or `setNotifications`.
+  final List<({String uuid, bool enabled})> notificationCalls = [];
+
+  /// Current wire state per UUID. The distinction from [enabledNotificationsFor]
+  /// matters: "was ever enabled" cannot detect an enable that leaked past a
+  /// block, which is the whole point of the stale-undo path.
+  final Map<String, bool> _notificationsEnabled = {};
+  final Map<String, Completer<void>> _gates = {};
+
+  final Map<String, Object> _characteristicFailures = {};
+  final Set<String> _transportLossOnEnsure = {};
+  final Set<String> _silentCloseOnEnsure = {};
+  final Set<String> _dropAfterEnsure = {};
+  final Map<String, Object> _writeFailures = {};
+  final Map<String, List<int>> _writeResponses = {};
+  final Map<String, List<List<int>>> _framesDuringEnable = {};
+  final Map<String, StreamController<List<int>>> _notifications = {};
+  final Map<String, int> _listeners = {};
+  final Map<String, int> _cancellations = {};
+
+  final StreamController<void> _disconnected =
+      StreamController<void>.broadcast();
+
+  @override
+  bool get isConnected => _isConnected;
+
+  @override
+  Stream<void> get disconnected => _disconnected.stream;
+
+  // ---------------------------------------------------------------- controls
+
+  /// Makes discovery/enablement fail for [uuid], as firmware without the
+  /// characteristic does. The session stays live.
+  void failCharacteristic(String uuid, [Object? error]) {
+    _characteristicFailures[_key(uuid)] =
+        error ?? StateError('characteristic $uuid not found');
+  }
+
+  /// Makes discovery for [uuid] fail the way a *transport* failure does in
+  /// `DirConClient`: a response timeout or socket error runs `_closeWithError`,
+  /// which invalidates the session and emits `disconnected` before the error
+  /// reaches the awaiting caller.
+  ///
+  /// Distinct from [failCharacteristic] on purpose — the two must not be
+  /// handled the same way.
+  ///
+  /// Set [emitDisconnect] false for the paths that invalidate the session
+  /// *without* publishing anything: `DirConClient.close()`, and any second
+  /// `_closeWithError` after `_disconnectEmitted` is already set. There the
+  /// only evidence of the failure is [isConnected].
+  void failCharacteristicWithTransportLoss(
+    String uuid, {
+    Object? error,
+    bool emitDisconnect = true,
+  }) {
+    final key = _key(uuid);
+    (emitDisconnect ? _transportLossOnEnsure : _silentCloseOnEnsure).add(key);
+    _characteristicFailures[key] =
+        error ?? TimeoutException('DIRCON request timed out');
+  }
+
+  /// Makes writes to [uuid] fail. Per-characteristic so a bootstrap failure on
+  /// the custom characteristic does not also break FTMS control.
+  void failWritesFor(String uuid, [Object? error]) {
+    _writeFailures[_key(uuid)] = error ?? StateError('write to $uuid failed');
+  }
+
+  void respondToWrites(String uuid, List<int> response) {
+    _writeResponses[_key(uuid)] = response;
+  }
+
+  /// Queues frames the device "emits" from inside `ensureCharacteristic`, i.e.
+  /// while notification enablement is still in flight. Only a subscriber that
+  /// listened *before* enabling can observe them.
+  void emitDuringEnable(String uuid, List<int> frame) {
+    _framesDuringEnable.putIfAbsent(_key(uuid), () => []).add(frame);
+  }
+
+  /// Drops the connection immediately *after* [uuid] is discovered
+  /// successfully — the socket dying in the window between one setup step and
+  /// the next, with no exception for the caller to inspect.
+  void dropConnectionAfterEnsure(String uuid) {
+    _dropAfterEnsure.add(_key(uuid));
+  }
+
+  /// Suspends any notification enable/disable for [uuid] until
+  /// [releaseNotificationGate], so a test can take a block while an enable is
+  /// still in flight.
+  void holdNotificationGate(String uuid) {
+    _gates[_key(uuid)] = Completer<void>();
+  }
+
+  void releaseNotificationGate(String uuid) {
+    final gate = _gates.remove(_key(uuid));
+    if (gate != null && !gate.isCompleted) gate.complete();
+  }
+
+  void emitNotification(String uuid, List<int> frame) {
+    final controller = _notifications[_key(uuid)];
+    if (controller == null || controller.isClosed) return;
+    controller.add(frame);
+  }
+
+  /// Simulates an unexpected transport loss.
+  void dropConnection() {
+    _isConnected = false;
+    if (!_disconnected.isClosed) _disconnected.add(null);
+  }
+
+  // -------------------------------------------------------------- assertions
+
+  List<List<int>> writesFor(String uuid) {
+    final key = _key(uuid);
+    return [
+      for (final write in writes)
+        if (_key(write.uuid) == key) write.value,
+    ];
+  }
+
+  /// Historical: true if notifications were *ever* enabled for [uuid].
+  bool enabledNotificationsFor(String uuid) {
+    final key = _key(uuid);
+    return ensureCalls.any(
+      (call) => _key(call.uuid) == key && call.enableNotifications,
+    );
+  }
+
+  /// Current wire state. This is what a block assertion needs — an enable that
+  /// was later undone must read false here while [enabledNotificationsFor]
+  /// still reads true.
+  bool notificationsEnabledNow(String uuid) =>
+      _notificationsEnabled[_key(uuid)] ?? false;
+
+  /// True once the characteristic has been looked up at all, whether or not
+  /// notifications were enabled for it.
+  bool discovered(String uuid) {
+    final key = _key(uuid);
+    return ensureCalls.any((call) => _key(call.uuid) == key);
+  }
+
+  /// True while something still holds a notification subscription for [uuid].
+  /// Asserting this directly matters: a consumer-side "is the controller
+  /// closed?" guard can make a leaked subscription look like a cancelled one.
+  bool isListening(String uuid) => (_listeners[_key(uuid)] ?? 0) > 0;
+
+  int cancellationsFor(String uuid) => _cancellations[_key(uuid)] ?? 0;
+
+  // ------------------------------------------------------------ DirConSession
+
+  @override
+  Future<void> initialize({
+    required String serviceUuid,
+    required String characteristicUuid,
+  }) async {
+    initializedServiceUuid = serviceUuid;
+    initializedCharacteristicUuid = characteristicUuid;
+    final failure = initializeFailure;
+    if (failure != null) throw failure;
+  }
+
+  @override
+  Future<void> ensureCharacteristic({
+    required String serviceUuid,
+    required String characteristicUuid,
+    bool enableNotifications = false,
+  }) async {
+    ensureCalls.add((
+      uuid: characteristicUuid,
+      enableNotifications: enableNotifications,
+    ));
+    final key = _key(characteristicUuid);
+    final failure = _characteristicFailures[key];
+    if (failure != null) {
+      // Order matters: DirConClient tears the session down and emits
+      // `disconnected` before the pending request completes with the error.
+      if (_transportLossOnEnsure.contains(key)) dropConnection();
+      if (_silentCloseOnEnsure.contains(key)) _isConnected = false;
+      throw failure;
+    }
+
+    // Deliberately synchronous with respect to the caller's await: these frames
+    // are delivered while enablement is still in flight.
+    for (final frame in _framesDuringEnable[key] ?? const <List<int>>[]) {
+      final controller = _notifications[key];
+      if (controller != null && !controller.isClosed) controller.add(frame);
+    }
+
+    if (enableNotifications) {
+      await _applyNotificationState(characteristicUuid, true);
+    }
+
+    if (_dropAfterEnsure.contains(key)) dropConnection();
+  }
+
+  @override
+  Future<void> setNotifications(String characteristicUuid, bool enabled) async {
+    if (!_isConnected) throw StateError('DIRCON session is closed');
+    await _applyNotificationState(characteristicUuid, enabled);
+  }
+
+  /// The one place wire state changes, so `ensureCharacteristic` and
+  /// `setNotifications` cannot drift into disagreeing models.
+  Future<void> _applyNotificationState(String uuid, bool enabled) async {
+    final gate = _gates[_key(uuid)];
+    if (gate != null) await gate.future;
+    notificationCalls.add((uuid: uuid, enabled: enabled));
+    _notificationsEnabled[_key(uuid)] = enabled;
+  }
+
+  @override
+  Future<List<int>> writeCharacteristic(
+    String characteristicUuid,
+    List<int> value,
+  ) async {
+    if (!_isConnected) throw StateError('DIRCON session is closed');
+    writes.add((uuid: characteristicUuid, value: List<int>.from(value)));
+    final key = _key(characteristicUuid);
+    final failure = _writeFailures[key];
+    if (failure != null) throw failure;
+    final configuredResponse = _writeResponses[key];
+    if (configuredResponse != null) return configuredResponse;
+
+    // This shared fake represents firmware from before the settings snapshot
+    // command existed. Old firmware explicitly rejects unknown references;
+    // modelling that response keeps connection bootstraps on the real legacy
+    // fallback path instead of making every test wait for snapshot chunks.
+    if (value.length > 1 && value[0] == 0x01 && value[1] == 0x31) {
+      return const <int>[0xff, 0x31];
+    }
+    return const <int>[];
+  }
+
+  @override
+  Stream<List<int>> characteristicNotifications(String characteristicUuid) {
+    final key = _key(characteristicUuid);
+    final controller = _notifications.putIfAbsent(
+      key,
+      () => StreamController<List<int>>.broadcast(
+        onListen: () => _listeners[key] = (_listeners[key] ?? 0) + 1,
+        onCancel: () {
+          _listeners[key] = (_listeners[key] ?? 1) - 1;
+          _cancellations[key] = (_cancellations[key] ?? 0) + 1;
+        },
+      ),
+    );
+    return controller.stream;
+  }
+
+  @override
+  Future<void> close() async {
+    _isConnected = false;
+    isClosed = true;
+    if (!_disconnected.isClosed) await _disconnected.close();
+  }
+
+  static String _key(String uuid) => uuid.toLowerCase();
+}
+
+/// Hands out prepared [FakeDirConSession]s in order, so a reconnect test can
+/// prove the first session was torn down and the second is live.
+class FakeDirConConnector {
+  FakeDirConConnector([List<FakeDirConSession>? sessions])
+    : _queued = Queue<FakeDirConSession>.of(
+        sessions ?? [FakeDirConSession()],
+      );
+
+  final Queue<FakeDirConSession> _queued;
+
+  /// Every host `DeviceData` tried, in order.
+  final List<String> hosts = [];
+
+  /// Every session actually handed out, in order.
+  final List<FakeDirConSession> issued = [];
+
+  /// When set, the next connect attempt throws this instead of returning a
+  /// session — the "DIRCON endpoint unreachable" path.
+  Object? connectFailure;
+
+  FakeDirConSession get first => issued.first;
+  FakeDirConSession get last => issued.last;
+
+  Future<DirConSession> call(String host) async {
+    hosts.add(host);
+    final failure = connectFailure;
+    if (failure != null) throw failure;
+    if (_queued.isEmpty) {
+      throw StateError('FakeDirConConnector ran out of prepared sessions');
+    }
+    final session = _queued.removeFirst();
+    issued.add(session);
+    return session;
+  }
+}

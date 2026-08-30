@@ -15,19 +15,19 @@ void main() {
       '00000000-0000-0000-0000-000000000001',
     );
 
-    await deviceData.blockFtmsSubscription();
-    await deviceData.blockFtmsSubscription();
-    expect(deviceData.isFtmsSubscriptionBlocked, isTrue);
+    await deviceData.blockFtmsNotifications();
+    await deviceData.blockFtmsNotifications();
+    expect(deviceData.isFtmsNotificationsBlocked, isTrue);
 
-    await deviceData.unblockFtmsSubscription(device);
-    expect(deviceData.isFtmsSubscriptionBlocked, isTrue);
+    await deviceData.unblockFtmsNotifications(device);
+    expect(deviceData.isFtmsNotificationsBlocked, isTrue);
 
-    await deviceData.unblockFtmsSubscription(device);
-    expect(deviceData.isFtmsSubscriptionBlocked, isFalse);
+    await deviceData.unblockFtmsNotifications(device);
+    expect(deviceData.isFtmsNotificationsBlocked, isFalse);
 
     // Defensive cleanup must not underflow and poison the next block.
-    await deviceData.unblockFtmsSubscription(device);
-    expect(deviceData.isFtmsSubscriptionBlocked, isFalse);
+    await deviceData.unblockFtmsNotifications(device);
+    expect(deviceData.isFtmsNotificationsBlocked, isFalse);
   });
 
   test('prefers the full custom device name over the BLE advertisement', () {
