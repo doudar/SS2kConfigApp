@@ -15,10 +15,12 @@ import 'extra.dart';
 import 'bleConstants.dart';
 import 'ble_connection_retry.dart';
 import 'ble_request_coalescer.dart';
+import 'ble_scan_results_protocol.dart';
 import 'bleOTA.dart';
 import 'connection_setup_coordinator.dart';
 import 'device_transport_state.dart';
 import 'dircon_client.dart';
+import 'settings_snapshot_protocol.dart';
 import 'smartspin_advertisement.dart';
 import 'workout_control_lane.dart';
 
@@ -61,6 +63,8 @@ enum FtmsNotificationsReadiness {
   /// The [DeviceData] was disposed while the caller was waiting.
   disposed,
 }
+
+enum _SettingsSnapshotSupport { unknown, supported, unsupported }
 
 class _DirConRecoveryAdvertisementSession {
   _DirConRecoveryAdvertisementSession(this.device);
@@ -780,7 +784,9 @@ class DeviceData {
     // stale after every fallback.
     if (_interactiveFtmsSessions.isNotEmpty) {
       _pendingSweepDevice = device;
-      print('[transport] settings sweep deferred: interactive FTMS session held');
+      print(
+        '[transport] settings sweep deferred: interactive FTMS session held',
+      );
       return;
     }
     if (_lastRequestStopwatch.isRunning) {
@@ -843,9 +849,7 @@ class DeviceData {
   /// is part of it. A failing callback must not skip its siblings, and must not
   /// turn a successfully restored link into a failed reconnect attempt — which
   /// is what an unisolated throw here used to do at the `[AutoReconnect]` catch.
-  Future<void> _runReconnectedCallbacks([
-    Future<void> Function()? only,
-  ]) async {
+  Future<void> _runReconnectedCallbacks([Future<void> Function()? only]) async {
     final callbacks = only != null
         ? <Future<void> Function()>[only]
         : List<Future<void> Function()>.from(_onReconnectedCallbacks);
@@ -1147,6 +1151,16 @@ class DeviceData {
     }
     _pendingCustomResponse = null;
     _pendingCustomResponseReference = null;
+    final settingsSnapshotCompleter = _settingsSnapshotCompleter;
+    if (settingsSnapshotCompleter != null &&
+        !settingsSnapshotCompleter.isCompleted) {
+      settingsSnapshotCompleter.completeError(
+        StateError('Connection closed during settings snapshot.'),
+      );
+    }
+    _settingsSnapshotCompleter = null;
+    _settingsSnapshotDecoder.reset();
+    _settingsSnapshotSupport = _SettingsSnapshotSupport.unknown;
     _customReadRequestCoalescer.clear();
     // The breaker describes a link that no longer exists; the next one starts
     // with a clean record.
@@ -1341,6 +1355,15 @@ class DeviceData {
   bool isPowerTableTransferInProgress = false;
 
   var customCharacteristic = createCustomCharacteristicFramework();
+  final BleScanResultStreamDecoder _scanResultDecoder =
+      BleScanResultStreamDecoder();
+  bool _scanResultStreamSupported = false;
+  final SettingsSnapshotDecoder _settingsSnapshotDecoder =
+      SettingsSnapshotDecoder();
+  _SettingsSnapshotSupport _settingsSnapshotSupport =
+      _SettingsSnapshotSupport.unknown;
+  Completer<SettingsSnapshotRequestResult>? _settingsSnapshotCompleter;
+  Future<void>? _settingsRequestInFlight;
 
   Map<int, Map>? _cachedCharacteristicMap;
 
@@ -2020,9 +2043,8 @@ class DeviceData {
         // future: bounding the wait alone would free this caller while the slot
         // stayed occupied by the wedged write.
         await _queueBleOperation(
-          () => characteristic
-              .setNotifyValue(true)
-              .timeout(_notifyEnableTimeout),
+          () =>
+              characteristic.setNotifyValue(true).timeout(_notifyEnableTimeout),
         );
       }
       enabled = true;
@@ -2678,77 +2700,136 @@ class DeviceData {
     await writeCommand(device, resetPowerTableVname);
   }
 
-  //request all settings
-  Future requestSettings(BluetoothDevice device) async {
-    if (this.isSimulated) return;
+  // Request all settings. Current firmware returns one chunked 0x31 snapshot;
+  // only firmware that explicitly rejects 0x31 uses the legacy per-reference
+  // sweep below.
+  Future<void> requestSettings(BluetoothDevice device) {
+    if (isSimulated) return Future<void>.value();
 
-    // An interactive FTMS lease (a calibration run) is listening on Machine
-    // Status and Control Point. Taking the notification block here — even for
-    // the moment before the loop below defers on its first iteration — suspends
-    // those streams and opens a transient blind window in the run. Defer the
-    // whole sweep without ever blocking; the last lease release runs it.
+    // Calibration owns the interactive FTMS channels while its lease is held.
+    // Defer even the shorter snapshot transfer so background bootstrap traffic
+    // cannot contend with the run.
     if (_interactiveFtmsSessions.isNotEmpty) {
-      print('[transport] settings sweep deferred: interactive FTMS session held');
+      print(
+        '[transport] settings sweep deferred: interactive FTMS session held',
+      );
+      _pendingSweepDevice = device;
+      return Future<void>.value();
+    }
+
+    final existing = _settingsRequestInFlight;
+    if (existing != null) return existing;
+
+    final request = _requestSettings(device);
+    _settingsRequestInFlight = request;
+    void clearRequest() {
+      if (identical(_settingsRequestInFlight, request)) {
+        _settingsRequestInFlight = null;
+      }
+    }
+
+    request.then<void>((_) => clearRequest(), onError: (_) => clearRequest());
+    return request;
+  }
+
+  Future<void> _requestSettings(BluetoothDevice device) async {
+    await blockFtmsNotifications();
+    try {
+      if (customResponsesDegraded.value) {
+        print('[transport] settings sweep abandoned: link degraded');
+        return;
+      }
+
+      if (_settingsSnapshotSupport != _SettingsSnapshotSupport.unsupported) {
+        try {
+          final result = await requestSettingsWithSnapshotFallback(
+            requestSnapshot: () => _requestSettingsSnapshot(device),
+            requestIndividually: () async {
+              _settingsSnapshotSupport = _SettingsSnapshotSupport.unsupported;
+              await _requestSettingsIndividually(device);
+            },
+          );
+          if (result == SettingsSnapshotRequestResult.supported) {
+            _settingsSnapshotSupport = _SettingsSnapshotSupport.supported;
+          }
+          return;
+        } catch (error) {
+          // A timeout, malformed chunk, or transport failure does not prove the
+          // command is unsupported. Retry 0x31 on the next settings refresh.
+          print('[transport] settings snapshot failed: $error');
+          if (_interactiveFtmsSessions.isNotEmpty) {
+            _pendingSweepDevice = device;
+            print(
+              '[transport] settings sweep yielded: interactive FTMS session started',
+            );
+          }
+          return;
+        }
+      }
+
+      await _requestSettingsIndividually(device);
+    } finally {
+      await unblockFtmsNotifications(device);
+    }
+  }
+
+  Future<SettingsSnapshotRequestResult> _requestSettingsSnapshot(
+    BluetoothDevice device,
+  ) async {
+    _settingsSnapshotDecoder.reset();
+    final completer = Completer<SettingsSnapshotRequestResult>();
+    _settingsSnapshotCompleter = completer;
+    try {
+      await writeCustomCharacteristic(device, const [
+        0x01,
+        settingsSnapshotReference,
+      ]);
+      return await completer.future.timeout(const Duration(seconds: 15));
+    } finally {
+      if (identical(_settingsSnapshotCompleter, completer)) {
+        _settingsSnapshotCompleter = null;
+      }
+    }
+  }
+
+  Future<void> _requestSettingsIndividually(BluetoothDevice device) async {
+    if (_interactiveFtmsSessions.isNotEmpty) {
+      print(
+        '[transport] settings sweep yielded: interactive FTMS session started',
+      );
       _pendingSweepDevice = device;
       return;
     }
 
-    await blockFtmsNotifications();
     var unconfirmed = 0;
-    try {
-      for (var c in this.customCharacteristic) {
-        // Firmware that wasn't Compatible with the app would reboot whenever this command was read.
-        if (!this.configAppCompatibleFirmware && c["vName"] == saveVname) {
-          continue;
-        }
+    for (final c in customCharacteristic) {
+      if (!configAppCompatibleFirmware && c["vName"] == saveVname) continue;
+      if (c["vName"] == BLE_logStreamVname) continue;
 
-        // Do not poll for BLE logging as it floods the connection. We rely on
-        // notifications for this.
-        if (c["vName"] == BLE_logStreamVname) {
-          continue;
-        }
-
-        // Once the device has stopped answering, every remaining entry costs a
-        // full response timeout and buys nothing. Abandoning the sweep also
-        // releases the FTMS block below far sooner, which is what lets a
-        // calibration run get its notifications back.
-        if (customResponsesDegraded.value) {
-          print('[transport] settings sweep abandoned: link degraded');
-          break;
-        }
-
-        // A calibration run took the FTMS lease after this sweep began. Yield
-        // now: the sweep holds the notification block for its whole duration,
-        // and the run is waiting on it. Its unfinished work becomes the pending
-        // sweep, run when the last lease releases.
-        if (_interactiveFtmsSessions.isNotEmpty) {
-          print('[transport] settings sweep yielded: interactive FTMS session started');
-          _pendingSweepDevice = device;
-          break;
-        }
-
-        try {
-          await writeCustomCharacteristic(device, [
-            0x01,
-            int.parse(c["reference"]),
-          ]);
-        } on TransportResponseUnconfirmed {
-          // One unconfirmed read is within jitter. The three-strike breaker
-          // checked at the top of the loop is the arbiter of when to stop.
-          unconfirmed++;
-        } catch (e) {
-          // TransportNotConnected, or anything else fatal to the transport: the
-          // rest of the sweep would only throw identically.
-          print('[transport] settings sweep stopped: $e');
-          break;
-        }
+      if (customResponsesDegraded.value) {
+        print('[transport] settings sweep abandoned: link degraded');
+        break;
       }
-    } finally {
-      // Always, on every exit path — a sweep that abandoned early must not keep
-      // FTMS notifications suspended behind it.
-      await unblockFtmsNotifications(device);
+      if (_interactiveFtmsSessions.isNotEmpty) {
+        print(
+          '[transport] settings sweep yielded: interactive FTMS session started',
+        );
+        _pendingSweepDevice = device;
+        break;
+      }
+
+      try {
+        await writeCustomCharacteristic(device, [
+          0x01,
+          int.parse(c["reference"]),
+        ]);
+      } on TransportResponseUnconfirmed {
+        unconfirmed++;
+      } catch (error) {
+        print('[transport] settings sweep stopped: $error');
+        break;
+      }
     }
-    // Once at the sweep boundary, with a count — not one line per characteristic.
     if (unconfirmed > 0) {
       print('[transport] settings sweep: $unconfirmed reads unconfirmed');
     }
@@ -3015,7 +3096,9 @@ class DeviceData {
   /// Scope is deliberately narrow: only BLE response timeouts trip it. DIRCON
   /// is request/response with its own timeout and no pending-response completer,
   /// so it never contributes.
-  final ValueNotifier<bool> customResponsesDegraded = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> customResponsesDegraded = ValueNotifier<bool>(
+    false,
+  );
 
   void _recordCustomResponseTimeout() {
     _consecutiveCustomResponseTimeouts++;
@@ -3048,6 +3131,7 @@ class DeviceData {
       print('[transport] link recovered: background polling resumed');
     }
   }
+
   final Object _bleOperationZoneKey = Object();
   final Set<Object> _activeBleOperationTokens = <Object>{};
 
@@ -3118,7 +3202,10 @@ class DeviceData {
     final token = Object();
     _activeBleOperationTokens.add(token);
     try {
-      return await runZoned(operation, zoneValues: {_bleOperationZoneKey: token});
+      return await runZoned(
+        operation,
+        zoneValues: {_bleOperationZoneKey: token},
+      );
     } finally {
       _activeBleOperationTokens.remove(token);
       _lastBleWriteCompletedAt = DateTime.now();
@@ -3404,6 +3491,59 @@ class DeviceData {
         }
       }
 
+      if (value.length > 1 &&
+          value[0] == 0x80 &&
+          value[1] == bleScanResultsReference) {
+        final update = _scanResultDecoder.add(value);
+        if (update != null) {
+          _scanResultStreamSupported = true;
+          if (update.event == BleScanResultEvent.end &&
+              update.isComplete == false) {
+            print(
+              'Scan-result stream ended with missing packets; displaying '
+              '${update.devices.length} complete records.',
+            );
+          }
+          if (update.changed || update.event == BleScanResultEvent.end) {
+            _applyStreamedFoundDevices(update.devices);
+          }
+        }
+        return;
+      }
+
+      if (value.length > 1 && value[1] == settingsSnapshotReference) {
+        if (isUnsupportedSettingsSnapshotPacket(value)) {
+          _settingsSnapshotDecoder.reset();
+          _settingsSnapshotSupport = _SettingsSnapshotSupport.unsupported;
+          final completer = _settingsSnapshotCompleter;
+          if (completer != null && !completer.isCompleted) {
+            completer.complete(SettingsSnapshotRequestResult.unsupported);
+          }
+          return;
+        }
+
+        if (value[0] == 0x80) {
+          try {
+            final snapshot = _settingsSnapshotDecoder.add(value);
+            if (snapshot != null) {
+              _applySettingsSnapshot(snapshot);
+              _settingsSnapshotSupport = _SettingsSnapshotSupport.supported;
+              final completer = _settingsSnapshotCompleter;
+              if (completer != null && !completer.isCompleted) {
+                completer.complete(SettingsSnapshotRequestResult.supported);
+              }
+            }
+          } catch (error, stackTrace) {
+            _settingsSnapshotDecoder.reset();
+            final completer = _settingsSnapshotCompleter;
+            if (completer != null && !completer.isCompleted) {
+              completer.completeError(error, stackTrace);
+            }
+          }
+        }
+        return;
+      }
+
       if (value[0] == 0x80) {
         if (value.length < 2) return;
 
@@ -3501,33 +3641,8 @@ class DeviceData {
 
                 // Format Found Devices into a JSON String
                 if (c["vName"] == foundDevicesVname) {
-                  String _pm = "";
-                  String _hrm = "";
-                  for (var i in this.customCharacteristic) {
-                    if (i["vName"] == connectedHRMVname) {
-                      _hrm = i["value"];
-                    }
-                    if (i["vName"] == connectedPWRVname) {
-                      _pm = i["value"];
-                    }
-                  }
-                  String t = c["value"];
-                  String tList = "";
-                  if (t == " " || t == "null") {
-                    t = "";
-                  } else {
-                    t = t.substring(1, t.length - 1);
-                    t += ",";
-                  }
-                  tList =
-                      defaultDevices +
-                      t +
-                      '"device -5":{"name":"' +
-                      _hrm +
-                      '","UUID":"0x180d"},"device -6":{"name":"' +
-                      _pm +
-                      '","UUID":"0x1818"}}]';
-                  c["value"] = tList;
+                  if (_scanResultStreamSupported) return;
+                  _formatFoundDevices(c, c["value"]);
                   print(c["value"]);
                 }
                 //Set the firmware version
@@ -3591,6 +3706,79 @@ class DeviceData {
 
   String _diagnosticHex(List<int> value) =>
       value.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join(' ');
+
+  void _applySettingsSnapshot(Map<String, dynamic> snapshot) {
+    _ensureCachedMap();
+    final values = settingsSnapshotValuesByReference(
+      snapshot,
+      customCharacteristic,
+    );
+    final rawFoundDevices = values.remove(0x14);
+
+    for (final entry in values.entries) {
+      final characteristic = _cachedCharacteristicMap?[entry.key];
+      if (characteristic == null) continue;
+
+      characteristic['value'] = entry.value.toString();
+      if (characteristic['vName'] == fwVname) {
+        firmwareVersion.value = characteristic['value'];
+      }
+      _emitCharacteristicChange(characteristic);
+    }
+
+    // Format this last so the saved HRM and power-meter values from the same
+    // snapshot are available when the synthetic picker entries are appended.
+    if (rawFoundDevices != null) {
+      final characteristic = _cachedCharacteristicMap?[0x14];
+      if (characteristic != null && !_scanResultStreamSupported) {
+        _formatFoundDevices(characteristic, rawFoundDevices.toString());
+        _emitCharacteristicChange(characteristic);
+      }
+    }
+  }
+
+  void _applyStreamedFoundDevices(List<BleScanDevice> devices) {
+    _ensureCachedMap();
+    final foundDevices = _cachedCharacteristicMap?[0x14];
+    if (foundDevices == null) return;
+
+    final raw = <String, dynamic>{};
+    for (var i = 0; i < devices.length; i++) {
+      raw['device $i'] = {'name': devices[i].name, 'UUID': devices[i].uuid};
+    }
+    _formatFoundDevices(foundDevices, jsonEncode(raw));
+    _emitCharacteristicChange(foundDevices);
+  }
+
+  void _formatFoundDevices(Map characteristic, String rawJson) {
+    final combined = <String, dynamic>{
+      'device -4': {'name': 'any', 'UUID': '0x180d'},
+      'device -3': {'name': 'none', 'UUID': '0x180d'},
+      'device -2': {'name': 'any', 'UUID': '0x1818'},
+      'device -1': {'name': 'none', 'UUID': '0x1818'},
+    };
+
+    if (rawJson.trim().isNotEmpty &&
+        rawJson.trim() != 'null' &&
+        rawJson.trim() != ' ') {
+      final decoded = jsonDecode(rawJson);
+      if (decoded is Map) {
+        for (final entry in decoded.entries) {
+          combined[entry.key.toString()] = entry.value;
+        }
+      }
+    }
+
+    combined['device -5'] = {
+      'name': getVnameValue(connectedHRMVname, returnNoFirmSupport: true),
+      'UUID': '0x180d',
+    };
+    combined['device -6'] = {
+      'name': getVnameValue(connectedPWRVname, returnNoFirmSupport: true),
+      'UUID': '0x1818',
+    };
+    characteristic['value'] = jsonEncode([combined]);
+  }
 
   /// Helper method to emit characteristic change events
   void _emitCharacteristicChange(Map c) {

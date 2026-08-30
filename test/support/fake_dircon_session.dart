@@ -246,7 +246,17 @@ class FakeDirConSession implements DirConSession {
     final key = _key(characteristicUuid);
     final failure = _writeFailures[key];
     if (failure != null) throw failure;
-    return _writeResponses[key] ?? const <int>[];
+    final configuredResponse = _writeResponses[key];
+    if (configuredResponse != null) return configuredResponse;
+
+    // This shared fake represents firmware from before the settings snapshot
+    // command existed. Old firmware explicitly rejects unknown references;
+    // modelling that response keeps connection bootstraps on the real legacy
+    // fallback path instead of making every test wait for snapshot chunks.
+    if (value.length > 1 && value[0] == 0x01 && value[1] == 0x31) {
+      return const <int>[0xff, 0x31];
+    }
+    return const <int>[];
   }
 
   @override

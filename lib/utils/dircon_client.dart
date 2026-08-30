@@ -99,6 +99,8 @@ class DirConClient implements DirConSession {
     'dart.vm.product',
   );
   static const int _wifiPasswordReference = 0x13;
+  static const int _settingsSnapshotReference = 0x31;
+  static const int _settingsSnapshotHeaderLength = 7;
 
   final String host;
   final Socket _socket;
@@ -423,6 +425,17 @@ class DirConClient implements DirConSession {
         body[17] == _wifiPasswordReference) {
       visible = body.sublist(0, 18);
       suffix = ' <password payload redacted>';
+    } else if ((identifier == writeCharacteristicMessage ||
+            identifier == notificationMessage) &&
+        body.length >= 18 &&
+        body[17] == _settingsSnapshotReference) {
+      // Keep the UUID and version/chunk framing visible, but never log the
+      // snapshot JSON because it contains the Wi-Fi password.
+      final visibleLength = body.length < 16 + _settingsSnapshotHeaderLength
+          ? body.length
+          : 16 + _settingsSnapshotHeaderLength;
+      visible = body.sublist(0, visibleLength);
+      suffix = ' <settings snapshot payload redacted>';
     } else if (body.length > 96) {
       visible = body.sublist(0, 96);
       suffix = ' ...(+${body.length - visible.length}B)';

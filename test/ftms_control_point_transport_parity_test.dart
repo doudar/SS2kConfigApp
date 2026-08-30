@@ -1667,7 +1667,12 @@ final class _FakeBlePlatform extends FlutterBluePlusPlatform {
             serviceUuid: Guid(csUUID),
             characteristicUuid: Guid(ccUUID),
             instanceId: 0,
-            value: [0x80, reference],
+            // This harness models firmware from before 0x31. Unknown reads
+            // are explicitly rejected, which exercises the production app's
+            // legacy per-setting fallback without weakening its strict rule.
+            value: reference == 0x31
+                ? const [0xff, 0x31]
+                : [0x80, reference],
             success: true,
             errorCode: 0,
             errorString: '',
