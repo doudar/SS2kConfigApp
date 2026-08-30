@@ -43,6 +43,9 @@ flutter precache --ios
 # Install Flutter dependencies
 flutter pub get
 
+# Work around Flutter regenerating its aggregate Swift package at iOS 13.
+/bin/sh ios/ci_scripts/patch_flutter_spm_deployment_target.sh
+
 # Prepare the remaining CocoaPods-backed plugins. Xcode Cloud performs the
 # actual release build in its Archive step, and the shared Runner scheme's
 # pre-action generates the SwiftPM package before that build starts.
