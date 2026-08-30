@@ -10,13 +10,8 @@ class PowerTablePainter extends CustomPainter {
   final double maxResistance;
   final double? homingMin; // currently unused but preserved
   final double? homingMax;
-  final double currentWatts;
-  final double currentResistance;
-  final int currentCadence;
-  final List<Map<String, double>> positionHistory; // stores {'x': watts, 'y': rawResistance}
-  final double tableDivisor;
-  final bool swapAxes; // false: Resistance(Y)/Watts(X), true: Watts(Y)/Resistance(X)
-  final double animationValue;
+  // false: Resistance(Y)/Watts(X), true: Watts(Y)/Resistance(X)
+  final bool swapAxes;
 
   PowerTablePainter({
     required this.powerTableData,
@@ -25,20 +20,13 @@ class PowerTablePainter extends CustomPainter {
     required this.maxResistance,
     this.homingMin,
     this.homingMax,
-    required this.currentWatts,
-    required this.currentResistance,
-    required this.currentCadence,
-    required this.positionHistory,
-    required this.tableDivisor,
     required this.swapAxes,
-    this.animationValue = 0.0,
   });
 
   final leftPadding = 20.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    _drawAxisEffects(canvas, size);
     _drawAxisLabels(canvas, size);
 
     final paint = Paint()
@@ -50,128 +38,6 @@ class PowerTablePainter extends CustomPainter {
     for (int i = 0; i < powerTableData.length; i++) {
       paint.color = colors[i % colors.length];
       _drawPowerCurve(canvas, size, powerTableData[i], paint);
-    }
-
-    _drawPositionHistory(canvas, size);
-
-    if (currentWatts > 0 && currentWatts <= MIN_POWER_RANGE) {
-      _drawCurrentPosition(canvas, size);
-    }
-  }
-
-  void _drawAxisEffects(Canvas canvas, Size size) {
-    double minRes = 0;
-    double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
-    double range = maxRes - minRes;
-
-    double xValue = 0.0;
-    double yValue = 0.0;
-    double xMax = 0.0;
-    double yMax = 0.0;
-
-    double scaledResistance = currentResistance / tableDivisor;
-
-    if (!swapAxes) {
-      // Y is Resistance, X is Watts
-      yValue = scaledResistance - minRes;
-      yMax = range;
-      xValue = currentWatts;
-      xMax = MIN_POWER_RANGE;
-    } else {
-      // Y is Watts, X is Resistance
-      yValue = currentWatts;
-      yMax = MIN_POWER_RANGE;
-      xValue = scaledResistance - minRes;
-      xMax = range;
-    }
-
-    // Normalize 0..1
-    double yRatio = (yMax == 0) ? 0 : (yValue / yMax).clamp(0.0, 1.0);
-    double xRatio = (xMax == 0) ? 0 : (xValue / xMax).clamp(0.0, 1.0);
-
-    // Visual styles
-    final double barThickness = 20.0;
-    final List<Color> flameColors = [
-      Colors.blueAccent,
-      Colors.cyanAccent,
-      Colors.greenAccent,
-      Colors.yellowAccent,
-      Colors.orangeAccent,
-      Colors.deepOrangeAccent,
-      Colors.redAccent,
-    ];
-
-    // --- Vertical Axis (Y) ---
-    // Draw from bottom up
-    if (yRatio > 0) {
-      double barHeight = size.height * yRatio;
-      Rect yFillRect = Rect.fromLTRB(
-        2, // x
-        size.height - barHeight, // top
-        2 + barThickness, // right
-        size.height // bottom
-      );
-      _paintAnimatedBar(canvas, yFillRect, flameColors, isVertical: true, ratio: yRatio);
-    }
-
-    // --- Horizontal Axis (X) ---
-    // Draw from left to right
-    if (xRatio > 0) {
-      double barWidth = (size.width - leftPadding) * xRatio;
-      Rect xFillRect = Rect.fromLTRB(
-        leftPadding, // left
-        -15, // top (above labels)
-        leftPadding + barWidth, // right
-        -15 + barThickness // bottom
-      );
-      _paintAnimatedBar(canvas, xFillRect, flameColors, isVertical: false, ratio: xRatio);
-    }
-  }
-
-  void _paintAnimatedBar(Canvas canvas, Rect rect, List<Color> colors,
-      {required bool isVertical, required double ratio}) {
-    final Paint barPaint = Paint()..style = PaintingStyle.fill;
-
-    double totalExtent = isVertical ? (rect.height / ratio) : (rect.width / ratio);
-    
-    // Create a Rect that represents the full range of the axis for gradient mapping
-    Rect gradientRect;
-    Alignment beginAlignment; // Start of axis (Low value)
-    Alignment endAlignment;   // End of axis (High value)
-
-    if (isVertical) {
-       // Vertical: Axis starts at Bottom (High Y) and goes to Top (Low Y)
-       gradientRect = Rect.fromLTRB(rect.left, rect.bottom - totalExtent, rect.right, rect.bottom);
-       beginAlignment = Alignment.bottomCenter;
-       endAlignment = Alignment.topCenter;
-    } else {
-       // Horizontal: Axis starts at Left and goes to Right
-       gradientRect = Rect.fromLTRB(rect.left, rect.top, rect.left + totalExtent, rect.bottom);
-       beginAlignment = Alignment.centerLeft;
-       endAlignment = Alignment.centerRight;
-    }
-
-    // Pulse effect
-    double pulse = 0.1 * sin(animationValue * 2 * pi); // -0.1 to 0.1
-    
-    barPaint.shader = LinearGradient(
-      begin: beginAlignment,
-      end: endAlignment,
-      colors: colors.map((c) => c.withValues(alpha: (0.8 + pulse).clamp(0.0, 1.0))).toList(),
-    ).createShader(gradientRect);
-
-    canvas.drawRect(rect, barPaint);
-    
-    // Draw a "Peak" indicator
-    Paint peakPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.9)
-      ..style = PaintingStyle.fill
-      ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2);
-      
-    if (isVertical) {
-       canvas.drawRect(Rect.fromLTRB(rect.left, rect.top, rect.right, rect.top + 2), peakPaint);
-    } else {
-       canvas.drawRect(Rect.fromLTRB(rect.right - 2, rect.top, rect.right, rect.bottom), peakPaint);
     }
   }
 
@@ -196,10 +62,16 @@ class PowerTablePainter extends CustomPainter {
         // Y-axis (Vertical): Center vertically, stick to left edge
         canvas.translate(10, size.height / 2);
         canvas.rotate(-pi / 2);
-        textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
+        textPainter.paint(
+          canvas,
+          Offset(-textPainter.width / 2, -textPainter.height / 2),
+        );
       } else {
         // X-axis (Horizontal): Center horizontally, near top
-        double x = leftPadding + (size.width - leftPadding) / 2 - textPainter.width / 2;
+        double x =
+            leftPadding +
+            (size.width - leftPadding) / 2 -
+            textPainter.width / 2;
         double y = 0;
         textPainter.paint(canvas, Offset(x, y));
       }
@@ -208,9 +80,9 @@ class PowerTablePainter extends CustomPainter {
 
     if (!swapAxes) {
       drawLabel("RESISTANCE", true); // Y
-      drawLabel("P O W E R", false);    // X
+      drawLabel("P O W E R", false); // X
     } else {
-      drawLabel("P O W E R", true);     // Y
+      drawLabel("P O W E R", true); // Y
       drawLabel("RESISTANCE", false); // X
     }
   }
@@ -227,30 +99,49 @@ class PowerTablePainter extends CustomPainter {
     );
 
     double minRes = 0;
-    double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
+    double maxRes = max(
+      MIN_RESISTANCE_RANGE,
+      homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE),
+    );
     double range = maxRes - minRes;
 
     if (!swapAxes) {
       // Resistance on Y axis
-      for (double resistance = minRes; resistance <= maxRes; resistance += range / 5) {
+      for (
+        double resistance = minRes;
+        resistance <= maxRes;
+        resistance += range / 5
+      ) {
         final y = size.height - ((resistance - minRes) * size.height / range);
-        canvas.drawLine(Offset(leftPadding, y), Offset(size.width, y), gridPaint);
+        canvas.drawLine(
+          Offset(leftPadding, y),
+          Offset(size.width, y),
+          gridPaint,
+        );
         // Round resistance to nearest whole number for labels
         textPainter.text = TextSpan(
           text: resistance.round().toString(),
-          style: TextStyle(color: Colors.grey[600], fontSize: WorkoutFontSizes.small),
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: WorkoutFontSizes.small,
+          ),
         );
         textPainter.layout();
         final double labelX = leftPadding + 4;
         textPainter.paint(canvas, Offset(labelX, y - textPainter.height / 2));
       }
       for (double watts = 0; watts <= MIN_POWER_RANGE; watts += 100) {
-        final x = leftPadding + (watts * (size.width - leftPadding) / MIN_POWER_RANGE);
+        final x =
+            leftPadding +
+            (watts * (size.width - leftPadding) / MIN_POWER_RANGE);
         canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
         if (watts > 0) {
           textPainter.text = TextSpan(
             text: '${watts.toInt()}w',
-            style: TextStyle(color: Colors.grey[600], fontSize: WorkoutFontSizes.small),
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: WorkoutFontSizes.small,
+            ),
           );
           textPainter.layout();
           double labelX = x - textPainter.width / 2;
@@ -260,24 +151,44 @@ class PowerTablePainter extends CustomPainter {
       }
     } else {
       // Watts on Y axis
-      for (double watts = 0; watts <= MIN_POWER_RANGE; watts += MIN_POWER_RANGE / 5) {
+      for (
+        double watts = 0;
+        watts <= MIN_POWER_RANGE;
+        watts += MIN_POWER_RANGE / 5
+      ) {
         final y = size.height - (watts * size.height / MIN_POWER_RANGE);
-        canvas.drawLine(Offset(leftPadding, y), Offset(size.width, y), gridPaint);
+        canvas.drawLine(
+          Offset(leftPadding, y),
+          Offset(size.width, y),
+          gridPaint,
+        );
         textPainter.text = TextSpan(
           text: '${watts.toInt()}w',
-          style: TextStyle(color: Colors.grey[600], fontSize: WorkoutFontSizes.small),
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: WorkoutFontSizes.small,
+          ),
         );
         textPainter.layout();
         final double labelX = leftPadding + 4;
         textPainter.paint(canvas, Offset(labelX, y - textPainter.height / 2));
       }
-      for (double resistance = minRes; resistance <= maxRes; resistance += range / 5) {
-        final x = leftPadding + ((resistance - minRes) * (size.width - leftPadding) / range);
+      for (
+        double resistance = minRes;
+        resistance <= maxRes;
+        resistance += range / 5
+      ) {
+        final x =
+            leftPadding +
+            ((resistance - minRes) * (size.width - leftPadding) / range);
         canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
         if (resistance > minRes) {
           textPainter.text = TextSpan(
             text: resistance.round().toString(),
-            style: TextStyle(color: Colors.grey[600], fontSize: WorkoutFontSizes.small),
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: WorkoutFontSizes.small,
+            ),
           );
           textPainter.layout();
           double labelX = x - textPainter.width / 2;
@@ -288,13 +199,21 @@ class PowerTablePainter extends CustomPainter {
     }
   }
 
-  void _drawPowerCurve(Canvas canvas, Size size, List<double?> data, Paint paint) {
+  void _drawPowerCurve(
+    Canvas canvas,
+    Size size,
+    List<double?> data,
+    Paint paint,
+  ) {
     final path = Path();
     bool isFirstPoint = true;
     Offset? lastValidPoint;
 
     double minRes = 0;
-    double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
+    double maxRes = max(
+      MIN_RESISTANCE_RANGE,
+      homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE),
+    );
     double range = maxRes - minRes;
 
     for (int i = 0; i < data.length && i * 30 <= MIN_POWER_RANGE; i++) {
@@ -304,10 +223,14 @@ class PowerTablePainter extends CustomPainter {
         double x;
         double y;
         if (!swapAxes) {
-          x = leftPadding + (powerValue * (size.width - leftPadding) / MIN_POWER_RANGE);
+          x =
+              leftPadding +
+              (powerValue * (size.width - leftPadding) / MIN_POWER_RANGE);
           y = size.height - ((resistanceValue - minRes) * size.height / range);
         } else {
-          x = leftPadding + ((resistanceValue - minRes) * (size.width - leftPadding) / range);
+          x =
+              leftPadding +
+              ((resistanceValue - minRes) * (size.width - leftPadding) / range);
           y = size.height - (powerValue * size.height / MIN_POWER_RANGE);
         }
         if (x >= leftPadding && x <= size.width && y >= 0 && y <= size.height) {
@@ -327,46 +250,247 @@ class PowerTablePainter extends CustomPainter {
     canvas.drawPath(path, paint);
   }
 
-  void _drawPositionHistory(Canvas canvas, Size size) {
+  @override
+  bool shouldRepaint(covariant PowerTablePainter oldDelegate) {
+    return !identical(powerTableData, oldDelegate.powerTableData) ||
+        maxResistance != oldDelegate.maxResistance ||
+        homingMin != oldDelegate.homingMin ||
+        homingMax != oldDelegate.homingMax ||
+        swapAxes != oldDelegate.swapAxes;
+  }
+}
+
+/// Lightweight live layer for the current position, trail, and pulsing axes.
+///
+/// The animation is supplied directly to [CustomPainter], so a tick schedules
+/// only a repaint of this layer. It does not rebuild widgets or repaint the
+/// cached grid and power curves beneath it.
+class PowerTableOverlayPainter extends CustomPainter {
+  PowerTableOverlayPainter({
+    required Listenable repaint,
+    required this.animation,
+    required this.colors,
+    required this.maxResistance,
+    this.homingMin,
+    this.homingMax,
+    required this.currentWatts,
+    required this.currentResistance,
+    required this.currentCadence,
+    required this.positionHistory,
+    required this.tableDivisor,
+    required this.swapAxes,
+    this.drawAxisEffects = true,
+    this.drawPosition = true,
+  }) : super(repaint: repaint);
+
+  final Animation<double> animation;
+  final List<Color> colors;
+  final double maxResistance;
+  final double? homingMin;
+  final double? homingMax;
+  final double Function() currentWatts;
+  final double Function() currentResistance;
+  final int Function() currentCadence;
+  final List<Map<String, double>> positionHistory;
+  final double tableDivisor;
+  final bool swapAxes;
+  final bool drawAxisEffects;
+  final bool drawPosition;
+
+  static const double leftPadding = 20.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final watts = currentWatts();
+    final resistance = currentResistance();
+    final cadence = currentCadence();
+    if (drawAxisEffects) {
+      _drawAxisEffects(canvas, size, watts, resistance);
+    }
+    if (drawPosition) {
+      _drawPositionHistory(canvas, size, cadence);
+      if (watts > 0 && watts <= MIN_POWER_RANGE) {
+        _drawCurrentPosition(canvas, size, watts, resistance, cadence);
+      }
+    }
+  }
+
+  void _drawAxisEffects(
+    Canvas canvas,
+    Size size,
+    double watts,
+    double resistance,
+  ) {
+    const minRes = 0.0;
+    final maxRes = max(
+      MIN_RESISTANCE_RANGE,
+      homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE),
+    );
+    final range = maxRes - minRes;
+    final scaledResistance = resistance / tableDivisor;
+
+    final xValue = swapAxes ? scaledResistance - minRes : watts;
+    final yValue = swapAxes ? watts : scaledResistance - minRes;
+    final xMax = swapAxes ? range : MIN_POWER_RANGE;
+    final yMax = swapAxes ? MIN_POWER_RANGE : range;
+    final yRatio = yMax == 0 ? 0.0 : (yValue / yMax).clamp(0.0, 1.0);
+    final xRatio = xMax == 0 ? 0.0 : (xValue / xMax).clamp(0.0, 1.0);
+
+    const barThickness = 20.0;
+    const flameColors = <Color>[
+      Colors.blueAccent,
+      Colors.cyanAccent,
+      Colors.greenAccent,
+      Colors.yellowAccent,
+      Colors.orangeAccent,
+      Colors.deepOrangeAccent,
+      Colors.redAccent,
+    ];
+
+    if (yRatio > 0) {
+      final barHeight = size.height * yRatio;
+      _paintAnimatedBar(
+        canvas,
+        Rect.fromLTRB(
+          2,
+          size.height - barHeight,
+          2 + barThickness,
+          size.height,
+        ),
+        flameColors,
+        isVertical: true,
+        ratio: yRatio,
+      );
+    }
+
+    if (xRatio > 0) {
+      final barWidth = (size.width - leftPadding) * xRatio;
+      _paintAnimatedBar(
+        canvas,
+        Rect.fromLTRB(
+          leftPadding,
+          -15,
+          leftPadding + barWidth,
+          -15 + barThickness,
+        ),
+        flameColors,
+        isVertical: false,
+        ratio: xRatio,
+      );
+    }
+  }
+
+  void _paintAnimatedBar(
+    Canvas canvas,
+    Rect rect,
+    List<Color> colors, {
+    required bool isVertical,
+    required double ratio,
+  }) {
+    final totalExtent = isVertical ? rect.height / ratio : rect.width / ratio;
+    final gradientRect = isVertical
+        ? Rect.fromLTRB(
+            rect.left,
+            rect.bottom - totalExtent,
+            rect.right,
+            rect.bottom,
+          )
+        : Rect.fromLTRB(
+            rect.left,
+            rect.top,
+            rect.left + totalExtent,
+            rect.bottom,
+          );
+    final pulse = 0.1 * sin(animation.value * 2 * pi);
+    final barPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..shader = LinearGradient(
+        begin: isVertical ? Alignment.bottomCenter : Alignment.centerLeft,
+        end: isVertical ? Alignment.topCenter : Alignment.centerRight,
+        colors: colors
+            .map(
+              (color) => color.withValues(alpha: (0.8 + pulse).clamp(0.0, 1.0)),
+            )
+            .toList(),
+      ).createShader(gradientRect);
+    canvas.drawRect(rect, barPaint);
+
+    final peakPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.9)
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+    final peak = isVertical
+        ? Rect.fromLTRB(rect.left, rect.top, rect.right, rect.top + 2)
+        : Rect.fromLTRB(rect.right - 2, rect.top, rect.right, rect.bottom);
+    canvas.drawRect(peak, peakPaint);
+  }
+
+  void _drawPositionHistory(Canvas canvas, Size size, int cadence) {
     for (int i = 0; i < positionHistory.length; i++) {
       final position = positionHistory[i];
       final opacity = (i + 1) / positionHistory.length;
       final paint = Paint()
-        ..color = _getCadenceColor(currentCadence).withValues(alpha: opacity * 0.3)
+        ..color = _getCadenceColor(cadence).withValues(alpha: opacity * 0.3)
         ..style = PaintingStyle.fill;
 
       double minRes = 0;
-      double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
+      double maxRes = max(
+        MIN_RESISTANCE_RANGE,
+        homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE),
+      );
       double range = maxRes - minRes;
       double x;
       double y;
       if (!swapAxes) {
-        x = leftPadding + (position['x']! * (size.width - leftPadding) / MIN_POWER_RANGE); // watts
-        y = size.height - ((position['y']! - minRes) * size.height / range); // resistance
+        x =
+            leftPadding +
+            (position['x']! *
+                (size.width - leftPadding) /
+                MIN_POWER_RANGE); // watts
+        y =
+            size.height -
+            ((position['y']! - minRes) * size.height / range); // resistance
       } else {
-        x = leftPadding + ((position['y']! - minRes) * (size.width - leftPadding) / range); // resistance
-        y = size.height - (position['x']! * size.height / MIN_POWER_RANGE); // watts
+        x =
+            leftPadding +
+            ((position['y']! - minRes) *
+                (size.width - leftPadding) /
+                range); // resistance
+        y =
+            size.height -
+            (position['x']! * size.height / MIN_POWER_RANGE); // watts
       }
       canvas.drawCircle(Offset(x, y), 6, paint);
     }
   }
 
-  void _drawCurrentPosition(Canvas canvas, Size size) {
+  void _drawCurrentPosition(
+    Canvas canvas,
+    Size size,
+    double watts,
+    double resistance,
+    int cadence,
+  ) {
     double minRes = 0;
-    double maxRes = max(MIN_RESISTANCE_RANGE, homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE));
+    double maxRes = max(
+      MIN_RESISTANCE_RANGE,
+      homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE),
+    );
     double range = maxRes - minRes;
-    double scaledResistance = currentResistance / tableDivisor;
+    double scaledResistance = resistance / tableDivisor;
     double x;
     double y;
     if (!swapAxes) {
-      x = leftPadding + (currentWatts * (size.width - leftPadding) / MIN_POWER_RANGE);
+      x = leftPadding + (watts * (size.width - leftPadding) / MIN_POWER_RANGE);
       y = size.height - ((scaledResistance - minRes) * size.height / range);
     } else {
-      x = leftPadding + ((scaledResistance - minRes) * (size.width - leftPadding) / range);
-      y = size.height - (currentWatts * size.height / MIN_POWER_RANGE);
+      x =
+          leftPadding +
+          ((scaledResistance - minRes) * (size.width - leftPadding) / range);
+      y = size.height - (watts * size.height / MIN_POWER_RANGE);
     }
     final paint = Paint()
-      ..color = _getCadenceColor(currentCadence)
+      ..color = _getCadenceColor(cadence)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(x, y), 6, paint);
   }
@@ -378,5 +502,14 @@ class PowerTablePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant PowerTableOverlayPainter oldDelegate) {
+    return maxResistance != oldDelegate.maxResistance ||
+        homingMin != oldDelegate.homingMin ||
+        homingMax != oldDelegate.homingMax ||
+        tableDivisor != oldDelegate.tableDivisor ||
+        swapAxes != oldDelegate.swapAxes ||
+        drawAxisEffects != oldDelegate.drawAxisEffects ||
+        drawPosition != oldDelegate.drawPosition ||
+        !identical(positionHistory, oldDelegate.positionHistory);
+  }
 }
