@@ -170,18 +170,14 @@ class PowerTableSharing {
   ]) async {
     try {
       // Pick file
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-      );
+      final pickedFile = await FilePicker.pickFile(type: FileType.any);
 
-      if (result == null || !context.mounted) return;
+      if (pickedFile == null || !context.mounted) return;
 
-      // Read file content
-      final File file = File(result.files.single.path!);
-      final String csvContent = await file.readAsString();
+      final String csvContent = utf8.decode(await pickedFile.readAsBytes());
 
       // Get filename without extension for save name
-      final String saveName = result.files.single.name.replaceAll('.ptab', '');
+      final String saveName = pickedFile.name.replaceAll('.ptab', '');
 
       // Check for duplicate name
       final bool isDuplicate = await PowerTableManager.isTableNameExists(

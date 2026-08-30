@@ -22,29 +22,63 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>smartspin2k</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>smartspin2k</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>strava</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>This app requires Bluetooth to communicate with the SmartSpin2k.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>This app requires Bluetooth to communicate with the SmartSpin2k.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>We need access in order to store and upload firmware to our device.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Camera access may be used when selecting files or media.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>In order to output sounds for workout events, we need to access the microphone. </string>
 	<key>NSDocumentsUsageDescription</key>
 	<string>We need access to save your workout files.</string>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>In order to output sounds for workout events, we need to access the microphone. </string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>flutter</string>
+					<key>UISceneDelegateClassName</key>
+					<string>FlutterSceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIFileSharingEnabled</key>
-	<true/>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
@@ -67,22 +101,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>smartspin2k</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>smartspin2k</string>
-			</array>
-		</dict>
-	</array>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>strava</string>
-	</array>
 </dict>
 </plist>

@@ -90,18 +90,14 @@ class PresetSharing {
   ) async {
     try {
       // Pick file
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-      );
+      final pickedFile = await FilePicker.pickFile(type: FileType.any);
 
-      if (result == null || !context.mounted) return;
+      if (pickedFile == null || !context.mounted) return;
 
-      // Read file content
-      final File file = File(result.files.single.path!);
-      final String jsonContent = await file.readAsString();
+      final String jsonContent = utf8.decode(await pickedFile.readAsBytes());
 
       // Get filename without extension for save name
-      String saveName = result.files.single.name;
+      String saveName = pickedFile.name;
       if (saveName.toLowerCase().endsWith('.ss2k')) {
         saveName = saveName.substring(0, saveName.length - 5);
       } else if (saveName.toLowerCase().endsWith('.json')) {
@@ -125,7 +121,9 @@ class PresetSharing {
           if (decoded is! List) throw FormatException("Invalid preset format");
 
           // Create merged version
-          List<dynamic> currentConfig = List.from(deviceData.customCharacteristic);
+          List<dynamic> currentConfig = List.from(
+            deviceData.customCharacteristic,
+          );
           List<dynamic> importedConfig = decoded;
 
           List<Map<String, dynamic>> mergedConfig = currentConfig.map((item) {

@@ -441,19 +441,30 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
       if (type == PICKER) {
         // Get firmware file path from picker
-        final result = await FilePicker.platform.pickFiles(
+        final pickedFile = await FilePicker.pickFile(
           type: FileType.custom,
           allowedExtensions: ['bin'],
         );
 
-        if (result == null || result.files.isEmpty) {
+        if (pickedFile == null) {
           setState(() {
             updatingFirmware = false;
           });
           return;
         }
 
-        binFilePath = result.files.first.path!;
+        final pickedPath = pickedFile.path;
+        if (pickedPath != null) {
+          binFilePath = pickedPath;
+        } else {
+          // Some providers expose only a URI. Materialize it because both BLE
+          // and Wi-Fi OTA require a normal filesystem path.
+          final directory = await getTemporaryDirectory();
+          final safeName = pickedFile.name.split(RegExp(r'[/\\]')).last;
+          final temporaryFirmware = io.File('${directory.path}/$safeName');
+          await temporaryFirmware.writeAsBytes(await pickedFile.readAsBytes());
+          binFilePath = temporaryFirmware.path;
+        }
       } else if (type == RELEASE && effectiveRelease != null) {
         // Download and extract firmware from selected release
         binFilePath = await _downloadAndExtractFirmware(

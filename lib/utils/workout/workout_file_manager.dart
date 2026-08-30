@@ -8,9 +8,13 @@ import 'workout_controller.dart';
 import 'workout_parser.dart';
 
 class WorkoutFileManager {
-  static Future<String?> captureWorkoutThumbnail(GlobalKey workoutGraphKey) async {
+  static Future<String?> captureWorkoutThumbnail(
+    GlobalKey workoutGraphKey,
+  ) async {
     try {
-      final boundary = workoutGraphKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary =
+          workoutGraphKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
       if (boundary == null) return null;
 
       final image = await boundary.toImage(pixelRatio: 1.0);
@@ -32,22 +36,15 @@ class WorkoutFileManager {
     required Function(String) onWorkoutLoaded,
   }) async {
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-        withData: true,
-      );
+      final file = await FilePicker.pickFile(type: FileType.any);
 
-      if (result != null && result.files.isNotEmpty) {
-        final file = result.files.first;
-        
-        if (file.bytes == null) {
-          throw Exception('Unable to read file data');
-        }
+      if (file != null) {
+        final content = utf8.decode(await file.readAsBytes());
 
-        final content = String.fromCharCodes(file.bytes!);
-        
         if (!content.trim().contains('<workout_file>')) {
-          throw Exception('Invalid workout file format. Expected .zwo file content.');
+          throw Exception(
+            'Invalid workout file format. Expected .zwo file content.',
+          );
         }
 
         // Parse the workout data first
@@ -62,7 +59,9 @@ class WorkoutFileManager {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('A workout named "${workoutData.name}" already exists'),
+                content: Text(
+                  'A workout named "${workoutData.name}" already exists',
+                ),
                 backgroundColor: Colors.orange,
               ),
             );
@@ -80,16 +79,16 @@ class WorkoutFileManager {
         // Load the workout to generate the graph, ensuring it starts in stopped state
         workoutController.loadWorkout(content, isResume: false);
         onWorkoutLoaded(content);
-        
+
         // Wait for the graph to be rendered
         await Future.delayed(const Duration(milliseconds: 100));
-        
+
         // Capture thumbnail
         final thumbnail = await captureWorkoutThumbnail(workoutGraphKey);
         if (thumbnail == null) {
           throw Exception('Failed to generate workout thumbnail');
         }
-        
+
         // Save to library
         await WorkoutStorage.saveWorkoutToLibrary(
           workoutContent: content,

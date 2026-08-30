@@ -3,7 +3,7 @@
 # Fail this script if any subcommand fails.
 set -e
 
-FLUTTER_VERSION="${FLUTTER_VERSION:-3.44.0}"
+FLUTTER_VERSION="${FLUTTER_VERSION:-3.44.8}"
 
 # The default execution directory of this script is the ci_scripts directory.
 cd $CI_PRIMARY_REPOSITORY_PATH # change working directory to the root of your cloned repo.
@@ -35,7 +35,7 @@ EOF
 git clone https://github.com/flutter/flutter.git --depth 1 -b "$FLUTTER_VERSION" $HOME/flutter
 export PATH="$PATH:$HOME/flutter/bin"
 
-flutter config --no-enable-swift-package-manager
+flutter config --enable-swift-package-manager
 
 # Install Flutter artifacts for iOS (--ios), or macOS (--macos) platforms.
 flutter precache --ios
@@ -43,7 +43,10 @@ flutter precache --ios
 # Install Flutter dependencies
 flutter pub get
 
-# Build the Flutter app with the extra arguments from environment variable
-flutter build ios --release --no-codesign
+# Prepare the remaining CocoaPods-backed plugins. Xcode Cloud performs the
+# actual release build in its Archive step, and the shared Runner scheme's
+# pre-action generates the SwiftPM package before that build starts.
+cd ios
+pod install
 
 exit 0
