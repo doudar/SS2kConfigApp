@@ -10,7 +10,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/device_data.dart';
-import '../utils/extra.dart';
 
 class ScanResultTile extends StatefulWidget {
   const ScanResultTile({Key? key, required this.result, this.onTap}) : super(key: key);
@@ -24,17 +23,22 @@ class ScanResultTile extends StatefulWidget {
 
 class _ScanResultTileState extends State<ScanResultTile> {
   late BluetoothConnectionState _connectionState;
+  late final DeviceData _deviceData;
 
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
 
   @override
   void initState() {
     super.initState();
-    _connectionState = widget.result.device.isConnected
+    _deviceData = DeviceDataManager.forDevice(widget.result.device);
+    _connectionState = widget.result.device.isConnected || _deviceData.isTransportActive
         ? BluetoothConnectionState.connected
         : BluetoothConnectionState.disconnected;
+    _deviceData.transportRevision.addListener(_handleTransportChanged);
     _connectionStateSubscription = this.widget.result.device.connectionState.listen((state) {
-      _connectionState = state;
+      _connectionState = state == BluetoothConnectionState.connected || _deviceData.isTransportActive
+          ? BluetoothConnectionState.connected
+          : BluetoothConnectionState.disconnected;
       if (mounted) {
         setState(() {});
       }
@@ -43,8 +47,16 @@ class _ScanResultTileState extends State<ScanResultTile> {
 
   @override
   void dispose() {
+    _deviceData.transportRevision.removeListener(_handleTransportChanged);
     _connectionStateSubscription.cancel();
     super.dispose();
+  }
+
+  void _handleTransportChanged() {
+    _connectionState = _deviceData.isTransportActive || widget.result.device.isConnected
+        ? BluetoothConnectionState.connected
+        : BluetoothConnectionState.disconnected;
+    if (mounted) setState(() {});
   }
 
   String getNiceHexArray(List<int> bytes) {
@@ -163,9 +175,7 @@ class _ScanResultTileState extends State<ScanResultTile> {
                 style: TextStyle(fontSize: compact ? 11 : 12, fontWeight: FontWeight.w600),
               ),
               onPressed: () async {
-                // Set user-initiated disconnect flag
-                DeviceDataManager.forDevice(this.widget.result.device).isUserDisconnect = true;
-                await this.widget.result.device.disconnectAndUpdateStream();
+                await _deviceData.disconnectPreferred(widget.result.device);
               },
               style: OutlinedButton.styleFrom(
                 backgroundColor: Colors.black.withValues(alpha: 0.35),

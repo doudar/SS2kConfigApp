@@ -130,6 +130,7 @@ void main() {
     final session = connector.first;
 
     expect(deviceData.isTransportActive, isTrue);
+    expect(session.isListening(ccUUID), isTrue);
     final revisionBefore = deviceData.transportRevision.value;
 
     await deviceData.disconnectPreferred(device);
@@ -140,6 +141,7 @@ void main() {
     expect(deviceData.transportState.value.transport, DeviceTransportKind.none);
     expect(deviceData.transportRevision.value, greaterThan(revisionBefore));
     expect(session.isClosed, isTrue);
+    expect(session.isListening(ccUUID), isFalse);
 
     // A workout target must not be written into a torn-down session.
     deviceData.setWorkoutTargetPower(200);

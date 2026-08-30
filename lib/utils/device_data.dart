@@ -456,12 +456,21 @@ class DeviceData {
   Future<void> disconnectPreferred(BluetoothDevice device) async {
     isUserDisconnect = true;
     _markTransportDisconnected(explicit: true);
-    if (_dirConSession != null) {
-      await _closeDirCon();
-      _resetConnectionState();
-      return;
+    final notifySubscription = _notifySubscription;
+    final ftmsSubscription = _ftmsSubscription;
+    final machineStatusSubscription = _machineStatusSubscription;
+    final controlPointSubscription = _controlPointSubscription;
+    await _closeDirCon();
+    _resetConnectionState(cancelBleSubscriptions: false);
+    await _safeCancel(notifySubscription, 'custom characteristic');
+    await _safeCancel(ftmsSubscription, 'FTMS Indoor Bike Data');
+    await _safeCancel(machineStatusSubscription, 'FTMS Machine Status');
+    await _safeCancel(controlPointSubscription, 'FTMS Control Point');
+    // A promoted BLE session can coexist with a DIRCON socket. Explicit
+    // disconnect means both transports, not merely whichever one was active.
+    if (device.isConnected) {
+      await device.disconnectAndUpdateStream();
     }
-    await device.disconnect();
   }
 
   Future<void> _connectDirCon(
@@ -1141,7 +1150,7 @@ class DeviceData {
 
   /// Reset BLE state that is tied to a specific connection so that the next
   /// [setupConnection] call performs a full re-bootstrap.
-  void _resetConnectionState() {
+  void _resetConnectionState({bool cancelBleSubscriptions = true}) {
     _setupCoordinator.invalidate();
     final pendingResponse = _pendingCustomResponse;
     if (pendingResponse != null && !pendingResponse.isCompleted) {
@@ -1173,16 +1182,24 @@ class DeviceData {
     ftmsControlPointCharacteristic = null;
     machineStatusCharacteristic = null;
     services = [];
-    _notifySubscription?.cancel();
+    final notifySubscription = _notifySubscription;
+    final ftmsSubscription = _ftmsSubscription;
+    final machineStatusSubscription = _machineStatusSubscription;
+    final controlPointSubscription = _controlPointSubscription;
     _notifySubscription = null;
-    _ftmsSubscription?.cancel();
     _ftmsSubscription = null;
-    _machineStatusSubscription?.cancel();
     _machineStatusSubscription = null;
     _machineStatusNotificationsLive = false;
-    _controlPointSubscription?.cancel();
     _controlPointSubscription = null;
     _controlPointNotificationsLive = false;
+    if (cancelBleSubscriptions) {
+      unawaited(_safeCancel(notifySubscription, 'custom characteristic'));
+      unawaited(_safeCancel(ftmsSubscription, 'FTMS Indoor Bike Data'));
+      unawaited(
+        _safeCancel(machineStatusSubscription, 'FTMS Machine Status'),
+      );
+      unawaited(_safeCancel(controlPointSubscription, 'FTMS Control Point'));
+    }
     _inUpdateLoop = false;
     _lastRequestStopwatch.reset();
     _cachedCharacteristicMap = null;
