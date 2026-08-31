@@ -3,7 +3,7 @@ import 'package:fit_tool/fit_tool.dart';
 import 'package:gpx/gpx.dart';
 
 class GpxToFitConverter {
-  static int _toFitTimestamp(DateTime dt) {
+  static int _toEpochMillis(DateTime dt) {
     return (dt.toUtc().millisecondsSinceEpoch);
   }
 
@@ -66,7 +66,7 @@ class GpxToFitConverter {
         : null;
 
     final DateTime baseDateTime = firstTrackPointTime ?? DateTime.now().toUtc();
-    final int startTimestamp = _toFitTimestamp(baseDateTime);
+    final int startTimestamp = _toEpochMillis(baseDateTime);
 
     // Add File ID message
     final fileIdMessage = FileIdMessage()
@@ -87,16 +87,16 @@ class GpxToFitConverter {
     // Process track points
     final records = <RecordMessage>[];
     // Seed one second before the start so that when GPX timestamps are missing, the first
-    // fallback calculation (previousTimestamp + 1) lands exactly on startTimestamp,
+    // fallback calculation lands exactly on startTimestamp,
     // ensuring the first record starts at the correct time
-    int previousTimestamp = startTimestamp - 1;
+    int previousTimestamp = startTimestamp - Duration.millisecondsPerSecond;
 
     if (xmlGpx.trks.isNotEmpty && xmlGpx.trks[0].trksegs.isNotEmpty) {
       for (var trackPoint in xmlGpx.trks[0].trksegs[0].trkpts) {
         final tpTime = trackPoint.time;
         final timestamp = tpTime != null
-            ? _toFitTimestamp(tpTime)
-            : (previousTimestamp + 1);
+            ? _toEpochMillis(tpTime)
+            : (previousTimestamp + Duration.millisecondsPerSecond);
         final record = RecordMessage()
           ..timestamp = timestamp
           ..positionLong = trackPoint.lon
@@ -141,19 +141,22 @@ class GpxToFitConverter {
       builder.addAll(records);
       // Add Lap message
       final lastRecordTimestamp = previousTimestamp;
+      final elapsedSeconds =
+          (lastRecordTimestamp - startTimestamp) /
+          Duration.millisecondsPerSecond;
       final lapMessage = LapMessage()
         ..timestamp = lastRecordTimestamp
-        ..startTime = startTimestamp;
-      // ..totalElapsedTime = elapsedTime
-      // ..totalTimerTime = elapsedTime;
+        ..startTime = startTimestamp
+        ..totalElapsedTime = elapsedSeconds
+        ..totalTimerTime = elapsedSeconds;
       builder.add(lapMessage);
 
       // Add Session message
       final sessionMessage = SessionMessage()
         ..timestamp = lastRecordTimestamp
         ..startTime = startTimestamp
-        // ..totalElapsedTime = elapsedTime
-        // ..totalTimerTime = elapsedTime
+        ..totalElapsedTime = elapsedSeconds
+        ..totalTimerTime = elapsedSeconds
         ..sport = Sport.cycling
         ..subSport = SubSport.virtualActivity
         ..firstLapIndex = 0
@@ -163,7 +166,7 @@ class GpxToFitConverter {
       // Add Activity message for summary timing
       final activityMessage = ActivityMessage()
         ..timestamp = lastRecordTimestamp
-        //..totalTimerTime = elapsedTime
+        ..totalTimerTime = elapsedSeconds
         ..numSessions = 1
         ..type = Activity.manual
         ..event = Event.activity

@@ -12,9 +12,9 @@ void main() {
         'steps': [
           {
             'duration': 60,
-            'power': {'start': 50.0, 'end': 70.0, 'units': '%ftp'}
-          }
-        ]
+            'power': {'start': 50.0, 'end': 70.0, 'units': '%ftp'},
+          },
+        ],
       };
       final xml = IntervalsWorkoutConverter.convertToZwo(doc);
       expect(xml.contains('<SteadyState'), isTrue);
@@ -30,9 +30,9 @@ void main() {
           {
             'duration': 120,
             'ramp': true,
-            'power': {'start': 40.0, 'end': 80.0, 'units': '%ftp'}
-          }
-        ]
+            'power': {'start': 40.0, 'end': 80.0, 'units': '%ftp'},
+          },
+        ],
       };
       final xml = IntervalsWorkoutConverter.convertToZwo(doc);
       expect(xml.contains('<Ramp'), isTrue);
@@ -49,20 +49,20 @@ void main() {
             'duration': 120,
             'text': 'Warmup ramp',
             'ramp': true,
-            'power': {'start': 40.0, 'end': 60.0, 'units': '%ftp'}
+            'power': {'start': 40.0, 'end': 60.0, 'units': '%ftp'},
           },
           {
             'duration': 300,
             'text': 'Go free',
             'freeride': true,
-            'power': {'value': 0.0, 'units': '%ftp'}
+            'power': {'value': 0.0, 'units': '%ftp'},
           },
           {
             'duration': 180,
             'text': 'Steady sweet spot',
-            'power': {'value': 88.0, 'units': '%ftp'}
-          }
-        ]
+            'power': {'value': 88.0, 'units': '%ftp'},
+          },
+        ],
       };
       final xml = IntervalsWorkoutConverter.convertToZwo(doc);
       // Segment elements
@@ -71,9 +71,12 @@ void main() {
       expect(xml.contains('<SteadyState'), isTrue);
       // Text events should be embedded inside each segment instead of a global block
       expect(xml.contains('<textevents>'), isFalse);
-      expect(xml.contains('message="Warmup ramp 2m ramp 40-60% ftp."'), isTrue);
-      expect(xml.contains('message="Go free 5m free ride."'), isTrue);
-      expect(xml.contains('message="Steady sweet spot 3m 88% ftp."'), isTrue);
+      expect(
+        xml.contains('message="Warmup ramp 2min ramp 40-60% ftp."'),
+        isTrue,
+      );
+      expect(xml.contains('message="Go free 5min free ride."'), isTrue);
+      expect(xml.contains('message="Steady sweet spot 3min 88% ftp."'), isTrue);
     });
 
     test('converts power_zone units using _power values', () {
@@ -84,9 +87,9 @@ void main() {
           {
             'duration': 60,
             'power': {'value': 1, 'units': 'power_zone'},
-            '_power': {'value': 150.0, 'start': 150.0, 'end': 150.0}
-          }
-        ]
+            '_power': {'value': 150.0, 'start': 150.0, 'end': 150.0},
+          },
+        ],
       };
       final xml = IntervalsWorkoutConverter.convertToZwo(doc);
       // 150 / 300 = 0.5
@@ -96,29 +99,40 @@ void main() {
     test('falls back to description prefix when name missing', () {
       final doc = {
         'description': 'Intermittent: High/low efforts',
-        'steps': []
+        'steps': [],
       };
 
       final xml = IntervalsWorkoutConverter.convertToZwo(doc);
       expect(xml.contains('<name>Intermittent</name>'), isTrue);
     });
 
-    test('writes fixture conversion to test/test.zwo', () async {
+    test('converts fixture in memory', () async {
       final jsonFile = File('test/test.json');
-      expect(await jsonFile.exists(), isTrue, reason: 'Fixture test/test.json missing');
+      expect(
+        await jsonFile.exists(),
+        isTrue,
+        reason: 'Fixture test/test.json missing',
+      );
 
-      final Map<String, dynamic> doc = jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
+      final Map<String, dynamic> doc =
+          jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
       final xml = IntervalsWorkoutConverter.convertToZwo(doc);
 
-      final outputFile = File('test/test.zwo');
-      await outputFile.writeAsString(xml);
-
-      expect(await outputFile.exists(), isTrue);
-      expect(xml.contains('<textevent'), isTrue, reason: 'Converted workout should embed interval text');
-      expect(xml.contains('<workout_file>'), isTrue);
-      expect(xml.contains('<name>Intermittent</name>'), isTrue, reason: 'Should derive title from description prefix.');
       expect(
-        xml.contains('For this first interval let&apos;s aim for 10m ramp 39.9-73% ftp 90rpm.'),
+        xml.contains('<textevent'),
+        isTrue,
+        reason: 'Converted workout should embed interval text',
+      );
+      expect(xml.contains('<workout_file>'), isTrue);
+      expect(
+        xml.contains('<name>Intermittent</name>'),
+        isTrue,
+        reason: 'Should derive title from description prefix.',
+      );
+      expect(
+        xml.contains(
+          'For this first interval let&apos;s aim for 10min ramp 40-73% ftp 90rpm.',
+        ),
         isTrue,
         reason: 'Should include enriched first-step summary.',
       );

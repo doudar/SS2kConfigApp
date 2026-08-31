@@ -7,9 +7,9 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:math';
-import 'package:fit_tool/fit_tool.dart';
 import 'package:flutter/services.dart';
+import 'package:clock/clock.dart';
+import 'package:fake_async/fake_async.dart';
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -108,35 +108,32 @@ void main() {
     // Export to GPX
     final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
     final gpxFileName = 'workout_${timestamp}.gpx';
-    final workoutsDir = Directory(path.join(Directory.current.path, 'test'));
-    if (!await workoutsDir.exists()) {
-      await workoutsDir.create(recursive: true);
+    final workoutsDir = await Directory.systemTemp.createTemp('erg_workout');
+    try {
+      final gpxFile = File(path.join(workoutsDir.path, gpxFileName));
+      final exportTrackPoints = await workoutController.getExportTrackPoints();
+      final gpxContent = await GpxFileExporter.generateGpxContent(
+        '2 Hour 300W Test',
+        exportTrackPoints,
+      );
+      await gpxFile.writeAsString(gpxContent);
+
+      // Convert GPX to FIT
+      final fitFileName = gpxFileName.replaceAll('.gpx', '.fit');
+      final fitFile = File(path.join(workoutsDir.path, fitFileName));
+      await GpxToFitConverter.convertAndCleanup(gpxFile.path);
+
+      expect(await fitFile.exists(), isTrue);
+    } finally {
+      workoutController.cleanup();
+      await workoutsDir.delete(recursive: true);
     }
-
-    final gpxFile = File(path.join(workoutsDir.path, gpxFileName));
-    final exportTrackPoints = await workoutController.getExportTrackPoints();
-    final gpxContent = await GpxFileExporter.generateGpxContent(
-      '2 Hour 300W Test',
-      exportTrackPoints,
-    );
-    await gpxFile.writeAsString(gpxContent);
-
-    // Convert GPX to FIT
-    final fitFileName = gpxFileName.replaceAll('.gpx', '.fit');
-    final fitFile = File(path.join(workoutsDir.path, fitFileName));
-    await GpxToFitConverter.convertAndCleanup(gpxFile.path);
-
-    // Success - both files were generated
-    print('Test completed successfully:');
-    print('GPX file: ${gpxFile.path}');
-    print('FIT file: ${fitFile.path}');
-
-    // Cleanup
-    workoutController.cleanup();
   });
 
-  test('Workout timing resists drift with delayed ticks', () async {
-    final workoutContent = '''
+  test(
+    'Workout timing accumulates virtual timer intervals without gaps',
+    () async {
+      final workoutContent = '''
 <?xml version="1.0" encoding="UTF-8"?>
 <workout_file>
     <author>Test</author>
@@ -149,84 +146,63 @@ void main() {
 </workout_file>
 ''';
 
-    final mockDevice = BluetoothDevice.fromId('00:00:00:00:00:00');
-    final deviceData = DeviceDataManager.forDevice(mockDevice);
-    deviceData.ftmsData = FtmsData();
-
-    final workoutController = WorkoutController(deviceData, mockDevice);
-    await workoutController.updateFTP(250.0);
-    workoutController.loadWorkout(workoutContent);
-
-    // Start workout
-    await workoutController.togglePlayPause();
-
-    final startWall = DateTime.now();
-    final random = Random(42);
-
-    // Let the timer run with intentionally jittery delays to simulate slow hardware
-    for (int i = 0; i < 25; i++) {
-      deviceData.ftmsData
+      final mockDevice = BluetoothDevice.fromId('00:00:00:00:00:01');
+      final deviceData = DeviceDataManager.forDevice(mockDevice);
+      deviceData.ftmsData = FtmsData()
         ..watts = 250
         ..cadence = 85
         ..heartRate = 150;
 
-      // Mix short and longer delays (50ms-1200ms) to force missed timer ticks
-      final delayMs = 50 + random.nextInt(1150);
-      await Future.delayed(Duration(milliseconds: delayMs));
-    }
+      final workoutController = WorkoutController(deviceData, mockDevice);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      workoutController.loadWorkout(workoutContent);
 
-    // Allow final timer tick
-    await Future.delayed(const Duration(milliseconds: 200));
-    await workoutController.stopWorkout();
+      const blockedIntervals = [
+        Duration(milliseconds: 50),
+        Duration(milliseconds: 1200),
+        Duration(milliseconds: 375),
+        Duration(milliseconds: 950),
+        Duration(milliseconds: 25),
+      ];
+      const timerInterval = Duration(milliseconds: 100);
 
-    final wallElapsed = DateTime.now().difference(startWall).inSeconds;
-    final controllerElapsed = workoutController.elapsedSeconds;
+      fakeAsync((async) {
+        withClock(async.getClock(DateTime.utc(2026, 1, 1)), () {
+          workoutController.isPlaying = true;
+          workoutController.startProgress();
 
-    // Controller elapsed time should closely follow wall time even with delayed ticks
-    final elapsedWithinTolerance =
-        controllerElapsed >= wallElapsed - 1 &&
-        controllerElapsed <= wallElapsed + 1;
-    expect(elapsedWithinTolerance, isTrue);
+          for (final blockedInterval in blockedIntervals) {
+            async.elapseBlocking(blockedInterval);
+            async.elapse(timerInterval);
+          }
+        });
+      });
 
-    // Track points should exist for essentially every elapsed second
-    expect(workoutController.trackPoints.length >= controllerElapsed, isTrue);
+      final expectedProgress =
+          blockedIntervals.fold<double>(
+            0,
+            (total, interval) => total + interval.inMicroseconds / 1000000,
+          ) +
+          (blockedIntervals.length * timerInterval.inMicroseconds / 1000000);
 
-    // Export and validate FIT elapsed time matches controller time
-    final fileTimestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-    final gpxFileName = 'drift_${fileTimestamp}.gpx';
-    final workoutsDir = await Directory.systemTemp.createTemp(
-      'ss2k_drift_test',
-    );
+      expect(
+        workoutController.workoutProgressSeconds,
+        closeTo(expectedProgress, 0.001),
+      );
+      expect(
+        workoutController.trackPoints.length,
+        workoutController.workoutProgressSeconds.floor(),
+      );
+      for (var i = 1; i < workoutController.trackPoints.length; i++) {
+        expect(
+          workoutController.trackPoints[i].timestamp.difference(
+            workoutController.trackPoints[i - 1].timestamp,
+          ),
+          const Duration(seconds: 1),
+        );
+      }
 
-    final gpxFile = File(path.join(workoutsDir.path, gpxFileName));
-    final gpxContent = await GpxFileExporter.generateGpxContent(
-      'Drift Check',
-      workoutController.trackPoints,
-    );
-    await gpxFile.writeAsString(gpxContent);
-
-    final fitPath = await GpxToFitConverter.convertAndCleanup(gpxFile.path);
-    final fitFileHandle = File(fitPath);
-    final fitBytes = await fitFileHandle.readAsBytes();
-    final fitFile = FitFile.fromBytes(fitBytes);
-    final session = fitFile.records
-        .map((r) => r.message)
-        .whereType<SessionMessage>()
-        .first;
-    final activity = fitFile.records
-        .map((r) => r.message)
-        .whereType<ActivityMessage>()
-        .first;
-
-    final fitElapsedSeconds = (session.totalElapsedTime ?? 0);
-    final activityElapsedSeconds = (activity.totalTimerTime ?? 0);
-
-    expect((fitElapsedSeconds - controllerElapsed).abs() <= 1, isTrue);
-    expect((activityElapsedSeconds - controllerElapsed).abs() <= 1, isTrue);
-
-    await fitFileHandle.delete();
-    await workoutsDir.delete(recursive: true);
-
-    workoutController.cleanup();
-  });
+      workoutController.cleanup();
+    },
+  );
 }

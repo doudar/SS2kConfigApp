@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math show sqrt, max;
 import 'dart:io';
+import 'package:clock/clock.dart';
 import 'package:path_provider/path_provider.dart';
 import '../device_data.dart';
 import '../device_transport_state.dart';
@@ -304,14 +305,14 @@ class WorkoutController extends ChangeNotifier {
       await workoutsDir.create(recursive: true);
     }
 
-    final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+    final timestamp = clock.now().toIso8601String().replaceAll(':', '-');
     final filePath =
         '${workoutsDir.path}${Platform.pathSeparator}workout_in_progress_$timestamp.jsonl';
     final inProgressFile = File(filePath);
     final metadata = {
       'type': 'metadata',
       'workoutName': workoutName ?? 'Unnamed Workout',
-      'startTime': (_workoutStartTime ?? DateTime.now()).toIso8601String(),
+      'startTime': (_workoutStartTime ?? clock.now()).toIso8601String(),
     };
 
     await inProgressFile.writeAsString(
@@ -468,7 +469,7 @@ class WorkoutController extends ChangeNotifier {
       }
       // Set workout start time when starting/resuming
       if (_workoutStartTime == null) {
-        _workoutStartTime = DateTime.now();
+        _workoutStartTime = clock.now();
       }
       await _prepareInProgressFile();
       isPlaying = true;
@@ -692,7 +693,7 @@ class WorkoutController extends ChangeNotifier {
           targetPower = segment.powerLow;
         }
 
-        final now = DateTime.now();
+        final now = clock.now();
         if (force ||
             _lastTargetUpdate == null ||
             now.difference(_lastTargetUpdate!) >= _targetUpdateInterval) {
@@ -714,12 +715,12 @@ class WorkoutController extends ChangeNotifier {
 
   void startProgress() {
     progressTimer?.cancel();
-    _lastTickTime = DateTime.now();
+    _lastTickTime = clock.now();
 
     // Initialize workout start time if not set
     if (_workoutStartTime == null) {
       // For resumed workouts, calculate the effective start time by subtracting progress
-      _workoutStartTime = DateTime.now().subtract(
+      _workoutStartTime = clock.now().subtract(
         Duration(milliseconds: (_workoutProgressTime * 1000).round()),
       );
     }
@@ -739,7 +740,7 @@ class WorkoutController extends ChangeNotifier {
       }
 
       // Calculate actual time elapsed since last tick to prevent drift
-      final now = DateTime.now();
+      final now = clock.now();
       final double delta = _lastTickTime != null
           ? now.difference(_lastTickTime!).inMicroseconds / 1000000.0
           : 0.1;
@@ -875,7 +876,7 @@ class WorkoutController extends ChangeNotifier {
   }
 
   Future<void> _saveWorkoutState({bool force = false}) async {
-    final now = DateTime.now();
+    final now = clock.now();
     if (!force && _lastWorkoutStateSave != null) {
       final elapsed = now.difference(_lastWorkoutStateSave!);
       if (elapsed < _workoutStateSaveInterval) {
