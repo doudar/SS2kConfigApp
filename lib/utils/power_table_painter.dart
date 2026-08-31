@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import 'workout/workout_constants.dart';
 import 'constants.dart';
 
+/// Optional font used by deterministic screenshot tests. Production renders
+/// continue to use the platform's default font.
+@visibleForTesting
+String? debugPowerTablePainterFontFamily;
+
 class PowerTablePainter extends CustomPainter {
   final List<List<double?>> powerTableData;
   final List<int> cadences;
@@ -47,6 +52,7 @@ class PowerTablePainter extends CustomPainter {
       fontSize: 28,
       fontWeight: FontWeight.w900,
       letterSpacing: 2.0,
+      fontFamily: debugPowerTablePainterFontFamily,
     );
 
     void drawLabel(String text, bool isVertical) {
@@ -124,6 +130,7 @@ class PowerTablePainter extends CustomPainter {
           style: TextStyle(
             color: Colors.grey[600],
             fontSize: WorkoutFontSizes.small,
+            fontFamily: debugPowerTablePainterFontFamily,
           ),
         );
         textPainter.layout();
@@ -141,6 +148,7 @@ class PowerTablePainter extends CustomPainter {
             style: TextStyle(
               color: Colors.grey[600],
               fontSize: WorkoutFontSizes.small,
+              fontFamily: debugPowerTablePainterFontFamily,
             ),
           );
           textPainter.layout();
@@ -167,6 +175,7 @@ class PowerTablePainter extends CustomPainter {
           style: TextStyle(
             color: Colors.grey[600],
             fontSize: WorkoutFontSizes.small,
+            fontFamily: debugPowerTablePainterFontFamily,
           ),
         );
         textPainter.layout();
@@ -188,6 +197,7 @@ class PowerTablePainter extends CustomPainter {
             style: TextStyle(
               color: Colors.grey[600],
               fontSize: WorkoutFontSizes.small,
+              fontFamily: debugPowerTablePainterFontFamily,
             ),
           );
           textPainter.layout();

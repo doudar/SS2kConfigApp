@@ -359,6 +359,11 @@ class DeviceData {
       _onReconnectedCallbacks.add(onReconnected);
     }
 
+    // Demo devices are intentionally transport-free. Their production widgets
+    // still mount DeviceHeader, but a disconnected host Bluetooth stream must
+    // not turn that into a real reconnect loop.
+    if (isSimulated) return;
+
     // Guard against duplicate subscriptions
     if (_reconnectSubscription != null) return;
 

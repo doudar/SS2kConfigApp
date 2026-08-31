@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import 'workout_parser.dart';
 import 'workout_constants.dart';
 
+/// Optional font used by deterministic screenshot tests. Production renders
+/// continue to use the platform's default font.
+@visibleForTesting
+String? debugWorkoutPainterFontFamily;
+
 class WorkoutPainter extends CustomPainter {
   final List<WorkoutSegment> segments;
   final double maxPower;
@@ -173,10 +178,11 @@ class WorkoutPainter extends CustomPainter {
 
     textPainter.text = TextSpan(
       text: text,
-      style: const TextStyle(
+      style: TextStyle(
         color: Colors.white,
         fontWeight: FontWeight.bold,
         fontSize: 10.0,
+        fontFamily: debugWorkoutPainterFontFamily,
       ),
     );
     
@@ -414,6 +420,7 @@ class WorkoutPainter extends CustomPainter {
           style: TextStyle(
             color: Colors.grey[600],
             fontSize: WorkoutFontSizes.small,
+            fontFamily: debugWorkoutPainterFontFamily,
           ),
         );
         textPainter.layout();
@@ -453,6 +460,7 @@ class WorkoutPainter extends CustomPainter {
           style: TextStyle(
             color: Colors.grey[600],
             fontSize: WorkoutFontSizes.small,
+            fontFamily: debugWorkoutPainterFontFamily,
           ),
         );
         textPainter.layout();
@@ -489,6 +497,7 @@ class WorkoutPainter extends CustomPainter {
         color: Colors.purple,
         fontSize: WorkoutFontSizes.small,
         fontWeight: FontWeight.bold,
+        fontFamily: debugWorkoutPainterFontFamily,
       ),
     );
     
@@ -547,6 +556,7 @@ class WorkoutPainter extends CustomPainter {
       color: color,
       fontSize: WorkoutFontSizes.small,
       fontWeight: FontWeight.bold,
+      fontFamily: debugWorkoutPainterFontFamily,
     );
 
     if (segment.isRamp) {

@@ -1,0 +1,19 @@
+platform,order,file,dimensions,alt_text
+ios_iphone,1,ios_iphone/01-workout.png,1320x2868,"SmartSpin2k workout screen with interval graph, workout summary, and live FTP target."
+ios_iphone,2,ios_iphone/02-settings.png,1320x2868,"SmartSpin2k settings screen showing basic, Bluetooth, network, and advanced categories."
+ios_iphone,3,ios_iphone/03-shifting.png,1320x2868,"SmartSpin2k virtual shifter with power, cadence, gear, and up and down controls."
+ios_iphone,4,ios_iphone/04-power-curve.png,1320x2868,SmartSpin2k resistance chart with multiple cadence curves and live power metrics.
+ios_ipad,1,ios_ipad/01-workout.png,2752x2064,"SmartSpin2k workout screen with interval graph, workout summary, and live FTP target."
+ios_ipad,2,ios_ipad/02-settings.png,2752x2064,"SmartSpin2k settings screen showing basic, Bluetooth, network, and advanced categories."
+ios_ipad,3,ios_ipad/03-shifting.png,2752x2064,"SmartSpin2k virtual shifter with power, cadence, gear, and up and down controls."
+ios_ipad,4,ios_ipad/04-power-curve.png,2752x2064,SmartSpin2k resistance chart with multiple cadence curves and live power metrics.
+macos,1,macos/01-workout.png,2880x1800,"SmartSpin2k workout screen with interval graph, workout summary, and live FTP target."
+macos,2,macos/02-settings.png,2880x1800,"SmartSpin2k settings screen showing basic, Bluetooth, network, and advanced categories."
+macos,3,macos/03-shifting.png,2880x1800,"SmartSpin2k virtual shifter with power, cadence, gear, and up and down controls."
+macos,4,macos/04-power-curve.png,2880x1800,SmartSpin2k resistance chart with multiple cadence curves and live power metrics.
+android_phone,1,android_phone/01-workout.png,1080x1920,"SmartSpin2k workout screen with interval graph, workout summary, and live FTP target."
+android_phone,2,android_phone/02-settings.png,1080x1920,"SmartSpin2k settings screen showing basic, Bluetooth, network, and advanced categories."
+android_phone,3,android_phone/03-shifting.png,1080x1920,"SmartSpin2k virtual shifter with power, cadence, gear, and up and down controls."
+android_phone,4,android_phone/04-power-curve.png,1080x1920,SmartSpin2k resistance chart with multiple cadence curves and live power metrics.
+android,feature,android/feature-graphic-1024x500.png,1024x500,SmartSpin2K workout dashboard over an energetic power-curve background.
+android,icon,android/app-icon-512.png,512x512,SmartSpin2K trainer controller hardware.
