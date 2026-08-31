@@ -1,8 +1,8 @@
 # Universal Transport Remediation Plan
 
-**Status:** Plans 1 and 2 complete; Plan 3 ready
+**Status:** Plans 1–3 complete; Plan 4 ready
 **Firmware baseline:** SmartSpin2k `develop`, inspected August 2026
-**Progress updated:** August 23, 2026
+**Progress updated:** August 30, 2026
 
 ## Objective
 
@@ -52,39 +52,52 @@ One known correctness defect remains outside these completed plans: a timed-out
 DIRCON→BLE setup can continue mutating state after its caller abandons it. It is
 tracked in [fallback_setup_cancellation_todo.md](fallback_setup_cancellation_todo.md).
 
-## Plan 3 — Focused state-consumer migration
+### Plan 3 — Focused state-consumer migration
 
-Migrate only consumers with demonstrated transport-neutral behavior:
+`ConnectedEpochWatcher` in [../lib/utils/device_transport_state.dart](../lib/utils/device_transport_state.dart)
+extracts the pattern `WorkoutController` already used: notify once per new
+connected session on either transport, ignore `reconnecting`, and leave async
+callbacks to guard themselves with a post-await epoch check. `WorkoutController`
+was refactored onto it with unchanged behavior.
 
-- **Device header:** render connection phase and active transport from
-  `DeviceTransportState`; keep RSSI BLE-only.
-- **Shifter:** on each new connected epoch, invalidate optimistic writes and
-  request the authoritative shifter position exactly once.
-- **Log screen:** preserve the user's intent to stream logs across either
-  transport and re-enable exactly once after a new connected epoch.
-- **Workout screen:** remove the raw BLE listener used only to trigger rebuilds;
-  keep workout/controller notifiers authoritative.
-- **Settings screen:** remove the raw BLE rebuild listener; keep characteristic
-  and readiness notifiers authoritative.
-- **Power-table screen:** delete the no-op BLE connection listener.
+Every transport-neutral consumer now uses it. The device header, shifter, and
+log screen migrated; the workout, settings-category, and power-table listeners
+were deleted outright, having done nothing but an unconditional `setState` or
+nothing at all. The only surviving `connectionState.listen` calls in `lib/` are
+the deliberately BLE-specific ones — OTA disconnect handling, scan-result
+display, and `DeviceData`'s own connection monitor, which is what *drives* the
+transport state rather than consuming it.
 
-Do not migrate deliberately BLE-specific behavior:
+Scope decisions worth recording, because each was a judgement call:
 
-- scanning and scan-result connection display;
-- BLE RSSI;
-- BLE OTA progress and disconnect handling;
-- GATT characteristic and CCCD health recovery.
+- **The device header was a source-of-truth swap, not a visual change.** The
+  icon set is exactly as before; it now branches on `DeviceTransportState`
+  rather than on `isDirConConnected` and `device.isConnected`. Those two can
+  disagree after a DIRCON→BLE failover, which is what left a stale router icon
+  painted over a Bluetooth session. The header also dropped its
+  `startConnectionMonitor(onReconnected:)` registration: the watcher and that
+  callback fire at different points of the same reconnect, so wiring both ran
+  the setup work twice per session. That duplication was pre-existing.
+- **`main_device_screen`'s listener was deleted with no replacement.**
+  `DeviceData.reconnectAndSetup` owns transport restoration, and the screen's
+  own `SS2KAppBar` → `DeviceHeader` already performs the full setup and RSSI
+  work. A third initiator would have been overreach. With the listener gone
+  `DeviceData.connectionStateSubscription` had no writer and was deleted too —
+  it was shared mutable state owned by a screen.
+- **The log screen deliberately retains `onReconnected`.** The watcher fires at
+  transport-connected, before `setupConnection` completes, where the enable
+  write can legitimately fail; `onReconnected` fires after setup and is the
+  retry. `_enableLogStreaming` returns early once logging is on, so it is a
+  no-op on the success path. Deleting it would have removed the only retry for
+  a failed early enable.
 
-### Plan 3 tests
-
-- Initial BLE and DIRCON connections each create one epoch.
-- Same-transport reconnect, DIRCON→BLE fallback, and BLE→DIRCON promotion each
-  create exactly one new epoch.
-- Entering `reconnecting` does not itself increment the epoch.
-- Shifter and log reinitialize exactly once per new connected epoch.
-- Removing raw BLE screen listeners does not regress notifier- or
-  characteristic-driven updates.
-- No non-BLE-specific screen relies on raw BLE events for reconnect behavior.
+Test support was consolidated into
+[../test/support/fake_ble_platform.dart](../test/support/fake_ble_platform.dart)
+(`FakeBlePlatform`, `BleHarness`, and their lifecycle rules), which now records
+routed `writeCalls` alongside the original payload-only `writes`. Coverage is in
+`connected_epoch_watcher_test.dart` and `screen_transport_epoch_test.dart`, and
+the pre-existing failing tests are recorded in
+[test_baseline.md](test_baseline.md) so "no new failures" is checkable.
 
 ## Plan 4 — Cross-transport release gate
 

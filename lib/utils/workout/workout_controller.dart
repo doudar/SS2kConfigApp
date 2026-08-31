@@ -63,8 +63,7 @@ class WorkoutController extends ChangeNotifier {
   // Static map to store device-specific controllers
   static final Map<String, WorkoutController> _instances = {};
   bool _isDisposed = false;
-  bool _transportListenerAttached = false;
-  int _lastConnectedEpoch = 0;
+  late final ConnectedEpochWatcher _connectedEpochWatcher;
   static const _targetUpdateInterval = Duration(seconds: 2);
   DateTime? _lastTargetUpdate;
 
@@ -123,9 +122,12 @@ class WorkoutController extends ChangeNotifier {
   }
 
   WorkoutController._internal(this.deviceData, this.device) {
-    _lastConnectedEpoch = deviceData.transportState.value.epoch;
-    deviceData.transportState.addListener(_handleTransportStateChanged);
-    _transportListenerAttached = true;
+    _connectedEpochWatcher = ConnectedEpochWatcher(
+      transportState: deviceData.transportState,
+      onNewConnectedEpoch: (_) {
+        if (isPlaying) _updateTargetPower(force: true);
+      },
+    )..attach();
     _resetSimulationParameters();
     _initializeController();
   }
@@ -134,33 +136,17 @@ class WorkoutController extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
-    _detachTransportListener();
+    _connectedEpochWatcher.dispose();
     super.dispose();
   }
 
   // Method to cleanup when completely done with a device
   void cleanup() {
     progressTimer?.cancel();
-    _detachTransportListener();
+    _connectedEpochWatcher.dispose();
     final deviceId = device.remoteId.str;
     _instances.remove(deviceId);
     super.dispose();
-  }
-
-  void _detachTransportListener() {
-    if (!_transportListenerAttached) return;
-    deviceData.transportState.removeListener(_handleTransportStateChanged);
-    _transportListenerAttached = false;
-  }
-
-  void _handleTransportStateChanged() {
-    final state = deviceData.transportState.value;
-    if (state.phase != DeviceTransportPhase.connected ||
-        state.epoch == _lastConnectedEpoch) {
-      return;
-    }
-    _lastConnectedEpoch = state.epoch;
-    if (isPlaying) _updateTargetPower(force: true);
   }
 
   // Getter for speed calculation

@@ -31,7 +31,6 @@ class SettingsCategoryScreen extends StatefulWidget {
 }
 
 class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>?
   _characteristicChangeSubscription;
   VoidCallback? _charReceivedListener;
@@ -57,14 +56,6 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
     };
     deviceData.charReceived.addListener(_charReceivedListener!);
 
-    _connectionStateSubscription = this.widget.device.connectionState.listen((
-      state,
-    ) async {
-      if (mounted) {
-        setState(() {});
-      }
-    });
-
     _characteristicChangeSubscription = deviceData.characteristicChanges.listen((
       event,
     ) {
@@ -83,7 +74,6 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
     if (_charReceivedListener != null) {
       deviceData.charReceived.removeListener(_charReceivedListener!);
     }
-    _connectionStateSubscription?.cancel();
     _characteristicChangeSubscription?.cancel();
     super.dispose();
   }

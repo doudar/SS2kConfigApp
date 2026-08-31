@@ -11,6 +11,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../utils/device_data.dart';
+import '../utils/device_transport_state.dart';
 import '../utils/constants.dart';
 import '../widgets/ss2k_app_bar.dart';
 
@@ -28,7 +29,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
   final List<String> _logMessages = [];
   final ScrollController _scrollController = ScrollController();
   StreamSubscription<String>? _logSubscription;
-  StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
+  ConnectedEpochWatcher? _watcher;
   Timer? _demoTimer;
   bool _wantsLogStreaming = true;
   bool _enableInProgress = false;
@@ -52,22 +53,32 @@ class _BleLogScreenState extends State<BleLogScreen> {
       _setupDemoMode();
     } else {
       _setupSubscriptions();
+      // Unlike DeviceHeader, this screen deliberately keeps BOTH session
+      // signals, because they play different roles here:
+      //   - the watcher below fires at transport-connected, which is *before*
+      //     setupConnection has completed, so its enable write can legitimately
+      //     fail;
+      //   - onReconnected fires after setup and is the retry. _enableLogStreaming
+      //     returns early when _loggingEnabled is already true, so it is a no-op
+      //     on the success path.
+      // Dropping onReconnected would remove the only retry for a failed early
+      // enable and leave the screen silently not streaming.
       deviceData.startConnectionMonitor(
         widget.device,
         onReconnected: _onReconnectedCallback,
       );
-      _connectionSubscription = widget.device.connectionState.listen((state) {
-        if (deviceData.isDirConConnected) return;
-        if (state == BluetoothConnectionState.disconnected) {
+      _watcher = ConnectedEpochWatcher(
+        transportState: deviceData.transportState,
+        onLeftConnected: (_) {
           _loggingEnabled = false;
-        } else if (state == BluetoothConnectionState.connected &&
-            _wantsLogStreaming) {
-          // Reactivate as soon as the link returns. The reconnect callback below
-          // remains a fallback after full service setup completes.
-          unawaited(_enableLogStreaming());
-        }
-        if (mounted) setState(() {});
-      });
+          if (mounted) setState(() {});
+        },
+        onNewConnectedEpoch: (_) {
+          // Reactivate as soon as the link returns, on either transport.
+          if (_wantsLogStreaming) unawaited(_enableLogStreaming());
+          if (mounted) setState(() {});
+        },
+      )..attach();
       unawaited(_enableLogStreaming());
     }
   }
@@ -79,12 +90,24 @@ class _BleLogScreenState extends State<BleLogScreen> {
         _enableInProgress)
       return;
 
+    // _enableInProgress is a non-reentrancy guard, not a per-session one. An
+    // attempt started in epoch N must not report success during epoch N+1:
+    // it would set _loggingEnabled for a session whose own attempt this same
+    // flag had already suppressed, leaving the screen not actually streaming.
+    final epoch = _watcher?.epoch;
+    bool sessionChanged() => _watcher != null && _watcher!.epoch != epoch;
+
     _enableInProgress = true;
     try {
       await deviceData.ensureCustomCharacteristicStream(widget.device);
-      if (!_wantsLogStreaming || !deviceData.isTransportActive) return;
+      if (!_wantsLogStreaming ||
+          !deviceData.isTransportActive ||
+          sessionChanged())
+        return;
       await deviceData.writeToSS2k(widget.device, logCharacteristic, s: "1");
-      if (_wantsLogStreaming && deviceData.isTransportActive) {
+      if (_wantsLogStreaming &&
+          deviceData.isTransportActive &&
+          !sessionChanged()) {
         _loggingEnabled = true;
         if (mounted) setState(() {});
       }
@@ -148,7 +171,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
 
     _demoTimer?.cancel();
     _logSubscription?.cancel();
-    _connectionSubscription?.cancel();
+    _watcher?.dispose();
     deviceData.stopConnectionMonitor(onReconnected: _onReconnectedCallback);
     _scrollController.dispose();
     super.dispose();
