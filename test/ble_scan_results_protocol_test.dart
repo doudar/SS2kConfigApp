@@ -115,4 +115,81 @@ void main() {
     expect(end?.isComplete, isFalse);
     expect(end?.devices, isEmpty);
   });
+
+  test('accumulates devices across scan cycles until reset', () {
+    final decoder = BleScanResultStreamDecoder();
+
+    decoder.add(
+      packet(event: BleScanResultEvent.begin, scanId: 20, sequence: 0),
+    );
+    decoder.add(
+      packet(
+        event: BleScanResultEvent.device,
+        scanId: 20,
+        sequence: 0,
+        payload: deviceBody('0x180d', 'Heart Rate'),
+      ),
+    );
+    decoder.add(packet(event: BleScanResultEvent.end, scanId: 20, sequence: 1));
+
+    final nextBegin = decoder.add(
+      packet(event: BleScanResultEvent.begin, scanId: 21, sequence: 0),
+    );
+    expect(nextBegin?.devices.map((device) => device.name), ['Heart Rate']);
+    expect(nextBegin?.changed, isFalse);
+
+    decoder.add(
+      packet(
+        event: BleScanResultEvent.device,
+        scanId: 21,
+        sequence: 0,
+        payload: deviceBody('0x1818', 'Power Meter'),
+      ),
+    );
+    final nextEnd = decoder.add(
+      packet(event: BleScanResultEvent.end, scanId: 21, sequence: 1),
+    );
+
+    expect(nextEnd?.isComplete, isTrue);
+    expect(nextEnd?.devices.map((device) => device.name), [
+      'Heart Rate',
+      'Power Meter',
+    ]);
+
+    decoder.reset();
+    expect(decoder.devices, isEmpty);
+  });
+
+  test('does not report a repeated discovery as a list change', () {
+    final decoder = BleScanResultStreamDecoder();
+    final discovery = deviceBody('0x180d', 'Heart Rate');
+
+    decoder.add(
+      packet(event: BleScanResultEvent.begin, scanId: 30, sequence: 0),
+    );
+    final first = decoder.add(
+      packet(
+        event: BleScanResultEvent.device,
+        scanId: 30,
+        sequence: 0,
+        payload: discovery,
+      ),
+    );
+    decoder.add(packet(event: BleScanResultEvent.end, scanId: 30, sequence: 1));
+    decoder.add(
+      packet(event: BleScanResultEvent.begin, scanId: 31, sequence: 0),
+    );
+    final repeated = decoder.add(
+      packet(
+        event: BleScanResultEvent.device,
+        scanId: 31,
+        sequence: 0,
+        payload: discovery,
+      ),
+    );
+
+    expect(first?.changed, isTrue);
+    expect(repeated?.changed, isFalse);
+    expect(repeated?.devices, hasLength(1));
+  });
 }

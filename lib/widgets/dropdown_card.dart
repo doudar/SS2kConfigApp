@@ -14,11 +14,8 @@ import '../utils/constants.dart';
 import '../utils/demo.dart';
 
 class DropdownCard extends StatefulWidget {
-  const DropdownCard({
-    Key? key,
-    required this.device,
-    required this.c,
-  }) : super(key: key);
+  const DropdownCard({Key? key, required this.device, required this.c})
+    : super(key: key);
 
   final BluetoothDevice device;
   final Map c;
@@ -46,13 +43,13 @@ class _DropdownCardState extends State<DropdownCard> {
       _charSubscription = deviceData.characteristicChanges
           .where((event) => event.vName == foundDevicesVname)
           .listen((event) {
-        if (mounted) {
-          buildDevicesMap();
-          setState(() {
-            // Trigger rebuild
+            if (mounted) {
+              buildDevicesMap();
+              setState(() {
+                // Trigger rebuild
+              });
+            }
           });
-        }
-      });
     } catch (e) {
       print("Subscription Failed, $e");
     }
@@ -65,41 +62,63 @@ class _DropdownCardState extends State<DropdownCard> {
   }
 
   void buildDevicesMap() {
-    List _items = [];
-    ddItems = [this.widget.c["value"]];
-    this
-        .deviceData
-        .customCharacteristic
-        .forEach((d) => (d["vName"] == foundDevicesVname) ? _items = jsonDecode(d["value"]) : null);
+    // These choices are valid even before a scan has begun (and if a legacy
+    // firmware response is empty or malformed).
+    final dropdownItems = <String>{'any', 'none'};
+    final currentValue = widget.c['value']?.toString().trim();
+    if (currentValue != null &&
+        currentValue.isNotEmpty &&
+        currentValue != 'null' &&
+        currentValue != 'Loading...' &&
+        currentValue != noFirmSupport) {
+      dropdownItems.add(currentValue);
+    }
 
-    for (var d in _items) {
-      for (var subd in d.values) {
-        if (this.widget.c["vName"] == connectedPWRVname) {
-          if (subd["UUID"] == '0x1818' ||
-              subd["UUID"] == '0x1826' ||
-              subd["UUID"] == '0x1816' ||
-              subd["UUID"] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' ||
-              subd["UUID"] == '0bf669f0-45f2-11e7-9598-0800200c9a66') {
-            if (subd["name"] == null) {
-              ddItems.add(subd["address"]);
-            } else {
-              ddItems.add(subd["name"]);
-            }
+    List<dynamic> items = const [];
+    for (final characteristic in deviceData.customCharacteristic) {
+      if (characteristic['vName'] != foundDevicesVname) continue;
+      final encodedDevices = characteristic['value'];
+      if (encodedDevices is! String || encodedDevices.trim().isEmpty) break;
+      try {
+        final decoded = jsonDecode(encodedDevices);
+        if (decoded is List) items = decoded;
+      } on FormatException {
+        // Keep the unconditional any/none choices while data is incomplete.
+      }
+      break;
+    }
+
+    for (final deviceGroup in items) {
+      if (deviceGroup is! Map) continue;
+      for (final device in deviceGroup.values) {
+        if (device is! Map) continue;
+        if (widget.c['vName'] == connectedPWRVname) {
+          if (device['UUID'] == '0x1818' ||
+              device['UUID'] == '0x1826' ||
+              device['UUID'] == '0x1816' ||
+              device['UUID'] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' ||
+              device['UUID'] == '0bf669f0-45f2-11e7-9598-0800200c9a66') {
+            _addDeviceLabel(dropdownItems, device);
           }
         }
-        if (this.widget.c["vName"] == connectedHRMVname) {
-          if (subd["UUID"] == "0x180d") {
-            if (subd["name"] == null) {
-              ddItems.add(subd["address"]);
-            } else {
-              ddItems.add(subd["name"]);
-            }
+        if (widget.c['vName'] == connectedHRMVname) {
+          if (device['UUID'] == '0x180d') {
+            _addDeviceLabel(dropdownItems, device);
           }
         }
       }
     }
-    //remove duplicates:
-    ddItems = ddItems.toSet().toList(); // Remove duplicates
+    ddItems = dropdownItems.toList();
+  }
+
+  void _addDeviceLabel(Set<String> items, Map device) {
+    final label = (device['name'] ?? device['address'])?.toString().trim();
+    if (label != null &&
+        label.isNotEmpty &&
+        label != 'null' &&
+        label != noFirmSupport) {
+      items.add(label);
+    }
   }
 
   Future _changeBLEDevice(BuildContext context) async {
@@ -109,10 +128,11 @@ class _DropdownCardState extends State<DropdownCard> {
     });
     //reconnect devices
     this.deviceData.writeToSS2k(this.widget.device, this.widget.c);
-    this
-        .deviceData
-        .customCharacteristic
-        .forEach((d) => d["vName"] == restartBLEVname ? this.deviceData.writeToSS2k(this.widget.device, d, s: "1") : ());
+    this.deviceData.customCharacteristic.forEach(
+      (d) => d["vName"] == restartBLEVname
+          ? this.deviceData.writeToSS2k(this.widget.device, d, s: "1")
+          : (),
+    );
   }
 
   Color _getTileColor() {
@@ -135,16 +155,18 @@ class _DropdownCardState extends State<DropdownCard> {
             borderRadius: BorderRadius.circular(15),
           ),
           child: Container(
-             decoration: BoxDecoration(
+            decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(15),
               gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    baseColor.withValues(alpha: 0.95), // Higher opacity for legibility
-                    baseColor.withValues(alpha: 0.7),
-                  ],
-                ),
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  baseColor.withValues(
+                    alpha: 0.95,
+                  ), // Higher opacity for legibility
+                  baseColor.withValues(alpha: 0.7),
+                ],
+              ),
             ),
             padding: const EdgeInsets.symmetric(vertical: 16.0),
             child: Column(
@@ -155,9 +177,15 @@ class _DropdownCardState extends State<DropdownCard> {
                   child: Text(
                     this.widget.c["humanReadableName"],
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold, 
+                      fontWeight: FontWeight.bold,
                       color: Colors.white,
-                      shadows: [Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black45)]
+                      shadows: [
+                        Shadow(
+                          offset: Offset(1, 1),
+                          blurRadius: 3,
+                          color: Colors.black45,
+                        ),
+                      ],
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -169,7 +197,13 @@ class _DropdownCardState extends State<DropdownCard> {
                     "Current: ${this.widget.c["value"]}",
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Colors.white70,
-                      shadows: [Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black45)]
+                      shadows: [
+                        Shadow(
+                          offset: Offset(1, 1),
+                          blurRadius: 2,
+                          color: Colors.black45,
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -178,7 +212,12 @@ class _DropdownCardState extends State<DropdownCard> {
                   child: ddItems.isEmpty
                       ? Padding(
                           padding: const EdgeInsets.all(32.0),
-                          child: Center(child: Text("No devices found", style: TextStyle(color: Colors.white))),
+                          child: Center(
+                            child: Text(
+                              "No devices found",
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
                         )
                       : ScrollbarTheme(
                           data: ScrollbarThemeData(
@@ -191,50 +230,68 @@ class _DropdownCardState extends State<DropdownCard> {
                             controller: _scrollController,
                             thumbVisibility: true,
                             child: ListView.separated(
-                            controller: _scrollController,
-                            shrinkWrap: true,
-                            padding: EdgeInsets.symmetric(horizontal: 8),
-                            itemCount: ddItems.length,
-                            separatorBuilder: (ctx, i) => SizedBox(height: 4),
-                            itemBuilder: (BuildContext context, int index) {
-                              final item = ddItems[index];
-                              final isSelected = item == this.widget.c["value"];
+                              controller: _scrollController,
+                              shrinkWrap: true,
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              itemCount: ddItems.length,
+                              separatorBuilder: (ctx, i) => SizedBox(height: 4),
+                              itemBuilder: (BuildContext context, int index) {
+                                final item = ddItems[index];
+                                final isSelected =
+                                    item == this.widget.c["value"];
 
-                              return Material(
-                                color: isSelected ? Colors.white.withValues(alpha: 0.2) : Colors.transparent,
-                                borderRadius: BorderRadius.circular(8),
-                                child: InkWell(
+                                return Material(
+                                  color: isSelected
+                                      ? Colors.white.withValues(alpha: 0.2)
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(8),
-                                  onTap: () {
-                                    selectedValue = item;
-                                    _changeBLEDevice(context);
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            item,
-                                            style: TextStyle(
-                                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                              fontSize: 16,
-                                              color: Colors.white,
-                                              shadows: [Shadow(offset: Offset(1, 1), blurRadius: 1, color: Colors.black26)]
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(8),
+                                    onTap: () {
+                                      selectedValue = item;
+                                      _changeBLEDevice(context);
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12.0,
+                                        horizontal: 16.0,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              item,
+                                              style: TextStyle(
+                                                fontWeight: isSelected
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                                fontSize: 16,
+                                                color: Colors.white,
+                                                shadows: [
+                                                  Shadow(
+                                                    offset: Offset(1, 1),
+                                                    blurRadius: 1,
+                                                    color: Colors.black26,
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        if (isSelected)
-                                          Icon(Icons.check_circle, color: Colors.white, size: 20),
-                                      ],
+                                          if (isSelected)
+                                            Icon(
+                                              Icons.check_circle,
+                                              color: Colors.white,
+                                              size: 20,
+                                            ),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
                         ),
-                      ),
                 ),
                 Divider(height: 24, color: Colors.white24),
                 Padding(
@@ -244,32 +301,49 @@ class _DropdownCardState extends State<DropdownCard> {
                     children: <Widget>[
                       if (!demoModeBypass.value)
                         TextButton.icon(
-                            icon: Icon(Icons.refresh, color: Colors.white70),
-                            label: const Text('SCAN', style: TextStyle(color: Colors.white)),
-                            onPressed: () async {
-                              //Find the save command and execute it
-                              await this
-                                  .deviceData
-                                  .writeCommand(this.widget.device, scanBLEVname);
-                            }),
-                      Spacer(),
-                      TextButton(
-                          child: const Text('BACK', style: TextStyle(color: Colors.white)),
-                          onPressed: () {
-                            Navigator.pop(context);
-                          }),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                          style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: baseColor),
-                          child: const Text('SAVE', style: TextStyle(fontWeight: FontWeight.bold)),
+                          icon: Icon(Icons.refresh, color: Colors.white70),
+                          label: const Text(
+                            'SCAN',
+                            style: TextStyle(color: Colors.white),
+                          ),
                           onPressed: () async {
                             //Find the save command and execute it
-                            await this
-                                .deviceData
-                                .writeCommand(this.widget.device, saveVname);
-                            if (!mounted) return;
-                            Navigator.pop(context);
-                          }),
+                            await this.deviceData.writeCommand(
+                              this.widget.device,
+                              scanBLEVname,
+                            );
+                          },
+                        ),
+                      Spacer(),
+                      TextButton(
+                        child: const Text(
+                          'BACK',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: baseColor,
+                        ),
+                        child: const Text(
+                          'SAVE',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: () async {
+                          //Find the save command and execute it
+                          await this.deviceData.writeCommand(
+                            this.widget.device,
+                            saveVname,
+                          );
+                          if (!mounted) return;
+                          Navigator.pop(context);
+                        },
+                      ),
                     ],
                   ),
                 ),

@@ -44,10 +44,23 @@ class _FragmentAssembly {
 class BleScanResultStreamDecoder {
   int? _scanId;
   bool _active = false;
-  final SplayTreeMap<int, BleScanDevice> _devices = SplayTreeMap();
+  final SplayTreeMap<int, BleScanDevice> _scanDevices = SplayTreeMap();
+  final Map<String, BleScanDevice> _devices = {};
   final Map<int, _FragmentAssembly> _fragments = {};
 
   List<BleScanDevice> get devices => List.unmodifiable(_devices.values);
+
+  /// Clears discoveries when the SmartSpin2k connection that produced them
+  /// closes. A new scan on the same connection deliberately does not clear the
+  /// list: nearby sensors can disappear from an individual scan cycle while
+  /// still being valid choices for the user.
+  void reset() {
+    _scanId = null;
+    _active = false;
+    _scanDevices.clear();
+    _devices.clear();
+    _fragments.clear();
+  }
 
   BleScanResultUpdate? add(List<int> packet) {
     if (packet.length < bleScanResultsHeaderLength ||
@@ -69,9 +82,13 @@ class BleScanResultStreamDecoder {
     if (event == BleScanResultEvent.begin) {
       _scanId = scanId;
       _active = true;
-      _devices.clear();
+      _scanDevices.clear();
       _fragments.clear();
-      return BleScanResultUpdate(event: event, devices: devices, changed: true);
+      return BleScanResultUpdate(
+        event: event,
+        devices: devices,
+        changed: false,
+      );
     }
 
     if (!_active || scanId != _scanId) return null;
@@ -79,8 +96,8 @@ class BleScanResultStreamDecoder {
     if (event == BleScanResultEvent.end) {
       final complete =
           _fragments.isEmpty &&
-          _devices.length == sequence &&
-          Iterable<int>.generate(sequence).every(_devices.containsKey);
+          _scanDevices.length == sequence &&
+          Iterable<int>.generate(sequence).every(_scanDevices.containsKey);
       _active = false;
       return BleScanResultUpdate(
         event: event,
@@ -122,11 +139,18 @@ class BleScanResultStreamDecoder {
     try {
       final uuid = utf8.decode(record.sublist(1, 1 + uuidLength));
       final name = utf8.decode(record.sublist(1 + uuidLength));
-      _devices[sequence] = BleScanDevice(name: name, uuid: uuid);
+      final device = BleScanDevice(name: name, uuid: uuid);
+      _scanDevices[sequence] = device;
+      final key = '$uuid\u0000$name';
+      final changed = !_devices.containsKey(key);
+      _devices[key] = device;
+      return BleScanResultUpdate(
+        event: event,
+        devices: devices,
+        changed: changed,
+      );
     } on FormatException {
       return null;
     }
-
-    return BleScanResultUpdate(event: event, devices: devices, changed: true);
   }
 }

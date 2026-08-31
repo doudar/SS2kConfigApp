@@ -256,6 +256,10 @@ class DeviceData {
       dispatch: _dispatchWorkoutControlBatch,
     );
     _transportStateController.addListener(_handleTransportStateChanged);
+    // The saved-device pickers can be opened before either scan protocol has
+    // produced a result. Seed their backing characteristic with valid choices
+    // so those dialogs are never built from a null/empty JSON value.
+    _applyStreamedFoundDevices(const <BleScanDevice>[]);
   }
 
   static Future<DirConSession> _connectDirConClient(String host) =>
@@ -1170,6 +1174,8 @@ class DeviceData {
     _settingsSnapshotCompleter = null;
     _settingsSnapshotDecoder.reset();
     _settingsSnapshotSupport = _SettingsSnapshotSupport.unknown;
+    _scanResultDecoder.reset();
+    _scanResultStreamSupported = false;
     _customReadRequestCoalescer.clear();
     // The breaker describes a link that no longer exists; the next one starts
     // with a clean record.
@@ -1195,14 +1201,13 @@ class DeviceData {
     if (cancelBleSubscriptions) {
       unawaited(_safeCancel(notifySubscription, 'custom characteristic'));
       unawaited(_safeCancel(ftmsSubscription, 'FTMS Indoor Bike Data'));
-      unawaited(
-        _safeCancel(machineStatusSubscription, 'FTMS Machine Status'),
-      );
+      unawaited(_safeCancel(machineStatusSubscription, 'FTMS Machine Status'));
       unawaited(_safeCancel(controlPointSubscription, 'FTMS Control Point'));
     }
     _inUpdateLoop = false;
     _lastRequestStopwatch.reset();
     _cachedCharacteristicMap = null;
+    _applyStreamedFoundDevices(const <BleScanDevice>[]);
     lastFtmsUpdate = null;
     _ftmsRecoveryInProgress = false;
     _lastFtmsRecoveryAttempt = null;
@@ -3521,7 +3526,7 @@ class DeviceData {
               '${update.devices.length} complete records.',
             );
           }
-          if (update.changed || update.event == BleScanResultEvent.end) {
+          if (update.changed) {
             _applyStreamedFoundDevices(update.devices);
           }
         }
