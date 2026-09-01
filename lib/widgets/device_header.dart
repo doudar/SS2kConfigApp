@@ -36,6 +36,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Timer setupTimer = Timer(Duration(seconds: 0), () {});
   late DeviceData deviceData;
   bool _isRefreshing = false;
+  bool _retryRefreshAfterInProgress = false;
   String _fwVersion = "";
   VoidCallback? _firmwareVersionListener;
   StreamSubscription<CharacteristicChangeEvent>? _deviceNameSubscription;
@@ -106,23 +107,24 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   /// Each await is followed by an epoch re-check so that work started in one
   /// session cannot publish its result into the next.
   Future<void> _initializeConnectedSession(DeviceTransportState state) async {
-    final epoch = state.epoch;
+    final generation = _watcher.generation;
+    bool stale() => !mounted || !_watcher.isCurrentGeneration(generation);
     try {
       // DIRCON is a network transport and has no BLE RSSI to read.
       if (state.transport == DeviceTransportKind.bluetooth) {
         await _readRssiInto();
       }
-      if (!mounted || _watcher.epoch != epoch) return;
+      if (stale()) return;
       if (widget.customRefreshEnabled) {
         if (widget.firmwareOnlyRefresh) {
           await deviceData.ensureCustomCharacteristicStream(widget.device);
         } else {
           await deviceData.setupConnection(widget.device);
         }
-        if (!mounted || _watcher.epoch != epoch) return;
-        if (!_isRefreshing) {
-          await _refreshDeviceInfo();
-        }
+        if (stale()) return;
+        // _refreshDeviceInfo queues its own retry if another session's pass
+        // is still running, so this session's refresh is never dropped.
+        await _refreshDeviceInfo();
       }
     } catch (e) {
       print('[DeviceHeader] connected-session init failed: $e');
@@ -133,7 +135,14 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   }
 
   Future<void> _refreshDeviceInfo({bool forceRefresh = false}) async {
-    if (_isRefreshing) return;
+    if (_isRefreshing) {
+      // A previous session's pass (or a manual "discover services") is still
+      // running. _isRefreshing is not scoped per session, so without this the
+      // losing caller's refresh would be silently dropped instead of retried
+      // once the in-flight pass finishes.
+      _retryRefreshAfterInProgress = true;
+      return;
+    }
 
     try {
       _isRefreshing = true;
@@ -154,6 +163,11 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       print('Error refreshing device info: $e');
     } finally {
       _isRefreshing = false;
+      final retry = _retryRefreshAfterInProgress;
+      _retryRefreshAfterInProgress = false;
+      if (retry && mounted) {
+        unawaited(_refreshDeviceInfo());
+      }
     }
   }
 

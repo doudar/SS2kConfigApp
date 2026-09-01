@@ -1,8 +1,10 @@
 # Universal Transport Remediation Plan
 
-**Status:** Plans 1–3 complete; Plan 4 ready
+**Status:** Plans 1–3 complete, including the reconnect-overlap fixes and
+regression tests found in review; `flutter test` is clean at 387 passed, 0
+failed; Plan 4 ready
 **Firmware baseline:** SmartSpin2k `develop`, inspected August 2026
-**Progress updated:** August 30, 2026
+**Progress updated:** August 31, 2026
 
 ## Objective
 
@@ -95,9 +97,11 @@ Test support was consolidated into
 [../test/support/fake_ble_platform.dart](../test/support/fake_ble_platform.dart)
 (`FakeBlePlatform`, `BleHarness`, and their lifecycle rules), which now records
 routed `writeCalls` alongside the original payload-only `writes`. Coverage is in
-`connected_epoch_watcher_test.dart` and `screen_transport_epoch_test.dart`, and
-the pre-existing failing tests are recorded in
-[test_baseline.md](test_baseline.md) so "no new failures" is checkable.
+`connected_epoch_watcher_test.dart` and `screen_transport_epoch_test.dart`. The
+four failures that used to require a baseline doc to distinguish from
+regressions (stale converter fixture text, a wall-clock-flaky ERG timing test,
+and a FIT export bug where Lap/Session/Activity duration fields were never
+populated) are now fixed; `flutter test` is clean at 387 passed, 0 failed.
 
 ## Plan 4 — Cross-transport release gate
 

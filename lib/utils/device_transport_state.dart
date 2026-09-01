@@ -90,14 +90,19 @@ class DeviceTransportStateController
 /// side effect. Callbacks are **synchronous notifications**: the watcher does
 /// not await them, does not serialize them, and does not own their errors. A
 /// callback that starts async work owns guarding it — `unawaited(...)` plus a
-/// re-check of [epoch] after each await, abandoning the work if the session has
-/// moved on:
+/// re-check after each await, abandoning the work if the session has moved on.
+///
+/// [epoch] only advances on a *new connected* session, so it cannot tell a
+/// replaced session from a merely-lost one: on `connected -> reconnecting` or
+/// `connected -> disconnected` it does not change. Work that must also stop
+/// the moment the connection is lost — not just when a replacement arrives —
+/// should check [generation] instead, which advances on both edges:
 ///
 /// ```dart
 /// Future<void> _initializeConnectedSession(DeviceTransportState state) async {
-///   final epoch = state.epoch;
+///   final generation = _watcher.generation;
 ///   await something();
-///   if (!mounted || _watcher.epoch != epoch) return;
+///   if (!mounted || !_watcher.isCurrentGeneration(generation)) return;
 ///   ...
 /// }
 /// ```
@@ -122,12 +127,23 @@ class ConnectedEpochWatcher {
   final ValueChanged<DeviceTransportState>? onLeftConnected;
 
   int _epoch = 0;
+  int _generation = 0;
   bool _wasConnected = false;
   bool _attached = false;
   bool _disposed = false;
 
   /// The epoch of the session most recently reported, for post-await checks.
   int get epoch => _epoch;
+
+  /// Advances on every connected-session boundary: a new connected epoch, or
+  /// leaving connected. Unlike [epoch], this also invalidates in-flight work
+  /// when the session is merely lost, not just replaced. See the class doc
+  /// for when to prefer this over [epoch].
+  int get generation => _generation;
+
+  /// Whether [generation] was still current as of this call. Consumers with
+  /// non-reentrant async work should check this after every await.
+  bool isCurrentGeneration(int generation) => generation == _generation;
 
   /// Whether the current state is a connected session — lets a consumer decide
   /// whether to run its initial-load path after [attach].
@@ -164,6 +180,7 @@ class ConnectedEpochWatcher {
     if (connected) {
       if (state.epoch == _epoch) return;
       _epoch = state.epoch;
+      _generation++;
       _wasConnected = true;
       onNewConnectedEpoch?.call(state);
       return;
@@ -171,6 +188,7 @@ class ConnectedEpochWatcher {
 
     if (_wasConnected) {
       _wasConnected = false;
+      _generation++;
       onLeftConnected?.call(state);
     }
   }

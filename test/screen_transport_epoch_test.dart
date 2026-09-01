@@ -354,8 +354,8 @@ void main() {
 
       expect(
         ccReferences().where((r) => r == shifterReference),
-        isNotEmpty,
-        reason: 'a new connected epoch must re-confirm the gear with the device',
+        hasLength(1),
+        reason: 'a new connected epoch must re-confirm the gear with the device exactly once',
       );
       await unmount(tester);
     });
@@ -391,16 +391,30 @@ void main() {
         timeout: const Duration(seconds: 4),
       );
 
+      // Unlike the plain-BLE reconnect above, a DIRCON->BLE failover always
+      // runs a full settings resweep on the new BLE session
+      // (_sweepSettingsInBackground in device_data.dart), independently of
+      // ShifterScreen. The gear reference is one of the ~48 references that
+      // sweep reads, so it is legitimately touched twice here: once by that
+      // sweep, once by the screen's own epoch-driven re-confirm.
       expect(
         ccReferences().where((r) => r == shifterReference),
-        isNotEmpty,
-        reason: 'the failover session must re-confirm the gear over BLE',
+        hasLength(2),
+        reason:
+            'the failover session must re-confirm the gear over BLE exactly once, '
+            'plus the one touch from the fallback settings resweep',
       );
       await unmount(tester);
     });
   });
 
   group('BleLogScreen', () {
+    /// `0x30` — the BLE log stream characteristic's setting reference byte.
+    const logStreamReference = 0x30;
+
+    bool loggingActive(WidgetTester tester) =>
+        find.textContaining('Log streaming is active').evaluate().isNotEmpty;
+
     testWidgets('clears logging-enabled state on disconnect', (tester) async {
       final harness = await connectBle(tester);
       await tester.pumpWidget(
@@ -416,6 +430,114 @@ void main() {
       expect(find.textContaining('disconnected'), findsWidgets);
       await unmount(tester);
     });
+
+    testWidgets('a reconnect over BLE re-enables log streaming', (
+      tester,
+    ) async {
+      final harness = await connectBle(tester);
+      await tester.pumpWidget(
+        MaterialApp(home: BleLogScreen(device: harness.device)),
+      );
+      await pumpUntil(tester, () => loggingActive(tester),
+          timeout: const Duration(seconds: 4));
+
+      blePlatform.markDisconnected(harness.device.remoteId);
+      await pumpUntil(tester, () => !harness.deviceData.isTransportActive);
+      expect(loggingActive(tester), isFalse);
+
+      blePlatform.clearObservations();
+      blePlatform.markConnected(harness.device.remoteId);
+      await pumpUntil(tester, () => harness.deviceData.isTransportActive);
+      await pumpUntil(tester, () => loggingActive(tester),
+          timeout: const Duration(seconds: 4));
+
+      expect(
+        ccReferences().where((r) => r == logStreamReference),
+        isNotEmpty,
+        reason: 'a new connected epoch must re-enable log streaming with the device',
+      );
+      await unmount(tester);
+    });
+
+    testWidgets('a DIRCON to BLE failover re-enables log streaming', (
+      tester,
+    ) async {
+      final s = await connectDirCon(tester, withParallelGatt: true);
+      await tester.pumpWidget(
+        MaterialApp(home: BleLogScreen(device: s.device)),
+      );
+      await pumpUntil(tester, () => false,
+          timeout: const Duration(seconds: 1));
+
+      blePlatform.clearObservations();
+      s.conn.first.dropConnection();
+      final failedOver = await pumpUntil(
+        tester,
+        () =>
+            s.data.transportState.value.transport ==
+                DeviceTransportKind.bluetooth &&
+            s.data.transportState.value.phase ==
+                DeviceTransportPhase.connected,
+      );
+      expect(failedOver, isTrue, reason: 'the failover never completed');
+      await pumpUntil(tester, () => loggingActive(tester),
+          timeout: const Duration(seconds: 4));
+
+      expect(
+        ccReferences().where((r) => r == logStreamReference),
+        isNotEmpty,
+        reason: 'the failover session must re-enable log streaming over BLE',
+      );
+      await unmount(tester);
+    });
+
+    testWidgets(
+      'a reconnect mid-enable is retried once the in-flight attempt finishes',
+      (tester) async {
+        // Regression test for the race the exactly-once retry queue fixes:
+        // epoch N's enable write is still parked when epoch N+1 arrives.
+        // Without a queued retry, epoch N+1's own attempt is dropped by the
+        // non-reentrancy guard and epoch N's write lands too late to count
+        // (sessionChanged), leaving the screen permanently not streaming.
+        final harness = await connectBle(tester);
+
+        blePlatform.holdWriteGate(ccUUID);
+        blePlatform.clearObservations();
+
+        await tester.pumpWidget(
+          MaterialApp(home: BleLogScreen(device: harness.device)),
+        );
+        await pumpUntil(
+          tester,
+          () => blePlatform.writeGateWaiters(ccUUID) == 1,
+        );
+
+        blePlatform.markDisconnected(harness.device.remoteId);
+        await pumpUntil(tester, () => !harness.deviceData.isTransportActive);
+        blePlatform.markConnected(harness.device.remoteId);
+        await pumpUntil(tester, () => harness.deviceData.isTransportActive);
+
+        // Give the epoch-N+1 arrival's own enable attempt a chance to run
+        // and observe "in progress" — it must queue, not park a second write.
+        await pumpUntil(tester, () => false,
+            timeout: const Duration(milliseconds: 200));
+        expect(
+          blePlatform.writeGateWaiters(ccUUID),
+          1,
+          reason:
+              'the epoch-N+1 attempt must queue behind the in-flight write, not start its own',
+        );
+
+        blePlatform.releaseWriteGate(ccUUID);
+
+        // Epoch N's write lands stale and is discarded; only the queued retry
+        // for the current epoch can bring logging up.
+        await pumpUntil(tester, () => loggingActive(tester),
+            timeout: const Duration(seconds: 4));
+
+        await unmount(tester);
+      },
+    );
   });
 
   group('deleted no-op listeners', () {

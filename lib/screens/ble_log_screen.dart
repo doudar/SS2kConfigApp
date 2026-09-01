@@ -33,6 +33,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
   Timer? _demoTimer;
   bool _wantsLogStreaming = true;
   bool _enableInProgress = false;
+  bool _retryEnableAfterInProgress = false;
   bool _loggingEnabled = false;
   late final Future<void> Function() _onReconnectedCallback;
 
@@ -84,11 +85,17 @@ class _BleLogScreenState extends State<BleLogScreen> {
   }
 
   Future<void> _enableLogStreaming() async {
-    if (deviceData.isSimulated ||
-        !_wantsLogStreaming ||
-        _loggingEnabled ||
-        _enableInProgress)
+    if (deviceData.isSimulated || !_wantsLogStreaming || _loggingEnabled)
       return;
+
+    if (_enableInProgress) {
+      // An attempt for an earlier (or the same) session is already running.
+      // Queue a retry against whatever session is current once it finishes,
+      // rather than dropping this request the way a single non-reentrancy
+      // flag would — that used to leave a losing epoch's enable unretried.
+      _retryEnableAfterInProgress = true;
+      return;
+    }
 
     // _enableInProgress is a non-reentrancy guard, not a per-session one. An
     // attempt started in epoch N must not report success during epoch N+1:
@@ -113,6 +120,11 @@ class _BleLogScreenState extends State<BleLogScreen> {
       }
     } finally {
       _enableInProgress = false;
+      final retry = _retryEnableAfterInProgress;
+      _retryEnableAfterInProgress = false;
+      if (retry && _wantsLogStreaming && !_loggingEnabled) {
+        unawaited(_enableLogStreaming());
+      }
     }
   }
 
