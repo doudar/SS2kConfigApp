@@ -50,4 +50,15 @@ void main() {
       ),
     );
   });
+
+  test('a non-explicit disconnect retains the transport and does not increment the epoch', () {
+    final controller = DeviceTransportStateController();
+    controller.markConnected(DeviceTransportKind.bluetooth);
+    final epoch = controller.value.epoch;
+
+    controller.markDisconnected(explicit: false);
+
+    expect(controller.value.transport, DeviceTransportKind.bluetooth);
+    expect(controller.value.epoch, epoch);
+  });
 }

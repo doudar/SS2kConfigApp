@@ -369,7 +369,6 @@ class DeviceData {
   final ValueNotifier<int> transportRevision = ValueNotifier(0);
   ValueNotifier<bool> charReceived = ValueNotifier(false);
   DateTime? lastFtmsUpdate;
-  StreamSubscription<BluetoothConnectionState>? connectionStateSubscription;
   StreamSubscription<bool>? isConnectingSubscription;
   StreamSubscription<bool>? isDisconnectingSubscription;
 

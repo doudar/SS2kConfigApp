@@ -74,26 +74,6 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       unawaited(_checkForFirmwareUpdate());
     }
 
-    deviceData.connectionStateSubscription = widget.device.connectionState
-        .listen((state) async {
-          if (deviceData.isDirConConnected) return;
-          if (state == BluetoothConnectionState.connected) {
-            deviceData.rssi.value = await widget.device.readRssi();
-            await deviceData.setupConnection(widget.device);
-          }
-        });
-
-    if (deviceData.isDirConConnected) {
-      () async {
-        await deviceData.setupConnection(widget.device);
-      }();
-    } else if (widget.device.isConnected) {
-      () async {
-        deviceData.rssi.value = await widget.device.readRssi();
-        await deviceData.setupConnection(widget.device);
-      }();
-    }
-
     deviceData.isConnectingSubscription = _listenConnectionFlag(
       stream: widget.device.isConnecting,
       onValue: (value) => deviceData.isConnecting = value,
@@ -240,7 +220,6 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     if (_firmwareVersionListener != null) {
       deviceData.firmwareVersion.removeListener(_firmwareVersionListener!);
     }
-    deviceData.connectionStateSubscription?.cancel();
     deviceData.isConnectingSubscription?.cancel();
     deviceData.isDisconnectingSubscription?.cancel();
     super.dispose();

@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../utils/device_data.dart';
+import '../utils/device_transport_state.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/power_table_chart.dart';
@@ -29,8 +30,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   String? _confirmedShifterValue;
   int _pendingShiftWrites = 0;
   int _shiftGeneration = 0;
-  late BluetoothConnectionState _lastConnectionState;
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  ConnectedEpochWatcher? _watcher;
   StreamSubscription<CharacteristicChangeEvent>?
   _characteristicChangeSubscription;
   double _chartOpacity = 0.15;
@@ -48,9 +48,6 @@ class _ShifterScreenState extends State<ShifterScreen> {
     deviceData = DeviceDataManager.forDevice(this.widget.device);
     _displayedShifterValue = ValueNotifier("Connecting");
     _syncShifterValueFromCache();
-    _lastConnectionState = deviceData.isTransportActive
-        ? BluetoothConnectionState.connected
-        : BluetoothConnectionState.disconnected;
 
     //special setup for demo mode
     if (deviceData.isSimulated) {
@@ -62,11 +59,27 @@ class _ShifterScreenState extends State<ShifterScreen> {
     _subscribeToDeviceUpdates();
     unawaited(deviceData.ensureFtmsNotifications(widget.device));
     unawaited(_refreshAuthoritativeShifterValue());
+
+    // Re-confirm the gear with the device once per new connected session, on
+    // either transport. Attached after the initial request above so entering
+    // the screen does not ask twice; the watcher deliberately does not replay
+    // on attach.
+    _watcher = ConnectedEpochWatcher(
+      transportState: deviceData.transportState,
+      onNewConnectedEpoch: (_) {
+        // Retain the cached value during reconnect, but invalidate optimistic
+        // writes from the old connection and immediately confirm with SS2k.
+        _shiftGeneration++;
+        _pendingShiftWrites = 0;
+        _syncShifterValueFromCache();
+        unawaited(_refreshAuthoritativeShifterValue());
+      },
+    )..attach();
   }
 
   @override
   void dispose() {
-    _connectionStateSubscription?.cancel();
+    _watcher?.dispose();
     _characteristicChangeSubscription?.cancel();
     _displayedShifterValue.dispose();
     WakelockPlus.disable();
@@ -108,24 +121,6 @@ class _ShifterScreenState extends State<ShifterScreen> {
   }
 
   void _subscribeToDeviceUpdates() {
-    _connectionStateSubscription = this.widget.device.connectionState.listen((
-      state,
-    ) {
-      if (deviceData.isDirConConnected) return;
-      final previousState = _lastConnectionState;
-      _lastConnectionState = state;
-
-      if (state == BluetoothConnectionState.connected &&
-          previousState != BluetoothConnectionState.connected) {
-        // Retain the cached value during reconnect, but invalidate optimistic
-        // writes from the old connection and immediately confirm with SS2k.
-        _shiftGeneration++;
-        _pendingShiftWrites = 0;
-        _syncShifterValueFromCache();
-        unawaited(_refreshAuthoritativeShifterValue());
-      }
-    });
-
     _characteristicChangeSubscription = deviceData.characteristicChanges.listen((
       event,
     ) {
