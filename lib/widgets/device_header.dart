@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
 import '../utils/device_data.dart';
+import '../utils/device_transport_state.dart';
 import '../utils/constants.dart';
 
 class DeviceHeader extends StatefulWidget {
@@ -30,21 +31,20 @@ class DeviceHeader extends StatefulWidget {
 }
 
 class _DeviceHeaderState extends State<DeviceHeader> {
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+  late final ConnectedEpochWatcher _watcher;
   Timer rssiTimer = Timer(Duration(seconds: 0), () {});
   Timer setupTimer = Timer(Duration(seconds: 0), () {});
   late DeviceData deviceData;
   bool _isRefreshing = false;
+  bool _retryRefreshAfterInProgress = false;
   String _fwVersion = "";
   VoidCallback? _firmwareVersionListener;
   StreamSubscription<CharacteristicChangeEvent>? _deviceNameSubscription;
-  late final Future<void> Function() _onReconnectedCallback;
 
   @override
   void initState() {
     super.initState();
     deviceData = DeviceDataManager.forDevice(this.widget.device);
-    _onReconnectedCallback = _handleReconnected;
 
     // Listen for firmware version changes to automatically update the UI
     _firmwareVersionListener = () {
@@ -66,54 +66,83 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         ? "Connecting Please Wait..."
         : deviceData.firmwareVersion.value;
 
-    // Start the centralized auto-reconnect monitor.
-    // The onReconnected callback handles UI-specific refresh after reconnecting.
-    deviceData.startConnectionMonitor(
-      this.widget.device,
-      onReconnected: _onReconnectedCallback,
-    );
+    // Start the centralized auto-reconnect monitor. It owns BLE-specific
+    // recovery only — the connected-epoch watcher below is this widget's sole
+    // session signal, so no `onReconnected` callback is registered. Wiring both
+    // ran the setup work twice per reconnect: the watcher fires when the
+    // transport reports connected, `onReconnected` fires again after
+    // `setupConnection` returns.
+    deviceData.startConnectionMonitor(this.widget.device);
 
-    // Listen for connection state changes to update UI (e.g. RSSI, services)
-    // The whole body is guarded. `Stream.listen` discards the future an async
-    // callback returns, so anything that throws in here becomes an unhandled
-    // async error — silent in release, an isolate pause in debug. `readRssi` is
-    // the one that actually bit: a disconnect racing this callback throws, and
-    // there is no `onError` to catch it.
-    _connectionStateSubscription ??= this.widget.device.connectionState.listen((
-      state,
-    ) async {
-      try {
-        if (this.deviceData.isDirConConnected) return;
-        if (state == BluetoothConnectionState.connected) {
-          await _readRssiInto();
-          if (!mounted) return;
-          if (widget.customRefreshEnabled) {
-            if (widget.firmwareOnlyRefresh) {
-              await this.deviceData.ensureCustomCharacteristicStream(
-                this.widget.device,
-              );
-            } else {
-              await this.deviceData.setupConnection(this.widget.device);
-            }
-            if (!_isRefreshing) {
-              await _refreshDeviceInfo();
-            }
-          }
-        } else {
-          this.deviceData.rssi.value = 0;
-        }
-      } catch (e) {
-        print('[DeviceHeader] connection state handler failed: $e');
-      }
-      if (mounted) {
-        setState(() {});
-      }
-    }, onError: (Object e) => print('[DeviceHeader] connectionState: $e'));
+    // Re-initialize once per connected session on either transport.
+    // `BluetoothDevice.connectionState`, which this replaces, never fires over
+    // DIRCON, so the old listener had to bail out on that transport entirely.
+    _watcher = ConnectedEpochWatcher(
+      transportState: deviceData.transportState,
+      onNewConnectedEpoch: (state) =>
+          unawaited(_initializeConnectedSession(state)),
+      onLeftConnected: (_) {
+        deviceData.rssi.value = 0;
+        if (mounted) setState(() {});
+      },
+    )..attach();
+    // The watcher deliberately does not replay on attach, unlike the fbp
+    // stream it replaces. Without this the header would lose its setup pass on
+    // every screen entry made while already connected.
+    if (_watcher.isConnected) {
+      unawaited(_initializeConnectedSession(deviceData.transportState.value));
+    }
     startTimer();
   }
 
+  /// Brings the header's view of the device up to date for one connected
+  /// session.
+  ///
+  /// The whole body is guarded. This runs as a fire-and-forget callback, so
+  /// anything that throws becomes an unhandled async error — silent in release,
+  /// an isolate pause in debug. `readRssi` is the one that actually bit: a
+  /// disconnect racing this call throws, and there is nothing above to catch
+  /// it.
+  ///
+  /// Each await is followed by an epoch re-check so that work started in one
+  /// session cannot publish its result into the next.
+  Future<void> _initializeConnectedSession(DeviceTransportState state) async {
+    final generation = _watcher.generation;
+    bool stale() => !mounted || !_watcher.isCurrentGeneration(generation);
+    try {
+      // DIRCON is a network transport and has no BLE RSSI to read.
+      if (state.transport == DeviceTransportKind.bluetooth) {
+        await _readRssiInto();
+      }
+      if (stale()) return;
+      if (widget.customRefreshEnabled) {
+        if (widget.firmwareOnlyRefresh) {
+          await deviceData.ensureCustomCharacteristicStream(widget.device);
+        } else {
+          await deviceData.setupConnection(widget.device);
+        }
+        if (stale()) return;
+        // _refreshDeviceInfo queues its own retry if another session's pass
+        // is still running, so this session's refresh is never dropped.
+        await _refreshDeviceInfo();
+      }
+    } catch (e) {
+      print('[DeviceHeader] connected-session init failed: $e');
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> _refreshDeviceInfo({bool forceRefresh = false}) async {
-    if (_isRefreshing) return;
+    if (_isRefreshing) {
+      // A previous session's pass (or a manual "discover services") is still
+      // running. _isRefreshing is not scoped per session, so without this the
+      // losing caller's refresh would be silently dropped instead of retried
+      // once the in-flight pass finishes.
+      _retryRefreshAfterInProgress = true;
+      return;
+    }
 
     try {
       _isRefreshing = true;
@@ -134,16 +163,20 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       print('Error refreshing device info: $e');
     } finally {
       _isRefreshing = false;
+      final retry = _retryRefreshAfterInProgress;
+      _retryRefreshAfterInProgress = false;
+      if (retry && mounted) {
+        unawaited(_refreshDeviceInfo());
+      }
     }
   }
 
   @override
   void dispose() {
-    _connectionStateSubscription?.cancel();
-    _connectionStateSubscription = null;
+    _watcher.dispose();
     _deviceNameSubscription?.cancel();
     _deviceNameSubscription = null;
-    deviceData.stopConnectionMonitor(onReconnected: _onReconnectedCallback);
+    deviceData.stopConnectionMonitor();
     rssiTimer.cancel();
     setupTimer.cancel();
     if (_firmwareVersionListener != null) {
@@ -167,18 +200,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     } catch (e) {
       this.deviceData.rssi.value = 0;
     }
-  }
-
-  Future<void> _handleReconnected() async {
-    if (!mounted) return;
-    // This runs as a reconnect callback. DeviceData isolates a throw from here
-    // now, but it should not need to: a signal-strength read is not part of
-    // restoring the transport.
-    await _readRssiInto();
-    if (widget.customRefreshEnabled && !_isRefreshing) {
-      await _refreshDeviceInfo();
-    }
-    if (mounted) setState(() {});
   }
 
   // Both bodies are guarded for the same reason as the connection-state
@@ -295,17 +316,24 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     );
   }
 
-  Widget _buildSignalStrengthIcon(int rssi) {
+  /// Branches on [DeviceTransportState] rather than on `isDirConConnected` and
+  /// `device.isConnected`. Those two can disagree with the transport state
+  /// after a failover — a live BLE session left over from a DIRCON drop kept
+  /// painting the router icon — and only the transport state is authoritative.
+  Widget _buildSignalStrengthIcon(DeviceTransportState state, int rssi) {
     IconData iconData;
     Color iconColor;
 
-    if (deviceData.isDirConConnected) {
+    final connected = state.phase == DeviceTransportPhase.connected;
+
+    if (connected && state.transport == DeviceTransportKind.dircon) {
       // DIRCON is a network transport and has no meaningful BLE RSSI. Use a
       // clearly different connected-cable symbol instead of implying that the
       // network session has no signal.
       iconData = Icons.router;
       iconColor = Colors.lightBlueAccent;
-    } else if (this.widget.device.isConnected) {
+    } else if (connected &&
+        state.transport == DeviceTransportKind.bluetooth) {
       if (rssi >= -60) {
         iconData = Icons.signal_cellular_4_bar_sharp;
         iconColor = Colors.green;
@@ -379,13 +407,13 @@ class _DeviceHeaderState extends State<DeviceHeader> {
                 borderRadius: BorderRadius.circular(8),
               ),
               alignment: Alignment.center,
-              child: ValueListenableBuilder<int>(
-                valueListenable: deviceData.transportRevision,
-                builder: (context, _, _) {
+              child: ValueListenableBuilder<DeviceTransportState>(
+                valueListenable: deviceData.transportState,
+                builder: (context, transportState, _) {
                   return ValueListenableBuilder<int>(
                     valueListenable: deviceData.rssi,
                     builder: (context, rssi, _) {
-                      return _buildSignalStrengthIcon(rssi);
+                      return _buildSignalStrengthIcon(transportState, rssi);
                     },
                   );
                 },

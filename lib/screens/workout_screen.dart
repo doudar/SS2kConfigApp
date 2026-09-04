@@ -47,7 +47,6 @@ class _WorkoutScreenState extends State<WorkoutScreen>
   bool _didApplyInitialAnimation = false;
   // Guard to prevent animation calls during teardown.
   bool _isDisposing = false;
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   final ScrollController _scrollController = ScrollController();
   double _lastScrollPosition = 0;
   final GlobalKey _workoutGraphKey = GlobalKey();
@@ -120,7 +119,6 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     _initializeAnimationControllers();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      rwSubscription();
       if (_workoutController.segments.isEmpty) {
         _loadDefaultWorkout();
       } else if (_workoutController.isPlaying && mounted) {
@@ -337,21 +335,10 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     });
   }
 
-  Future<void> rwSubscription() async {
-    _connectionStateSubscription = widget.device.connectionState.listen((
-      state,
-    ) async {
-      if (mounted) {
-        setState(() {});
-      }
-    });
-  }
-
   @override
   void dispose() {
     _isDisposing = true;
     _workoutController.removeListener(_workoutControllerListener);
-    _connectionStateSubscription?.cancel();
 
     // Now safely dispose animation + other resources.
     _metricsAndSummaryFadeController.dispose();

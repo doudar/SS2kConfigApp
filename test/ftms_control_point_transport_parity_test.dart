@@ -6,9 +6,6 @@
 // once per isolate and never unsubscribes, so these tests must stay in their
 // own file — restoring the previous instance in tearDown does not undo those
 // subscriptions.
-import 'dart:async';
-
-import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_blue_plus_platform_interface/flutter_blue_plus_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,6 +17,7 @@ import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/device_transport_state.dart';
 import 'package:ss2kconfigapp/utils/ftmsControlPoint.dart';
 
+import 'support/fake_ble_platform.dart';
 import 'support/fake_dircon_session.dart';
 
 const _targetWatts = 250;
@@ -31,7 +29,7 @@ void main() {
 
   // Installed before anything can touch FlutterBluePlus, so its one-time
   // initialization binds to this fake rather than to a real platform.
-  final blePlatform = _FakeBlePlatform();
+  final blePlatform = FakeBlePlatform();
   FlutterBluePlusPlatform.instance = blePlatform;
 
   test('BLE and DIRCON deliver byte-identical target power commands', () async {
@@ -50,7 +48,7 @@ void main() {
   // platform fake installed above, so its assertions have to live here.
   group('BLE FTMS notification block', () {
     test('blocks and releases both characteristics together', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
 
       // The post-connection block is already held: nothing enabled yet.
       expect(harness.deviceData.isFtmsNotificationsBlocked, isTrue);
@@ -75,7 +73,7 @@ void main() {
     // setNotifyValue(true) is in flight would otherwise leave the
     // characteristic notifying with nothing listening.
     test('an enable superseded by a new block undoes itself', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
 
       blePlatform.holdNotifyGate(_machineStatusUuid);
       final unblock = harness.deviceData.unblockFtmsNotifications(
@@ -106,7 +104,7 @@ void main() {
     });
 
     test('a missing Machine Status characteristic does not stop Indoor Bike Data', () async {
-      final harness = await _BleHarness.connect(
+      final harness = await BleHarness.connect(
         blePlatform,
         withMachineStatus: false,
       );
@@ -128,7 +126,7 @@ void main() {
     // only the last is published, leaving the other delivering frames with
     // nothing able to cancel it.
     test('two overlapping passes leave exactly one Indoor Bike listener', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
 
       final decoded = <FtmsData>[];
@@ -146,7 +144,7 @@ void main() {
       blePlatform.holdNotifyGate(_indoorBikeUuid);
       final first = harness.deviceData.ensureFtmsNotifications(harness.device);
       final second = harness.deviceData.ensureFtmsNotifications(harness.device);
-      await _waitUntil(
+      await waitUntil(
         () => blePlatform.notifyGateWaiters(_indoorBikeUuid) >= 1,
       );
       await _settle();
@@ -175,7 +173,7 @@ void main() {
     // A pass that finds no characteristic has to clear it, or calibration is
     // told the stream is ready with no listener behind it.
     test('a Machine Status characteristic that goes missing clears readiness', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
 
       expect(
@@ -240,7 +238,7 @@ void main() {
       // Wi-Fi dies. The firmware sees no FIN/RST; the app sees the socket go.
       connector.first.dropConnection();
 
-      await _waitUntil(
+      await waitUntil(
         () =>
             deviceData.transportState.value.transport ==
                 DeviceTransportKind.bluetooth &&
@@ -250,7 +248,7 @@ void main() {
 
       // Both, not just Indoor Bike Data: 0x2ADA is calibration's only evidence
       // channel, and it was never enabled over BLE in the captured session.
-      await _waitUntil(() => blePlatform.enabledNow(_machineStatusUuid));
+      await waitUntil(() => blePlatform.enabledNow(_machineStatusUuid));
       expect(blePlatform.enabledNow(_indoorBikeUuid), isTrue);
 
       expect(
@@ -298,7 +296,7 @@ void main() {
       await deviceData.connectPreferred(device, waitForSetup: true);
       connector.first.dropConnection();
 
-      await _waitUntil(() => secondRan);
+      await waitUntil(() => secondRan);
       expect(
         deviceData.transportState.value.phase,
         DeviceTransportPhase.connected,
@@ -334,7 +332,7 @@ void main() {
       // `[transport] settings sweep …` lines are only in this zone if the
       // `.listen()` happened here too.
       final transportLog = <String>[];
-      await _withPrintCapture(transportLog, () async {
+      await withPrintCapture(transportLog, () async {
         deviceData = DeviceData(dirConConnector: connector.call)
           ..advertisedIpAddress = '192.168.1.50';
 
@@ -348,7 +346,7 @@ void main() {
         blePlatform.writes.clear();
 
         connector.first.dropConnection();
-        await _waitUntil(
+        await waitUntil(
           () =>
               deviceData.transportState.value.transport ==
                   DeviceTransportKind.bluetooth &&
@@ -362,7 +360,7 @@ void main() {
         // hit, and the run must start from here. (Waiting for Machine Status to
         // come up first, as the pre-rewrite test did, would wait out the whole
         // sweep and defeat the point.)
-        await _waitUntil(
+        await waitUntil(
           () =>
               deviceData.isFtmsNotificationsBlocked &&
               blePlatform.writes.any((w) => w.length >= 2 && w[0] == 0x01),
@@ -376,7 +374,7 @@ void main() {
         await monitor.start();
 
         // The sweep did not hold the FTMS block hostage through the run...
-        await _waitUntil(() => !deviceData.isFtmsNotificationsBlocked);
+        await waitUntil(() => !deviceData.isFtmsNotificationsBlocked);
         expect(monitor.phase, isNot(CalibrationPhase.failedToStart));
         expect(
           monitor.notificationsReadiness,
@@ -402,7 +400,7 @@ void main() {
           _machineStatusUuid,
           const [0x14, 0x01],
         );
-        await _waitUntil(() => monitor.acknowledged);
+        await waitUntil(() => monitor.acknowledged);
 
         monitor.dispose();
       });
@@ -447,7 +445,7 @@ void main() {
       );
 
       connector.first.dropConnection();
-      await _waitUntil(
+      await waitUntil(
         () =>
             deviceData.transportState.value.transport ==
                 DeviceTransportKind.bluetooth &&
@@ -505,7 +503,7 @@ void main() {
   // missing once stays missing for the life of the connection.
   group('FTMS discovery capabilities', () {
     test('a discovered connection subscribes Machine Status', () async {
-      final harness = await _BleHarness.connectViaDiscovery(blePlatform);
+      final harness = await BleHarness.connectViaDiscovery(blePlatform);
 
       expect(harness.deviceData.machineStatusCharacteristic, isNotNull);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
@@ -520,7 +518,7 @@ void main() {
       // Discovery reports no 0x2ADA. On real firmware that is either a device
       // without Machine Status or a pass that missed it, and the app cannot
       // tell which without asking again.
-      final harness = await _BleHarness.connectViaDiscovery(
+      final harness = await BleHarness.connectViaDiscovery(
         blePlatform,
         withMachineStatus: false,
       );
@@ -550,7 +548,7 @@ void main() {
     // the enable comes back `primary service not found '1826'`. Before this the
     // app logged that and gave up, leaving 0x2ADA down for the connection.
     test('a stale service cache on enable is repaired by one re-probe', () async {
-      final harness = await _BleHarness.connectViaDiscovery(blePlatform);
+      final harness = await BleHarness.connectViaDiscovery(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
       expect(blePlatform.enabledNow(_machineStatusUuid), isTrue);
 
@@ -576,7 +574,7 @@ void main() {
     // both ask the same question of the same connection, and a device that
     // keeps failing the enable must not be able to drive discovery in a loop.
     test('a stale-cache re-probe is budgeted once per epoch', () async {
-      final harness = await _BleHarness.connectViaDiscovery(blePlatform);
+      final harness = await BleHarness.connectViaDiscovery(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
 
       blePlatform.failNotifyAsStaleService(
@@ -614,7 +612,7 @@ void main() {
     // control point unconditionally on a write, while 0x2ADA is suppressed when
     // the status value did not change.
     test('a discovered connection subscribes the FTMS Control Point', () async {
-      final harness = await _BleHarness.connectViaDiscovery(blePlatform);
+      final harness = await BleHarness.connectViaDiscovery(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
 
       expect(
@@ -634,7 +632,7 @@ void main() {
         FTMS_CONTROL_POINT_CHARACTERISTIC_UUID,
         const [0x80, 0x13, 0x01, 0x20, 0x03, 0x60, 0x09],
       );
-      await _waitUntil(() => frames.isNotEmpty);
+      await waitUntil(() => frames.isNotEmpty);
       expect(frames.single, const [0x80, 0x13, 0x01, 0x20, 0x03, 0x60, 0x09]);
 
       harness.dispose();
@@ -644,7 +642,7 @@ void main() {
     // live while the transport is meant to be quiet is the thing the block
     // exists to prevent, whatever it carries.
     test('the FTMS block covers the control point', () async {
-      final harness = await _BleHarness.connectViaDiscovery(blePlatform);
+      final harness = await BleHarness.connectViaDiscovery(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
       expect(
         blePlatform.enabledNow(FTMS_CONTROL_POINT_CHARACTERISTIC_UUID),
@@ -675,7 +673,7 @@ void main() {
   // reading it. Machine Status it never touched at all.
   group('FTMS health watchdog', () {
     test('recovery restores data delivery and Machine Status together', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
 
       final decoded = <FtmsData>[];
@@ -707,7 +705,7 @@ void main() {
     });
 
     test('a failed recovery does not report itself as recovered', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
 
       final stalledAt = DateTime.now().subtract(const Duration(minutes: 1));
@@ -734,7 +732,7 @@ void main() {
     // `isNotifying` is true. In Run C it ran four times, logged
     // `already notifying, no CCCD write` each time, and repaired nothing.
     test('a connection that never delivered a frame is recycled, not re-ensured', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
 
       // Subscribed on both ends, and not one frame has arrived: exactly the
@@ -766,7 +764,7 @@ void main() {
     // an ensure pass is what runs discovery in the first place. Recycling here
     // would disable nothing and then do the same work anyway.
     test('with no characteristic yet the branch still drives discovery', () async {
-      final harness = await _BleHarness.connectViaDiscovery(blePlatform);
+      final harness = await BleHarness.connectViaDiscovery(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
 
       harness.deviceData.indoorBikeCharacteristic = null;
@@ -791,7 +789,7 @@ void main() {
   // device that had stopped answering.
   group('transport scheduler', () {
     test('a control command overtakes queued background work', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
       harness.deviceData.ftmsControlPointCharacteristic =
           BluetoothCharacteristic(
@@ -842,7 +840,7 @@ void main() {
     });
 
     test('a failing operation does not stop the pump', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
 
       final failed = harness.deviceData.writeCustomCharacteristic(
         harness.device,
@@ -863,7 +861,7 @@ void main() {
 
   group('custom response circuit breaker', () {
     test('trips after repeated silence and clears on the next answer', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       final deviceData = harness.deviceData;
 
       expect(deviceData.customResponsesDegraded.value, isFalse);
@@ -893,7 +891,7 @@ void main() {
     });
 
     test('a degraded link abandons the sweep and still releases its block', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       final deviceData = harness.deviceData;
       await deviceData.unblockFtmsNotifications(harness.device);
 
@@ -929,7 +927,7 @@ void main() {
     // write is synchronous, so a whole sweep completes before a poll observes
     // its first write. The BLE write gate parks the sweep provably mid-read.
     test('a lease taken mid-sweep abandons the remaining reads and frees the block', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       final deviceData = harness.deviceData;
       await deviceData.unblockFtmsNotifications(harness.device);
 
@@ -941,7 +939,7 @@ void main() {
       final sweep = deviceData.requestSettings(harness.device);
 
       // The sweep took the block and is parked on its first read at the wire.
-      await _waitUntil(() => blePlatform.writeGateWaiters(ccUUID) == 1);
+      await waitUntil(() => blePlatform.writeGateWaiters(ccUUID) == 1);
       expect(deviceData.isFtmsNotificationsBlocked, isTrue);
       expect(
         blePlatform.writes.where(isRead),
@@ -957,14 +955,14 @@ void main() {
       // Exactly the one read that was already in flight — the loop broke
       // before issuing a second.
       expect(blePlatform.writes.where(isRead), hasLength(1));
-      await _waitUntil(() => !deviceData.isFtmsNotificationsBlocked);
-      await _waitUntil(() => blePlatform.enabledNow(_machineStatusUuid));
+      await waitUntil(() => !deviceData.isFtmsNotificationsBlocked);
+      await waitUntil(() => blePlatform.enabledNow(_machineStatusUuid));
 
       // Releasing the last lease runs the deferred remainder against the same
       // device.
       final afterYield = blePlatform.writes.where(isRead).length;
       deviceData.endInteractiveFtmsSession(token);
-      await _waitUntil(
+      await waitUntil(
         () => blePlatform.writes.where(isRead).length > afterYield,
       );
 
@@ -976,7 +974,7 @@ void main() {
     // The low-level write must surface an unconfirmed response, and the legacy
     // writeToSS2k wrapper must be the only thing that swallows it.
     test('writeToSS2kStrict throws where writeToSS2k absorbs', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       final deviceData = harness.deviceData;
       final logChar = deviceData.customCharacteristic.firstWhere(
         (c) => c['vName'] == BLE_logStreamVname,
@@ -1003,7 +1001,7 @@ void main() {
     // a half-written power table was never a good outcome — and no trailing
     // header-only [0x02, reference] packet may follow.
     test('a power-table upload stops on the first unconfirmed row', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       final deviceData = harness.deviceData;
       final powerTable = deviceData.customCharacteristic.firstWhere(
         (c) => c['vName'] == powerTableDataVname,
@@ -1042,7 +1040,7 @@ void main() {
     // that then rejects the command, which would let a stale frame from a
     // previous run acknowledge this one.
     test('onDispatch does not fire when the control point is not ready', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       // No control point characteristic assigned: the write is rejected.
       harness.deviceData.ftmsControlPointCharacteristic = null;
 
@@ -1060,7 +1058,7 @@ void main() {
     });
 
     test('onDispatch fires once, adjacent to a successful write', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       harness.deviceData.ftmsControlPointCharacteristic = BluetoothCharacteristic(
         remoteId: harness.device.remoteId,
         serviceUuid: Guid(ftmsServiceUUID),
@@ -1094,7 +1092,7 @@ void main() {
     // only for tests. The monitor wiring is four lines; the tracker gates it
     // depends on have unit coverage in calibration_monitor_test.dart.
     test('a Machine Status frame cannot acknowledge a spin-down still queued behind other work', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       harness.deviceData.ftmsControlPointCharacteristic = BluetoothCharacteristic(
         remoteId: harness.device.remoteId,
         serviceUuid: Guid(ftmsServiceUUID),
@@ -1113,7 +1111,7 @@ void main() {
       final busy = harness.deviceData
           .writeCustomCharacteristic(harness.device, [0x01, 1])
           .catchError((Object _) {});
-      await _waitUntil(() => blePlatform.writeGateWaiters(ccUUID) == 1);
+      await waitUntil(() => blePlatform.writeGateWaiters(ccUUID) == 1);
 
       // The spin-down is genuinely queued behind it.
       final dispatch = harness.deviceData.writeFtmsControlPointCommand(
@@ -1135,7 +1133,7 @@ void main() {
       // Drain the pump; the spin-down reaches the wire and `onDispatch` fires
       // adjacent to it.
       blePlatform.releaseWriteGate(ccUUID);
-      await _waitUntil(spinDownOnWire);
+      await waitUntil(spinDownOnWire);
       await dispatch;
       await busy;
 
@@ -1153,7 +1151,7 @@ void main() {
     // The unblocked branch used to await ensureFtmsNotifications untimed, so a
     // caller's 15 s budget bought nothing once setup itself stalled.
     test('a stalled setup times out within the caller budget', () async {
-      final harness = await _BleHarness.connect(blePlatform);
+      final harness = await BleHarness.connect(blePlatform);
       await harness.deviceData.unblockFtmsNotifications(harness.device);
 
       // Machine Status goes missing and the enable parks on the wire: readiness
@@ -1185,7 +1183,7 @@ void main() {
   // CalibrationStartStage.logStreamEnable is reachable on this transport too.
   group('calibration start over BLE', () {
     test('a log-enable failure with no other live channel fails to start', () async {
-      final harness = await _BleHarness.connect(
+      final harness = await BleHarness.connect(
         blePlatform,
         withMachineStatus: false,
       );
@@ -1223,84 +1221,6 @@ void main() {
 /// `_decodeIndoorBikeData` accepts and publishes.
 const _indoorBikeFrame = [0x00, 0x00, 0x64, 0x00];
 
-/// A BLE-connected [DeviceData] with the FTMS characteristics assigned
-/// directly.
-///
-/// Service discovery is not modelled: `indoorBikeCharacteristic` and
-/// `machineStatusCharacteristic` are public fields, so assigning them is enough
-/// for the notification lifecycle to run — the same shortcut `_sendOverBle`
-/// already takes for the control point.
-class _BleHarness {
-  _BleHarness(this.device, this.deviceData);
-
-  final BluetoothDevice device;
-  final DeviceData deviceData;
-
-  static int _nextId = 0;
-
-  static Future<_BleHarness> connect(
-    _FakeBlePlatform platform, {
-    bool withMachineStatus = true,
-  }) async {
-    await FlutterBluePlus.isSupported;
-    platform.reset();
-
-    final device = BluetoothDevice.fromId(
-      '00:00:00:00:00:${(_nextId++).toRadixString(16).padLeft(2, '0').toUpperCase()}',
-    );
-    // Discovery has to agree with the direct assignment below, or the
-    // epoch-scoped re-probe — which fires precisely when Machine Status is
-    // missing — would hand the characteristic back and contradict the fixture.
-    platform.discoveryIncludesMachineStatus = withMachineStatus;
-
-    final deviceData = DeviceData();
-    deviceData.startConnectionMonitor(device);
-    platform.markConnected(device.remoteId);
-    await _waitUntil(() => deviceData.isTransportActive);
-
-    deviceData.indoorBikeCharacteristic = BluetoothCharacteristic(
-      remoteId: device.remoteId,
-      serviceUuid: Guid(ftmsServiceUUID),
-      characteristicUuid: Guid(_indoorBikeUuid),
-    );
-    if (withMachineStatus) {
-      deviceData.machineStatusCharacteristic = BluetoothCharacteristic(
-        remoteId: device.remoteId,
-        serviceUuid: Guid(ftmsServiceUUID),
-        characteristicUuid: Guid(_machineStatusUuid),
-      );
-    }
-    return _BleHarness(device, deviceData);
-  }
-
-  /// Like [connect], but lets `setupConnection` run real service discovery and
-  /// assign the characteristics itself — the path A6 lives on.
-  static Future<_BleHarness> connectViaDiscovery(
-    _FakeBlePlatform platform, {
-    bool withMachineStatus = true,
-  }) async {
-    await FlutterBluePlus.isSupported;
-    platform.reset();
-    platform.discoveryIncludesMachineStatus = withMachineStatus;
-
-    final device = BluetoothDevice.fromId(
-      '00:00:00:00:00:${(_nextId++).toRadixString(16).padLeft(2, '0').toUpperCase()}',
-    );
-    final deviceData = DeviceData();
-    deviceData.startConnectionMonitor(device);
-    platform.markConnected(device.remoteId);
-    await _waitUntil(() => deviceData.isTransportActive);
-
-    await deviceData.setupConnection(device);
-    return _BleHarness(device, deviceData);
-  }
-
-  void dispose() {
-    deviceData.stopConnectionMonitor();
-    deviceData.dispose();
-  }
-}
-
 Future<void> _settle() => Future<void>.delayed(Duration.zero);
 
 Future<List<int>> _sendOverDirCon(int watts) async {
@@ -1314,14 +1234,14 @@ Future<List<int>> _sendOverDirCon(int watts) async {
 
   deviceData.setWorkoutTargetPower(watts);
   final session = connector.first;
-  await _waitUntil(() => session.writesFor(ftmsControlPointUUID).isNotEmpty);
+  await waitUntil(() => session.writesFor(ftmsControlPointUUID).isNotEmpty);
   final bytes = session.writesFor(ftmsControlPointUUID).single;
 
   deviceData.dispose();
   return bytes;
 }
 
-Future<List<int>> _sendOverBle(_FakeBlePlatform platform, int watts) async {
+Future<List<int>> _sendOverBle(FakeBlePlatform platform, int watts) async {
   // Triggers FlutterBluePlus's lazy initialization so it subscribes to the
   // fake's event streams before any connection state is emitted.
   await FlutterBluePlus.isSupported;
@@ -1334,7 +1254,7 @@ Future<List<int>> _sendOverBle(_FakeBlePlatform platform, int watts) async {
   // alone would leave DeviceData reporting no transport.
   deviceData.startConnectionMonitor(device);
   platform.markConnected(device.remoteId);
-  await _waitUntil(() => deviceData.isTransportActive);
+  await waitUntil(() => deviceData.isTransportActive);
 
   expect(
     deviceData.transportState.value.transport,
@@ -1350,415 +1270,10 @@ Future<List<int>> _sendOverBle(_FakeBlePlatform platform, int watts) async {
 
   platform.writes.clear();
   deviceData.setWorkoutTargetPower(watts);
-  await _waitUntil(() => platform.writes.isNotEmpty);
+  await waitUntil(() => platform.writes.isNotEmpty);
   final bytes = platform.writes.single;
 
   deviceData.stopConnectionMonitor();
   deviceData.dispose();
   return bytes;
-}
-
-/// Only the members these tests exercise are overridden; every other member of
-/// [FlutterBluePlusPlatform] already has a usable default.
-final class _FakeBlePlatform extends FlutterBluePlusPlatform {
-  final StreamController<BmConnectionStateResponse> _connectionStates =
-      StreamController<BmConnectionStateResponse>.broadcast();
-  final StreamController<BmBluetoothAdapterState> _adapterStates =
-      StreamController<BmBluetoothAdapterState>.broadcast();
-  final StreamController<BmCharacteristicData> _characteristicWrites =
-      StreamController<BmCharacteristicData>.broadcast();
-  final StreamController<BmCharacteristicData> _characteristicReceived =
-      StreamController<BmCharacteristicData>.broadcast();
-  // setNotifyValue takes `.first` on this *before* it learns whether the
-  // characteristic has a CCCD. The base class default is an empty stream, whose
-  // `.first` completes with a "No element" error nothing is there to catch.
-  // A controller that never closes leaves that future harmlessly pending.
-  final StreamController<BmDescriptorData> _descriptorWrites =
-      StreamController<BmDescriptorData>.broadcast();
-  // The base class default is an empty stream, and `discoverServices` takes
-  // `.first` on it — so without this any code path that discovers services
-  // fails with a bare "No element" instead of a modelled result.
-  final StreamController<BmDiscoverServicesResult> _discoveredServices =
-      StreamController<BmDiscoverServicesResult>.broadcast();
-
-  /// Whether service discovery reports 0x2ADA. False models both firmware
-  /// without Machine Status and a discovery pass that missed it — the two cases
-  /// the epoch-scoped re-probe exists to tell apart.
-  bool discoveryIncludesMachineStatus = true;
-
-  /// How many times discovery actually reached the platform. The re-probe is
-  /// budgeted at one per connection epoch, which is only observable here.
-  int discoveryCount = 0;
-
-  /// Whether the device answers custom-characteristic requests. See
-  /// [writeCharacteristic]; setting it false models a response-silent device.
-  bool answerCustomRequests = true;
-
-  final List<List<int>> writes = [];
-
-  /// Every `setNotifyValue` request, in order.
-  final List<({String uuid, bool enable})> notifyCalls = [];
-  final Map<String, bool> _notifyState = {};
-  final Map<String, Completer<void>> _notifyGates = {};
-  final Map<String, int> _notifyGateWaiters = {};
-
-  /// Every `connect` request the platform received, in order. A fresh GATT
-  /// connect on the DIRCON->BLE fallback is only observable here — the
-  /// `markConnected` shortcut the other tests use bypasses `connect` entirely.
-  final List<BmConnectRequest> connectCalls = [];
-
-  /// Parks a `writeCharacteristic` for [uuid] until [releaseWriteGate]. Unlike
-  /// the notify gate this holds an operation *in flight*, which is what keeps
-  /// the transport pump occupied: `TransportOpPriority.control` preempts only
-  /// queued work, never the op currently running.
-  final Map<String, Completer<void>> _writeGates = {};
-  final Map<String, int> _writeGateWaiters = {};
-
-  void holdWriteGate(String uuid) {
-    _writeGates[_key(uuid)] = Completer<void>();
-    _writeGateWaiters[_key(uuid)] = 0;
-  }
-
-  void releaseWriteGate(String uuid) {
-    final gate = _writeGates.remove(_key(uuid));
-    if (gate != null && !gate.isCompleted) gate.complete();
-  }
-
-  /// How many `writeCharacteristic` calls are currently parked on [uuid]'s gate.
-  int writeGateWaiters(String uuid) => _writeGateWaiters[_key(uuid)] ?? 0;
-
-  /// Current wire state per characteristic. `isNotifying` on the real
-  /// characteristic reads a CCCD descriptor cache this fake does not populate,
-  /// so this is the only place the block's effect is observable.
-  bool enabledNow(String uuid) => _notifyState[_key(uuid)] ?? false;
-
-  final Set<String> _staleNotifyUuids = {};
-
-  /// Makes `setNotifyValue` for [uuid] fail the way both platform plugins do
-  /// when their cached service list no longer holds the service a cached
-  /// characteristic came from — Run D's
-  /// `PlatformException(setNotifyValue, primary service not found '1826')`.
-  ///
-  /// Cleared by the next [discoverServices], because rediscovery is exactly
-  /// what repairs the cache. [permanent] models a device that keeps failing, so
-  /// a test can prove the re-probe is budgeted rather than looping.
-  void failNotifyAsStaleService(String uuid, {bool permanent = false}) {
-    _staleNotifyUuids.add(_key(uuid));
-    if (permanent) _permanentStaleNotifyUuids.add(_key(uuid));
-  }
-
-  final Set<String> _permanentStaleNotifyUuids = {};
-
-  /// Parks a `setNotifyValue` for [uuid] until [releaseNotifyGate], so a test
-  /// can take a block while an enable is still in flight.
-  void holdNotifyGate(String uuid) {
-    _notifyGates[_key(uuid)] = Completer<void>();
-    _notifyGateWaiters[_key(uuid)] = 0;
-  }
-
-  void releaseNotifyGate(String uuid) {
-    final gate = _notifyGates.remove(_key(uuid));
-    if (gate != null && !gate.isCompleted) gate.complete();
-  }
-
-  /// How many `setNotifyValue` calls are currently parked on [uuid]'s gate.
-  /// Lets a test wait for a pass to actually reach the wire rather than
-  /// guessing at a number of event-loop turns.
-  int notifyGateWaiters(String uuid) => _notifyGateWaiters[_key(uuid)] ?? 0;
-
-  /// Emits a notification frame the way the platform does.
-  ///
-  /// `onValueReceived` filters on remoteId, primaryServiceUuid, serviceUuid,
-  /// characteristicUuid, instanceId *and* success. [_BleHarness] builds its
-  /// characteristics without a primaryServiceUuid and with the default
-  /// instanceId, so those two have to be null and 0 here — otherwise every
-  /// frame is filtered out and an "exactly one event" assertion passes because
-  /// nothing was ever delivered.
-  void emitNotification(
-    DeviceIdentifier remoteId,
-    String uuid,
-    List<int> value,
-  ) {
-    _characteristicReceived.add(
-      BmCharacteristicData(
-        remoteId: remoteId,
-        primaryServiceUuid: null,
-        serviceUuid: Guid(ftmsServiceUUID),
-        characteristicUuid: Guid(uuid),
-        instanceId: 0,
-        value: List<int>.from(value),
-        success: true,
-        errorCode: 0,
-        errorString: '',
-      ),
-    );
-  }
-
-  /// `Guid.str` collapses a standard 128-bit UUID to its 16-bit short form, so
-  /// both sides have to be normalized the same way or every lookup silently
-  /// misses and reads as "never enabled".
-  static String _key(String uuid) => Guid(uuid).str.toLowerCase();
-
-  void reset() {
-    writes.clear();
-    notifyCalls.clear();
-    _notifyState.clear();
-    // Complete before clearing: a test that failed mid-hold must not strand a
-    // parked write or enable into the next test's run.
-    for (final gate in [..._notifyGates.values, ..._writeGates.values]) {
-      if (!gate.isCompleted) gate.complete();
-    }
-    _notifyGates.clear();
-    _notifyGateWaiters.clear();
-    _writeGates.clear();
-    _writeGateWaiters.clear();
-    connectCalls.clear();
-    discoveryIncludesMachineStatus = true;
-    discoveryCount = 0;
-    answerCustomRequests = true;
-    _staleNotifyUuids.clear();
-    _permanentStaleNotifyUuids.clear();
-  }
-
-  @override
-  Stream<BmDiscoverServicesResult> get onDiscoveredServices =>
-      _discoveredServices.stream;
-
-  /// Reports two primary services — the SmartSpin2k custom service and FTMS —
-  /// because `_findChar` only runs when more than one service is present.
-  @override
-  Future<bool> discoverServices(BmDiscoverServicesRequest request) async {
-    discoveryCount++;
-    // Rediscovery is what repairs a stale cache, so it clears the failure —
-    // except where a test asked for one that outlives it.
-    _staleNotifyUuids.removeWhere(
-      (uuid) => !_permanentStaleNotifyUuids.contains(uuid),
-    );
-    BmBluetoothCharacteristic characteristic(String service, String uuid) =>
-        BmBluetoothCharacteristic(
-          remoteId: request.remoteId,
-          primaryServiceUuid: null,
-          serviceUuid: Guid(service),
-          characteristicUuid: Guid(uuid),
-          instanceId: 0,
-          descriptors: [],
-          properties: BmCharacteristicProperties(
-            broadcast: false,
-            read: true,
-            writeWithoutResponse: false,
-            write: true,
-            notify: true,
-            indicate: false,
-            authenticatedSignedWrites: false,
-            extendedProperties: false,
-            notifyEncryptionRequired: false,
-            indicateEncryptionRequired: false,
-          ),
-        );
-
-    BmBluetoothService service(String uuid, List<String> characteristics) =>
-        BmBluetoothService(
-          remoteId: request.remoteId,
-          primaryServiceUuid: null,
-          serviceUuid: Guid(uuid),
-          characteristics: [
-            for (final c in characteristics) characteristic(uuid, c),
-          ],
-        );
-
-    _discoveredServices.add(
-      BmDiscoverServicesResult(
-        remoteId: request.remoteId,
-        services: [
-          service(csUUID, [ccUUID]),
-          service(ftmsServiceUUID, [
-            _indoorBikeUuid,
-            FTMS_CONTROL_POINT_CHARACTERISTIC_UUID,
-            if (discoveryIncludesMachineStatus) _machineStatusUuid,
-          ]),
-        ],
-        success: true,
-        errorCode: 0,
-        errorString: '',
-      ),
-    );
-    return true;
-  }
-
-  // Returning false means "this characteristic has no CCCD", which is the
-  // branch where FlutterBluePlus skips waiting for an OnDescriptorWritten
-  // event. That keeps the fake to the one call it needs to observe.
-  @override
-  Future<bool> setNotifyValue(BmSetNotifyValueRequest request) async {
-    final uuid = request.characteristicUuid.str.toLowerCase();
-    final gate = _notifyGates[uuid];
-    if (gate != null) {
-      _notifyGateWaiters[uuid] = (_notifyGateWaiters[uuid] ?? 0) + 1;
-      await gate.future;
-      _notifyGateWaiters[uuid] = (_notifyGateWaiters[uuid] ?? 1) - 1;
-    }
-    if (_staleNotifyUuids.contains(uuid)) {
-      notifyCalls.add((uuid: uuid, enable: request.enable));
-      throw PlatformException(
-        code: 'setNotifyValue',
-        message: "primary service not found '1826'",
-      );
-    }
-    notifyCalls.add((uuid: uuid, enable: request.enable));
-    _notifyState[uuid] = request.enable;
-    return false;
-  }
-
-  @override
-  Stream<BmConnectionStateResponse> get onConnectionStateChanged =>
-      _connectionStates.stream;
-
-  @override
-  Stream<BmBluetoothAdapterState> get onAdapterStateChanged =>
-      _adapterStates.stream;
-
-  @override
-  Stream<BmCharacteristicData> get onCharacteristicWritten =>
-      _characteristicWrites.stream;
-
-  @override
-  Stream<BmCharacteristicData> get onCharacteristicReceived =>
-      _characteristicReceived.stream;
-
-  @override
-  Stream<BmDescriptorData> get onDescriptorWritten => _descriptorWrites.stream;
-
-  @override
-  Future<bool> isSupported(BmIsSupportedRequest request) async => true;
-
-  // BluetoothCharacteristic.write() fails the operation if the adapter reports
-  // off or turning off.
-  @override
-  Future<BmBluetoothAdapterState> getAdapterState(
-    BmBluetoothAdapterStateRequest request,
-  ) async => BmBluetoothAdapterState(adapterState: BmAdapterStateEnum.on);
-
-  @override
-  Future<bool> writeCharacteristic(
-    BmWriteCharacteristicRequest request,
-  ) async {
-    final gateKey = _key(request.characteristicUuid.str);
-    final gate = _writeGates[gateKey];
-    if (gate != null) {
-      _writeGateWaiters[gateKey] = (_writeGateWaiters[gateKey] ?? 0) + 1;
-      await gate.future;
-      _writeGateWaiters[gateKey] = (_writeGateWaiters[gateKey] ?? 1) - 1;
-    }
-    writes.add(List<int>.from(request.value));
-    // The real firmware answers every `[0x01, reference]` read with a
-    // `[0x80, reference, ...]` notification, and _writeCustomCharacteristic
-    // holds the shared transport queue until it arrives. A silent fake makes
-    // every settings sweep cost the full 2 s response timeout per entry, which
-    // is minutes for one connection bootstrap.
-    if (answerCustomRequests &&
-        _key(request.characteristicUuid.str) == _key(ccUUID) &&
-        request.value.length > 1) {
-      final reference = request.value[1];
-      scheduleMicrotask(() {
-        _characteristicReceived.add(
-          BmCharacteristicData(
-            remoteId: request.remoteId,
-            primaryServiceUuid: null,
-            serviceUuid: Guid(csUUID),
-            characteristicUuid: Guid(ccUUID),
-            instanceId: 0,
-            // This harness models firmware from before 0x31. Unknown reads
-            // are explicitly rejected, which exercises the production app's
-            // legacy per-setting fallback without weakening its strict rule.
-            value: reference == 0x31
-                ? const [0xff, 0x31]
-                : [0x80, reference],
-            success: true,
-            errorCode: 0,
-            errorString: '',
-          ),
-        );
-      });
-    }
-    // write() awaits a matching completion event before returning.
-    _characteristicWrites.add(
-      BmCharacteristicData(
-        remoteId: request.remoteId,
-        primaryServiceUuid: request.primaryServiceUuid,
-        serviceUuid: request.serviceUuid,
-        characteristicUuid: request.characteristicUuid,
-        instanceId: request.instanceId,
-        value: request.value,
-        success: true,
-        errorCode: 0,
-        errorString: '',
-      ),
-    );
-    return true;
-  }
-
-  void markConnected(DeviceIdentifier remoteId) {
-    _connectionStates.add(
-      BmConnectionStateResponse(
-        remoteId: remoteId,
-        connectionState: BmConnectionStateEnum.connected,
-        disconnectReasonCode: null,
-        disconnectReasonString: null,
-      ),
-    );
-  }
-
-  void markDisconnected(DeviceIdentifier remoteId) {
-    _connectionStates.add(
-      BmConnectionStateResponse(
-        remoteId: remoteId,
-        connectionState: BmConnectionStateEnum.disconnected,
-        disconnectReasonCode: null,
-        disconnectReasonString: null,
-      ),
-    );
-  }
-
-  // The real plugin resolves `connect()` first and only then publishes the
-  // connected state on its event stream, as a separate asynchronous step.
-  // `device.connect()` subscribes to that stream before awaiting our return,
-  // so a synchronous add would not actually be lost — deferring it a microtask
-  // is about staying faithful to the plugin's ordering (connect completes,
-  // then the state event lands), not about preventing event loss.
-  @override
-  Future<bool> connect(BmConnectRequest request) async {
-    connectCalls.add(request);
-    scheduleMicrotask(() => markConnected(request.remoteId));
-    return true;
-  }
-}
-
-/// Runs [body] with every `print` line also appended to [sink], so a test can
-/// assert on a specific transport log line without silencing normal output.
-Future<void> _withPrintCapture(
-  List<String> sink,
-  Future<void> Function() body,
-) {
-  return runZoned(
-    body,
-    zoneSpecification: ZoneSpecification(
-      print: (self, parent, zone, line) {
-        sink.add(line);
-        parent.print(zone, line);
-      },
-    ),
-  );
-}
-
-Future<void> _waitUntil(
-  bool Function() condition, {
-  Duration timeout = const Duration(seconds: 5),
-}) async {
-  final deadline = DateTime.now().add(timeout);
-  while (!condition()) {
-    if (DateTime.now().isAfter(deadline)) {
-      throw StateError('condition was not met within $timeout');
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 1));
-  }
 }

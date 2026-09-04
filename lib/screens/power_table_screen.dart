@@ -24,7 +24,6 @@ class PowerTableScreen extends StatefulWidget {
 }
 
 class _PowerTableScreenState extends State<PowerTableScreen> {
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
   StreamSubscription<CharacteristicChangeEvent>? _characteristicChangeSubscription;
   late DeviceData deviceData;
   String statusString = '';
@@ -61,7 +60,6 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
 
   @override
   void dispose() {
-    _connectionStateSubscription?.cancel();
     _characteristicChangeSubscription?.cancel();
     super.dispose();
   }
@@ -85,15 +83,6 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   }
 
   Future rwSubscription() async {
-    _connectionStateSubscription = this.widget.device.connectionState.listen((state) async {
-      if (state == BluetoothConnectionState.connected) {
-        // Request power table data when connection is restored
-        //_chartKey.currentState?.requestAllCadenceLines();
-        //_chartKey.currentState?.requestHomingValues();
-      }
-      // Connection state changes don't require rebuilding the metrics
-    });
-    
     _characteristicChangeSubscription = deviceData.characteristicChanges.listen((event) {
       if (deviceData.FTMSmode == 0 || deviceData.FTMSmode == 17) {
         deviceData.simulatedTargetWatts = "";
