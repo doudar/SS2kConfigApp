@@ -30,11 +30,16 @@ class _DropdownCardState extends State<DropdownCard> {
   late DeviceData deviceData;
   StreamSubscription? _charSubscription;
   final ScrollController _scrollController = ScrollController();
+  VoidCallback? _scanStateListener;
 
   @override
   void initState() {
     super.initState();
     deviceData = DeviceDataManager.forDevice(this.widget.device);
+    _scanStateListener = () {
+      if (mounted) setState(() {});
+    };
+    deviceData.bleDeviceScanInProgress.addListener(_scanStateListener!);
     buildDevicesMap();
     selectedValue = ddItems.isNotEmpty ? ddItems[0] : null;
     try {
@@ -57,7 +62,11 @@ class _DropdownCardState extends State<DropdownCard> {
 
   @override
   void dispose() {
+    if (_scanStateListener != null) {
+      deviceData.bleDeviceScanInProgress.removeListener(_scanStateListener!);
+    }
     _charSubscription?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -143,6 +152,7 @@ class _DropdownCardState extends State<DropdownCard> {
   @override
   Widget build(BuildContext context) {
     Color baseColor = _getTileColor();
+    final isScanning = deviceData.bleDeviceScanInProgress.value;
     return Center(
       child: Container(
         constraints: BoxConstraints(
@@ -301,18 +311,40 @@ class _DropdownCardState extends State<DropdownCard> {
                     children: <Widget>[
                       if (!demoModeBypass.value)
                         TextButton.icon(
-                          icon: Icon(Icons.refresh, color: Colors.white70),
-                          label: const Text(
-                            'SCAN',
-                            style: TextStyle(color: Colors.white),
+                          icon: isScanning
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.refresh,
+                                  color: Colors.white70,
+                                ),
+                          label: Text(
+                            isScanning ? 'SCANNING…' : 'SCAN',
+                            style: const TextStyle(color: Colors.white),
                           ),
-                          onPressed: () async {
-                            //Find the save command and execute it
-                            await this.deviceData.writeCommand(
-                              this.widget.device,
-                              scanBLEVname,
-                            );
-                          },
+                          onPressed: isScanning
+                              ? null
+                              : () async {
+                                  try {
+                                    await deviceData.scanForBleDevices(
+                                      widget.device,
+                                    );
+                                  } catch (error) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Could not start BLE scan: $error',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
                         ),
                       Spacer(),
                       TextButton(

@@ -38,4 +38,40 @@ void main() {
     expect(find.text('none'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('saved BLE device picker shows immediate scan feedback', (
+    tester,
+  ) async {
+    final device = BluetoothDevice.fromId('00:00:00:00:00:33');
+    final deviceData = DeviceData();
+    DeviceDataManager.updateDataForDevice(device, deviceData);
+    addTearDown(() {
+      DeviceDataManager.clearDataForDevice(device);
+      deviceData.dispose();
+    });
+
+    final powerMeter = deviceData.customCharacteristic.firstWhere(
+      (characteristic) => characteristic['vName'] == connectedPWRVname,
+    );
+    powerMeter['value'] = 'any';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DropdownCard(device: device, c: powerMeter),
+        ),
+      ),
+    );
+
+    expect(find.text('SCAN'), findsOneWidget);
+    deviceData.bleDeviceScanInProgress.value = true;
+    await tester.pump();
+
+    expect(find.text('SCANNING…'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(
+      tester.widget<TextButton>(find.byType(TextButton).first).onPressed,
+      isNull,
+    );
+  });
 }
