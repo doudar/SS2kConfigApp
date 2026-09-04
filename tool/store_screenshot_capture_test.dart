@@ -51,7 +51,7 @@ class _CaptureTarget {
 }
 
 const _targets = <_CaptureTarget>[
-  _CaptureTarget('ios_iphone', Size(660, 1434), Size(1320, 2868)),
+  _CaptureTarget('ios_iphone', Size(642, 1389), Size(1284, 2778)),
   _CaptureTarget('ios_ipad', Size(1376, 1032), Size(2752, 2064)),
   _CaptureTarget('macos', Size(1440, 900), Size(2880, 1800)),
   _CaptureTarget('android_phone', Size(540, 960), Size(1080, 1920)),
@@ -64,15 +64,45 @@ Future<void> _loadFont(String family, String path) async {
   await loader.load();
 }
 
+String _firstAvailablePath(List<String> candidates) {
+  for (final candidate in candidates) {
+    if (File(candidate).existsSync()) return candidate;
+  }
+  throw StateError('No supported file found in: ${candidates.join(', ')}');
+}
+
+String _materialIconsPath() {
+  var directory = File(Platform.resolvedExecutable).parent;
+  while (directory.parent.path != directory.path) {
+    final candidate = <String>[
+      directory.path,
+      'bin',
+      'cache',
+      'artifacts',
+      'material_fonts',
+      'MaterialIcons-Regular.otf',
+    ].join(Platform.pathSeparator);
+    if (File(candidate).existsSync()) return candidate;
+    directory = directory.parent;
+  }
+  throw StateError(
+    'Could not locate MaterialIcons-Regular.otf in the Flutter SDK.',
+  );
+}
+
 Future<void> _loadCaptureFonts() async {
   // flutter_test defaults to the block-shaped Ahem font. Load a normal system
   // face plus Flutter's icon font so the capture matches the running app.
-  await _loadFont('Ahem', '/System/Library/Fonts/Supplemental/Arial.ttf');
-  await _loadFont('StoreSans', '/System/Library/Fonts/Supplemental/Arial.ttf');
-  await _loadFont(
-    'MaterialIcons',
-    '/Users/anthonydoud/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-  );
+  final regularFont = _firstAvailablePath(<String>[
+    '/System/Library/Fonts/Supplemental/Arial.ttf',
+    r'C:\Windows\Fonts\arial.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+  ]);
+  final materialIcons = _materialIconsPath();
+
+  await _loadFont('Ahem', regularFont);
+  await _loadFont('StoreSans', regularFont);
+  await _loadFont('MaterialIcons', materialIcons);
 }
 
 Future<ThemeData> _loadDarkTheme(WidgetTester tester) async {

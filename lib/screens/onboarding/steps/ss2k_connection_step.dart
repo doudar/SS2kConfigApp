@@ -11,6 +11,7 @@ import '../../../utils/onboarding/wizard_session.dart';
 import '../../../utils/snackbar.dart';
 import '../../../utils/demo.dart';
 import '../../../utils/smartspin_advertisement.dart';
+import '../../../utils/nearby_ble_devices.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../widgets/scan_result_tile.dart';
 
@@ -41,6 +42,8 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
     }
     _scanResultsSubscription = FlutterBluePlus.scanResults.listen(
       (results) {
+        NearbyBleDevices.instance.observeAll(results);
+        DeviceDataManager.refreshNearbyDevices();
         if (mounted) setState(() => _scanResults = results);
       },
       onError: (e) {

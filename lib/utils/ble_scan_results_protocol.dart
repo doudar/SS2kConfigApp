@@ -9,10 +9,11 @@ const int bleScanResultsHeaderLength = 10;
 enum BleScanResultEvent { begin, device, end }
 
 class BleScanDevice {
-  const BleScanDevice({required this.name, required this.uuid});
+  const BleScanDevice({required this.name, required this.uuid, this.address});
 
   final String name;
   final String uuid;
+  final String? address;
 }
 
 class BleScanResultUpdate {
