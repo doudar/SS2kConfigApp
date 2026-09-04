@@ -4067,6 +4067,17 @@ class DeviceData {
   }
 
   void _renderFoundDevices(Map characteristic) {
+    final connectedHeartRate = getVnameValue(
+      connectedHRMVname,
+      returnNoFirmSupport: true,
+    );
+    final connectedPowerMeter = getVnameValue(
+      connectedPWRVname,
+      returnNoFirmSupport: true,
+    );
+    _reconcileSavedFoundDevice(connectedHeartRate, bleHeartRateDeviceUuid);
+    _reconcileSavedFoundDevice(connectedPowerMeter, bleCyclingPowerDeviceUuid);
+
     final combined = <String, dynamic>{
       'device -4': {'name': 'any', 'UUID': bleHeartRateDeviceUuid},
       'device -3': {'name': 'none', 'UUID': bleHeartRateDeviceUuid},
@@ -4080,14 +4091,39 @@ class DeviceData {
     }
 
     combined['device -5'] = {
-      'name': getVnameValue(connectedHRMVname, returnNoFirmSupport: true),
+      'name': connectedHeartRate,
       'UUID': bleHeartRateDeviceUuid,
     };
     combined['device -6'] = {
-      'name': getVnameValue(connectedPWRVname, returnNoFirmSupport: true),
+      'name': connectedPowerMeter,
       'UUID': bleCyclingPowerDeviceUuid,
     };
     characteristic['value'] = jsonEncode([combined]);
+  }
+
+  void _reconcileSavedFoundDevice(String name, String uuid) {
+    final cleanName = name.trim();
+    if (cleanName.isEmpty ||
+        cleanName == 'any' ||
+        cleanName == 'none' ||
+        cleanName == 'null' ||
+        cleanName == 'Loading...' ||
+        cleanName == noFirmSupport) {
+      return;
+    }
+
+    // The configured value came from SmartSpin2k and is just as authoritative
+    // as a firmware scan result. Reconcile it before rendering so a native
+    // advertisement alias cannot appear beside the saved device while a scan
+    // is still in progress.
+    final reconciled = NearbyBleDevices.instance.reconcileFirmwareDevice(
+      BleScanDevice(name: cleanName, uuid: uuid),
+    );
+    _rememberFoundDevice(
+      uuid: reconciled.uuid,
+      name: reconciled.name,
+      address: reconciled.address,
+    );
   }
 
   /// Helper method to emit characteristic change events

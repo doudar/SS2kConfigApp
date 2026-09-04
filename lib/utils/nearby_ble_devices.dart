@@ -92,12 +92,12 @@ class NearbyBleDevices {
     _firmwareDevices[_deviceKey(device.name, device.uuid)] = device;
     _reconcileFirmwareChoices();
 
-    final matches = _matchingPeers(device).toList(growable: false);
+    final matches = _matchingPeerGroups(device);
     if (matches.length != 1) return device;
     return BleScanDevice(
       name: device.name,
       uuid: device.uuid,
-      address: matches.single.remoteId,
+      address: matches.single.peers.first.remoteId,
     );
   }
 
@@ -120,7 +120,7 @@ class NearbyBleDevices {
       // A uniquely reconciled firmware record is already represented by its
       // phone-visible peer above. Do not emit it a second time without an
       // address.
-      if (_matchingPeers(firmwareDevice).length == 1) continue;
+      if (_matchingPeerGroups(firmwareDevice).length == 1) continue;
       final key = _deviceKey(firmwareDevice.name, firmwareDevice.uuid);
       if (!emitted.add(key)) continue;
       yield firmwareDevice;
@@ -248,22 +248,26 @@ class NearbyBleDevices {
       peer.firmwareChoice = null;
     }
     for (final firmwareDevice in _firmwareDevices.values) {
-      final matches = _matchingPeers(firmwareDevice).toList(growable: false);
+      final matches = _matchingPeerGroups(firmwareDevice);
       if (matches.length != 1) continue;
-      final peer = matches.single;
-      peer.firmwareChoice = NearbyBleDevice(
-        name: firmwareDevice.name,
-        uuid: firmwareDevice.uuid,
-        remoteId: peer.remoteId,
-        identitySuffix: _suffixFromFirmwareName(firmwareDevice.name),
-      );
+      // A private address can rotate while the app remains open. Apply the
+      // authoritative firmware name to every address that produced the same
+      // generated native name so the aliases remain collapsed in [devices].
+      for (final peer in matches.single.peers) {
+        peer.firmwareChoice = NearbyBleDevice(
+          name: firmwareDevice.name,
+          uuid: firmwareDevice.uuid,
+          remoteId: peer.remoteId,
+          identitySuffix: _suffixFromFirmwareName(firmwareDevice.name),
+        );
+      }
     }
   }
 
-  Iterable<_NearbyBlePeer> _matchingPeers(BleScanDevice firmwareDevice) sync* {
+  List<_NearbyBlePeerGroup> _matchingPeerGroups(BleScanDevice firmwareDevice) {
     final firmwareName = firmwareDevice.name.toLowerCase();
-    final categoryPeers = <_NearbyBlePeer>[];
-    final exactPeers = <_NearbyBlePeer>[];
+    final categoryPeers = <_NearbyBlePeerMatch>[];
+    final exactPeers = <_NearbyBlePeerMatch>[];
     for (final peer in _peersByRemoteId.values) {
       final observations = peer.observations.values
           .where(
@@ -272,30 +276,64 @@ class NearbyBleDevices {
           )
           .toList(growable: false);
       if (observations.isEmpty) continue;
-      categoryPeers.add(peer);
-      if (observations.any(
-        (observed) => observed.name.toLowerCase() == firmwareName,
-      )) {
-        exactPeers.add(peer);
+      categoryPeers.add(_NearbyBlePeerMatch(peer, observations));
+      final exactObservations = observations
+          .where((observed) => observed.name.toLowerCase() == firmwareName)
+          .toList(growable: false);
+      if (exactObservations.isNotEmpty) {
+        exactPeers.add(_NearbyBlePeerMatch(peer, exactObservations));
       }
     }
 
     if (exactPeers.isNotEmpty) {
-      yield* exactPeers;
-      return;
+      return _groupEquivalentPeers(exactPeers);
     }
 
     final firmwareSuffix = _suffixFromFirmwareName(firmwareDevice.name);
-    if (firmwareSuffix == null) return;
-    for (final peer in categoryPeers) {
-      if (peer.observations.values.any(
-        (observed) =>
-            _sameDeviceCategory(observed.uuid, firmwareDevice.uuid) &&
-            observed.identitySuffix == firmwareSuffix,
-      )) {
-        yield peer;
+    if (firmwareSuffix == null) return const [];
+    final suffixPeers = <_NearbyBlePeerMatch>[];
+    for (final match in categoryPeers) {
+      final matchingObservations = match.observations
+          .where((observed) => observed.identitySuffix == firmwareSuffix)
+          .toList(growable: false);
+      if (matchingObservations.isNotEmpty) {
+        suffixPeers.add(_NearbyBlePeerMatch(match.peer, matchingObservations));
       }
     }
+    return _groupEquivalentPeers(suffixPeers);
+  }
+
+  /// Groups observations that have the same generated native name. Windows
+  /// and Android can expose more than one private address for one physical
+  /// sensor over the lifetime of the app, but those observations still carry
+  /// the same firmware identity suffix. Different names sharing only an
+  /// eight-bit suffix remain separate and therefore ambiguous.
+  static List<_NearbyBlePeerGroup> _groupEquivalentPeers(
+    List<_NearbyBlePeerMatch> matches,
+  ) {
+    final groups = <_NearbyBlePeerGroup>[];
+    for (final match in matches) {
+      final names = match.observations
+          .map((observed) => observed.name.toLowerCase())
+          .toSet();
+      final overlapping = groups
+          .where((group) => group.names.any(names.contains))
+          .toList(growable: false);
+      if (overlapping.isEmpty) {
+        groups.add(_NearbyBlePeerGroup([match.peer], names));
+        continue;
+      }
+
+      final target = overlapping.first;
+      target.peers.add(match.peer);
+      target.names.addAll(names);
+      for (final duplicate in overlapping.skip(1)) {
+        target.peers.addAll(duplicate.peers);
+        target.names.addAll(duplicate.names);
+        groups.remove(duplicate);
+      }
+    }
+    return groups;
   }
 
   static String? _suffixFromFirmwareName(String name) {
@@ -331,4 +369,18 @@ class _NearbyBlePeer {
   final Map<String, NearbyBleDevice> observations = {};
   NearbyBleDevice? latest;
   NearbyBleDevice? firmwareChoice;
+}
+
+class _NearbyBlePeerMatch {
+  const _NearbyBlePeerMatch(this.peer, this.observations);
+
+  final _NearbyBlePeer peer;
+  final List<NearbyBleDevice> observations;
+}
+
+class _NearbyBlePeerGroup {
+  _NearbyBlePeerGroup(this.peers, this.names);
+
+  final List<_NearbyBlePeer> peers;
+  final Set<String> names;
 }

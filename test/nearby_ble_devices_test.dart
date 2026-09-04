@@ -124,6 +124,33 @@ void main() {
     expect(cache.devices.single.name, 'COROS HEART RATE C9340F 68');
   });
 
+  test(
+    'reconciles identical observations across a rotated private address',
+    () {
+      final cache = NearbyBleDevices.instance;
+      for (final id in ['42:11:22:33:44:55', '43:11:22:33:44:66']) {
+        cache.observe(
+          _result(
+            id: id,
+            name: 'COROS HR C9340F',
+            services: ['180d'],
+            manufacturerData: {
+              0x1234: [0x90, 0x68],
+            },
+          ),
+        );
+      }
+
+      final reconciled = cache.reconcileFirmwareDevice(
+        const BleScanDevice(name: 'COROS HEART RATE C9340F 68', uuid: '0x180d'),
+      );
+
+      expect(reconciled.address, isNotNull);
+      expect(cache.devices, hasLength(1));
+      expect(cache.devices.single.name, 'COROS HEART RATE C9340F 68');
+    },
+  );
+
   test('does not reconcile an ambiguous suffix', () {
     final cache = NearbyBleDevices.instance;
     for (final id in ['42:11:22:33:44:55', '43:11:22:33:44:66']) {
@@ -322,5 +349,50 @@ void main() {
     encoded = foundDevices['value'] as String;
     expect(encoded, contains('COROS HEART RATE C9340F 68'));
     expect(encoded, isNot(contains('COROS HR C9340F 68')));
+  });
+
+  test('saved firmware name replaces its native advertisement alias', () {
+    final cache = NearbyBleDevices.instance;
+    final smartSpin = BluetoothDevice.fromId('C2:11:22:33:44:88');
+    final data = DeviceDataManager.forDevice(smartSpin);
+    addTearDown(() {
+      DeviceDataManager.clearDataForDevice(smartSpin);
+      data.dispose();
+    });
+
+    final connectedHeartRate = data.customCharacteristic.firstWhere(
+      (characteristic) => characteristic['vName'] == connectedHRMVname,
+    );
+    connectedHeartRate['value'] = 'COROS HEART RATE C9340F 68';
+    cache.observe(
+      _result(
+        id: '42:11:22:33:44:55',
+        name: 'COROS HR C9340F',
+        services: ['180d'],
+        manufacturerData: {
+          0x1234: [0x90, 0x68],
+        },
+      ),
+    );
+
+    data.mergeAppDiscoveredBleDevices(cache.scanDevicesFor(smartSpin));
+
+    final foundDevices = data.customCharacteristic.firstWhere(
+      (characteristic) => characteristic['vName'] == foundDevicesVname,
+    );
+    final decoded = jsonDecode(foundDevices['value'] as String) as List;
+    final group = decoded.single as Map<String, dynamic>;
+    final heartRateNames = group.values
+        .where(
+          (device) =>
+              device is Map &&
+              isHeartRateDeviceServiceUuid(device['UUID']?.toString()),
+        )
+        .map((device) => (device as Map)['name'])
+        .whereType<String>()
+        .toList();
+
+    expect(heartRateNames, contains('COROS HEART RATE C9340F 68'));
+    expect(heartRateNames, isNot(contains('COROS HR C9340F 68')));
   });
 }
