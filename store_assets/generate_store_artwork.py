@@ -15,8 +15,24 @@ OUT = ROOT / "store_assets"
 BACKGROUND = OUT / "source" / "generated_background.png"
 APP_ICON = ROOT / "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png"
 
-FONT_REGULAR = "/System/Library/Fonts/Supplemental/Arial.ttf"
-FONT_BOLD = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+
+def first_available_font(*candidates: str) -> str:
+    for candidate in candidates:
+        if Path(candidate).is_file():
+            return candidate
+    raise FileNotFoundError(f"No supported font found in: {', '.join(candidates)}")
+
+
+FONT_REGULAR = first_available_font(
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+)
+FONT_BOLD = first_available_font(
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+)
 
 
 @dataclass(frozen=True)
@@ -71,7 +87,7 @@ STORIES = (
 
 
 PLATFORMS = {
-    "ios_iphone": (1320, 2868),
+    "ios_iphone": (1284, 2778),
     "ios_ipad": (2752, 2064),
     "macos": (2880, 1800),
     "android_phone": (1080, 1920),
@@ -331,7 +347,9 @@ def render_landscape(platform: str, size: tuple[int, int], story: Story, index: 
 
 def save_png(image: Image.Image, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(path, "PNG", optimize=True)
+    temporary_path = path.with_suffix(f"{path.suffix}.tmp")
+    image.save(temporary_path, "PNG", optimize=True)
+    temporary_path.replace(path)
 
 
 def feature_graphic() -> Image.Image:
@@ -377,7 +395,7 @@ def contact_sheet(paths: list[Path]) -> None:
         x = (idx % columns) * cell_w + 20
         y = (idx // columns) * cell_h + 20
         sheet.paste(image, (x, y))
-        draw.text((x, y + 310), str(path.relative_to(OUT)), font=label_font, fill="white")
+        draw.text((x, y + 310), path.relative_to(OUT).as_posix(), font=label_font, fill="white")
     save_png(sheet, OUT / "preview-contact-sheet.png")
 
 
@@ -399,7 +417,7 @@ def main() -> None:
                 {
                     "platform": platform,
                     "order": str(index),
-                    "file": str(path.relative_to(OUT)),
+                    "file": path.relative_to(OUT).as_posix(),
                     "dimensions": f"{size[0]}x{size[1]}",
                     "alt_text": story.alt,
                 }
@@ -412,7 +430,7 @@ def main() -> None:
         {
             "platform": "android",
             "order": "feature",
-            "file": str(feature_path.relative_to(OUT)),
+            "file": feature_path.relative_to(OUT).as_posix(),
             "dimensions": "1024x500",
             "alt_text": "SmartSpin2K workout dashboard over an energetic power-curve background.",
         }
@@ -425,17 +443,22 @@ def main() -> None:
         {
             "platform": "android",
             "order": "icon",
-            "file": str(icon_path.relative_to(OUT)),
+            "file": icon_path.relative_to(OUT).as_posix(),
             "dimensions": "512x512",
             "alt_text": "SmartSpin2K trainer controller hardware.",
         }
     )
 
     manifest_path = OUT / "manifest.csv"
-    with manifest_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=("platform", "order", "file", "dimensions", "alt_text"))
+    temporary_manifest_path = manifest_path.with_suffix(".csv.tmp")
+    with temporary_manifest_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=("platform", "order", "file", "dimensions", "alt_text"),
+        )
         writer.writeheader()
         writer.writerows(manifest_rows)
+    temporary_manifest_path.replace(manifest_path)
 
     contact_sheet([path for path in outputs if "app-icon" not in path.name])
     print(f"Generated {len(outputs)} store assets plus manifest and contact sheet in {OUT}")

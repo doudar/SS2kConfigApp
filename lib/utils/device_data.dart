@@ -16,12 +16,14 @@ import 'bleConstants.dart';
 import 'ble_connection_retry.dart';
 import 'ble_request_coalescer.dart';
 import 'ble_scan_results_protocol.dart';
+import 'ble_sensor_services.dart';
 import 'bleOTA.dart';
 import 'connection_setup_coordinator.dart';
 import 'device_transport_state.dart';
 import 'dircon_client.dart';
 import 'settings_snapshot_protocol.dart';
 import 'smartspin_advertisement.dart';
+import 'nearby_ble_devices.dart';
 import 'workout_control_lane.dart';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -169,7 +171,11 @@ class DeviceDataManager {
     if (!_dataMap.containsKey(device.remoteId.str)) {
       _dataMap[device.remoteId.str] = DeviceData();
     }
-    return _dataMap[device.remoteId.str]!;
+    final data = _dataMap[device.remoteId.str]!;
+    data.mergeAppDiscoveredBleDevices(
+      NearbyBleDevices.instance.scanDevicesFor(device),
+    );
+    return data;
   }
 
   static void updateDataForDevice(BluetoothDevice device, DeviceData data) {
@@ -178,6 +184,17 @@ class DeviceDataManager {
 
   static void clearDataForDevice(BluetoothDevice device) {
     _dataMap.remove(device.remoteId.str);
+  }
+
+  /// Re-applies the latest phone-side discoveries to every active connection.
+  /// This lets a late scan response reconcile an earlier firmware result.
+  static void refreshNearbyDevices() {
+    for (final entry in _dataMap.entries) {
+      final device = BluetoothDevice.fromId(entry.key);
+      entry.value.mergeAppDiscoveredBleDevices(
+        NearbyBleDevices.instance.scanDevicesFor(device),
+      );
+    }
   }
 }
 
@@ -3932,6 +3949,24 @@ class DeviceData {
 
   final Map<String, Map<String, String>> _foundDevicesForConnection = {};
 
+  /// Seeds this SmartSpin2k connection with supported sensors the companion
+  /// app already heard while scanning for SmartSpin2ks.
+  void mergeAppDiscoveredBleDevices(Iterable<BleScanDevice> devices) {
+    _ensureCachedMap();
+    final foundDevices = _cachedCharacteristicMap?[0x14];
+    if (foundDevices == null) return;
+
+    for (final device in devices) {
+      _rememberFoundDevice(
+        uuid: device.uuid,
+        name: device.name,
+        address: device.address,
+      );
+    }
+    _renderFoundDevices(foundDevices);
+    _emitCharacteristicChange(foundDevices);
+  }
+
   void _rememberFoundDevice({
     required String uuid,
     String? name,
@@ -3945,12 +3980,25 @@ class DeviceData {
         : cleanAddress;
     if (cleanUuid.isEmpty || label == null || label.isEmpty) return;
 
-    final key = '$cleanUuid\u0000$label';
+    final hasAddress = cleanAddress != null && cleanAddress.isNotEmpty;
+    final key = hasAddress
+        ? 'address:${cleanAddress.toLowerCase()}'
+        : 'name:${cleanUuid.toLowerCase()}\u0000${label.toLowerCase()}';
+
+    if (hasAddress) {
+      // A firmware result may arrive after its phone-side alias was inserted
+      // without an address. Remove only exact aliases; unknown/ambiguous
+      // devices remain separate rather than being guessed together.
+      _foundDevicesForConnection.removeWhere((existingKey, existing) {
+        if (existingKey == key || existing['address'] != null) return false;
+        return existing['name']?.toString().toLowerCase() ==
+            label.toLowerCase();
+      });
+    }
     _foundDevicesForConnection[key] = {
       'name': label,
       'UUID': cleanUuid,
-      if (cleanAddress != null && cleanAddress.isNotEmpty)
-        'address': cleanAddress,
+      if (hasAddress) 'address': cleanAddress,
     };
   }
 
@@ -3960,7 +4008,14 @@ class DeviceData {
     if (foundDevices == null) return;
 
     for (final device in devices) {
-      _rememberFoundDevice(uuid: device.uuid, name: device.name);
+      final reconciled = NearbyBleDevices.instance.reconcileFirmwareDevice(
+        device,
+      );
+      _rememberFoundDevice(
+        uuid: reconciled.uuid,
+        name: reconciled.name,
+        address: reconciled.address,
+      );
     }
     _renderFoundDevices(foundDevices);
     _emitCharacteristicChange(foundDevices);
@@ -3990,10 +4045,19 @@ class DeviceData {
 
     final uuid = decoded['UUID']?.toString();
     if (uuid != null) {
-      _rememberFoundDevice(
+      final address = decoded['address']?.toString();
+      final firmwareDevice = BleScanDevice(
         uuid: uuid,
-        name: decoded['name']?.toString(),
-        address: decoded['address']?.toString(),
+        name: decoded['name']?.toString() ?? address ?? '',
+        address: address,
+      );
+      final reconciled = address == null || address.trim().isEmpty
+          ? NearbyBleDevices.instance.reconcileFirmwareDevice(firmwareDevice)
+          : firmwareDevice;
+      _rememberFoundDevice(
+        uuid: reconciled.uuid,
+        name: reconciled.name,
+        address: reconciled.address,
       );
       return;
     }
@@ -4004,10 +4068,10 @@ class DeviceData {
 
   void _renderFoundDevices(Map characteristic) {
     final combined = <String, dynamic>{
-      'device -4': {'name': 'any', 'UUID': '0x180d'},
-      'device -3': {'name': 'none', 'UUID': '0x180d'},
-      'device -2': {'name': 'any', 'UUID': '0x1818'},
-      'device -1': {'name': 'none', 'UUID': '0x1818'},
+      'device -4': {'name': 'any', 'UUID': bleHeartRateDeviceUuid},
+      'device -3': {'name': 'none', 'UUID': bleHeartRateDeviceUuid},
+      'device -2': {'name': 'any', 'UUID': bleCyclingPowerDeviceUuid},
+      'device -1': {'name': 'none', 'UUID': bleCyclingPowerDeviceUuid},
     };
 
     var index = 0;
@@ -4017,11 +4081,11 @@ class DeviceData {
 
     combined['device -5'] = {
       'name': getVnameValue(connectedHRMVname, returnNoFirmSupport: true),
-      'UUID': '0x180d',
+      'UUID': bleHeartRateDeviceUuid,
     };
     combined['device -6'] = {
       'name': getVnameValue(connectedPWRVname, returnNoFirmSupport: true),
-      'UUID': '0x1818',
+      'UUID': bleCyclingPowerDeviceUuid,
     };
     characteristic['value'] = jsonEncode([combined]);
   }

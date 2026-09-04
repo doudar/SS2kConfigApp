@@ -4,7 +4,7 @@ This folder contains upload-ready English store artwork built from the app's rea
 
 ## Upload sets
 
-- `ios_iphone/`: four 1320 × 2868 portrait screenshots for Apple's 6.9-inch iPhone slot.
+- `ios_iphone/`: four 1284 × 2778 portrait screenshots for Apple's 6.5-inch iPhone slot.
 - `ios_ipad/`: four 2752 × 2064 landscape screenshots for Apple's required 13-inch iPad slot.
 - `macos/`: four 2880 × 1800 screenshots in Apple's required 16:10 Mac format.
 - `android_phone/`: four 1080 × 1920 portrait screenshots in Google's recommendation-friendly 9:16 phone format.
@@ -23,10 +23,10 @@ The capture harness starts Flutter's headless test renderer, mounts the producti
 flutter test tool/store_screenshot_capture_test.dart
 ```
 
-Then composite the raw Flutter captures into the upload artwork with the bundled Codex image runtime (or any Python with Pillow installed):
+Then composite the raw Flutter captures into the upload artwork with any Python installation that has Pillow available:
 
 ```sh
-/Users/anthonydoud/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 store_assets/generate_store_artwork.py
+python store_assets/generate_store_artwork.py
 ```
 
 The raw, viewport-specific Flutter captures are saved beneath `source/flutter/`. The reusable backdrop in `source/generated_background.png` was produced with the built-in image-generation tool. Store text and real Flutter renders are composited deterministically by `generate_store_artwork.py` so labels remain accurate.

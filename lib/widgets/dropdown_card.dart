@@ -12,6 +12,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/device_data.dart';
 import '../utils/constants.dart';
 import '../utils/demo.dart';
+import '../utils/ble_sensor_services.dart';
 
 class DropdownCard extends StatefulWidget {
   const DropdownCard({Key? key, required this.device, required this.c})
@@ -102,16 +103,12 @@ class _DropdownCardState extends State<DropdownCard> {
       for (final device in deviceGroup.values) {
         if (device is! Map) continue;
         if (widget.c['vName'] == connectedPWRVname) {
-          if (device['UUID'] == '0x1818' ||
-              device['UUID'] == '0x1826' ||
-              device['UUID'] == '0x1816' ||
-              device['UUID'] == '6e400001-b5a3-f393-e0a9-e50e24dcca9e' ||
-              device['UUID'] == '0bf669f0-45f2-11e7-9598-0800200c9a66') {
+          if (isPowerMeterDeviceServiceUuid(device['UUID']?.toString())) {
             _addDeviceLabel(dropdownItems, device);
           }
         }
         if (widget.c['vName'] == connectedHRMVname) {
-          if (device['UUID'] == '0x180d') {
+          if (isHeartRateDeviceServiceUuid(device['UUID']?.toString())) {
             _addDeviceLabel(dropdownItems, device);
           }
         }

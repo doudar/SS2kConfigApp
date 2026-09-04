@@ -7,6 +7,8 @@
 
 import 'package:flutter/material.dart';
 
+import 'ble_sensor_services.dart';
+
 enum SettingType {
   basic,
   bluetooth,
@@ -36,7 +38,7 @@ const double MIN_RESISTANCE_RANGE =
 final String csUUID = "77776277-7877-7774-4466-896665500000";
 final String ccUUID = "77776277-7877-7774-4466-896665500001";
 
-final String ftmsServiceUUID = "00001826-0000-1000-8000-00805f9b34fb";
+const String ftmsServiceUUID = bleFitnessMachineServiceUuid128;
 final String ftmsControlPointUUID = "00002AD9-0000-1000-8000-00805f9b34fb";
 final String ftmsIndoorBikeDataUUID = "00002AD2-0000-1000-8000-00805f9b34fb";
 
@@ -48,7 +50,7 @@ final String noFirmSupport = "Not supported by firmware version.";
 
 // Any and None selections pre-formatted so they can be appended to the JSON from the SmartSpin2k easily.
 String defaultDevices =
-    '''[{"device -4": {"name": "any", "UUID": "0x180d"},"device -3": {"name": "none", "UUID": "0x180d"},"device -2": {"name": "any", "UUID": "0x1818"},"device -1": {"name": "none", "UUID": "0x1818"},''';
+    '''[{"device -4": {"name": "any", "UUID": "$bleHeartRateDeviceUuid"},"device -3": {"name": "none", "UUID": "$bleHeartRateDeviceUuid"},"device -2": {"name": "any", "UUID": "$bleCyclingPowerDeviceUuid"},"device -1": {"name": "none", "UUID": "$bleCyclingPowerDeviceUuid"},''';
 
 // Defining vName variables directly for easier editing
 final String passwordVname = "BLE_password";
@@ -211,7 +213,7 @@ final dynamic customCharacteristicFramework = [
     "max": 2000,
     "textDescription": "The following devices have been found",
     "defaultData":
-        "[{\"device 0\":{\"name\":\"Polar OH1 B9B6D624 d6\",\"UUID\":\"0x180d\"},\"device 1\":{\"name\":\"Wahoo Kicker\",\"UUID\":\"0x1818\"} }]",
+        "[{\"device 0\":{\"name\":\"Polar OH1 B9B6D624 d6\",\"UUID\":\"$bleHeartRateDeviceUuid\"},\"device 1\":{\"name\":\"Wahoo Kicker\",\"UUID\":\"$bleCyclingPowerDeviceUuid\"} }]",
   },
   {
     "vName": shiftStepVname,

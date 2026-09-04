@@ -23,6 +23,7 @@ import '../utils/demo.dart';
 import 'onboarding/onboarding_wizard.dart';
 import '../utils/onboarding/wizard_session.dart';
 import '../utils/smartspin_advertisement.dart';
+import '../utils/nearby_ble_devices.dart';
 import 'package:provider/provider.dart';
 
 class ScanScreen extends StatefulWidget {
@@ -46,6 +47,8 @@ class _ScanScreenState extends State<ScanScreen> {
 
     _scanResultsSubscription = FlutterBluePlus.scanResults.listen(
       (results) {
+        NearbyBleDevices.instance.observeAll(results);
+        DeviceDataManager.refreshNearbyDevices();
         _scanResults = results;
         if (mounted) {
           setState(() {});
