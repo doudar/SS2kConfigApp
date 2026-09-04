@@ -287,6 +287,25 @@ class DeviceData {
   Timer? _ftmsPostConnectionTimer;
   bool _ftmsPostConnectionBlockActive = false;
 
+  /// The SmartSpin2k whose custom-characteristic stream this object owns.
+  /// Kept so firmware-initiated scans (which arrive as BEGIN/END packets rather
+  /// than through a button callback) can pause and restore FTMS as well.
+  BluetoothDevice? _connectedDevice;
+
+  static const Duration _bleDeviceScanTimeout = Duration(seconds: 20);
+  Future<void>? _bleDeviceScanRequest;
+  Future<void>? _bleDeviceScanEndInFlight;
+  Completer<void>? _bleDeviceScanCompletion;
+  Timer? _bleDeviceScanTimer;
+  bool _bleDeviceScanOwnsFtmsBlock = false;
+
+  /// True from the instant a scan is requested (or observed on the stream)
+  /// until its END packet/result arrives. Device pickers listen to this for
+  /// immediate, shared UI feedback.
+  final ValueNotifier<bool> bleDeviceScanInProgress = ValueNotifier<bool>(
+    false,
+  );
+
   /// True only while FTMS Machine Status is genuinely usable: a listener is
   /// published and its wire-level enable succeeded on the current transport.
   ///
@@ -470,7 +489,10 @@ class DeviceData {
     final machineStatusSubscription = _machineStatusSubscription;
     final controlPointSubscription = _controlPointSubscription;
     await _closeDirCon();
-    _resetConnectionState(cancelBleSubscriptions: false);
+    _resetConnectionState(
+      cancelBleSubscriptions: false,
+      clearBleScanResults: true,
+    );
     await _safeCancel(notifySubscription, 'custom characteristic');
     await _safeCancel(ftmsSubscription, 'FTMS Indoor Bike Data');
     await _safeCancel(machineStatusSubscription, 'FTMS Machine Status');
@@ -971,6 +993,7 @@ class DeviceData {
     bool settle = true,
   }) {
     if (_isDisposed) return;
+    _connectedDevice = device;
     final wasAlreadyConnected =
         _transportStateController.value.transport == transport &&
         _transportStateController.value.phase == DeviceTransportPhase.connected;
@@ -1159,7 +1182,10 @@ class DeviceData {
 
   /// Reset BLE state that is tied to a specific connection so that the next
   /// [setupConnection] call performs a full re-bootstrap.
-  void _resetConnectionState({bool cancelBleSubscriptions = true}) {
+  void _resetConnectionState({
+    bool cancelBleSubscriptions = true,
+    bool clearBleScanResults = false,
+  }) {
     _setupCoordinator.invalidate();
     final pendingResponse = _pendingCustomResponse;
     if (pendingResponse != null && !pendingResponse.isCompleted) {
@@ -1179,8 +1205,12 @@ class DeviceData {
     _settingsSnapshotCompleter = null;
     _settingsSnapshotDecoder.reset();
     _settingsSnapshotSupport = _SettingsSnapshotSupport.unknown;
+    unawaited(_endBleDeviceScan(_connectedDevice));
     _scanResultDecoder.reset();
     _scanResultStreamSupported = false;
+    if (clearBleScanResults) {
+      _foundDevicesForConnection.clear();
+    }
     _customReadRequestCoalescer.clear();
     // The breaker describes a link that no longer exists; the next one starts
     // with a clean record.
@@ -1212,6 +1242,10 @@ class DeviceData {
     _inUpdateLoop = false;
     _lastRequestStopwatch.reset();
     _cachedCharacteristicMap = null;
+    // Re-render the persistent discoveries against the freshly rebuilt
+    // characteristic map. Transparent BLE/DIRCON handoffs and automatic
+    // reconnects are still the same user-visible SmartSpin2k connection, so
+    // only an explicit disconnect clears these choices.
     _applyStreamedFoundDevices(const <BleScanDevice>[]);
     lastFtmsUpdate = null;
     _ftmsRecoveryInProgress = false;
@@ -2684,6 +2718,14 @@ class DeviceData {
       return;
     }
 
+    try {
+      await _writeCommandStrict(device, name);
+    } catch (e) {
+      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
+    }
+  }
+
+  Future<void> _writeCommandStrict(BluetoothDevice device, String name) async {
     Map<String, dynamic>? command;
     for (final c in customCharacteristic) {
       if (c["vName"] == name) {
@@ -2691,16 +2733,131 @@ class DeviceData {
         break;
       }
     }
-    if (command == null) return;
+    if (command == null) {
+      throw StateError('SmartSpin2k command $name is unavailable');
+    }
 
+    await writeCustomCharacteristic(device, [
+      0x02,
+      int.parse(command["reference"]),
+      0x01,
+    ], priority: TransportOpPriority.interactive);
+  }
+
+  /// Starts a sensor scan as one session-wide operation.
+  ///
+  /// FTMS is fully paused before the scan command reaches the firmware and is
+  /// restored after the streamed END marker (or the legacy found-devices
+  /// result). A safety deadline prevents a dropped final notification from
+  /// leaving live workout data paused indefinitely.
+  Future<void> scanForBleDevices(BluetoothDevice device) {
+    final existing = _bleDeviceScanRequest;
+    if (existing != null) return existing;
+    if (bleDeviceScanInProgress.value) {
+      return _bleDeviceScanCompletion?.future ?? Future<void>.value();
+    }
+
+    final request = _runBleDeviceScan(device);
+    _bleDeviceScanRequest = request;
+    request.then<void>(
+      (_) {
+        if (identical(_bleDeviceScanRequest, request)) {
+          _bleDeviceScanRequest = null;
+        }
+      },
+      onError: (_) {
+        if (identical(_bleDeviceScanRequest, request)) {
+          _bleDeviceScanRequest = null;
+        }
+      },
+    );
+    return request;
+  }
+
+  Future<void> _runBleDeviceScan(BluetoothDevice device) async {
+    _connectedDevice = device;
+    _beginBleDeviceScan(device);
+    final completion = _bleDeviceScanCompletion!;
     try {
-      await writeCustomCharacteristic(device, [
-        0x02,
-        int.parse(command["reference"]),
-        0x01,
-      ]);
-    } catch (e) {
-      Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
+      if (!_bleDeviceScanOwnsFtmsBlock) {
+        _bleDeviceScanOwnsFtmsBlock = true;
+        await blockFtmsNotifications();
+      }
+      if (!identical(_bleDeviceScanCompletion, completion) ||
+          completion.isCompleted) {
+        return;
+      }
+
+      try {
+        await _writeCommandStrict(device, scanBLEVname);
+      } on TransportResponseUnconfirmed {
+        // The write reached the peripheral; a busy scanner can delay its
+        // acknowledgement. Keep listening for BEGIN/results/END rather than
+        // claiming the scan failed while it is visibly running.
+        print('[BLE scan] command response unconfirmed; awaiting scan stream');
+      }
+
+      if (!completion.isCompleted) {
+        await completion.future.timeout(_bleDeviceScanTimeout);
+      }
+    } on TimeoutException {
+      print('[BLE scan] timed out waiting for scan completion');
+    } finally {
+      await _endBleDeviceScan(device);
+    }
+  }
+
+  void _beginBleDeviceScan(BluetoothDevice device) {
+    _connectedDevice = device;
+    if (!bleDeviceScanInProgress.value) {
+      bleDeviceScanInProgress.value = true;
+    }
+    _bleDeviceScanCompletion ??= Completer<void>();
+    _bleDeviceScanTimer?.cancel();
+    _bleDeviceScanTimer = Timer(_bleDeviceScanTimeout, () {
+      print('[BLE scan] safety timeout ended scan UI and FTMS pause');
+      unawaited(_endBleDeviceScan(device));
+    });
+  }
+
+  void _observeBleDeviceScanBegin() {
+    final device = _connectedDevice;
+    if (device == null || _isDisposed) return;
+    _beginBleDeviceScan(device);
+    if (!_bleDeviceScanOwnsFtmsBlock) {
+      _bleDeviceScanOwnsFtmsBlock = true;
+      unawaited(blockFtmsNotifications());
+    }
+  }
+
+  Future<void> _endBleDeviceScan(BluetoothDevice? device) async {
+    final existing = _bleDeviceScanEndInFlight;
+    if (existing != null) return existing;
+
+    final ending = _finishBleDeviceScan(device);
+    _bleDeviceScanEndInFlight = ending;
+    try {
+      await ending;
+    } finally {
+      if (identical(_bleDeviceScanEndInFlight, ending)) {
+        _bleDeviceScanEndInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _finishBleDeviceScan(BluetoothDevice? device) async {
+    _bleDeviceScanTimer?.cancel();
+    _bleDeviceScanTimer = null;
+    if (_bleDeviceScanOwnsFtmsBlock) {
+      _bleDeviceScanOwnsFtmsBlock = false;
+      if (device != null) await unblockFtmsNotifications(device);
+    }
+
+    final completion = _bleDeviceScanCompletion;
+    _bleDeviceScanCompletion = null;
+    if (completion != null && !completion.isCompleted) completion.complete();
+    if (!_isDisposed && bleDeviceScanInProgress.value) {
+      bleDeviceScanInProgress.value = false;
     }
   }
 
@@ -3524,6 +3681,9 @@ class DeviceData {
         final update = _scanResultDecoder.add(value);
         if (update != null) {
           _scanResultStreamSupported = true;
+          if (update.event == BleScanResultEvent.begin) {
+            _observeBleDeviceScanBegin();
+          }
           if (update.event == BleScanResultEvent.end &&
               update.isComplete == false) {
             print(
@@ -3533,6 +3693,9 @@ class DeviceData {
           }
           if (update.changed) {
             _applyStreamedFoundDevices(update.devices);
+          }
+          if (update.event == BleScanResultEvent.end) {
+            unawaited(_endBleDeviceScan(_connectedDevice));
           }
         }
         return;
@@ -3671,6 +3834,9 @@ class DeviceData {
                   if (_scanResultStreamSupported) return;
                   _formatFoundDevices(c, c["value"]);
                   print(c["value"]);
+                  if (bleDeviceScanInProgress.value) {
+                    unawaited(_endBleDeviceScan(_connectedDevice));
+                  }
                 }
                 //Set the firmware version
                 if (c["vName"] == fwVname) {
@@ -3764,20 +3930,79 @@ class DeviceData {
     }
   }
 
+  final Map<String, Map<String, String>> _foundDevicesForConnection = {};
+
+  void _rememberFoundDevice({
+    required String uuid,
+    String? name,
+    String? address,
+  }) {
+    final cleanUuid = uuid.trim();
+    final cleanName = name?.trim();
+    final cleanAddress = address?.trim();
+    final label = (cleanName != null && cleanName.isNotEmpty)
+        ? cleanName
+        : cleanAddress;
+    if (cleanUuid.isEmpty || label == null || label.isEmpty) return;
+
+    final key = '$cleanUuid\u0000$label';
+    _foundDevicesForConnection[key] = {
+      'name': label,
+      'UUID': cleanUuid,
+      if (cleanAddress != null && cleanAddress.isNotEmpty)
+        'address': cleanAddress,
+    };
+  }
+
   void _applyStreamedFoundDevices(List<BleScanDevice> devices) {
     _ensureCachedMap();
     final foundDevices = _cachedCharacteristicMap?[0x14];
     if (foundDevices == null) return;
 
-    final raw = <String, dynamic>{};
-    for (var i = 0; i < devices.length; i++) {
-      raw['device $i'] = {'name': devices[i].name, 'UUID': devices[i].uuid};
+    for (final device in devices) {
+      _rememberFoundDevice(uuid: device.uuid, name: device.name);
     }
-    _formatFoundDevices(foundDevices, jsonEncode(raw));
+    _renderFoundDevices(foundDevices);
     _emitCharacteristicChange(foundDevices);
   }
 
   void _formatFoundDevices(Map characteristic, String rawJson) {
+    if (rawJson.trim().isNotEmpty &&
+        rawJson.trim() != 'null' &&
+        rawJson.trim() != ' ') {
+      try {
+        _rememberLegacyFoundDevices(jsonDecode(rawJson));
+      } on FormatException {
+        print('[BLE scan] ignored malformed legacy found-devices result');
+      }
+    }
+    _renderFoundDevices(characteristic);
+  }
+
+  void _rememberLegacyFoundDevices(dynamic decoded) {
+    if (decoded is List) {
+      for (final value in decoded) {
+        _rememberLegacyFoundDevices(value);
+      }
+      return;
+    }
+    if (decoded is! Map) return;
+
+    final uuid = decoded['UUID']?.toString();
+    if (uuid != null) {
+      _rememberFoundDevice(
+        uuid: uuid,
+        name: decoded['name']?.toString(),
+        address: decoded['address']?.toString(),
+      );
+      return;
+    }
+    for (final value in decoded.values) {
+      _rememberLegacyFoundDevices(value);
+    }
+  }
+
+  void _renderFoundDevices(Map characteristic) {
     final combined = <String, dynamic>{
       'device -4': {'name': 'any', 'UUID': '0x180d'},
       'device -3': {'name': 'none', 'UUID': '0x180d'},
@@ -3785,15 +4010,9 @@ class DeviceData {
       'device -1': {'name': 'none', 'UUID': '0x1818'},
     };
 
-    if (rawJson.trim().isNotEmpty &&
-        rawJson.trim() != 'null' &&
-        rawJson.trim() != ' ') {
-      final decoded = jsonDecode(rawJson);
-      if (decoded is Map) {
-        for (final entry in decoded.entries) {
-          combined[entry.key.toString()] = entry.value;
-        }
-      }
+    var index = 0;
+    for (final device in _foundDevicesForConnection.values) {
+      combined['device ${index++}'] = device;
     }
 
     combined['device -5'] = {
@@ -3824,6 +4043,14 @@ class DeviceData {
   /// Dispose of resources
   void dispose() {
     _isDisposed = true;
+    _bleDeviceScanTimer?.cancel();
+    _bleDeviceScanTimer = null;
+    final scanCompletion = _bleDeviceScanCompletion;
+    _bleDeviceScanCompletion = null;
+    if (scanCompletion != null && !scanCompletion.isCompleted) {
+      scanCompletion.complete();
+    }
+    bleDeviceScanInProgress.dispose();
     _ftmsPostConnectionTimer?.cancel();
     _ftmsPostConnectionTimer = null;
     // Anything waiting on readiness is woken here rather than left to time out
