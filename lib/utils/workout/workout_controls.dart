@@ -6,11 +6,13 @@ import 'sounds.dart';
 class WorkoutControls extends StatefulWidget {
   final WorkoutController workoutController;
   final VoidCallback onStopWorkout;
+  final VoidCallback? onSkipSegment;
 
   const WorkoutControls({
     Key? key,
     required this.workoutController,
     required this.onStopWorkout,
+    this.onSkipSegment,
   }) : super(key: key);
 
   @override
@@ -104,7 +106,9 @@ class _WorkoutControlsState extends State<WorkoutControls> {
                     iconSize: 42,
                     color: Colors.white,
                     tooltip: 'Skip Segment',
-                    onPressed: widget.workoutController.skipToNextSegment,
+                    onPressed:
+                        widget.onSkipSegment ??
+                        widget.workoutController.skipToNextSegment,
                   ),
               ],
             ),
