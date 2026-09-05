@@ -62,8 +62,12 @@ and workout export as Classic.
   and prescribed FTP intensity sets their height, with beveled interval shoulders
   and sloping ramps. A tiny gold cyclist and trail mark progress along the ridge.
 - Each workout rolls one of three rescue stories with a different crew, stolen
-  object and hometown. The opening minute introduces the Gear Golem's heist;
-  the last minute brings the crew home. Short workouts shorten these chapters,
+  object and hometown. Pressing Play on a fresh Arcade ride shows a 16-second
+  cutscene: the village, the Gear Golem's heist, the capture and the cyclist's
+  pursuit. The ERG timer starts after the scene; **Skip & start ride** starts
+  immediately, and **Back** cancels. Resuming does not replay it. The cast stays
+  consistent through the ending, and the heist is not replayed in the riding view.
+  The last minute brings the crew home. Short workouts shorten this chapter,
   and endless free rides have no automatic homecoming. Stories follow the
   workout clock, so pauses and skips stay in sync.
 - Natural completion in Arcade plays a 12-second arrival, dismount and village
@@ -78,21 +82,44 @@ and workout export as Classic.
   stretches or shrinks with output so its boundary meets the workout timer;
   completed road stays fixed and future sectors use their planned intensity.
   Trainer control, workout duration and exported distance are unchanged.
+- The route strip previews the next target, interval duration and time until it
+  starts; wide layouts show up to three upcoming intervals. Tap a preview or road
+  block in the strip for the interval plan, including target watts and FTP
+  percentages. Ramps show directional watt ranges and sloping silhouettes.
+  The 3D road rises or falls through each ramp, with the rider's height anchored
+  to the workout clock even as power changes the remaining road length.
 - Stay within 10% of the current target (minimum tolerance 10 W) to earn energy.
   Every 15 seconds on target increases the combo, up to 4×. Three seconds of
   settling time protects a combo when power drifts. Extra power earns no bonus.
-- During coastal and neon chase sectors, detailed rotor drones fly in from the
-  screen edges and track the cyclist. Six accumulated seconds on target charge
-  the handlebar blaster, which locks on, fires a visible bolt and shatters the
-  drone into armor fragments and sparks. Off-target/stale data cannot charge it;
-  pausing freezes the encounter. Surviving drones fly away on sector changes.
-  New waves continue after a sector is secured. Drone kills are counted at the
-  finish without changing workout targets or awarding extra score. Impact sounds
-  respect the effects toggle; reduced motion replaces flybys and debris with
-  stationary targeting and impact cues.
-- Spend 65% of an interval on target to secure its sector (+150 points) or defeat
-  its boss (+500). Recovery earns energy too. Free rides reward pedaling with
+- During coastal and neon chase sectors, rotor drones arrive after random
+  18–38 second gaps, with varied entry edges and hover positions. Six accumulated
+  seconds on target charge the blaster. Tap the drone within the next eight
+  seconds to shoot it; tapping elsewhere in the world fires along the missed
+  direction. A miss, an unused charged shot, or 24 seconds hovering without a
+  full charge lets the drone steal up to 50 points and fly away. Scores stop at
+  zero, and each drone can steal only once. The quest bar shows blaster charge
+  during encounters; a gold ring and countdown mark the shooting window.
+  Pausing, stale telemetry, Classic, and modal screens freeze combat. A sector
+  change or skip releases an unshot drone without theft; committed shots finish.
+  Drone kills are counted at the finish without changing workout targets or
+  awarding extra score. Effects respect the audio toggle, and reduced motion
+  preserves the same tap targets without flybys or debris.
+- Spend 65% of a non-boss interval on target to secure its sector (+150 points).
+  Bosses share the drone blaster: six seconds on target charge a shot, then tap
+  the Golem within eight seconds. Only hits damage its shield. Each started
+  30 seconds of a hard interval adds an armor hit, capped at six; the final hit
+  awards +500 once. A miss or expired shot triggers a counterattack costing up
+  to 50 points, followed by another charge cycle. Bosses stay in the fight.
+  Recovery earns energy too. Free rides reward pedaling with
   positive power. Missing/stale telemetry and skipped time earn no credit.
+- The Gear Golem shares its animated forge body across story scenes and boss
+  battles: turning shoulder cogs, piston limbs, furnace core, exhaust stacks,
+  and a moving jaw. Armor cracks and sheds sparks as charged shots land.
+- Opening and ending scenes have character-anchored dialogue bubbles with
+  story-specific taunts, cries for help, and a homecoming conversation. Six
+  original synthesized vocal effects add a mechanical laugh, crew calls and
+  cheers, and hero responses. They follow the effects toggle and stop on skip
+  or backgrounding. Dialogue remains accessible and advances in reduced motion.
 - The **audio menu** controls music and sound effects independently. Effects
   start enabled; music is opt-in. Earned energy pickups, bolts, combo upgrades,
   secured sectors, boss arrivals and boss defeats each have their own cue.
@@ -109,11 +136,17 @@ and workout export as Classic.
   Loading/restarting a workout resets the quest; scores are not saved across
   closing the screen or restarting the app. The finish panel reports your rank,
   secured sectors, bosses, and best combo.
+- While a workout is playing, Arcade expands over the device header. Pausing
+  or stopping shrinks it back to reveal the header; Classic always keeps it.
+  The header stays mounted to preserve connection monitoring, and expansion
+  preserves the active Arcade state. Reduced motion switches layouts directly.
 
 The world is drawn with Flutter `CustomPainter`; no game engine, network assets,
 or additional dependencies are required. Original PCM music is checked in under
 `assets/sounds/arcade_*.wav`. Regenerate it with
 `dart run tool/generate_arcade_music.dart`.
+The six formant-synthesized vocal assets are generated separately with
+`python tool/generate_arcade_voices.py` (standard library only).
 
 Run arcade checks with
 `flutter test test/arcade_session_test.dart test/arcade_workout_view_test.dart test/arcade_audio_test.dart test/arcade_road_test.dart test/arcade_pedaling_test.dart`.

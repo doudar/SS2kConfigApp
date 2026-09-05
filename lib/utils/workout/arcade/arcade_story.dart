@@ -35,12 +35,13 @@ class ArcadeStory {
     required bool endless,
     required int bosses,
     required int sectors,
+    bool openingSeen = false,
   }) {
     final time = seconds.isFinite ? math.max(0.0, seconds) : 0.0;
     final duration = total.isFinite ? math.max(0.0, total) : 0.0;
     // Short rides get shorter chapters; neither depends on segment labels.
     final chapter = endless ? 60.0 : math.min(60.0, duration / 3);
-    final phase = chapter > 0 && time < chapter
+    final phase = !openingSeen && chapter > 0 && time < chapter
         ? ArcadeStoryPhase.opening
         : !endless && chapter > 0 && time >= duration - chapter
         ? ArcadeStoryPhase.homecoming

@@ -204,13 +204,13 @@ void main() {
       sample(2);
       expect(game.cues, isEmpty);
       sample(3);
-      expect(game.cues, [ArcadeCue.bolt]);
+      expect(game.cues, [ArcadeCue.pickup]);
       sample(4, fresh: false);
       expect(game.cues, isEmpty);
       for (var i = 5; i <= 16; i++) sample(i.toDouble());
       expect(game.cues, contains(ArcadeCue.combo));
       for (var i = 17; i <= 66; i++) sample(i.toDouble());
-      expect(game.cues, contains(ArcadeCue.bossDefeat));
+      expect(game.cues, isNot(contains(ArcadeCue.bossDefeat)));
       sample(67);
       expect(game.cues, isNot(contains(ArcadeCue.bossDefeat)));
       game.willSkip();

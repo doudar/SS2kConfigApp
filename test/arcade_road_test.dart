@@ -9,6 +9,53 @@ WorkoutSegment _sector(int duration, double power) => WorkoutSegment(
 );
 
 void main() {
+  test(
+    'ramp terrain follows time at the rider while remaining distance changes',
+    () {
+      final ramp = WorkoutSegment(
+        type: SegmentType.warmup,
+        duration: 10,
+        powerLow: .4,
+        powerHigh: 1.2,
+        isRamp: true,
+      );
+      final road = ArcadeRoad();
+      final route = [
+        ramp,
+        WorkoutSegment(
+          type: SegmentType.cooldown,
+          duration: 10,
+          powerLow: .4,
+          powerHigh: 1.2,
+          isRamp: true,
+        ),
+      ];
+      void sample(double seconds, double watts) => road.update(
+        segments: route,
+        seconds: seconds,
+        watts: watts,
+        ftp: 200,
+        playing: true,
+      );
+      for (var i = 0; i <= 5; i++) sample(i.toDouble(), 200);
+      final before = road.snapshot();
+      expect(before.powerAt(before.position), closeTo(.8, 1e-9));
+      sample(5, 400);
+      final faster = road.snapshot();
+      expect(faster.position, before.position);
+      expect(faster.spans.first.end, greaterThan(before.spans.first.end));
+      expect(faster.powerAt(faster.position), closeTo(.8, 1e-9));
+      final pieces = faster.pieces(9, 11).toList();
+      expect(pieces, hasLength(2));
+      expect(pieces.first.endPower, closeTo(.8, 1e-9));
+      expect(pieces.last.startPower, closeTo(.8, 1e-9));
+      expect(pieces.first.startPower, lessThan(pieces.last.endPower));
+      expect(faster.pieces(29, 30).last.endPower, closeTo(1.2, 1e-9));
+      // The following cooldown starts high, then falls along its road span.
+      expect(faster.powerAt(30), closeTo(1.2, 1e-9));
+      expect(faster.powerAt(35), lessThan(faster.powerAt(30)));
+    },
+  );
   late ArcadeRoad road;
   late List<WorkoutSegment> segments;
   void sample(

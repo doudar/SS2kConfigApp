@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'arcade_cues.dart';
+import 'arcade_dialogue.dart';
 import 'arcade_music.dart';
 import 'arcade_session.dart';
 import 'arcade_sound_effects.dart';
@@ -36,8 +36,12 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
   late final ArcadeSoundEffects _effects;
   bool _foreground = true;
   bool _leaving = false;
-  bool _cheered = false;
+  int _chapter = 0;
   bool _started = false;
+  bool get _recovered =>
+      widget.session.bossesDefeated > 0 || widget.session.cleared.isNotEmpty;
+  ArcadeDialogue get _dialogue =>
+      ArcadeDialogue.ending(_chapter, recovered: _recovered);
 
   @override
   void initState() {
@@ -58,9 +62,10 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
   }
 
   void _tick() {
-    if (!_cheered && _clock.value >= .58) {
-      _cheered = true;
-      _effects.play([ArcadeCue.sectorClear]);
+    final next = ArcadeDialogue.finaleChapter(_clock.value);
+    if (_chapter != next) {
+      _chapter = next;
+      _effects.play([_dialogue.cue]);
     }
   }
 
@@ -70,6 +75,7 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
     if (!_started) {
       _started = true;
       _sync();
+      _effects.play([_dialogue.cue]);
     }
   }
 
@@ -160,13 +166,18 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
                         child: RepaintBoundary(
                           child: AnimatedBuilder(
                             animation: _clock,
-                            builder: (context, _) => CustomPaint(
-                              size: Size.infinite,
-                              painter: _FinalePainter(
-                                session.story,
-                                reduced ? 1 : _clock.value,
-                                session.bossesDefeated > 0 ||
-                                    session.cleared.isNotEmpty,
+                            builder: (context, _) => Semantics(
+                              liveRegion: true,
+                              label: _dialogue.semantics,
+                              child: CustomPaint(
+                                size: Size.infinite,
+                                painter: _FinalePainter(
+                                  session.story,
+                                  reduced ? 1 : _clock.value,
+                                  _recovered,
+                                  _dialogue,
+                                  MediaQuery.textScalerOf(context),
+                                ),
                               ),
                             ),
                           ),
@@ -221,10 +232,18 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
 }
 
 class _FinalePainter extends CustomPainter {
-  const _FinalePainter(this.story, this.progress, this.recovered);
+  const _FinalePainter(
+    this.story,
+    this.progress,
+    this.recovered,
+    this.dialogue,
+    this.textScaler,
+  );
   final ArcadeStory story;
   final double progress;
   final bool recovered;
+  final ArcadeDialogue dialogue;
+  final TextScaler textScaler;
 
   @override
   void paint(Canvas c, Size size) {
@@ -245,7 +264,8 @@ class _FinalePainter extends CustomPainter {
         ).createShader(Offset.zero & size),
     );
     final scale = math.min(size.width / 580, size.height / 280);
-    c.translate(size.width / 2, size.height * .64);
+    final origin = Offset(size.width / 2, size.height * .64);
+    c.translate(origin.dx, origin.dy);
     c.scale(scale);
     c.drawCircle(
       const Offset(100, -100),
@@ -324,6 +344,7 @@ class _FinalePainter extends CustomPainter {
       ((progress - .48) / .16).clamp(0.0, 1.0),
     );
     final celebration = ((progress - .64) / .16).clamp(0.0, 1.0);
+    final heroHop = celebration * math.max(0, math.sin(progress * 65)) * 6;
     final bike = Offset(-310 + arrival * 245, 0);
     if (progress < .48) {
       ArcadeStoryArt.dismount(
@@ -331,6 +352,7 @@ class _FinalePainter extends CustomPainter {
         bike,
         dismount,
         progress < .25 ? progress * 100 : 25,
+        speaking: dialogue.speaker == ArcadeSpeaker.hero,
       );
     } else {
       ArcadeStoryArt.bicycle(c, bike, phase: 25);
@@ -340,7 +362,10 @@ class _FinalePainter extends CustomPainter {
         feet,
         const Color(0xffb391ff),
         cheer: celebration,
-        hop: celebration * math.max(0, math.sin(progress * 65)) * 6,
+        hop: heroHop,
+        hero: true,
+        speaking: dialogue.speaker == ArcadeSpeaker.hero,
+        clock: progress * 12,
       );
     }
     for (var i = 0; i < 3; i++) {
@@ -350,6 +375,8 @@ class _FinalePainter extends CustomPainter {
         Color.lerp(tint, ArcadeStoryArt.mint, i * .3)!,
         cheer: .35 + celebration * .65,
         hop: math.max(0, math.sin(progress * 65 + i)) * (2 + celebration * 5),
+        speaking: dialogue.speaker == ArcadeSpeaker.crew && i == 1,
+        clock: progress * 12,
       );
     }
     if (recovered) {
@@ -374,11 +401,21 @@ class _FinalePainter extends CustomPainter {
       }
     }
     c.restore();
+    final heroHead = progress < .48
+        ? ArcadeStoryArt.dismountHead(bike, dismount)
+        : Offset(bike.dx + 23 + walk * 38, -heroHop) +
+              ArcadeStoryArt.standingHeroHead;
+    final speakerHead = dialogue.speaker == ArcadeSpeaker.hero
+        ? heroHead
+        : const Offset(72, -42);
+    dialogue.paint(c, size, origin + speakerHead * scale, textScaler);
   }
 
   @override
   bool shouldRepaint(covariant _FinalePainter oldDelegate) =>
       oldDelegate.progress != progress ||
       oldDelegate.story != story ||
-      oldDelegate.recovered != recovered;
+      oldDelegate.recovered != recovered ||
+      oldDelegate.dialogue.text != dialogue.text ||
+      oldDelegate.textScaler != textScaler;
 }

@@ -78,4 +78,21 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('reduced motion still advances the ending conversation', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    addTearDown(semantics.dispose);
+    await open(tester, () {}, reduced: true);
+    expect(find.bySemanticsLabel(RegExp('THE CREW: Look!')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.bySemanticsLabel(RegExp('YOU: We made it')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    expect(
+      find.bySemanticsLabel(RegExp('Together all the way!')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

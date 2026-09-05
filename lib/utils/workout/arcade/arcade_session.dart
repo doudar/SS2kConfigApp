@@ -38,9 +38,18 @@ ArcadeBiome biomeFor(WorkoutSegment segment) {
 /// Presentation-only rewards. Never writes targets or drives the workout clock.
 /// State lives above the view, so switching to Classic does not lose the run.
 class ArcadeSession {
+  ArcadeSession({ArcadeDrones? drones}) : drones = drones ?? ArcadeDrones();
   final ArcadeRoad road = ArcadeRoad();
-  final ArcadeDrones drones = ArcadeDrones();
+  final ArcadeDrones drones;
+
+  /// Set by the visible Arcade view. Classic and modal screens cannot be shot
+  /// through, so encounters wait while the rider cannot interact with them.
+  bool droneInteractionEnabled = false;
   ArcadeStory story = ArcadeStory.random();
+  bool openingSeen = false;
+  ArcadeStory? _stagedOpening;
+  void stageOpening(ArcadeStory opening) => _stagedOpening = opening;
+  void cancelStagedOpening() => _stagedOpening = null;
   bool musicEnabled = false;
   bool effectsEnabled = true;
   List<WorkoutSegment>? _segments;
@@ -65,6 +74,63 @@ class ArcadeSession {
   Iterable<ArcadeCue> get cues => _cues;
 
   int get score => _points.floor();
+
+  bool fireDrone({
+    required int serial,
+    required bool hit,
+    required double aimX,
+    required double aimY,
+    required double shownClock,
+  }) {
+    if (!droneInteractionEnabled || !_wasPlaying || !hasSignal) return false;
+    final events = drones.fire(
+      serial: serial,
+      hit: hit,
+      aimX: aimX,
+      aimY: aimY,
+      shownClock: shownClock,
+    );
+    if (events.isEmpty) return false;
+    _cues.clear();
+    cueRevision++;
+    _applyDroneEvents(events, _lastTime ?? 0);
+    return true;
+  }
+
+  void _applyDroneEvents(Iterable<ArcadeDroneEvent> events, double seconds) {
+    for (final event in events) {
+      switch (event) {
+        case ArcadeDroneEvent.ready:
+          _cues.add(ArcadeCue.combo);
+        case ArcadeDroneEvent.fired:
+          _cues.add(ArcadeCue.bolt);
+        case ArcadeDroneEvent.destroyed:
+        case ArcadeDroneEvent.bossHit:
+          _cues.add(ArcadeCue.droneHit);
+        case ArcadeDroneEvent.bossDestroyed:
+          final sector = drones.snapshot().sector;
+          if (cleared.add(sector)) {
+            bossesDefeated++;
+            _points += 500;
+            reward = 'GEAR GOLEM DEFEATED  +500';
+            _rewardUntil = seconds + 5;
+            _cues.add(ArcadeCue.bossDefeat);
+          }
+        case ArcadeDroneEvent.escaped:
+        case ArcadeDroneEvent.bossCounter:
+          final stolen = math.min(score, ArcadeDrones.theftPoints);
+          _points = math.max(0.0, _points - ArcadeDrones.theftPoints);
+          reward = event == ArcadeDroneEvent.bossCounter
+              ? 'GOLEM COUNTERATTACK · −$stolen POINTS'
+              : stolen > 0
+              ? 'DRONE STOLE $stolen POINTS!'
+              : 'DRONE ESCAPED · NO POINTS TO STEAL';
+          _rewardUntil = seconds + 4;
+          _cues.add(ArcadeCue.crewAlarm);
+      }
+    }
+  }
+
   int get combo => 1 + (streakSeconds / 15).floor().clamp(0, 3);
   String get rank => score >= 6000
       ? 'LEGEND'
@@ -84,8 +150,17 @@ class ArcadeSession {
   double segmentStart(List<WorkoutSegment> segments, int index) =>
       segments.take(index).fold(0.0, (sum, s) => sum + s.duration);
 
-  double chargeFor(int index, WorkoutSegment segment) =>
-      ((_charge[index] ?? 0) / math.max(1, segment.duration * .65)).clamp(0, 1);
+  double chargeFor(int index, WorkoutSegment segment) {
+    if (biomeFor(segment) == ArcadeBiome.volcano) {
+      if (cleared.contains(index)) return 1;
+      final target = drones.snapshot();
+      return target.isBoss && target.sector == index ? target.damage : 0;
+    }
+    return ((_charge[index] ?? 0) / math.max(1, segment.duration * .65)).clamp(
+      0,
+      1,
+    );
+  }
 
   void willSkip() {
     road.willSkip();
@@ -124,6 +199,7 @@ class ArcadeSession {
       _points = 0;
       drones.reset();
       story = ArcadeStory.random();
+      openingSeen = false;
       streakSeconds = 0;
       _offTargetSeconds = 0;
       _charge.clear();
@@ -136,6 +212,13 @@ class ArcadeSession {
       _wasPlaying = false;
       _skip = false;
       _energySeconds = 0;
+    }
+    // Adopt the cast shown before Play, including when the controller rewinds
+    // a completed workout on restart. Cancelled cutscenes never reset rewards.
+    if (playing && _stagedOpening != null) {
+      story = _stagedOpening!;
+      openingSeen = true;
+      _stagedOpening = null;
     }
     _segments = segments;
     final previous = _lastTime;
@@ -162,26 +245,26 @@ class ArcadeSession {
       endless: endless,
       bosses: bossesDefeated,
       sectors: cleared.length,
+      openingSeen: openingSeen,
     );
     final combatEvents = drones.update(
       seconds: wasPlaying ? delta : 0,
-      playing: playing,
+      playing: playing && droneInteractionEnabled && freshSignal,
       enabled:
-          chapter.phase == ArcadeStoryPhase.chase &&
-          (currentBiome == ArcadeBiome.coast ||
-              currentBiome == ArcadeBiome.neon),
+          (currentBiome == ArcadeBiome.volcano && !cleared.contains(index)) ||
+          (chapter.phase == ArcadeStoryPhase.chase &&
+              (currentBiome == ArcadeBiome.coast ||
+                  currentBiome == ArcadeBiome.neon)),
       onTarget: onTarget,
       sector: index,
-      style: currentBiome == ArcadeBiome.neon
+      style: currentBiome == ArcadeBiome.volcano
+          ? ArcadeDroneStyle.golem
+          : currentBiome == ArcadeBiome.neon
           ? ArcadeDroneStyle.sentinel
           : ArcadeDroneStyle.wheel,
       skipped: _skip,
+      bossHits: (segments[index].duration / 30).ceil().clamp(1, 6),
     );
-    for (final event in combatEvents) {
-      _cues.add(
-        event == ArcadeDroneEvent.fired ? ArcadeCue.bolt : ArcadeCue.droneHit,
-      );
-    }
     if (!_skip &&
         playing &&
         !wasPlaying &&
@@ -192,6 +275,7 @@ class ArcadeSession {
     if (_skip || !wasPlaying || delta <= 0 || delta > 1.5) {
       if (_skip || delta > 1.5) streakSeconds = 0;
       _skip = false;
+      _applyDroneEvents(combatEvents, seconds);
       return;
     }
     if (playing &&
@@ -207,12 +291,7 @@ class ArcadeSession {
       final oldEnergy = (_energySeconds / 3).floor();
       _energySeconds += delta;
       if ((_energySeconds / 3).floor() > oldEnergy) {
-        _cues.add(
-          biomeFor(segments[index]) == ArcadeBiome.volcano &&
-                  !cleared.contains(index)
-              ? ArcadeCue.bolt
-              : ArcadeCue.pickup,
-        );
+        _cues.add(ArcadeCue.pickup);
       }
       _offTargetSeconds = 0;
       bestCombo = math.max(bestCombo, combo);
@@ -225,13 +304,13 @@ class ArcadeSession {
         final slice = math.min(seconds, end) - cursor;
         if (slice <= 0) break;
         _charge[i] = (_charge[i] ?? 0) + slice;
-        if (!cleared.contains(i) && chargeFor(i, segments[i]) >= 1) {
+        if (biomeFor(segments[i]) != ArcadeBiome.volcano &&
+            !cleared.contains(i) &&
+            chargeFor(i, segments[i]) >= 1) {
           cleared.add(i);
-          final boss = biomeFor(segments[i]) == ArcadeBiome.volcano;
-          if (boss) bossesDefeated++;
-          _cues.add(boss ? ArcadeCue.bossDefeat : ArcadeCue.sectorClear);
-          _points += boss ? 500 : 150;
-          reward = boss ? 'GEAR GOLEM DEFEATED  +500' : 'SECTOR SECURED  +150';
+          _cues.add(ArcadeCue.sectorClear);
+          _points += 150;
+          reward = 'SECTOR SECURED  +150';
           _rewardUntil = seconds + 5;
         }
         cursor += slice;
@@ -243,5 +322,6 @@ class ArcadeSession {
     }
     final total = segments.fold(0, (sum, s) => sum + s.duration);
     if (!playing && seconds >= total && total > 0) finished = true;
+    _applyDroneEvents(combatEvents, seconds);
   }
 }

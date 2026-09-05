@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../workout_controller.dart';
@@ -8,7 +9,10 @@ import 'arcade_pedaling.dart';
 import 'arcade_sound_effects.dart';
 import 'arcade_session.dart';
 import 'arcade_story.dart';
+import 'arcade_intro.dart';
+import 'arcade_route_preview.dart';
 import 'arcade_world_painter.dart';
+import 'arcade_preferences.dart';
 
 class ArcadeWorkoutView extends StatefulWidget {
   const ArcadeWorkoutView({
@@ -46,6 +50,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
   set _effectsEnabled(bool value) => game.effectsEnabled = value;
   bool _foreground = true;
   bool _dialogOpen = false;
+  bool _starting = false;
 
   WorkoutController get ride => widget.controller;
   ArcadeSession get game => widget.session;
@@ -55,6 +60,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     endless: ride.isUnlimitedFreeRide,
     bosses: game.bossesDefeated,
     sectors: game.cleared.length,
+    openingSeen: game.openingSeen,
   );
   int get index =>
       game.segmentIndex(ride.segments, ride.workoutProgressSeconds);
@@ -124,6 +130,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
         (ModalRoute.of(context)?.isCurrent ?? true) &&
         TickerMode.valuesOf(context).enabled;
     final running = visible && ride.isPlaying;
+    game.droneInteractionEnabled = running;
     if (running && !MediaQuery.disableAnimationsOf(context)) {
       if (!_animation.isAnimating) {
         _lastPedalTick = null;
@@ -162,6 +169,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
 
   @override
   void dispose() {
+    game.droneInteractionEnabled = false;
     ride.removeListener(_sync);
     WidgetsBinding.instance.removeObserver(this);
     _animation.dispose();
@@ -184,12 +192,20 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
             'Stay within 10% of your ERG target (with a 10 W minimum window) to collect energy. '
             'Every 15 seconds on target builds your multiplier, up to 4×. '
             'You have 3 seconds to settle when your power drifts.\n\n'
-            'Ride on target for 65% of a sector to secure it: +150 points, or +500 for a boss. '
+            'Ride on target for 65% of a non-boss sector to secure it: +150 points. '
             'Extra power earns no extra points. Recovery is rewarded just as much. '
             'Free ride collects energy whenever you pedal with power.\n\n'
             'In coastal and neon chase sectors, six seconds on target charge your '
-            'handlebar blaster. It automatically locks on and shoots a drone. '
-            'Going off target holds your charge; a new sector starts a new encounter.\n\n'
+            'handlebar blaster. Drones arrive with random 18–38 second gaps. '
+            'When the blaster is full, tap the drone within eight seconds. '
+            'A miss fires in the direction you tapped; the drone steals up to 50 points and escapes. '
+            'Ignoring it has the same penalty, including if you do not charge within 24 seconds of hovering. '
+            'Your score never falls below zero. Going off target holds your charge. '
+            'Pausing, lost telemetry, dialogs and Classic freeze encounters; sector changes release unshot drones without a penalty.\n\n'
+            'Bosses use the same six-second charge and eight-second tap window. '
+            'Aim at the Gear Golem to crack its armor. Longer hard intervals need more hits (one to six). '
+            'A miss or expired shot lets it counterattack for up to 50 points; recharge and try again. '
+            'Only landed shots damage the boss. The final hit earns 500 points.\n\n'
             'Skipping advances the route without awarding skipped time. Your score stays '
             'with this screen when you switch to Classic; loading or restarting a workout '
             'starts a new quest. The audio menu controls music and sound effects '
@@ -207,6 +223,45 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     if (!mounted) return;
     _dialogOpen = false;
     _sync();
+  }
+
+  Future<void> _playPause() async {
+    if (_starting) return;
+    final newRun =
+        !ride.isPlaying &&
+        ride.progressPosition == 0 &&
+        (!game.openingSeen || ride.workoutProgressSeconds > 0);
+    if (!newRun) {
+      await ride.togglePlayPause();
+      return;
+    }
+    final segments = ride.segments;
+    if (segments.isEmpty) return;
+    final previousStory = game.story;
+    final opening = ride.workoutProgressSeconds > 0
+        ? ArcadeStory.random()
+        : game.story;
+    _starting = true;
+    _dialogOpen = true;
+    _sync();
+    try {
+      final start = await ArcadeIntro.show(context, game, opening);
+      if (!mounted ||
+          !start ||
+          ride.isPlaying ||
+          !identical(segments, ride.segments) ||
+          !identical(previousStory, game.story))
+        return;
+      game.stageOpening(opening);
+      await ride.togglePlayPause();
+    } finally {
+      game.cancelStagedOpening();
+      _starting = false;
+      if (mounted) {
+        _dialogOpen = false;
+        _sync();
+      }
+    }
   }
 
   Future<void> _ftp() async {
@@ -259,6 +314,95 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     return '${value ~/ 60}:${(value % 60).toString().padLeft(2, '0')}';
   }
 
+  void _shoot(ArcadeWorldPainter painter, Size size, Offset tap) {
+    if (!_foreground ||
+        _dialogOpen ||
+        !ride.isPlaying ||
+        !(ModalRoute.of(context)?.isCurrent ?? true))
+      return;
+    final layout = painter.droneLayout(size);
+    if (layout == null || !layout.frame.ready) return;
+    final hit = layout.contains(tap);
+    final aim = hit ? layout.position : layout.missEndpoint(tap);
+    if (game.fireDrone(
+      serial: layout.frame.serial,
+      hit: hit,
+      aimX: aim.dx / size.width,
+      aimY: aim.dy / size.height,
+      shownClock: layout.frame.clock,
+    )) {
+      _sync();
+      setState(() {});
+    }
+  }
+
+  Widget _world(double charge, bool compact, bool sideHud) => LayoutBuilder(
+    builder: (context, scene) => AnimatedBuilder(
+      animation: _animation,
+      builder: (context, _) {
+        final size = scene.biggest;
+        final painter = ArcadeWorldPainter(
+          segments: ride.segments,
+          road: game.road.snapshot(aheadSeconds: _roadFrameOffset),
+          seconds: ride.workoutProgressSeconds,
+          animation: _animation.value * 120,
+          biome: biome,
+          onTarget: game.onTarget,
+          charge: charge,
+          pedalPhase: _pedaling.phase,
+          moving: ride.isPlaying && game.hasSignal,
+          showCheckpoints: !ride.isUnlimitedFreeRide,
+          escapeSeconds: game.openingSeen && !ride.isUnlimitedFreeRide
+              ? ride.workoutProgressSeconds + _roadFrameOffset
+              : null,
+          story: story,
+          drone: game.drones.snapshot(aheadSeconds: _roadFrameOffset),
+          reducedMotion: MediaQuery.disableAnimationsOf(context),
+          // Keep the shootable hover position clear of the metrics and quest card.
+          droneFlightBounds: Rect.fromLTRB(
+            sideHud ? 200 : 8,
+            sideHud ? 0 : (compact ? 65 : 94),
+            size.width - 8,
+            math.max(sideHud ? 64 : 125, size.height - (compact ? 88 : 145)),
+          ),
+        );
+        final layout = painter.droneLayout(size);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            MouseRegion(
+              cursor: layout?.frame.ready == true
+                  ? SystemMouseCursors.precise
+                  : MouseCursor.defer,
+              child: GestureDetector(
+                key: const ValueKey('arcade-drone-playfield'),
+                behavior: HitTestBehavior.opaque,
+                excludeFromSemantics: true,
+                onTapUp: (details) =>
+                    _shoot(painter, size, details.localPosition),
+                child: CustomPaint(painter: painter),
+              ),
+            ),
+            if (layout != null && layout.frame.ready)
+              Positioned.fromRect(
+                rect: Rect.fromCenter(
+                  center: layout.position,
+                  width: (layout.frame.isBoss ? 128 : 88) * layout.bodyScale,
+                  height: (layout.frame.isBoss ? 140 : 64) * layout.bodyScale,
+                ),
+                child: Semantics(
+                  button: true,
+                  label: 'Charged blaster. Shoot ${layout.frame.targetName}.',
+                  onTap: () => _shoot(painter, size, layout.position),
+                  child: const IgnorePointer(child: SizedBox.expand()),
+                ),
+              ),
+          ],
+        );
+      },
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Theme(
@@ -281,6 +425,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
               final charge = current == null
                   ? 0.0
                   : game.chargeFor(index, current);
+              final drone = game.drones.snapshot();
               final target = widget.deviceData.ftmsData.targetERG;
               final remaining = current == null
                   ? 0
@@ -336,6 +481,20 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                                   if (value == 'effects')
                                     _effectsEnabled = !_effectsEnabled;
                                 });
+                                // Persist explicit menu choices, not temporary
+                                // audio-player failures that mute this session.
+                                if (value == 'music') {
+                                  unawaited(
+                                    ArcadePreferences.saveMusic(_musicEnabled),
+                                  );
+                                }
+                                if (value == 'effects') {
+                                  unawaited(
+                                    ArcadePreferences.saveEffects(
+                                      _effectsEnabled,
+                                    ),
+                                  );
+                                }
                                 _sync();
                               },
                               itemBuilder: (_) => [
@@ -378,32 +537,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                             fit: StackFit.expand,
                             children: [
                               RepaintBoundary(
-                                child: AnimatedBuilder(
-                                  animation: _animation,
-                                  builder: (context, _) => CustomPaint(
-                                    painter: ArcadeWorldPainter(
-                                      segments: ride.segments,
-                                      road: game.road.snapshot(
-                                        aheadSeconds: _roadFrameOffset,
-                                      ),
-                                      seconds: ride.workoutProgressSeconds,
-                                      animation: _animation.value * 120,
-                                      biome: biome,
-                                      onTarget: game.onTarget,
-                                      charge: charge,
-                                      pedalPhase: _pedaling.phase,
-                                      moving: ride.isPlaying && game.hasSignal,
-                                      story: story,
-                                      drone: game.drones.snapshot(
-                                        aheadSeconds: _roadFrameOffset,
-                                      ),
-                                      reducedMotion:
-                                          MediaQuery.disableAnimationsOf(
-                                            context,
-                                          ),
-                                    ),
-                                  ),
-                                ),
+                                child: _world(charge, compact, sideHud),
                               ),
                               Positioned(
                                 top: 0,
@@ -488,7 +622,10 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                                                 ),
                                               ),
                                               Text(
-                                                biome == ArcadeBiome.volcano
+                                                drone.visible
+                                                    ? 'BLASTER ${(drone.charge * 100).round()}%'
+                                                    : biome ==
+                                                          ArcadeBiome.volcano
                                                     ? '${((1 - charge) * 100).ceil()}% SHIELD'
                                                     : '${(charge * 100).floor()}%',
                                                 style: TextStyle(
@@ -501,10 +638,8 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                                           const SizedBox(height: 6),
                                           if (ride.isPlaying) ...[
                                             Text(
-                                              game.drones.snapshot().visible
-                                                  ? game.drones
-                                                        .snapshot()
-                                                        .status
+                                              drone.visible
+                                                  ? drone.status
                                                   : story.caption,
                                               maxLines: compact ? 2 : 3,
                                               overflow: TextOverflow.ellipsis,
@@ -516,7 +651,9 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                                             const SizedBox(height: 6),
                                           ],
                                           LinearProgressIndicator(
-                                            value: biome == ArcadeBiome.volcano
+                                            value: drone.visible
+                                                ? drone.charge
+                                                : biome == ArcadeBiome.volcano
                                                 ? 1 - charge
                                                 : charge,
                                             minHeight: 4,
@@ -563,7 +700,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                           ),
                         ),
                       ),
-                      _routeStrip(color, compact),
+                      _routeStrip(compact),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
                         child: Row(
@@ -582,7 +719,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                               child: FilledButton.icon(
                                 onPressed: ride.segments.isEmpty
                                     ? null
-                                    : ride.togglePlayPause,
+                                    : _playPause,
                                 style: FilledButton.styleFrom(
                                   backgroundColor: arcadeMint,
                                   foregroundColor: arcadeInk,
@@ -721,69 +858,13 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     ),
   );
 
-  Widget _routeStrip(Color color, bool compact) {
-    final segments = ride.segments;
-    // A moving window keeps even very long imported workouts cheap to render.
-    final start = math.max(0, index - 2);
-    final end = math.min(segments.length, start + 24);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 5, 16, 2),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Text(
-                'ROUTE ${segments.isEmpty ? 0 : index + 1}/${segments.length}',
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 9,
-                  letterSpacing: 1,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                ride.isUnlimitedFreeRide
-                    ? 'ENDLESS EXPEDITION'
-                    : '${_time(ride.workoutProgressSeconds)} / ${_time(ride.totalDuration)}',
-                style: const TextStyle(color: Colors.white54, fontSize: 9),
-              ),
-            ],
-          ),
-          const SizedBox(height: 5),
-          SizedBox(
-            height: compact ? 10 : 18,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (var i = start; i < end; i++)
-                  Expanded(
-                    flex: math.max(1, math.min(segments[i].duration, 180)),
-                    child: Semantics(
-                      label:
-                          'Sector ${i + 1}: ${biomeFor(segments[i]).title}${game.cleared.contains(i) ? ", secured" : ""}',
-                      child: Container(
-                        height:
-                            7 +
-                            segments[i].maxPower.clamp(0, 1.5) *
-                                (compact ? 2 : 7),
-                        margin: const EdgeInsets.symmetric(horizontal: 1),
-                        decoration: BoxDecoration(
-                          color: biomeColor(
-                            biomeFor(segments[i]),
-                          ).withValues(alpha: i < index ? .3 : .85),
-                          border: i == index
-                              ? Border.all(color: Colors.white, width: 1.5)
-                              : null,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _routeStrip(bool compact) => ArcadeRoutePreview(
+    segments: ride.segments,
+    index: index,
+    seconds: ride.workoutProgressSeconds,
+    ftp: ride.ftpValue,
+    endless: ride.isUnlimitedFreeRide,
+    compact: compact,
+    cleared: game.cleared,
+  );
 }

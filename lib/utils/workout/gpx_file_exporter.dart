@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../services/strava_service.dart';
 import '../../services/intervals_service.dart';
 import 'workout_controller.dart';
+import 'workout_export_dialog.dart';
 import 'bike_shape_generator.dart';
 import 'gpx_to_fit.dart';
 
@@ -101,16 +102,8 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         context: context,
         barrierDismissible: false,
         builder: (BuildContext context) {
-          return const AlertDialog(
-            title: Text('Preparing Export'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                LinearProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Checking export options...'),
-              ],
-            ),
+          return const WorkoutExportProgressDialog(
+            message: 'Checking your connected apps…',
           );
         },
       );
@@ -124,34 +117,19 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
       optionsDialogShown = false;
     }
 
+    if (!context.mounted) return;
     final String? exportChoice = await showDialog<String>(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Export Workout'),
-          content: const Text('How would you like to export your workout?'),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('DISCARD'),
-              onPressed: () => Navigator.of(context).pop('discard'),
-            ),
-            if (isStravaConnected)
-              TextButton(
-                child: const Text('UPLOAD TO STRAVA'),
-                onPressed: () => Navigator.of(context).pop('strava'),
-              ),
-            if (isIntervalsConnected)
-              TextButton(
-                child: const Text('UPLOAD TO INTERVALS.ICU'),
-                onPressed: () => Navigator.of(context).pop('intervals'),
-              ),
-            TextButton(
-              child: const Text('SAVE FILE'),
-              onPressed: () => Navigator.of(context).pop('save'),
-            ),
-          ],
-        );
-      },
+      builder: (BuildContext context) => WorkoutExportDialog(
+        workoutName: workoutController.workoutName ?? 'Indoor ride',
+        duration: workoutController.formatDuration(
+          workoutController.elapsedSeconds,
+        ),
+        averagePower: workoutController.averagePower,
+        averageCadence: workoutController.averageCadence,
+        stravaConnected: isStravaConnected,
+        intervalsConnected: isIntervalsConnected,
+      ),
     );
 
     if (exportChoice == 'save' ||
@@ -186,19 +164,10 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         context: context,
         barrierDismissible: false,
         builder: (BuildContext context) {
-          return AlertDialog(
-            title: const Text('Processing Workout'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const LinearProgressIndicator(),
-                const SizedBox(height: 16),
-                ValueListenableBuilder<String>(
-                  valueListenable: progressMessage,
-                  builder: (context, value, _) => Text(value),
-                ),
-              ],
-            ),
+          return ValueListenableBuilder<String>(
+            valueListenable: progressMessage,
+            builder: (context, value, _) =>
+                WorkoutExportProgressDialog(message: value),
           );
         },
       );
@@ -323,22 +292,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
           final bool? shouldShare = await showDialog<bool>(
             context: context,
             builder: (BuildContext context) {
-              return AlertDialog(
-                title: const Text('Workout Exported'),
-                content: Text(
-                  'File saved to: $fitFilePath\n\nWould you like to share it now?',
-                ),
-                actions: <Widget>[
-                  TextButton(
-                    child: const Text('NO'),
-                    onPressed: () => Navigator.of(context).pop(false),
-                  ),
-                  TextButton(
-                    child: const Text('YES'),
-                    onPressed: () => Navigator.of(context).pop(true),
-                  ),
-                ],
-              );
+              return WorkoutSavedDialog(filePath: fitFilePath);
             },
           );
 

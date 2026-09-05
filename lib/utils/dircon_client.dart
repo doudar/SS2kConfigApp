@@ -106,6 +106,8 @@ class DirConClient implements DirConSession {
   final Socket _socket;
   final Duration responseTimeout;
   final DirConFrameParser _parser = DirConFrameParser();
+  final Stopwatch _connectionAge = Stopwatch()..start();
+  int? _lastReceiveMs;
   final Map<int, Completer<DirConFrame>> _pending = {};
   final StreamController<DirConFrame> _notifications =
       StreamController<DirConFrame>.broadcast();
@@ -144,6 +146,7 @@ class DirConClient implements DirConSession {
   void _listen() {
     _subscription = _socket.listen(
       (bytes) {
+        _lastReceiveMs = _connectionAge.elapsedMilliseconds;
         _log('RX-SOCKET', '${bytes.length} bytes');
         for (final frame in _parser.add(bytes)) {
           _logFrame(
@@ -313,7 +316,11 @@ class DirConClient implements DirConSession {
       // failure, not a protocol response: invalidate synchronously so callers
       // cannot schedule another workout write against this half-open session.
       if (_pending.remove(sequence) != null) {
-        _log('TIMEOUT', '$host request type=0x${identifier.toRadixString(16)}');
+        _log(
+          'TIMEOUT',
+          '$host request type=0x${identifier.toRadixString(16)} '
+              'seq=$sequence limitMs=${responseTimeout.inMilliseconds}',
+        );
         _closeWithError(error, stackTrace);
       }
       rethrow;
@@ -341,7 +348,14 @@ class DirConClient implements DirConSession {
   void _closeWithError(Object error, StackTrace stackTrace) {
     if (_isClosed) return;
     _isClosed = true;
-    _log('DISCONNECTED', '$host: $error');
+    final ageMs = _connectionAge.elapsedMilliseconds;
+    final lastReceiveMs = _lastReceiveMs;
+    _log(
+      'DISCONNECTED',
+      '$host: $error; connectedMs=$ageMs '
+          'lastReceiveAgoMs=${lastReceiveMs == null ? 'never' : ageMs - lastReceiveMs} '
+          'pending=${_pending.length}',
+    );
     _failPending(error, stackTrace);
     if (!_disconnectEmitted && !_disconnected.isClosed) {
       _disconnectEmitted = true;
@@ -464,6 +478,9 @@ class DirConClient implements DirConSession {
   }
 
   static void _log(String event, String message) {
-    if (diagnosticsEnabled) print('[DIRCON][$event] $message');
+    // Retain failure reasons in release logs without enabling packet logging.
+    if (diagnosticsEnabled || event == 'TIMEOUT' || event == 'DISCONNECTED') {
+      print('[DIRCON][$event] $message');
+    }
   }
 }

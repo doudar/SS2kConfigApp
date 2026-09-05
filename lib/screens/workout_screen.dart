@@ -10,6 +10,7 @@ import '../utils/workout/workout_controller.dart';
 import '../utils/workout/workout_storage.dart';
 import '../utils/workout/sounds.dart';
 import '../utils/workout/gpx_file_exporter.dart';
+import '../utils/workout/workout_export_dialog.dart';
 import '../utils/workout/workout_file_manager.dart';
 import '../utils/workout/workout_tts_settings.dart';
 // Intervals service & converter now only used inside WorkoutMenu
@@ -26,6 +27,8 @@ import '../utils/stream_extensions.dart';
 import '../utils/workout/arcade/arcade_session.dart';
 import '../utils/workout/arcade/arcade_workout_view.dart';
 import '../utils/workout/arcade/arcade_finale.dart';
+import '../utils/workout/arcade/arcade_workout_frame.dart';
+import '../utils/workout/arcade/arcade_preferences.dart';
 
 enum OverlayMode { none, overview, powerTable }
 
@@ -41,6 +44,8 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     with TickerProviderStateMixin {
   String? _workoutName;
   bool _arcadeMode = false;
+  bool _arcadePreferencesLoaded = false;
+  bool _arcadeFullscreen = false;
   bool _completionPending = false;
   final ArcadeSession _arcadeSession = ArcadeSession();
   late AnimationController _metricsAndSummaryFadeController;
@@ -123,6 +128,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     _workoutController = WorkoutController(deviceData, widget.device);
     _initTTSSettings();
     _initializeAnimationControllers();
+    unawaited(_loadArcadePreferences());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_workoutController.segments.isEmpty) {
@@ -140,6 +146,11 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     _workoutControllerListener = () {
       if (!mounted) return;
       if (_isDisposing) return; // Skip any animation updates while disposing
+
+      final fullscreen = _arcadeMode && _workoutController.isPlaying;
+      if (_arcadeFullscreen != fullscreen) {
+        setState(() => _arcadeFullscreen = fullscreen);
+      }
 
       final lastUpdate = deviceData.lastFtmsUpdate;
       _arcadeSession.update(
@@ -212,6 +223,15 @@ class _WorkoutScreenState extends State<WorkoutScreen>
 
     // Reconnection is handled centrally by DeviceData.startConnectionMonitor.
     // No per-screen reconnect timer needed.
+  }
+
+  Future<void> _loadArcadePreferences() async {
+    final preferences = await ArcadePreferences.load();
+    if (!mounted || _isDisposing) return;
+    _arcadeSession.musicEnabled = preferences.musicEnabled;
+    _arcadeSession.effectsEnabled = preferences.effectsEnabled;
+    _setArcadeMode(preferences.arcadeMode, persist: false);
+    setState(() => _arcadePreferencesLoaded = true);
   }
 
   Future<void> _initTTSSettings() async {
@@ -321,22 +341,21 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     if (_completionPending) return;
     final bool? shouldStop = await showDialog<bool>(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('End Workout?'),
-          content: const Text('Do you want to end your workout?'),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('NO'),
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-            TextButton(
-              child: const Text('YES'),
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-          ],
-        );
-      },
+      builder: (BuildContext context) => WorkoutEndDialog(
+        workoutName: _workoutController.workoutName ?? 'Indoor ride',
+        duration: _workoutController.formatDuration(
+          _workoutController.elapsedSeconds,
+        ),
+        remaining: _workoutController.isUnlimitedFreeRide
+            ? null
+            : _workoutController.formatDuration(
+                (_workoutController.totalDuration -
+                        _workoutController.workoutProgressSeconds)
+                    .clamp(0, double.infinity)
+                    .ceil(),
+              ),
+        playing: _workoutController.isPlaying,
+      ),
     );
 
     if (shouldStop == true) {
@@ -349,10 +368,31 @@ class _WorkoutScreenState extends State<WorkoutScreen>
 
   // Calibration dialog logic migrated to WorkoutMenu; method removed here to avoid duplication.
 
+  void _setArcadeMode(bool enabled, {bool persist = true}) {
+    if (_arcadeMode == enabled) return;
+    setState(() {
+      _arcadeMode = enabled;
+      _arcadeFullscreen = enabled && _workoutController.isPlaying;
+    });
+    if (persist) unawaited(ArcadePreferences.saveMode(enabled));
+    // Classic stays mounted for workout thumbnail capture, but its pulse and
+    // scrolling must not drive a second animated graph behind Arcade.
+    if (enabled) {
+      _pulseController.stop();
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.offset);
+      }
+    } else {
+      _pulseController.repeat(reverse: true);
+      _updateScrollPosition();
+    }
+  }
+
   void _updateScrollPosition() {
-    if (!mounted || !_scrollController.hasClients) return;
+    if (!mounted || _arcadeMode || !_scrollController.hasClients) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposing || _arcadeMode) return;
       if (_workoutController.isPlaying && _scrollController.hasClients) {
         final viewportWidth = _scrollController.position.viewportDimension;
         final totalWidth =
@@ -457,12 +497,34 @@ class _WorkoutScreenState extends State<WorkoutScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (!_ttsInitialized) {
+    if (!_ttsInitialized || !_arcadePreferencesLoaded) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return Scaffold(
-      appBar: SS2KAppBar(
+    return ArcadeWorkoutFrame(
+      expanded: _arcadeFullscreen,
+      arcade: _arcadeMode
+          ? ArcadeWorkoutView(
+              controller: _workoutController,
+              deviceData: deviceData,
+              session: _arcadeSession,
+              onStop: _showStopWorkoutDialog,
+              onExit: () => _setArcadeMode(false),
+            )
+          : null,
+      overlay: AnimatedBuilder(
+        animation: _workoutController,
+        builder: (context, _) {
+          if (!_workoutController.isPlaying) return const SizedBox.shrink();
+          return WorkoutTextEventOverlay(
+            currentSegment: _workoutController.currentSegment,
+            secondsIntoSegment: _workoutController.currentSegmentElapsedSeconds,
+            ttsSettings: _ttsSettings,
+            workoutController: _workoutController,
+          );
+        },
+      ),
+      header: SS2KAppBar(
         device: widget.device,
         title: _workoutName ?? '',
         firmwareOnlyDeviceHeader: true,
@@ -472,7 +534,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
             tooltip: _arcadeMode
                 ? 'Classic workout mode'
                 : 'Arcade workout mode',
-            onPressed: () => setState(() => _arcadeMode = !_arcadeMode),
+            onPressed: () => _setArcadeMode(!_arcadeMode),
           ),
           if (!_arcadeMode &&
               MediaQuery.of(context).orientation == Orientation.landscape)
@@ -753,33 +815,6 @@ class _WorkoutScreenState extends State<WorkoutScreen>
                   ),
                 ],
               ),
-            ),
-          ),
-          if (_arcadeMode)
-            Positioned.fill(
-              child: ArcadeWorkoutView(
-                controller: _workoutController,
-                deviceData: deviceData,
-                session: _arcadeSession,
-                onStop: _showStopWorkoutDialog,
-                onExit: () => setState(() => _arcadeMode = false),
-              ),
-            ),
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _workoutController,
-              builder: (context, _) {
-                if (!_workoutController.isPlaying) {
-                  return const SizedBox.shrink();
-                }
-                return WorkoutTextEventOverlay(
-                  currentSegment: _workoutController.currentSegment,
-                  secondsIntoSegment:
-                      _workoutController.currentSegmentElapsedSeconds,
-                  ttsSettings: _ttsSettings,
-                  workoutController: _workoutController,
-                );
-              },
             ),
           ),
         ],

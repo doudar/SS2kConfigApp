@@ -9,8 +9,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_session.dart';
+import 'package:ss2kconfigapp/utils/workout/arcade/arcade_drones.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_workout_view.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_world_painter.dart';
+import 'package:ss2kconfigapp/utils/workout/arcade/arcade_preferences.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
 
 void main() {
@@ -217,12 +219,71 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.volume_up), findsOneWidget);
+      final savedAudio = await ArcadePreferences.load();
+      expect(savedAudio.musicEnabled, isTrue);
+      expect(savedAudio.effectsEnabled, isFalse);
       expect(tester.takeException(), isNull);
       await tester.tap(find.byTooltip('How to play'));
       await tester.pumpAndSettle();
       expect(find.text('Welcome to Crank Quest'), findsOneWidget);
       await tester.tap(find.text('LET’S RIDE'));
       await tester.pumpAndSettle();
+
+      // Exercise the real playfield gesture, with no workout recording timer.
+      game.musicEnabled = false;
+      game.update(
+        segments: controller.segments,
+        seconds: controller.workoutProgressSeconds,
+        playing: true,
+        watts: 100,
+        target: 100,
+        freshSignal: true,
+      );
+      controller.isPlaying = true;
+      await tester.runAsync(() => controller.updateFTP(200));
+      void readyDrone({ArcadeDroneStyle style = ArcadeDroneStyle.wheel}) {
+        for (var i = 0; i < 1200 && !game.drones.snapshot().ready; i++) {
+          game.drones.update(
+            seconds: .05,
+            playing: true,
+            enabled: true,
+            onTarget: true,
+            sector: 1,
+            style: style,
+          );
+        }
+        expect(game.drones.snapshot().ready, true);
+      }
+
+      readyDrone();
+      await tester.pump(const Duration(milliseconds: 20));
+      final playfield = find.byKey(const ValueKey('arcade-drone-playfield'));
+      final sceneSize = tester.getSize(playfield);
+      final sceneOrigin = tester.getTopLeft(playfield);
+      final dronePose = world().droneLayout(sceneSize)!;
+      await tester.tapAt(sceneOrigin + dronePose.position);
+      await tester.pump();
+      expect(game.drones.snapshot().phase, ArcadeDronePhase.firing);
+      expect(game.drones.snapshot().shotHit, true);
+      readyDrone();
+      await tester.pump(const Duration(milliseconds: 20));
+      final miss = Offset(12, sceneSize.height * .45);
+      expect(world().droneLayout(sceneSize)!.contains(miss), false);
+      await tester.tapAt(sceneOrigin + miss);
+      await tester.pump();
+      expect(game.drones.snapshot().phase, ArcadeDronePhase.firing);
+      expect(game.drones.snapshot().shotHit, false);
+
+      readyDrone(style: ArcadeDroneStyle.golem);
+      await tester.pump(const Duration(milliseconds: 20));
+      final bossPose = world().droneLayout(sceneSize)!;
+      expect(bossPose.frame.isBoss, true);
+      final head = bossPose.position + Offset(0, -35 * bossPose.bodyScale);
+      await tester.tapAt(sceneOrigin + head);
+      await tester.pump();
+      expect(game.drones.snapshot().phase, ArcadeDronePhase.firing);
+      expect(game.drones.snapshot().shotHit, true);
+
       await tester.tap(find.byTooltip('Return to Classic'));
       expect(exits, 1);
       await tester.pumpWidget(const SizedBox.shrink());

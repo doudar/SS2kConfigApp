@@ -55,17 +55,21 @@ void main() {
   });
 
   test(
-    'sustained target builds capped combos and awards one boss per sector',
+    'sustained target builds capped combos but does not defeat a boss without shots',
     () {
       for (var second = 0; second <= 90; second++) sample(second.toDouble());
       expect(game.combo, 4);
-      expect(game.bossesDefeated, 1);
-      expect(game.cleared, {0});
-      expect(game.chargeFor(0, segments.first), 1);
+      expect(game.bossesDefeated, 0);
+      expect(game.cleared, isEmpty);
+      expect(game.chargeFor(0, segments.first), 0);
       expect(game.score, greaterThan(2000));
       final score = game.score;
       sample(91);
-      expect(game.score - score, 40, reason: 'Boss reward must not repeat');
+      expect(
+        game.score - score,
+        40,
+        reason: 'Effort earns points without an automatic boss reward',
+      );
     },
   );
 

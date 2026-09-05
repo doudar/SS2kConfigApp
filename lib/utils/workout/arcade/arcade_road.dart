@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import '../workout_parser.dart';
+import 'arcade_segment_profile.dart';
 
 /// One road unit is one isometric tile. At FTP this is 12x the original
 /// one-tile-per-six-seconds display speed. This never controls trainer speed,
@@ -21,10 +22,18 @@ class ArcadeRoadSpan {
 }
 
 class ArcadeRoadPiece {
-  const ArcadeRoadPiece(this.segment, this.start, this.end);
+  const ArcadeRoadPiece(
+    this.segment,
+    this.start,
+    this.end,
+    this.startPower,
+    this.endPower,
+  );
   final WorkoutSegment segment;
   final double start;
   final double end;
+  final double startPower;
+  final double endPower;
 }
 
 class ArcadeRoadSnapshot {
@@ -33,11 +42,13 @@ class ArcadeRoadSnapshot {
     required this.speed,
     required this.spans,
     required this.currentIndex,
+    this.currentProgress = 0,
   });
   final double position;
   final double speed;
   final List<ArcadeRoadSpan> spans;
   final int currentIndex;
+  final double currentProgress;
 
   int _indexAt(double distance) {
     var low = 0;
@@ -56,6 +67,36 @@ class ArcadeRoadSnapshot {
   WorkoutSegment? segmentAt(double distance) =>
       spans.isEmpty ? null : spans[_indexAt(distance)].segment;
 
+  double _powerInSpan(int index, double distance) {
+    final span = spans[index];
+    var progress = span.length > 0
+        ? (distance - span.start) / span.length
+        : 1.0;
+    if (index == currentIndex) {
+      // Anchor the active ramp to elapsed workout time, not distance travelled.
+      // Changing actual power stretches the remaining road without moving the
+      // current target height beneath the rider.
+      if (distance <= position) {
+        progress = position > span.start
+            ? currentProgress *
+                  (distance - span.start) /
+                  (position - span.start)
+            : currentProgress;
+      } else {
+        progress = span.end > position
+            ? currentProgress +
+                  (1 - currentProgress) *
+                      (distance - position) /
+                      (span.end - position)
+            : 1;
+      }
+    }
+    return arcadeSegmentPower(span.segment, progress);
+  }
+
+  double powerAt(double distance) =>
+      spans.isEmpty ? .5 : _powerInSpan(_indexAt(distance), distance);
+
   /// Split tiles precisely at sector boundaries instead of sampling a biome
   /// once per tile. Extend the end scenery beyond the finite route.
   Iterable<ArcadeRoadPiece> pieces(double start, double end) sync* {
@@ -64,11 +105,21 @@ class ArcadeRoadSnapshot {
     while (cursor < end) {
       final index = _indexAt(cursor);
       final span = spans[index];
-      final boundary = index == spans.length - 1
-          ? end
-          : math.min(end, span.end);
+      var boundary = index == spans.length - 1 ? end : math.min(end, span.end);
+      if (index == currentIndex &&
+          span.segment.isRamp &&
+          cursor < position &&
+          boundary > position) {
+        boundary = position;
+      }
       if (boundary <= cursor) return;
-      yield ArcadeRoadPiece(span.segment, cursor, boundary);
+      yield ArcadeRoadPiece(
+        span.segment,
+        cursor,
+        boundary,
+        _powerInSpan(index, cursor),
+        _powerInSpan(index, boundary),
+      );
       cursor = boundary;
     }
   }
@@ -206,6 +257,13 @@ class ArcadeRoad {
       speed: _speed,
       spans: _spans,
       currentIndex: _index,
+      currentProgress: _segments.isEmpty || _segments[_index].duration <= 0
+          ? 0
+          : (((_seconds ?? 0) +
+                        (_playing ? ahead : 0) -
+                        (_index == 0 ? 0 : _endTimes[_index - 1])) /
+                    _segments[_index].duration)
+                .clamp(0.0, 1.0),
     );
   }
 }
