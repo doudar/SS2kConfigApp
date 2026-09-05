@@ -58,6 +58,20 @@ and workout export as Classic.
 - Workout segments generate floating isometric roads: recovery groves, coastal
   endurance routes, neon tempo climbs, and Gear Golem battles at 105% FTP or above.
   Ramps use their average intensity to choose a biome.
+- The distant hills trace the full workout: interval duration sets their width
+  and prescribed FTP intensity sets their height, with beveled interval shoulders
+  and sloping ramps. A tiny gold cyclist and trail mark progress along the ridge.
+- Each workout rolls one of three rescue stories with a different crew, stolen
+  object and hometown. The opening minute introduces the Gear Golem's heist;
+  the last minute brings the crew home. Short workouts shorten these chapters,
+  and endless free rides have no automatic homecoming. Stories follow the
+  workout clock, so pauses and skips stay in sync.
+- Natural completion in Arcade plays a 12-second arrival, dismount and village
+  celebration before the save/upload dialog. **Continue to save ride** skips it
+  immediately. Recording has already stopped; the story adds no workout time.
+  The ending reflects earned bosses/sectors without awarding extra points.
+  Reduced motion shows a still celebration; backgrounding pauses the sequence
+  and audio. Classic and manually stopped rides go straight to save as before.
 - Terrain speed follows actual power as a percentage of FTP: 100% FTP travels
   two tiles per second (12× the original pace), 50% moves half as fast, and 150%
   moves 1.5× as fast. Zero power stops travel. The current sector's remaining road
@@ -67,6 +81,15 @@ and workout export as Classic.
 - Stay within 10% of the current target (minimum tolerance 10 W) to earn energy.
   Every 15 seconds on target increases the combo, up to 4×. Three seconds of
   settling time protects a combo when power drifts. Extra power earns no bonus.
+- During coastal and neon chase sectors, detailed rotor drones fly in from the
+  screen edges and track the cyclist. Six accumulated seconds on target charge
+  the handlebar blaster, which locks on, fires a visible bolt and shatters the
+  drone into armor fragments and sparks. Off-target/stale data cannot charge it;
+  pausing freezes the encounter. Surviving drones fly away on sector changes.
+  New waves continue after a sector is secured. Drone kills are counted at the
+  finish without changing workout targets or awarding extra score. Impact sounds
+  respect the effects toggle; reduced motion replaces flybys and debris with
+  stationary targeting and impact cues.
 - Spend 65% of an interval on target to secure its sector (+150 points) or defeat
   its boss (+500). Recovery earns energy too. Free rides reward pedaling with
   positive power. Missing/stale telemetry and skipped time earn no credit.

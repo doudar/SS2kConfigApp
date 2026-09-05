@@ -7,6 +7,7 @@ import 'arcade_music.dart';
 import 'arcade_pedaling.dart';
 import 'arcade_sound_effects.dart';
 import 'arcade_session.dart';
+import 'arcade_story.dart';
 import 'arcade_world_painter.dart';
 
 class ArcadeWorkoutView extends StatefulWidget {
@@ -39,13 +40,22 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
   late final ArcadeMusic _music;
   late final ArcadeSoundEffects _effects;
   late int _lastCueRevision;
-  bool _musicEnabled = false;
-  bool _effectsEnabled = true;
+  bool get _musicEnabled => game.musicEnabled;
+  set _musicEnabled(bool value) => game.musicEnabled = value;
+  bool get _effectsEnabled => game.effectsEnabled;
+  set _effectsEnabled(bool value) => game.effectsEnabled = value;
   bool _foreground = true;
   bool _dialogOpen = false;
 
   WorkoutController get ride => widget.controller;
   ArcadeSession get game => widget.session;
+  ArcadeStoryFrame get story => game.story.frame(
+    seconds: ride.workoutProgressSeconds,
+    total: ride.totalDuration.toDouble(),
+    endless: ride.isUnlimitedFreeRide,
+    bosses: game.bossesDefeated,
+    sectors: game.cleared.length,
+  );
   int get index =>
       game.segmentIndex(ride.segments, ride.workoutProgressSeconds);
   WorkoutSegment? get segment =>
@@ -177,6 +187,9 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
             'Ride on target for 65% of a sector to secure it: +150 points, or +500 for a boss. '
             'Extra power earns no extra points. Recovery is rewarded just as much. '
             'Free ride collects energy whenever you pedal with power.\n\n'
+            'In coastal and neon chase sectors, six seconds on target charge your '
+            'handlebar blaster. It automatically locks on and shoots a drone. '
+            'Going off target holds your charge; a new sector starts a new encounter.\n\n'
             'Skipping advances the route without awarding skipped time. Your score stays '
             'with this screen when you switch to Classic; loading or restarting a workout '
             'starts a new quest. The audio menu controls music and sound effects '
@@ -380,6 +393,14 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                                       charge: charge,
                                       pedalPhase: _pedaling.phase,
                                       moving: ride.isPlaying && game.hasSignal,
+                                      story: story,
+                                      drone: game.drones.snapshot(
+                                        aheadSeconds: _roadFrameOffset,
+                                      ),
+                                      reducedMotion:
+                                          MediaQuery.disableAnimationsOf(
+                                            context,
+                                          ),
                                     ),
                                   ),
                                 ),
@@ -452,7 +473,12 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                                                   game.finished
                                                       ? 'QUEST COMPLETE · ${game.rank}'
                                                       : game.reward ??
-                                                            biome.title,
+                                                            (story.phase ==
+                                                                    ArcadeStoryPhase
+                                                                        .chase
+                                                                ? biome.title
+                                                                : story
+                                                                      .heading),
                                                   style: TextStyle(
                                                     color: color,
                                                     fontWeight: FontWeight.w800,
@@ -473,6 +499,22 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                                             ],
                                           ),
                                           const SizedBox(height: 6),
+                                          if (ride.isPlaying) ...[
+                                            Text(
+                                              game.drones.snapshot().visible
+                                                  ? game.drones
+                                                        .snapshot()
+                                                        .status
+                                                  : story.caption,
+                                              maxLines: compact ? 2 : 3,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: arcadeGold,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                          ],
                                           LinearProgressIndicator(
                                             value: biome == ArcadeBiome.volcano
                                                 ? 1 - charge

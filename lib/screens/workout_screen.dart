@@ -25,6 +25,7 @@ import '../widgets/power_table_chart.dart';
 import '../utils/stream_extensions.dart';
 import '../utils/workout/arcade/arcade_session.dart';
 import '../utils/workout/arcade/arcade_workout_view.dart';
+import '../utils/workout/arcade/arcade_finale.dart';
 
 enum OverlayMode { none, overview, powerTable }
 
@@ -40,6 +41,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     with TickerProviderStateMixin {
   String? _workoutName;
   bool _arcadeMode = false;
+  bool _completionPending = false;
   final ArcadeSession _arcadeSession = ArcadeSession();
   late AnimationController _metricsAndSummaryFadeController;
   late Animation<double> _metricsAndSummaryFadeAnimation;
@@ -147,6 +149,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
         watts: deviceData.ftmsData.watts.toDouble(),
         target: deviceData.ftmsData.targetERG.toDouble(),
         ftp: _workoutController.ftpValue,
+        endless: _workoutController.isUnlimitedFreeRide,
         freshSignal:
             lastUpdate != null &&
             DateTime.now().difference(lastUpdate) < const Duration(seconds: 3),
@@ -193,11 +196,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
           if (_workoutController.progressPosition >= 1.0 &&
               !_workoutController.isUnlimitedFreeRide) {
             _workoutController.progressPosition = 0;
-            Future.delayed(const Duration(milliseconds: 500), () {
-              if (mounted) {
-                GpxFileExporter.showExportDialog(context, _workoutController);
-              }
-            });
+            unawaited(_showFinishAndExport(celebrate: _arcadeMode));
           }
         }
       }
@@ -296,7 +295,30 @@ class _WorkoutScreenState extends State<WorkoutScreen>
 
   // Intervals & other menu actions migrated to WorkoutMenu.
 
+  Future<void> _showFinishAndExport({bool celebrate = false}) async {
+    if (_completionPending || !mounted) return;
+    _completionPending = true;
+    final story = _arcadeSession.story;
+    try {
+      // Leave the controller notification stack before opening a route.
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (!mounted ||
+          _workoutController.isPlaying ||
+          !identical(story, _arcadeSession.story))
+        return;
+      if (celebrate) await ArcadeFinale.show(context, _arcadeSession);
+      if (!mounted ||
+          _workoutController.isPlaying ||
+          !identical(story, _arcadeSession.story))
+        return;
+      await GpxFileExporter.showExportDialog(context, _workoutController);
+    } finally {
+      _completionPending = false;
+    }
+  }
+
   Future<void> _showStopWorkoutDialog() async {
+    if (_completionPending) return;
     final bool? shouldStop = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -319,7 +341,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
 
     if (shouldStop == true) {
       await _workoutController.stopWorkout();
-      GpxFileExporter.showExportDialog(context, _workoutController);
+      if (mounted) await _showFinishAndExport();
     }
   }
 

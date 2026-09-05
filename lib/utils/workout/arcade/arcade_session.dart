@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import '../workout_parser.dart';
 import 'arcade_cues.dart';
 import 'arcade_road.dart';
+import 'arcade_story.dart';
+import 'arcade_drones.dart';
 
 enum ArcadeBiome { grove, coast, neon, volcano }
 
@@ -37,6 +39,10 @@ ArcadeBiome biomeFor(WorkoutSegment segment) {
 /// State lives above the view, so switching to Classic does not lose the run.
 class ArcadeSession {
   final ArcadeRoad road = ArcadeRoad();
+  final ArcadeDrones drones = ArcadeDrones();
+  ArcadeStory story = ArcadeStory.random();
+  bool musicEnabled = false;
+  bool effectsEnabled = true;
   List<WorkoutSegment>? _segments;
   double? _lastTime;
   bool _wasPlaying = false;
@@ -95,6 +101,7 @@ class ArcadeSession {
     required double target,
     required bool freshSignal,
     double ftp = 200,
+    bool endless = false,
   }) {
     road.update(
       segments: segments,
@@ -115,6 +122,8 @@ class ArcadeSession {
     if ((!identical(_segments, segments) && !sameUnlimitedRide) ||
         (_lastTime != null && seconds < _lastTime!)) {
       _points = 0;
+      drones.reset();
+      story = ArcadeStory.random();
       streakSeconds = 0;
       _offTargetSeconds = 0;
       _charge.clear();
@@ -146,6 +155,33 @@ class ArcadeSession {
                 (watts - target).abs() <= math.max(10, target * .10)));
     if (seconds > _rewardUntil) reward = null;
     final delta = previous == null ? 0.0 : seconds - previous;
+    final currentBiome = biomeFor(segments[index]);
+    final chapter = story.frame(
+      seconds: seconds,
+      total: segments.fold<double>(0, (sum, segment) => sum + segment.duration),
+      endless: endless,
+      bosses: bossesDefeated,
+      sectors: cleared.length,
+    );
+    final combatEvents = drones.update(
+      seconds: wasPlaying ? delta : 0,
+      playing: playing,
+      enabled:
+          chapter.phase == ArcadeStoryPhase.chase &&
+          (currentBiome == ArcadeBiome.coast ||
+              currentBiome == ArcadeBiome.neon),
+      onTarget: onTarget,
+      sector: index,
+      style: currentBiome == ArcadeBiome.neon
+          ? ArcadeDroneStyle.sentinel
+          : ArcadeDroneStyle.wheel,
+      skipped: _skip,
+    );
+    for (final event in combatEvents) {
+      _cues.add(
+        event == ArcadeDroneEvent.fired ? ArcadeCue.bolt : ArcadeCue.droneHit,
+      );
+    }
     if (!_skip &&
         playing &&
         !wasPlaying &&
