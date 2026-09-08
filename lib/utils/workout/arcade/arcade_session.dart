@@ -5,6 +5,7 @@ import 'arcade_cues.dart';
 import 'arcade_road.dart';
 import 'arcade_story.dart';
 import 'arcade_drones.dart';
+import 'arcade_rider_appearance.dart';
 
 enum ArcadeBiome { grove, coast, neon, volcano }
 
@@ -52,6 +53,7 @@ class ArcadeSession {
   void cancelStagedOpening() => _stagedOpening = null;
   bool musicEnabled = false;
   bool effectsEnabled = true;
+  ArcadeRiderAppearance rider = const ArcadeRiderAppearance();
   List<WorkoutSegment>? _segments;
   double? _lastTime;
   bool _wasPlaying = false;

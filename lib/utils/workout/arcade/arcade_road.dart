@@ -6,6 +6,8 @@ import 'arcade_segment_profile.dart';
 /// one-tile-per-six-seconds display speed. This never controls trainer speed,
 /// workout duration, exported distance or scoring.
 const arcadeTilesPerSecondAtFtp = 2.0;
+// About two seconds of road at FTP for a quick climb after a checkpoint.
+const arcadeRoadTransitionTiles = 4.0;
 
 double arcadeRoadSpeed(double watts, double ftp) {
   if (!watts.isFinite || !ftp.isFinite || watts <= 0 || ftp <= 0) return 0;
@@ -106,6 +108,10 @@ class ArcadeRoadSnapshot {
       final index = _indexAt(cursor);
       final span = spans[index];
       var boundary = index == spans.length - 1 ? end : math.min(end, span.end);
+      final transitionEnd = span.start + arcadeRoadTransitionTiles;
+      if (index > 0 && cursor < transitionEnd && boundary > transitionEnd) {
+        boundary = transitionEnd;
+      }
       if (index == currentIndex &&
           span.segment.isRamp &&
           cursor < position &&

@@ -6,6 +6,7 @@ import 'arcade_session.dart';
 import 'arcade_sound_effects.dart';
 import 'arcade_story.dart';
 import 'arcade_story_art.dart';
+import 'arcade_rider_appearance.dart';
 
 /// Runs after recording has stopped. The caller awaits this before export.
 /// The save shortcut is always available, including with reduced motion.
@@ -177,6 +178,7 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
                                   _recovered,
                                   _dialogue,
                                   MediaQuery.textScalerOf(context),
+                                  session.rider,
                                 ),
                               ),
                             ),
@@ -238,12 +240,14 @@ class _FinalePainter extends CustomPainter {
     this.recovered,
     this.dialogue,
     this.textScaler,
+    this.rider,
   );
   final ArcadeStory story;
   final double progress;
   final bool recovered;
   final ArcadeDialogue dialogue;
   final TextScaler textScaler;
+  final ArcadeRiderAppearance rider;
 
   @override
   void paint(Canvas c, Size size) {
@@ -353,9 +357,10 @@ class _FinalePainter extends CustomPainter {
         dismount,
         progress < .25 ? progress * 100 : 25,
         speaking: dialogue.speaker == ArcadeSpeaker.hero,
+        rider: rider,
       );
     } else {
-      ArcadeStoryArt.bicycle(c, bike, phase: 25);
+      ArcadeStoryArt.bicycle(c, bike, phase: 25, rider: rider);
       final feet = Offset(bike.dx + 23 + walk * 38, 0);
       ArcadeStoryArt.person(
         c,
@@ -365,6 +370,7 @@ class _FinalePainter extends CustomPainter {
         hop: heroHop,
         hero: true,
         speaking: dialogue.speaker == ArcadeSpeaker.hero,
+        rider: rider,
         clock: progress * 12,
       );
     }
@@ -417,5 +423,6 @@ class _FinalePainter extends CustomPainter {
       oldDelegate.story != story ||
       oldDelegate.recovered != recovered ||
       oldDelegate.dialogue.text != dialogue.text ||
-      oldDelegate.textScaler != textScaler;
+      oldDelegate.textScaler != textScaler ||
+      oldDelegate.rider != rider;
 }

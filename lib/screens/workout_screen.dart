@@ -230,6 +230,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     if (!mounted || _isDisposing) return;
     _arcadeSession.musicEnabled = preferences.musicEnabled;
     _arcadeSession.effectsEnabled = preferences.effectsEnabled;
+    _arcadeSession.rider = preferences.rider;
     _setArcadeMode(preferences.arcadeMode, persist: false);
     setState(() => _arcadePreferencesLoaded = true);
   }
@@ -495,6 +496,23 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     );
   }
 
+  void _onArcadeWorkoutLoaded() {
+    _updatePreviewDuration();
+    if (mounted) setState(() => _workoutName = _workoutController.workoutName);
+  }
+
+  WorkoutMenu _workoutMenu() => WorkoutMenu(
+    workoutController: _workoutController,
+    deviceData: deviceData,
+    device: widget.device,
+    ttsSettings: _ttsSettings,
+    workoutGraphKey: _workoutGraphKey,
+    onWorkoutLoaded: (content, {String? name}) {
+      _updatePreviewDuration();
+      if (name != null && mounted) setState(() => _workoutName = name);
+    },
+  );
+
   @override
   Widget build(BuildContext context) {
     if (!_ttsInitialized || !_arcadePreferencesLoaded) {
@@ -510,6 +528,9 @@ class _WorkoutScreenState extends State<WorkoutScreen>
               session: _arcadeSession,
               onStop: _showStopWorkoutDialog,
               onExit: () => _setArcadeMode(false),
+              onBrowseWorkouts: () =>
+                  _workoutMenu().showWorkoutLibrary(context),
+              onWorkoutLoaded: _onArcadeWorkoutLoaded,
             )
           : null,
       overlay: AnimatedBuilder(
@@ -549,21 +570,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
               onPressed: _toggleOverlay,
               tooltip: 'Toggle Overlay',
             ),
-          WorkoutMenu(
-            workoutController: _workoutController,
-            deviceData: deviceData,
-            device: widget.device,
-            ttsSettings: _ttsSettings,
-            workoutGraphKey: _workoutGraphKey,
-            onWorkoutLoaded: (content, {String? name}) {
-              _updatePreviewDuration();
-              if (name != null && mounted) {
-                setState(() {
-                  _workoutName = name;
-                });
-              }
-            },
-          ),
+          _workoutMenu(),
         ],
       ),
       body: Stack(

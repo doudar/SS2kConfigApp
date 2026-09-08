@@ -766,6 +766,10 @@ class WorkoutMenu extends StatelessWidget {
     );
   }
 
+  /// Reuse the library's existing load/resume flows from the Arcade lobby.
+  void showWorkoutLibrary(BuildContext context) =>
+      _showWorkoutLibrary(context, selectionMode: true);
+
   void _showWorkoutLibrary(BuildContext context, {required bool selectionMode}) {
     final rootContext = context;
     showDialog(

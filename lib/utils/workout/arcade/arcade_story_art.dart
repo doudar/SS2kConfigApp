@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'arcade_story.dart';
 import 'arcade_golem_art.dart';
 import 'arcade_cage_art.dart';
+import 'arcade_rider_art.dart';
+import 'arcade_rider_appearance.dart';
 
 /// Small canvas actors shared by the roadside story and the final celebration.
 class ArcadeStoryArt {
@@ -49,9 +51,11 @@ class ArcadeStoryArt {
     bool speaking = false,
     double clock = 0,
     bool hero = false,
+    ArcadeRiderAppearance rider = const ArcadeRiderAppearance(),
   }) {
     c.save();
     c.translate(feet.dx, feet.dy - hop);
+    final jersey = hero ? rider.jersey : shirt;
     final hipY = hero ? -27.0 : -15.0;
     final shoulderY = hero ? -43.0 : -28.0;
     final head = hero ? standingHeroHead : const Offset(0, -35);
@@ -59,25 +63,53 @@ class ArcadeStoryArt {
       c,
       const Offset(-4, 0),
       Offset(-2, hipY),
-      hero ? const Color(0xff736ba5) : ink,
+      hero ? Color.lerp(rider.shorts, Colors.black, .25)! : ink,
       4,
     );
     if (hero) {
+      line(
+        c,
+        const Offset(-4, -1),
+        Offset(-3, hipY / 2),
+        Color.lerp(rider.skin, Colors.black, .2)!,
+        3,
+      );
+      line(c, const Offset(-7, -1), const Offset(-1, -1), rider.shoes, 3);
       final knee = Offset(2.5, hipY / 2);
-      line(c, Offset(0, hipY), knee, const Color(0xffb391ff), 5);
-      line(c, knee, const Offset(5, 0), Colors.white, 3);
+      line(c, Offset(0, hipY), knee, rider.shorts, 5);
+      line(c, knee, const Offset(5, 0), rider.skin, 3);
+      line(c, const Offset(2, -1), const Offset(8, -1), rider.shoes, 3);
     } else {
       line(c, const Offset(5, 0), Offset(1, hipY), ink, 4);
     }
-    line(c, Offset(0, hipY + 1), Offset(0, shoulderY), shirt, 9);
+    line(c, Offset(0, hipY + 1), Offset(0, shoulderY), jersey, 9);
     for (final side in [-1.0, 1.0]) {
       line(
         c,
         Offset(side * 3, shoulderY + 3),
         Offset(side * 12, shoulderY + 8 - cheer * 20),
-        shirt,
+        jersey,
         3,
       );
+      if (hero) {
+        final shoulder = Offset(side * 3, shoulderY + 3);
+        final hand = Offset(side * 12, shoulderY + 8 - cheer * 20);
+        line(c, Offset.lerp(shoulder, hand, .5)!, hand, rider.skin, 3);
+        c.drawCircle(hand, 1.8, Paint()..color = rider.shoes);
+      }
+    }
+    if (hero) {
+      line(c, const Offset(-2, -38), const Offset(-2, -29), rider.helmet, 1);
+      ArcadeRiderArt.head(
+        c,
+        head,
+        rider,
+        scale: .65,
+        speaking: speaking,
+        clock: clock,
+      );
+      c.restore();
+      return;
     }
     c.drawCircle(head, 6, Paint()..color = const Color(0xffffc69b));
     _face(c, head, speaking, clock);
@@ -108,11 +140,16 @@ class ArcadeStoryArt {
     );
   }
 
-  static void bicycle(Canvas c, Offset p, {double phase = 0}) {
+  static void bicycle(
+    Canvas c,
+    Offset p, {
+    double phase = 0,
+    ArcadeRiderAppearance rider = const ArcadeRiderAppearance(),
+  }) {
     c.save();
     c.translate(p.dx, p.dy);
     final wheelPaint = Paint()
-      ..color = mint
+      ..color = rider.bike
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
     for (final x in [-17.0, 17.0]) {
@@ -141,7 +178,7 @@ class ArcadeStoryArt {
       [stem, crank],
       [stem, front],
     ]) {
-      line(c, pair[0], pair[1], mint, 2);
+      line(c, pair[0], pair[1], rider.bike, 2);
     }
     // Exposed seatpost above the seat tube, with the saddle above the head tube.
     line(c, seat, saddle, const Color(0xffb5c5dc), 2);
@@ -170,6 +207,7 @@ class ArcadeStoryArt {
     double progress,
     double phase, {
     bool speaking = false,
+    ArcadeRiderAppearance rider = const ArcadeRiderAppearance(),
   }) {
     final t = Curves.easeInOut.transform(progress.clamp(0.0, 1.0));
     final hip = Offset.lerp(
@@ -192,31 +230,55 @@ class ArcadeStoryArt {
       bike + const Offset(18, 0),
       t,
     )!;
-    line(c, hip, farFoot, const Color(0xff736ba5), 4);
-    bicycle(c, bike, phase: phase);
+    line(c, hip, farFoot, Color.lerp(rider.shorts, Colors.black, .25)!, 4);
+    line(
+      c,
+      Offset.lerp(hip, farFoot, .55)!,
+      farFoot,
+      Color.lerp(rider.skin, Colors.black, .2)!,
+      3,
+    );
+    line(
+      c,
+      farFoot + const Offset(-3, 0),
+      farFoot + const Offset(4, 0),
+      rider.shoes,
+      3,
+    );
+    bicycle(c, bike, phase: phase, rider: rider);
     // The pedaling knee bend disappears as the rider stands beside the bike.
     final knee = Offset.lerp(hip, nearFoot, .5)! + Offset(7 * (1 - t), 0);
-    line(c, hip, knee, const Color(0xffb391ff), 5);
-    line(c, knee, nearFoot, Colors.white, 3);
-    line(c, hip, shoulder, const Color(0xffb391ff), 9);
+    line(c, hip, knee, rider.shorts, 5);
+    line(c, knee, nearFoot, rider.skin, 3);
+    line(c, hip, shoulder, rider.jersey, 9);
     final hand = Offset.lerp(
       bike + const Offset(11, -34),
       shoulder + const Offset(10, 9),
       t,
     )!;
-    line(c, shoulder, hand, const Color(0xffffc69b), 3);
+    line(c, shoulder, hand, rider.skin, 3);
     final head = dismountHead(bike, progress);
-    c.drawCircle(head, 6, Paint()..color = const Color(0xffffc69b));
-    _face(c, head, speaking, phase / 6);
-    c.drawArc(
-      Rect.fromCircle(center: head, radius: 7),
-      math.pi,
-      math.pi,
-      false,
-      Paint()
-        ..color = gold
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4,
+    line(
+      c,
+      nearFoot + const Offset(-3, 0),
+      nearFoot + const Offset(4, 0),
+      rider.shoes,
+      3,
+    );
+    line(
+      c,
+      hip + const Offset(-2, -1),
+      shoulder + const Offset(-2, 2),
+      rider.helmet,
+      1,
+    );
+    ArcadeRiderArt.head(
+      c,
+      head,
+      rider,
+      scale: .65,
+      speaking: speaking,
+      clock: phase / 6,
     );
   }
 

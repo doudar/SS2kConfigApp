@@ -13,6 +13,7 @@ import 'package:ss2kconfigapp/utils/workout/arcade/arcade_drones.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_workout_view.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_world_painter.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_preferences.dart';
+import 'package:ss2kconfigapp/utils/workout/arcade/arcade_intro.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
 
 void main() {
@@ -115,7 +116,12 @@ void main() {
         );
         await tester.pump();
         expect(find.text('CRANK QUEST'), findsOneWidget);
-        expect(find.text('PLAY'), findsOneWidget);
+        expect(find.text('START QUEST'), findsOneWidget);
+        expect(find.byKey(const ValueKey('arcade-lobby')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('arcade-drone-playfield')),
+          findsNothing,
+        );
         expect(find.byTooltip('Arcade audio'), findsOneWidget);
         expect(tester.takeException(), isNull);
         if (const bool.fromEnvironment('ARCADE_SCREENSHOTS')) {
@@ -131,6 +137,21 @@ void main() {
           });
         }
       }
+      // Start opens the cinematic; backing out leaves the workout untouched.
+      game.effectsEnabled = false;
+      await tester.ensureVisible(find.text('START QUEST'));
+      await tester.tap(find.text('START QUEST'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(ArcadeIntro), findsOneWidget);
+      expect(controller.isPlaying, isFalse);
+      expect(controller.workoutProgressSeconds, 0);
+      await tester.tap(find.text('BACK'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('arcade-lobby')), findsOneWidget);
+      expect(game.openingSeen, isFalse);
+      expect(controller.isPlaying, isFalse);
+      game.effectsEnabled = true;
+
       // Drive the actual view ticker from trainer cadence, without starting the
       // workout's transport/recording timer in this rendering test.
       controller.isPlaying = true;
@@ -182,6 +203,8 @@ void main() {
       await tester.runAsync(() => controller.updateFTP(200));
       await tester.pump(const Duration(milliseconds: 100));
       expect(phase(), beforePause);
+      expect(find.byKey(const ValueKey('arcade-lobby')), findsNothing);
+      expect(find.text('RESUME'), findsOneWidget);
       final pausedPosition = world().road.position;
       await tester.pump(const Duration(milliseconds: 100));
       expect(world().road.position, pausedPosition);

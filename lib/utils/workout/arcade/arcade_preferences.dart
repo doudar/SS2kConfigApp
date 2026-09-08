@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'arcade_rider_appearance.dart';
 
 /// User choices survive workout resets, screen navigation and app restarts.
 class ArcadePreferences {
@@ -7,15 +9,18 @@ class ArcadePreferences {
     this.arcadeMode = false,
     this.musicEnabled = false,
     this.effectsEnabled = true,
+    this.rider = const ArcadeRiderAppearance(),
   });
 
   final bool arcadeMode;
   final bool musicEnabled;
   final bool effectsEnabled;
+  final ArcadeRiderAppearance rider;
 
   static const _modeKey = 'workout_arcade_mode';
   static const _musicKey = 'workout_arcade_music';
   static const _effectsKey = 'workout_arcade_effects';
+  static const _riderKey = 'workout_arcade_rider';
   static Future<void> _pendingSave = Future<void>.value();
 
   static Future<ArcadePreferences> load() async {
@@ -27,6 +32,7 @@ class ArcadePreferences {
         arcadeMode: prefs.getBool(_modeKey) ?? false,
         musicEnabled: prefs.getBool(_musicKey) ?? false,
         effectsEnabled: prefs.getBool(_effectsKey) ?? true,
+        rider: _loadRider(prefs),
       );
     } catch (error) {
       debugPrint('Unable to load arcade preferences: $error');
@@ -37,13 +43,30 @@ class ArcadePreferences {
   static Future<void> saveMode(bool enabled) => _save(_modeKey, enabled);
   static Future<void> saveMusic(bool enabled) => _save(_musicKey, enabled);
   static Future<void> saveEffects(bool enabled) => _save(_effectsKey, enabled);
+  static Future<void> saveRider(ArcadeRiderAppearance rider) =>
+      _save(_riderKey, jsonEncode(rider.toJson()));
 
-  static Future<void> _save(String key, bool enabled) {
+  static ArcadeRiderAppearance _loadRider(SharedPreferences prefs) {
+    try {
+      final saved = prefs.getString(_riderKey);
+      return ArcadeRiderAppearance.fromJson(
+        saved == null ? null : jsonDecode(saved),
+      );
+    } catch (error) {
+      debugPrint('Unable to load rider appearance: $error');
+      return const ArcadeRiderAppearance();
+    }
+  }
+
+  static Future<void> _save(String key, Object value) {
     // Serialize rapid toggles so an older disk write cannot win the race.
     _pendingSave = _pendingSave.then((_) async {
       try {
         final prefs = await SharedPreferences.getInstance();
-        if (!await prefs.setBool(key, enabled)) {
+        final saved = value is bool
+            ? await prefs.setBool(key, value)
+            : await prefs.setString(key, value as String);
+        if (!saved) {
           debugPrint('Unable to save arcade preference: $key');
         }
       } catch (error) {

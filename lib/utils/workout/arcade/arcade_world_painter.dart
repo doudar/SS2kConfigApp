@@ -2,7 +2,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../workout_parser.dart';
 import 'arcade_session.dart';
-import 'arcade_pedaling.dart';
+import 'arcade_rider_art.dart';
+import 'arcade_rider_appearance.dart';
 import 'arcade_road.dart';
 import 'arcade_story.dart';
 import 'arcade_story_art.dart';
@@ -12,6 +13,7 @@ import 'arcade_segment_profile.dart';
 import 'arcade_golem_art.dart';
 import 'arcade_checkpoint_art.dart';
 import 'arcade_cage_art.dart';
+import 'arcade_terrain.dart';
 
 const arcadeMint = Color(0xff74ffd3);
 const arcadeGold = Color(0xffffd477);
@@ -43,6 +45,7 @@ class ArcadeWorldPainter extends CustomPainter {
     this.reducedMotion = false,
     this.escapeSeconds,
     this.showCheckpoints = true,
+    this.rider = const ArcadeRiderAppearance(),
   });
 
   final List<WorkoutSegment> segments;
@@ -62,6 +65,7 @@ class ArcadeWorldPainter extends CustomPainter {
   // Null before the opening or for an endless ride with no destination.
   final double? escapeSeconds;
   final bool showCheckpoints;
+  final ArcadeRiderAppearance rider;
 
   double? get _escapeDuration {
     final time = escapeSeconds;
@@ -92,8 +96,12 @@ class ArcadeWorldPainter extends CustomPainter {
           ),
         ),
       );
-  double _roadHeight(double power) =>
-      12 + math.max(0, power) * 22 * _heightScale;
+  late final ArcadeTerrainProfile _terrain = ArcadeTerrainProfile(
+    road,
+    _heightScale,
+    reducedMotion: reducedMotion,
+  );
+  double _roadHeight(double distance) => _terrain.heightAt(distance);
 
   double _scaleFor(Size size) => math
       .min(
@@ -109,14 +117,7 @@ class ArcadeWorldPainter extends CustomPainter {
     );
   }
 
-  double get _riderHeight => _roadHeight(
-    road.spans.isEmpty
-        ? .5
-        : arcadeSegmentPower(
-            road.spans[road.currentIndex].segment,
-            road.currentProgress,
-          ),
-  );
+  double get _riderHeight => _roadHeight(road.position);
 
   ArcadeDroneLayout? droneLayout(Size size) {
     final frame = drone;
@@ -266,7 +267,7 @@ class ArcadeWorldPainter extends CustomPainter {
       final segment = road.segmentAt(worldEnd - .5);
       final tileBiome = segment == null ? biome : biomeFor(segment);
       final color = biomeColor(tileBiome);
-      final base = _roadHeight(road.powerAt(worldEnd - .5));
+      final base = _roadHeight(worldEnd - .5);
       for (final piece
           in road.pieces(worldEnd - 1, worldEnd).toList().reversed) {
         _roadSurface(
@@ -340,7 +341,7 @@ class ArcadeWorldPainter extends CustomPainter {
     if (chapter != null &&
         chapter.phase != ArcadeStoryPhase.chase &&
         (biome != ArcadeBiome.volcano || charge >= 1)) {
-      final p = _iso(-4.8, 0, 65);
+      final p = _iso(-4.8, 0, _roadHeight(position + 4.8) + 6);
       canvas.save();
       canvas.translate(p.dx, p.dy);
       canvas.scale(-.8, .8);
@@ -350,7 +351,11 @@ class ArcadeWorldPainter extends CustomPainter {
         charge < 1 &&
         !(drone?.isBoss ?? false)) {
       // Idle preview only. Active bosses use the shared aimable combat layer.
-      final boss = _iso(-4.5, 0, 70 + math.sin(animation * 2) * 5);
+      final boss = _iso(
+        -4.5,
+        0,
+        _roadHeight(position + 4.5) + 56 + math.sin(animation * 2) * 5,
+      );
       _boss(canvas, boss);
     }
     final riderHeight = _riderHeight;
@@ -403,14 +408,7 @@ class ArcadeWorldPainter extends CustomPainter {
           ? road.spans[nextIndex].segment
           : null;
       final color = next == null ? arcadeGold : biomeColor(biomeFor(next));
-      final height =
-          _roadHeight(
-            math.max(
-              arcadeSegmentPower(span.segment, 1),
-              next == null ? 0 : arcadeSegmentPower(next, 0),
-            ),
-          ) +
-          1;
+      final height = _roadHeight(span.end) + 1;
       ArcadeCheckpointArt.paint(
         canvas,
         farFoot: _iso(u, -1.3, height),
@@ -440,15 +438,11 @@ class ArcadeWorldPainter extends CustomPainter {
     final topExit = (origin.dy / worldScale + 20) / 18 + towDistance;
     final exit = math.max(4.0, math.min(rightExit, topExit)) + .5;
     final ahead = 4.0 + (exit - 4.0) * Curves.easeInQuad.transform(progress);
-    final feet = _iso(
-      -ahead,
-      0,
-      _roadHeight(road.powerAt(road.position + ahead)),
-    );
+    final feet = _iso(-ahead, 0, _roadHeight(road.position + ahead));
     final cageFeet = _iso(
       -ahead + towDistance,
       0,
-      _roadHeight(road.powerAt(road.position + ahead - towDistance)),
+      _roadHeight(road.position + ahead - towDistance),
     );
     final tint = ArcadeStoryArt.color(story?.story.variant ?? 0);
     final clock = reducedMotion ? 0.0 : escapeSeconds!;
@@ -634,33 +628,33 @@ class ArcadeWorldPainter extends CustomPainter {
     );
     canvas.rotate(slope.clamp(-.5, .5));
     final stroke = Paint()
-      ..color = arcadeGold
+      ..color = rider.bike
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
     canvas.drawCircle(const Offset(-5, -2.5), 2.5, stroke);
     canvas.drawCircle(const Offset(5, -2.5), 2.5, stroke);
-    _line(canvas, const Offset(-5, -2.5), const Offset(-1, -6), arcadeGold, 1);
-    _line(canvas, const Offset(-1, -6), const Offset(1, -2.5), arcadeGold, 1);
-    _line(canvas, const Offset(1, -2.5), const Offset(-5, -2.5), arcadeGold, 1);
-    _line(canvas, const Offset(1, -2.5), const Offset(3, -6), arcadeGold, 1);
-    _line(canvas, const Offset(3, -6), const Offset(5, -2.5), arcadeGold, 1);
-    _line(canvas, const Offset(-1, -6), const Offset(3, -6), arcadeGold, 1);
+    _line(canvas, const Offset(-5, -2.5), const Offset(-1, -6), rider.bike, 1);
+    _line(canvas, const Offset(-1, -6), const Offset(1, -2.5), rider.bike, 1);
+    _line(canvas, const Offset(1, -2.5), const Offset(-5, -2.5), rider.bike, 1);
+    _line(canvas, const Offset(1, -2.5), const Offset(3, -6), rider.bike, 1);
+    _line(canvas, const Offset(3, -6), const Offset(5, -2.5), rider.bike, 1);
+    _line(canvas, const Offset(-1, -6), const Offset(3, -6), rider.bike, 1);
     _line(
       canvas,
       const Offset(-1, -6),
       const Offset(-2, -9),
-      Colors.white,
+      rider.jersey,
       1.3,
     );
     _line(
       canvas,
       const Offset(-2, -9),
       const Offset(1, -11),
-      Colors.white,
+      rider.jersey,
       1.3,
     );
-    _line(canvas, const Offset(1, -11), const Offset(3, -6), Colors.white, 1);
-    canvas.drawCircle(const Offset(1.5, -13), 1.7, Paint()..color = arcadeGold);
+    _line(canvas, const Offset(1, -11), const Offset(3, -6), rider.jersey, 1);
+    canvas.drawCircle(const Offset(1.5, -13), 1.7, Paint()..color = rider.bike);
     canvas.restore();
   }
 
@@ -673,11 +667,12 @@ class ArcadeWorldPainter extends CustomPainter {
     final segment = piece.segment;
     final color = biomeColor(biomeFor(segment));
     // The tile starts at its later power; increasing u runs back in time.
-    final frontHeight = _roadHeight(piece.endPower);
-    final backHeight = _roadHeight(piece.startPower);
+    final frontHeight = _roadHeight(piece.end);
+    final backHeight = _roadHeight(piece.start);
     double height(double fraction) =>
         frontHeight + (backHeight - frontHeight) * fraction;
-    final surfaceWidth = math.max(width - .012, width * .96);
+    // Shared endpoints keep adjoining tiles watertight, including banners.
+    final surfaceWidth = width;
     final a = _iso(u, -1.2, frontHeight);
     final b = _iso(u + surfaceWidth, -1.2, height(surfaceWidth / width));
     final c = _iso(u + surfaceWidth, 1.2, height(surfaceWidth / width));
@@ -696,6 +691,7 @@ class ArcadeWorldPainter extends CustomPainter {
       _iso(u + surfaceWidth, 1.2),
     ], Color.lerp(surfaceColor, Colors.black, .38)!);
     _polygon(canvas, [a, b, c, d], surfaceColor);
+    _line(canvas, a, d, color.withValues(alpha: .18), .8);
     for (final side in [-1.15, 1.15]) {
       _line(
         canvas,
@@ -747,161 +743,17 @@ class ArcadeWorldPainter extends CustomPainter {
   void _cyclist(Canvas c, Offset p) {
     c.save();
     c.translate(p.dx, p.dy);
-    // Undo world mirroring so rider leans toward the destination.
     c.scale(-1, 1);
-    c.drawOval(
-      const Rect.fromLTWH(-36, 6, 73, 17),
-      Paint()..color = Colors.black.withValues(alpha: .45),
-    );
-    final rear = const Offset(-24, 0),
-        front = const Offset(26, -7),
-        crank = ArcadePedalPose.crank;
-    final pose = ArcadePedalPose(pedalPhase);
-    // The rider's left leg, shoe and crank sit behind both wheels and frame.
-    _leg(
+    ArcadeRiderArt.paint(
       c,
-      pose.hip,
-      pose.farKnee,
-      pose.farPedal,
-      const Color(0xff6d63a5),
-      const Color(0xff9eaeca),
+      Offset.zero,
+      rider: rider,
+      pedalPhase: pedalPhase,
+      onTarget: onTarget,
+      moving: moving,
+      animation: animation,
     );
-    _line(c, crank, pose.farPedal, const Color(0xff9aaac3), 2.5);
-    _shoe(c, pose.farPedal, const Color(0xffa8b7d0));
-    for (final wheel in [rear, front]) {
-      c.drawCircle(wheel, 16, Paint()..color = const Color(0xff080d1a));
-      c.drawCircle(
-        wheel,
-        15,
-        Paint()
-          ..color = onTarget ? arcadeMint : const Color(0xff96a8c4)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5,
-      );
-      final spin = pedalPhase * 2;
-      for (var i = 0; i < 3; i++) {
-        final angle = spin + i * math.pi / 3;
-        final d = Offset(math.cos(angle), math.sin(angle)) * 13;
-        _line(c, wheel - d, wheel + d, Colors.white24, 1);
-      }
-    }
-    const seat = Offset(-12, -25), stem = Offset(15, -30);
-    for (final pair in [
-      [rear, seat],
-      [seat, crank],
-      [crank, rear],
-      [crank, stem],
-      [stem, seat],
-      [stem, front],
-    ]) {
-      _line(c, pair[0], pair[1], arcadeMint, 3);
-    }
-    _line(c, stem, const Offset(18, -37), Colors.white, 3);
-    _line(c, const Offset(11, -37), const Offset(22, -37), Colors.white, 3);
-    _line(
-      c,
-      seat + const Offset(-6, -2),
-      seat + const Offset(5, -2),
-      Colors.white,
-      4,
-    );
-    c.drawCircle(crank, 5, Paint()..color = const Color(0xff26384b));
-    c.drawCircle(
-      crank,
-      4,
-      Paint()
-        ..color = arcadeMint
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-    _line(c, crank, pose.nearPedal, Colors.white, 2.5);
-    _leg(
-      c,
-      pose.hip,
-      pose.nearKnee,
-      pose.nearPedal,
-      const Color(0xffb391ff),
-      const Color(0xffdce5ff),
-    );
-    _shoe(c, pose.nearPedal, arcadeGold);
-    _line(c, pose.hip, const Offset(2, -59), const Color(0xffa78aff), 12);
-    _line(
-      c,
-      const Offset(3, -55),
-      const Offset(14, -41),
-      const Color(0xffffc69b),
-      4,
-    );
-    _line(
-      c,
-      const Offset(14, -41),
-      const Offset(21, -37),
-      const Color(0xffffc69b),
-      4,
-    );
-    c.drawCircle(
-      const Offset(10, -68),
-      9,
-      Paint()..color = const Color(0xffffc69b),
-    );
-    c.drawArc(
-      const Rect.fromLTWH(0, -79, 22, 20),
-      math.pi,
-      math.pi,
-      false,
-      Paint()
-        ..color = arcadeGold
-        ..strokeWidth = 8
-        ..style = PaintingStyle.stroke,
-    );
-    _line(
-      c,
-      const Offset(14, -69),
-      const Offset(21, -70),
-      const Color(0xff152036),
-      3,
-    );
-    if (onTarget && moving) {
-      for (var i = 0; i < 4; i++) {
-        final t = (animation * .7 + i / 4) % 1;
-        c.drawCircle(
-          Offset(-40 - t * 45, 6 + i * 4),
-          (1 - t) * 3,
-          Paint()..color = arcadeMint.withValues(alpha: 1 - t),
-        );
-      }
-    }
     c.restore();
-  }
-
-  void _leg(
-    Canvas c,
-    Offset hip,
-    Offset knee,
-    Offset pedal,
-    Color shorts,
-    Color shin,
-  ) {
-    _line(c, hip, knee, shorts, 6);
-    c.drawCircle(knee, 2.8, Paint()..color = shin);
-    _line(c, knee, pedal, shin, 4);
-  }
-
-  void _shoe(Canvas c, Offset pedal, Color color) {
-    _line(
-      c,
-      pedal + const Offset(-3, 1),
-      pedal + const Offset(5, 1),
-      color,
-      3.5,
-    );
-    _line(
-      c,
-      pedal + const Offset(-3, 3),
-      pedal + const Offset(6, 3),
-      const Color(0xff152036),
-      1.5,
-    );
   }
 
   @override

@@ -5,6 +5,8 @@ import '../workout_controller.dart';
 import '../workout_parser.dart';
 import '../../device_data.dart';
 import 'arcade_music.dart';
+import 'arcade_lobby.dart';
+import 'arcade_lobby_workout.dart';
 import 'arcade_pedaling.dart';
 import 'arcade_sound_effects.dart';
 import 'arcade_session.dart';
@@ -13,6 +15,9 @@ import 'arcade_intro.dart';
 import 'arcade_route_preview.dart';
 import 'arcade_world_painter.dart';
 import 'arcade_preferences.dart';
+import 'arcade_vitals.dart';
+import 'arcade_rider_appearance.dart';
+import 'arcade_rider_customizer.dart';
 
 class ArcadeWorkoutView extends StatefulWidget {
   const ArcadeWorkoutView({
@@ -22,6 +27,8 @@ class ArcadeWorkoutView extends StatefulWidget {
     required this.session,
     required this.onStop,
     required this.onExit,
+    this.onBrowseWorkouts,
+    this.onWorkoutLoaded,
   });
 
   final WorkoutController controller;
@@ -29,6 +36,8 @@ class ArcadeWorkoutView extends StatefulWidget {
   final ArcadeSession session;
   final VoidCallback onStop;
   final VoidCallback onExit;
+  final VoidCallback? onBrowseWorkouts;
+  final VoidCallback? onWorkoutLoaded;
 
   @override
   State<ArcadeWorkoutView> createState() => _ArcadeWorkoutViewState();
@@ -51,6 +60,35 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
   bool _foreground = true;
   bool _dialogOpen = false;
   bool _starting = false;
+
+  bool get _showLobby =>
+      !ride.isPlaying &&
+      ride.workoutProgressSeconds == 0 &&
+      !game.openingSeen &&
+      !game.finished;
+
+  void _selectWorkout(ArcadeLobbyWorkout choice) {
+    // A shelf callback must never replace a ride started elsewhere meanwhile.
+    if (!_showLobby || _starting) return;
+    try {
+      ride.loadWorkout(choice.content, isResume: false);
+      widget.onWorkoutLoaded?.call();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${choice.name} is ready. Start when you are.'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This workout could not be loaded. Choose another ride.',
+          ),
+        ),
+      );
+    }
+  }
 
   WorkoutController get ride => widget.controller;
   ArcadeSession get game => widget.session;
@@ -176,6 +214,25 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     _music.dispose();
     _effects.dispose();
     super.dispose();
+  }
+
+  Future<void> _customizeRider() async {
+    _dialogOpen = true;
+    _sync();
+    try {
+      final appearance = await showDialog<ArcadeRiderAppearance>(
+        context: context,
+        builder: (_) => ArcadeRiderCustomizer(initial: game.rider),
+      );
+      if (!mounted || appearance == null) return;
+      setState(() => game.rider = appearance);
+      unawaited(ArcadePreferences.saveRider(appearance));
+    } finally {
+      if (mounted) {
+        _dialogOpen = false;
+        _sync();
+      }
+    }
   }
 
   Future<void> _help() async {
@@ -351,6 +408,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
           charge: charge,
           pedalPhase: _pedaling.phase,
           moving: ride.isPlaying && game.hasSignal,
+          rider: game.rider,
           showCheckpoints: !ride.isUnlimitedFreeRide,
           escapeSeconds: game.openingSeen && !ride.isUnlimitedFreeRide
               ? ride.workoutProgressSeconds + _roadFrameOffset
@@ -361,9 +419,12 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
           // Keep the shootable hover position clear of the metrics and quest card.
           droneFlightBounds: Rect.fromLTRB(
             sideHud ? 200 : 8,
-            sideHud ? 0 : (compact ? 65 : 94),
+            sideHud ? 0 : (compact ? 80 : 98),
             size.width - 8,
-            math.max(sideHud ? 64 : 125, size.height - (compact ? 88 : 145)),
+            math.max(
+              sideHud ? 64 : 125,
+              size.height - (40 + MediaQuery.textScalerOf(context).scale(40)),
+            ),
           ),
         );
         final layout = painter.droneLayout(size);
@@ -425,7 +486,6 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
               final charge = current == null
                   ? 0.0
                   : game.chargeFor(index, current);
-              final drone = game.drones.snapshot();
               final target = widget.deviceData.ftmsData.targetERG;
               final remaining = current == null
                   ? 0
@@ -470,6 +530,14 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                                       ),
                                     ),
                                 ],
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Customize rider',
+                              onPressed: _customizeRider,
+                              icon: const Icon(
+                                Icons.checkroom_rounded,
+                                size: 21,
                               ),
                             ),
                             PopupMenuButton<String>(
@@ -531,243 +599,257 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                           ],
                         ),
                       ),
-                      Expanded(
-                        child: ClipRect(
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              RepaintBoundary(
-                                child: _world(charge, compact, sideHud),
-                              ),
-                              Positioned(
-                                top: 0,
-                                left: 12,
-                                right: sideHud ? null : 12,
-                                width: sideHud ? 175 : null,
-                                child: _metrics(
-                                  current,
-                                  target,
-                                  remaining,
-                                  color,
-                                  compact,
-                                  sideHud,
+                      if (_showLobby)
+                        Expanded(
+                          child: ArcadeLobby(
+                            name: ride.workoutName ?? 'Your workout',
+                            segments: ride.segments,
+                            endless: ride.isUnlimitedFreeRide,
+                            ftp: ride.ftpValue,
+                            story: game.story,
+                            rider: game.rider,
+                            onStart: ride.segments.isEmpty || _starting
+                                ? null
+                                : _playPause,
+                            onCustomize: _customizeRider,
+                            onFtp: _ftp,
+                            onBrowse: widget.onBrowseWorkouts,
+                            onSelect: _selectWorkout,
+                          ),
+                        )
+                      else ...[
+                        Expanded(
+                          child: ClipRect(
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                RepaintBoundary(
+                                  child: _world(charge, compact, sideHud),
                                 ),
-                              ),
-                              if (!compact)
                                 Positioned(
-                                  top: 72,
+                                  top: 0,
+                                  left: 12,
+                                  right: sideHud ? null : 12,
+                                  width: sideHud ? 175 : null,
+                                  child: _metrics(
+                                    current,
+                                    target,
+                                    remaining,
+                                    color,
+                                    compact,
+                                    sideHud,
+                                  ),
+                                ),
+                                Positioned(
+                                  top: sideHud
+                                      ? 106
+                                      : compact
+                                      ? 54
+                                      : 72,
                                   left: 18,
-                                  child: Text(
-                                    '${widget.deviceData.ftmsData.cadence} RPM   /   ${widget.deviceData.ftmsData.heartRate} BPM   /   ${ride.ftpValue > 0 ? (widget.deviceData.ftmsData.watts / ride.ftpValue * 100).round() : 0}% FTP',
+                                  right: sideHud ? null : 18,
+                                  width: sideHud ? 169 : null,
+                                  child: ArcadeVitals(
+                                    cadence: widget.deviceData.ftmsData.cadence,
+                                    heartRate:
+                                        widget.deviceData.ftmsData.heartRate,
+                                    percentFtp: ride.ftpValue > 0
+                                        ? (widget.deviceData.ftmsData.watts /
+                                                  ride.ftpValue *
+                                                  100)
+                                              .round()
+                                        : 0,
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 8,
+                                  left: sideHud ? 200 : 14,
+                                  right: 14,
+                                  child: Center(
+                                    child: _questPanel(charge, target, color),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        _routeStrip(compact),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                tooltip: 'Stop Workout',
+                                onPressed:
+                                    ride.isPlaying ||
+                                        ride.workoutProgressSeconds > 0
+                                    ? widget.onStop
+                                    : null,
+                                icon: const Icon(Icons.stop_circle_outlined),
+                                color: const Color(0xffff9d9d),
+                              ),
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: ride.segments.isEmpty
+                                      ? null
+                                      : _playPause,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: arcadeMint,
+                                    foregroundColor: arcadeInk,
+                                  ),
+                                  icon: Icon(
+                                    ride.isPlaying
+                                        ? Icons.pause
+                                        : Icons.play_arrow,
+                                  ),
+                                  label: Text(
+                                    ride.isPlaying
+                                        ? 'PAUSE'
+                                        : ride.workoutProgressSeconds > 0 &&
+                                              !game.finished
+                                        ? 'RESUME'
+                                        : 'PLAY',
                                     style: const TextStyle(
-                                      color: Color(0xff889ab8),
-                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
                                       letterSpacing: 1,
                                     ),
                                   ),
                                 ),
-                              Positioned(
-                                bottom: 8,
-                                left: sideHud ? 200 : 14,
-                                right: 14,
-                                child: Center(
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      maxWidth: 540,
-                                    ),
-                                    child: Container(
-                                      padding: EdgeInsets.all(compact ? 9 : 12),
-                                      decoration: BoxDecoration(
-                                        color: arcadeInk.withValues(alpha: .88),
-                                        border: Border.all(
-                                          color: color.withValues(alpha: .4),
-                                        ),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                game.finished
-                                                    ? Icons.emoji_events
-                                                    : biome ==
-                                                          ArcadeBiome.volcano
-                                                    ? Icons.whatshot
-                                                    : Icons.bolt,
-                                                color: color,
-                                                size: 17,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  game.finished
-                                                      ? 'QUEST COMPLETE · ${game.rank}'
-                                                      : game.reward ??
-                                                            (story.phase ==
-                                                                    ArcadeStoryPhase
-                                                                        .chase
-                                                                ? biome.title
-                                                                : story
-                                                                      .heading),
-                                                  style: TextStyle(
-                                                    color: color,
-                                                    fontWeight: FontWeight.w800,
-                                                    fontSize: 12,
-                                                    letterSpacing: .7,
-                                                  ),
-                                                ),
-                                              ),
-                                              Text(
-                                                drone.visible
-                                                    ? 'BLASTER ${(drone.charge * 100).round()}%'
-                                                    : biome ==
-                                                          ArcadeBiome.volcano
-                                                    ? '${((1 - charge) * 100).ceil()}% SHIELD'
-                                                    : '${(charge * 100).floor()}%',
-                                                style: TextStyle(
-                                                  color: color,
-                                                  fontSize: 11,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 6),
-                                          if (ride.isPlaying) ...[
-                                            Text(
-                                              drone.visible
-                                                  ? drone.status
-                                                  : story.caption,
-                                              maxLines: compact ? 2 : 3,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color: arcadeGold,
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 6),
-                                          ],
-                                          LinearProgressIndicator(
-                                            value: drone.visible
-                                                ? drone.charge
-                                                : biome == ArcadeBiome.volcano
-                                                ? 1 - charge
-                                                : charge,
-                                            minHeight: 4,
-                                            color: color,
-                                            backgroundColor: Colors.white10,
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                          ),
-                                          if (!compact) ...[
-                                            const SizedBox(height: 7),
-                                            Text(
-                                              game.finished
-                                                  ? '${game.cleared.length} sectors secured · ${game.bossesDefeated} bosses · best ${game.bestCombo}× combo'
-                                                  : !ride.isPlaying
-                                                  ? (ride.workoutProgressSeconds >
-                                                            0
-                                                        ? 'QUEST PAUSED · Your energy is safe. Resume when ready.'
-                                                        : 'Your workout becomes a world. Press PLAY to begin.')
-                                                  : !game.hasSignal
-                                                  ? 'Waiting for live trainer data…'
-                                                  : game.onTarget
-                                                  ? (biome ==
-                                                            ArcadeBiome.volcano
-                                                        ? 'ON TARGET · Energy bolts charging. Keep it steady!'
-                                                        : 'ON TARGET · ${biome.mission}')
-                                                  : current?.type ==
-                                                        SegmentType.freeRide
-                                                  ? 'Pedal at your own pace to collect energy.'
-                                                  : 'Settle near $target W to collect energy. More power earns no bonus.',
-                                              style: const TextStyle(
-                                                color: Color(0xffc3cfe3),
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  ),
+                              ),
+                              IconButton(
+                                tooltip: 'Skip Segment',
+                                onPressed: ride.isPlaying && !ride.isFreeRide
+                                    ? () {
+                                        game.willSkip();
+                                        ride.skipToNextSegment();
+                                      }
+                                    : null,
+                                icon: const Icon(Icons.skip_next),
+                              ),
+                              TextButton(
+                                onPressed: _ftp,
+                                child: Text(
+                                  'FTP ${ride.ftpValue.round()}',
+                                  style: const TextStyle(fontSize: 11),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ),
-                      _routeStrip(compact),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              tooltip: 'Stop Workout',
-                              onPressed:
-                                  ride.isPlaying ||
-                                      ride.workoutProgressSeconds > 0
-                                  ? widget.onStop
-                                  : null,
-                              icon: const Icon(Icons.stop_circle_outlined),
-                              color: const Color(0xffff9d9d),
-                            ),
-                            Expanded(
-                              child: FilledButton.icon(
-                                onPressed: ride.segments.isEmpty
-                                    ? null
-                                    : _playPause,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: arcadeMint,
-                                  foregroundColor: arcadeInk,
-                                ),
-                                icon: Icon(
-                                  ride.isPlaying
-                                      ? Icons.pause
-                                      : Icons.play_arrow,
-                                ),
-                                label: Text(
-                                  ride.isPlaying
-                                      ? 'PAUSE'
-                                      : ride.workoutProgressSeconds > 0 &&
-                                            !game.finished
-                                      ? 'RESUME'
-                                      : 'PLAY',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Skip Segment',
-                              onPressed: ride.isPlaying && !ride.isFreeRide
-                                  ? () {
-                                      game.willSkip();
-                                      ride.skipToNextSegment();
-                                    }
-                                  : null,
-                              icon: const Icon(Icons.skip_next),
-                            ),
-                            TextButton(
-                              onPressed: _ftp,
-                              child: Text(
-                                'FTP ${ride.ftpValue.round()}',
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      ],
                     ],
                   );
                 },
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _questPanel(double charge, int target, Color color) {
+    final drone = game.drones.snapshot();
+    final chapter = story;
+    final title = game.finished
+        ? 'QUEST COMPLETE · ${game.rank}'
+        : game.reward ??
+              (chapter.phase == ArcadeStoryPhase.chase
+                  ? biome.title
+                  : chapter.heading);
+    final status = game.finished
+        ? '${game.cleared.length} sectors · ${game.bossesDefeated} bosses · best ${game.bestCombo}×'
+        : !ride.isPlaying
+        ? (ride.workoutProgressSeconds > 0
+              ? 'Paused · Your energy is safe.'
+              : 'Press PLAY to begin your quest.')
+        : !game.hasSignal
+        ? 'Waiting for live trainer data…'
+        : drone.visible
+        ? drone.status
+        : chapter.phase != ArcadeStoryPhase.chase
+        ? chapter.caption
+        : segment?.type == SegmentType.freeRide
+        ? 'Ride at your own pace to charge.'
+        : game.onTarget
+        ? 'ON TARGET · Keep your rhythm.'
+        : 'Ride near $target W to charge.';
+    final energy = drone.visible
+        ? drone.charge
+        : biome == ArcadeBiome.volcano
+        ? 1 - charge
+        : charge;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 400),
+      child: Tooltip(
+        message: '$title\n$status\n${chapter.caption}\n${biome.mission}',
+        child: Container(
+          key: const ValueKey('arcade-quest-panel'),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: arcadeInk.withValues(alpha: .80),
+            border: Border.all(color: color.withValues(alpha: .35)),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    game.finished
+                        ? Icons.emoji_events
+                        : biome == ArcadeBiome.volcano
+                        ? Icons.whatshot
+                        : Icons.bolt,
+                    color: color,
+                    size: 15,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${drone.visible
+                        ? 'BLASTER '
+                        : biome == ArcadeBiome.volcano
+                        ? 'SHIELD '
+                        : ''}${(energy * 100).round()}%',
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              LinearProgressIndicator(
+                value: energy,
+                minHeight: 3,
+                color: color,
+                backgroundColor: Colors.white10,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                status,
+                maxLines: drone.visible && ride.isPlaying ? 2 : 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: arcadeGold, fontSize: 11),
+              ),
+            ],
           ),
         ),
       ),

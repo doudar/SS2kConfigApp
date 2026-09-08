@@ -7,6 +7,7 @@ import 'arcade_session.dart';
 import 'arcade_sound_effects.dart';
 import 'arcade_story.dart';
 import 'arcade_story_art.dart';
+import 'arcade_rider_appearance.dart';
 
 /// A pre-ride cinematic. It never starts or changes the workout controller.
 class ArcadeIntro extends StatefulWidget {
@@ -205,6 +206,7 @@ class _ArcadeIntroState extends State<ArcadeIntro>
                                     : _clock.value,
                                 _dialogue,
                                 MediaQuery.textScalerOf(context),
+                                widget.session.rider,
                               ),
                             ),
                           ),
@@ -273,11 +275,13 @@ class _IntroPainter extends CustomPainter {
     this.progress,
     this.dialogue,
     this.textScaler,
+    this.rider,
   );
   final ArcadeStory story;
   final double progress;
   final ArcadeDialogue dialogue;
   final TextScaler textScaler;
+  final ArcadeRiderAppearance rider;
 
   @override
   void paint(Canvas c, Size size) {
@@ -448,6 +452,7 @@ class _IntroPainter extends CustomPainter {
       mounting,
       progress * 100,
       speaking: dialogue.speaker == ArcadeSpeaker.hero,
+      rider: rider,
     );
     if (progress > .72) {
       for (var i = 0; i < 12; i++) {
@@ -468,5 +473,6 @@ class _IntroPainter extends CustomPainter {
       oldDelegate.progress != progress ||
       oldDelegate.story != story ||
       oldDelegate.dialogue.text != dialogue.text ||
-      oldDelegate.textScaler != textScaler;
+      oldDelegate.textScaler != textScaler ||
+      oldDelegate.rider != rider;
 }
