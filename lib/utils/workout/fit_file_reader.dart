@@ -331,16 +331,6 @@ class FitFileReader {
       return thumbFile;
     }
 
-    final legacyThumbPath = await _getLegacyThumbnailPath(fitFilePath);
-    if (legacyThumbPath != null) {
-      final legacyFile = File(legacyThumbPath);
-      if (await legacyFile.exists()) {
-        await thumbFile.create(recursive: true);
-        await legacyFile.copy(thumbFile.path);
-        return thumbFile;
-      }
-    }
-
     final powerSeries = await _readPowerWindows(fitFilePath, windowSeconds: _thumbnailWindowSeconds);
     if (powerSeries == null || powerSeries.windows.isEmpty) {
       return null;
@@ -355,34 +345,18 @@ class FitFileReader {
         return null;
       }
 
-      final totalDuration = parsedWorkout.segments.fold<int>(0, (sum, segment) => sum + segment.duration);
-      final maxPower = parsedWorkout.segments.fold<double>(
-        0,
-        (currentMax, segment) => segment.maxPower > currentMax ? segment.maxPower : currentMax,
-      );
-
-      if (totalDuration <= 0 || maxPower <= 0) {
-        return null;
-      }
-
       final recorder = ui.PictureRecorder();
       final canvas = ui.Canvas(recorder);
       final size = ui.Size(_thumbnailWidth.toDouble(), _thumbnailHeight.toDouble());
 
-      final painter = WorkoutPainter(
-        segments: parsedWorkout.segments,
-        maxPower: maxPower,
-        totalDuration: totalDuration.toDouble(),
-        ftpValue: 1.0,
-        currentProgress: 0,
-        actualPowerPoints: const <int, double>{},
-        showLabels: false,
-      );
+      final painter = WorkoutPainter.preview(parsedWorkout.segments);
 
       painter.paint(canvas, size);
       final picture = recorder.endRecording();
       final image = await picture.toImage(_thumbnailWidth, _thumbnailHeight);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      picture.dispose();
       if (byteData == null) {
         return null;
       }
@@ -422,7 +396,7 @@ class FitFileReader {
   static Future<String> _getWorkoutThumbnailPath(String fitFilePath) async {
     final parentDir = File(fitFilePath).parent;
     final workoutName = _workoutNameFromPath(fitFilePath);
-    return '${parentDir.path}${Platform.pathSeparator}$workoutName.png';
+    return '${parentDir.path}${Platform.pathSeparator}$workoutName.profile-v3.png';
   }
 
   static Future<String?> _getLegacyThumbnailPath(String fitFilePath) async {

@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../workout_parser.dart';
+import '../workout_painter.dart';
+import '../workout_account_prompt.dart';
+import '../intervals_today_card.dart';
 import 'arcade_enemy_art.dart';
 import 'arcade_lobby_workout.dart';
 import 'arcade_rider_appearance.dart';
@@ -211,7 +214,7 @@ class _ArcadeLobbyState extends State<ArcadeLobby> {
                 height: 72,
                 width: double.infinity,
                 child: RepaintBoundary(
-                  child: CustomPaint(painter: _WorkoutProfile(segments)),
+                  child: CustomPaint(painter: WorkoutPainter.preview(segments)),
                 ),
               ),
             ),
@@ -371,7 +374,7 @@ class _ArcadeLobbyState extends State<ArcadeLobby> {
                           height: 32,
                           width: double.infinity,
                           child: CustomPaint(
-                            painter: _WorkoutProfile(choice.workout.segments),
+                            painter: WorkoutPainter.preview(choice.workout.segments),
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -433,6 +436,7 @@ class _ArcadeLobbyState extends State<ArcadeLobby> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                IntervalsTodayCard(ftp: widget.ftp, onSelect: widget.onSelect),
                 if (wide)
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -447,6 +451,7 @@ class _ArcadeLobbyState extends State<ArcadeLobby> {
                   const SizedBox(height: 16),
                   _briefing(false),
                 ],
+                const WorkoutAccountPrompt(),
                 const SizedBox(height: 24),
                 _label('CHOOSE ANOTHER ADVENTURE'),
                 const SizedBox(height: 6),
@@ -527,57 +532,4 @@ class _LaunchArt extends CustomPainter {
   @override
   bool shouldRepaint(covariant _LaunchArt old) =>
       old.rider != rider || old.story.variant != story.variant;
-}
-
-class _WorkoutProfile extends CustomPainter {
-  const _WorkoutProfile(this.segments);
-  final List<WorkoutSegment> segments;
-
-  @override
-  void paint(Canvas c, Size size) {
-    // Unlimited free ride gets a neutral continuous strip.
-    final total = segments.fold<double>(
-      0,
-      (sum, s) => sum + math.max(1, s.duration),
-    );
-    if (total <= 0) return;
-    final peak = segments.fold<double>(
-      1.0,
-      (max, s) => math.max(
-        max,
-        math.max(arcadeSegmentPower(s, 0), arcadeSegmentPower(s, 1)),
-      ),
-    );
-    var x = 0.0;
-    for (final segment in segments) {
-      final end = x + math.max(1, segment.duration) / total * size.width;
-      double y(double t) =>
-          size.height -
-          4 -
-          (segment.type == SegmentType.freeRide
-                  ? .5
-                  : arcadeSegmentPower(segment, t).clamp(0, peak)) /
-              peak *
-              (size.height - 8);
-      final path = Path()
-        ..moveTo(x, size.height)
-        ..lineTo(x, y(0))
-        ..lineTo(end, y(1))
-        ..lineTo(end, size.height)
-        ..close();
-      final color = biomeColor(biomeFor(segment));
-      c.drawPath(path, Paint()..color = color.withValues(alpha: .40));
-      c.drawLine(
-        Offset(x, y(0)),
-        Offset(end, y(1)),
-        Paint()
-          ..color = color
-          ..strokeWidth = 2,
-      );
-      x = end;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _WorkoutProfile old) => old.segments != segments;
 }

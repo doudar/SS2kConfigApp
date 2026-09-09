@@ -33,7 +33,9 @@ class ArcadeCheckpointArt {
         4,
       );
     }
-    const rise = Offset(0, -94);
+    // Leave room for the helmet beneath the sloping sign, including its
+    // lower edge as the rider starts climbing beyond the checkpoint.
+    const rise = Offset(0, -156);
     final farTop = farFoot + rise, nearTop = nearFoot + rise;
     for (final foot in [farFoot, nearFoot]) {
       final top = foot + rise;

@@ -192,17 +192,17 @@ class WorkoutZones {
   /// Tempo zone (76-87% FTP)
   static const double tempo = 0.87;
 
-  /// Threshold zone (88-95% FTP)
-  static const double threshold = 0.95;
+  /// Sweet spot (above 87% through 94% FTP)
+  static const double sweetSpot = 0.94;
 
-  /// VO2Max zone (96-105% FTP)
-  static const double vo2max = 1.05;
+  /// Threshold (above 94% through 105% FTP)
+  static const double threshold = 1.05;
 
-  /// Anaerobic zone (106-120% FTP)
-  static const double anaerobic = 1.20;
+  /// VO2 max (above 105% through 120% FTP)
+  static const double vo2max = 1.20;
 
-  /// Neuromuscular zone (> 120% FTP)
-  static const double neuromuscular = 1.50;
+  /// Anaerobic (above 120% FTP)
+  static const double anaerobic = double.infinity;
 }
 
 // Default cooldown values (70% to 50% FTP)

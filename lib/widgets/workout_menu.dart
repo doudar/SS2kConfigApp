@@ -31,7 +31,6 @@ class WorkoutMenu extends StatelessWidget {
     required this.deviceData,
     required this.device,
     required this.ttsSettings,
-    required this.workoutGraphKey,
     required this.onWorkoutLoaded,
   });
 
@@ -39,7 +38,6 @@ class WorkoutMenu extends StatelessWidget {
   final DeviceData deviceData;
   final BluetoothDevice device;
   final WorkoutTTSSettings ttsSettings;
-  final GlobalKey workoutGraphKey;
   final void Function(String content, {String? name}) onWorkoutLoaded;
 
   @override
@@ -240,7 +238,6 @@ class WorkoutMenu extends StatelessWidget {
     await WorkoutFileManager.pickAndLoadWorkout(
       context: context,
       workoutController: workoutController,
-      workoutGraphKey: workoutGraphKey,
       onBeforeLoad: () => _confirmWorkoutReplacement(context),
       onWorkoutLoaded: (content) {
         onWorkoutLoaded(content, name: workoutController.workoutName);
@@ -719,41 +716,8 @@ class WorkoutMenu extends StatelessWidget {
     );
   }
 
-  String? _convertIntervalsWorkoutToZwo(Map<String, dynamic> workout) {
-    final workoutDoc = workout['workout_doc'];
-    final workoutFile = workout['workout_file'];
-
-    if (workoutDoc == null && workoutFile == null) {
-      return null;
-    }
-
-    try {
-      Map<String, dynamic> docToConvert;
-      if (workoutDoc is Map) {
-        docToConvert = Map<String, dynamic>.from(workoutDoc);
-      } else {
-        docToConvert = {
-          'workout_file': workoutFile,
-          'steps': workoutDoc is Map ? workoutDoc['steps'] : null,
-        };
-      }
-
-      docToConvert['name'] ??= workout['name'];
-      docToConvert['description'] ??= workout['description'];
-
-      // Pass through duration metadata so empty-step workouts can use it
-      if (docToConvert['duration'] == null || docToConvert['duration'] == 0) {
-        docToConvert['duration'] ??= workout['moving_time'] ?? workout['planned_duration'] ?? workout['duration'];
-        if (docToConvert['duration'] == 0) {
-          docToConvert['duration'] = workout['moving_time'] ?? workout['planned_duration'] ?? 0;
-        }
-      }
-
-      return IntervalsWorkoutConverter.convertToZwo(docToConvert);
-    } catch (_) {
-      return null;
-    }
-  }
+  String? _convertIntervalsWorkoutToZwo(Map<String, dynamic> workout) =>
+      IntervalsWorkoutConverter.convertEventToZwo(workout);
 
   Future<String?> _getOrGenerateIntervalsThumb(Map<String, dynamic> workout) async {
     final zwoContent = _convertIntervalsWorkoutToZwo(workout);

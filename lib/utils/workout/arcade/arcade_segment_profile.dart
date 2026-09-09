@@ -1,17 +1,9 @@
 import '../workout_parser.dart';
+import '../workout_profile.dart';
 
 /// Match the workout controller's ramp direction, including cooldown reversal.
-double arcadeSegmentPower(WorkoutSegment segment, double progress) {
-  final t = progress.isFinite ? progress.clamp(0.0, 1.0) : 0.0;
-  final start = segment.type == SegmentType.cooldown
-      ? segment.powerHigh
-      : segment.powerLow;
-  final end = segment.type == SegmentType.cooldown
-      ? segment.powerLow
-      : segment.powerHigh;
-  final power = segment.isRamp ? start + (end - start) * t : segment.powerLow;
-  return power.isFinite ? power : 0;
-}
+double arcadeSegmentPower(WorkoutSegment segment, double progress) =>
+    workoutSegmentPower(segment, progress);
 
 String arcadeTargetLabel(
   WorkoutSegment segment,

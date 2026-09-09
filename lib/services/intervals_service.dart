@@ -9,10 +9,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/env.dart';
 
 class IntervalsService {
+  /// Signals completed login/logout, including asynchronous mobile callbacks.
+  static final connectionChanges = ValueNotifier<int>(0);
   static const String _baseUrl = 'https://intervals.icu/api/v1';
   static const String _authUrl = 'https://intervals.icu/oauth/authorize';
   static const String _tokenUrl = 'https://intervals.icu/api/oauth/token';
   static const String _redirectUri = 'smartspin2k://intervals_redirect';
+  // Intervals accepts each resource once. WRITE already includes READ access.
+  static const String _oauthScopes = 'ACTIVITY:WRITE,LIBRARY:READ,CALENDAR:READ,WELLNESS:READ';
   
   // Keys for storing tokens in SharedPreferences
   static const String _accessTokenKey = 'intervals_access_token';
@@ -61,6 +65,7 @@ class IntervalsService {
     if (scope != null) {
       await prefs.setString(_scopeKey, scope);
     }
+    connectionChanges.value++;
   }
 
   // Clear stored tokens
@@ -72,6 +77,7 @@ class IntervalsService {
     await prefs.remove(_athleteIdKey);
     await prefs.remove(_tokenTypeKey);
     await prefs.remove(_scopeKey);
+    connectionChanges.value++;
   }
 
   // Check if user is authenticated
@@ -128,7 +134,7 @@ class IntervalsService {
         'client_id': Environment.intervalsClientId,
         'redirect_uri': redirectUri,
         'response_type': 'code',
-        'scope': 'ACTIVITY:WRITE,LIBRARY:READ,CALENDAR:READ',
+        'scope': _oauthScopes,
       });
 
       debugPrint('Launching Intervals.icu OAuth URL (desktop): $authUrl');
@@ -177,7 +183,7 @@ class IntervalsService {
       'client_id': Environment.intervalsClientId,
       'redirect_uri': _redirectUri,
       'response_type': 'code',
-      'scope': 'ACTIVITY:WRITE,LIBRARY:READ,CALENDAR:READ',
+      'scope': _oauthScopes,
     });
 
     debugPrint('Launching Intervals.icu OAuth URL (mobile): $authUrl');
@@ -230,6 +236,14 @@ class IntervalsService {
   }
 
   // Get today's planned workout
+  static bool isRideWorkoutEvent(dynamic event) {
+    if (event is! Map<String, dynamic> ||
+        (event['workout_doc'] == null && event['workout_file'] == null)) return false;
+    final sport = event['type']?.toString().toLowerCase();
+    // Older events can omit sport. Explicit runs/swims are not trainer rides.
+    return sport == null || sport.isEmpty || sport.contains('ride') || sport == 'bike' || sport == 'cycling';
+  }
+
   static Future<Map<String, dynamic>?> getTodaysWorkout() async {
     if (!await isAuthenticated()) return null;
 
@@ -270,8 +284,8 @@ class IntervalsService {
           final events = decoded;
           for (final event in events) {
             // Consider both 'WORKOUT' and presence of workout fields
-            final hasWorkout = event is Map<String, dynamic> && (event['workout_doc'] != null || event['workout_file'] != null);
-            if ((event['category'] == 'WORKOUT' || hasWorkout) && hasWorkout) {
+            final hasWorkout = isRideWorkoutEvent(event);
+            if (hasWorkout) {
               return event;
             }
           }
@@ -280,8 +294,8 @@ class IntervalsService {
           final events = decoded['events'];
           if (events is List) {
             for (final event in events) {
-              final hasWorkout = event is Map<String, dynamic> && (event['workout_doc'] != null || event['workout_file'] != null);
-              if ((event['category'] == 'WORKOUT' || hasWorkout) && hasWorkout) {
+              final hasWorkout = isRideWorkoutEvent(event);
+              if (hasWorkout) {
                 return event;
               }
             }
@@ -308,8 +322,8 @@ class IntervalsService {
           final decoded = json.decode(rangeRes.body);
           if (decoded is List) {
             for (final event in decoded) {
-              final hasWorkout = event is Map<String, dynamic> && (event['workout_doc'] != null || event['workout_file'] != null);
-              if ((event['category'] == 'WORKOUT' || hasWorkout) && hasWorkout) {
+              final hasWorkout = isRideWorkoutEvent(event);
+              if (hasWorkout) {
                 return event;
               }
             }

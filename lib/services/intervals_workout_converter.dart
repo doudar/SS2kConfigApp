@@ -1,5 +1,42 @@
 
 class IntervalsWorkoutConverter {
+  static String? convertEventToZwo(Map<String, dynamic> workout) {
+    final workoutDoc = workout['workout_doc'];
+    final workoutFile = workout['workout_file'];
+
+    if (workoutDoc == null && workoutFile == null) {
+      return null;
+    }
+
+    try {
+      Map<String, dynamic> docToConvert;
+      if (workoutDoc is Map) {
+        docToConvert = Map<String, dynamic>.from(workoutDoc);
+      } else {
+        docToConvert = {
+          'workout_file': workoutFile,
+          'steps': workoutDoc is Map ? workoutDoc['steps'] : null,
+        };
+      }
+
+      docToConvert['name'] ??= workout['name'];
+      docToConvert['description'] ??= workout['description'];
+
+      // Pass through duration metadata so empty-step workouts can use it
+      if (docToConvert['duration'] == null || docToConvert['duration'] == 0) {
+        docToConvert['duration'] ??= workout['moving_time'] ?? workout['planned_duration'] ?? workout['duration'];
+        if (docToConvert['duration'] == 0) {
+          docToConvert['duration'] = workout['moving_time'] ?? workout['planned_duration'] ?? 0;
+        }
+      }
+
+      return IntervalsWorkoutConverter.convertToZwo(docToConvert);
+    } catch (_) {
+      return null;
+    }
+  }
+
+
   /// Converts an Intervals.icu workout document to ZWO format for the workout controller
   static String convertToZwo(Map<String, dynamic> workoutDoc) {
     final workoutFile = workoutDoc['workout_file'];
@@ -29,8 +66,8 @@ class IntervalsWorkoutConverter {
     buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
     buffer.writeln('<workout_file>');
     buffer.writeln('  <author>Intervals.icu</author>');
-    buffer.writeln('  <name>$name</name>');
-    buffer.writeln('  <description>$description</description>');
+    buffer.writeln('  <name>${_escapeXml(name)}</name>');
+    buffer.writeln('  <description>${_escapeXml(description.toString())}</description>');
     buffer.writeln('  <sportType>bike</sportType>');
     buffer.writeln('  <tags/>');
     buffer.writeln('  <workout>');

@@ -9,6 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/env.dart';
 
 class StravaService {
+  /// Signals completed login/logout, including asynchronous mobile callbacks.
+  static final connectionChanges = ValueNotifier<int>(0);
   static const String _baseUrl = 'https://www.strava.com/api/v3';
   static const String _authUrl = 'https://www.strava.com/oauth/authorize';
   static const String _mobileAuthUrl = 'https://www.strava.com/oauth/mobile/authorize';
@@ -36,6 +38,7 @@ class StravaService {
     await prefs.setString(_accessTokenKey, accessToken);
     await prefs.setString(_refreshTokenKey, refreshToken);
     await prefs.setString(_expiresAtKey, expiresAt);
+    connectionChanges.value++;
   }
 
   // Clear stored tokens
@@ -44,6 +47,7 @@ class StravaService {
     await prefs.remove(_accessTokenKey);
     await prefs.remove(_refreshTokenKey);
     await prefs.remove(_expiresAtKey);
+    connectionChanges.value++;
   }
 
   // Check if user is authenticated (refresh if needed)

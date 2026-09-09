@@ -8,6 +8,7 @@ import 'workout_controller.dart';
 import 'workout_export_dialog.dart';
 import 'bike_shape_generator.dart';
 import 'gpx_to_fit.dart';
+import 'workout_coach_repository.dart';
 
 class GpxFileExporter {
   static Future<List<TrackPoint>> generateBikeTrackPoints(
@@ -224,6 +225,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         final fitFilePath = await GpxToFitConverter.convertAndCleanup(
           gpxFile.path,
         );
+        WorkoutCoachRepository.invalidateLocal();
 
         if (uploadToStrava) {
           if (context.mounted) {

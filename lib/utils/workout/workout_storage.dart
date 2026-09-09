@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'workout_painter.dart';
 import 'workout_parser.dart';
+import 'workout_training_load.dart';
 
 class WorkoutStorage {
   static const String _ftpKey = 'workout_ftp_value';
@@ -14,7 +15,7 @@ class WorkoutStorage {
   static const String _isPlayingKey = 'workout_is_playing';
   static const String _inProgressFilePathKey = 'workout_in_progress_file_path';
   static const String _savedWorkoutsKey = 'saved_workouts';
-  static const String _workoutThumbnailPrefix = 'workout_thumbnail_';
+  static const String _workoutThumbnailPrefix = 'workout_thumbnail_profile_v3_';
   static const String _placeholderThumbnail = 'cGxhY2Vob2xkZXI=';
   static const String defaultWorkoutName = "Anthony's Mix";
 
@@ -226,33 +227,18 @@ class WorkoutStorage {
       final parsedWorkout = WorkoutParser.parseZwoFile(workoutContent);
       if (parsedWorkout.segments.isEmpty) return null;
 
-      final totalDuration = parsedWorkout.segments.fold<int>(0, (sum, segment) => sum + segment.duration);
-      final maxPower = parsedWorkout.segments.fold<double>(
-        0,
-        (currentMax, segment) => segment.maxPower > currentMax ? segment.maxPower : currentMax,
-      );
-
-      if (totalDuration <= 0 || maxPower <= 0) return null;
-
-      final ftpValue = await loadFTP();
       const size = ui.Size(100, 60);
       final recorder = ui.PictureRecorder();
       final canvas = ui.Canvas(recorder);
 
-      final painter = WorkoutPainter(
-        segments: parsedWorkout.segments,
-        maxPower: maxPower,
-        totalDuration: totalDuration.toDouble(),
-        ftpValue: ftpValue,
-        currentProgress: 0,
-        actualPowerPoints: const <int, double>{},
-        showLabels: false,
-      );
+      final painter = WorkoutPainter.preview(parsedWorkout.segments);
 
       painter.paint(canvas, size);
       final picture = recorder.endRecording();
       final image = await picture.toImage(size.width.toInt(), size.height.toInt());
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      picture.dispose();
       if (byteData == null) return null;
 
       final base64Data = base64Encode(byteData.buffer.asUint8List());
@@ -267,25 +253,17 @@ class WorkoutStorage {
     try {
       final workoutData = WorkoutParser.parseZwoFile(workoutContent);
       int totalTime = 0;
-      double normalizedWork = 0;
-      const double ftpValue = 200;
 
       for (final segment in workoutData.segments) {
         totalTime += segment.duration;
-        if (segment.isRamp) {
-          normalizedWork += segment.duration * ((segment.powerLow + segment.powerHigh) / 2) * ftpValue;
-        } else {
-          normalizedWork += segment.duration * segment.powerLow * ftpValue;
-        }
       }
 
       if (totalTime <= 0) {
         return null;
       }
 
-      final intensityFactor = (normalizedWork / totalTime) / ftpValue;
-      final tss = (totalTime * intensityFactor * intensityFactor) / 36;
-      return '${_formatDuration(totalTime)} • TSS ${tss.toStringAsFixed(0)}';
+      final load = WorkoutTrainingLoad.estimate(workoutData.segments);
+      return '${_formatDuration(totalTime)} • ${WorkoutTrainingLoad.label(load?.tss)}';
     } catch (_) {
       return null;
     }

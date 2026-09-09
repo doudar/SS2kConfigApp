@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../workout_parser.dart';
+import '../workout_profile.dart';
 import 'arcade_cues.dart';
 import 'arcade_road.dart';
 import 'arcade_story.dart';
@@ -26,16 +27,12 @@ extension ArcadeBiomeStory on ArcadeBiome {
   };
 }
 
-ArcadeBiome biomeFor(WorkoutSegment segment) {
-  if (segment.type == SegmentType.freeRide) return ArcadeBiome.coast;
-  final power = segment.isRamp
-      ? (segment.powerLow + segment.powerHigh) / 2
-      : segment.powerLow;
-  if (power >= 1.05) return ArcadeBiome.volcano;
-  if (power >= .85) return ArcadeBiome.neon;
-  if (power >= .60) return ArcadeBiome.coast;
-  return ArcadeBiome.grove;
-}
+ArcadeBiome biomeFor(WorkoutSegment segment) => switch (workoutEffort(segment)) {
+  WorkoutEffort.easy => ArcadeBiome.grove,
+  WorkoutEffort.steady => ArcadeBiome.coast,
+  WorkoutEffort.hard => ArcadeBiome.neon,
+  WorkoutEffort.intense => ArcadeBiome.volcano,
+};
 
 /// Presentation-only rewards. Never writes targets or drives the workout clock.
 /// State lives above the view, so switching to Classic does not lose the run.

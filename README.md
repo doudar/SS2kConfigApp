@@ -186,6 +186,71 @@ Run arcade checks with
 The widget test can also write previews into `build/` with
 `--dart-define=ARCADE_SCREENSHOTS=true` (Windows uses the local Segoe UI font).
 
+### Workout suggestions
+
+The regular workout lobby recommends a session from the built-in, saved, and
+connected Intervals.icu workout libraries. Riders choose Stay consistent, Build
+endurance, Improve performance, or Ease back in. The card explains the suggestion
+in plain language and can recommend a rest day. It shows Intervals.icu Fitness,
+Fatigue and Form with a recent-history chart when multiple days are available;
+tap or hover over the chart to inspect a day. Workout cards and the library show
+estimated TSS from the prescribed power profile. Free rides and max efforts have
+unknown planned TSS, displayed as a dash.
+All workout profiles use `WorkoutPainter`: classic and arcade lobbies, the arcade
+route strip and interval details, recommendation cards, library thumbnails, and
+the live classic graph. Profiles share the arcade palette, translucent flat fills,
+bright top edges, and ramp geometry. Live graphs retain power, heart rate, cadence,
+target labels, and progress. Thumbnail caches regenerate once for the new style.
+Profiles, time in zones, and arcade roads share a single palette: teal recovery
+(through 55% FTP), blue endurance (75%), green tempo (87%), yellow sweet spot (94%),
+orange threshold (105%), coral VO2 max (120%), and violet anaerobic (above 120%).
+Ramps change color at zone boundaries; free rides and max efforts use neutral gray.
+Arcade encounters and scenery categories remain independent of these display zones.
+
+The selected workout also shows planned time in each training zone,
+with watt ranges based on the current FTP. On wide screens this sits below the
+selected-workout card. A connected Intervals.icu account without current fitness
+metrics gets a reconnect prompt explaining wellness access and its coaching benefits,
+after the background fetch completes. Reconnecting bypasses the normal retry cooldown.
+Suggestions only load a workout when tapped; starting it remains a separate action.
+
+The coach compares the rolling week's accumulated TSS with the preceding four
+weeks and limits progression relative to recent session loads. It uses recorded
+training load when available, or estimates it from duration, normalized power, and
+FTP for local rides. Ride count or consecutive riding days alone never trigger
+rest: short recovery spins and long demanding rides contribute different loads.
+Missing per-ride load stays unknown. Without a current Intervals.icu load model,
+sparse or incomplete history produces gentle suggestions.
+Uploaded local rides are deduplicated against Intervals.icu history.
+
+With Intervals.icu wellness access, today's Fitness (CTL), Fatigue (ATL), and
+Form (CTL minus ATL) take precedence over the fallback weekly-load cap.
+Exceeding a previous weeks' average alone does not force rest when this current
+model is available; session size remains limited by recent rides.
+Missing individual ride summaries do not override a current CTL/ATL baseline.
+If no individual loads are available, current CTL sizes the suggested session.
+Goal-dependent relative form thresholds ease the effort; substantial fatigue suggests rest. Optional
+sleep, resting HR, and HRV are compared with the rider's prior 28 days (at least
+seven measurements). High reported fatigue or soreness also eases the effort.
+These are conservative coaching heuristics, not a diagnosis or a reproduction of
+Intervals.icu's customizable chart zones. Recent hard rides and recovery checks
+still apply. Missing or stale readings are not treated as good
+recovery, and readiness/sleep scores with provider-dependent scales are not used.
+
+Local/cache results appear first. FIT parsing and workout scoring run off the UI
+isolate, with cached file summaries. Activity, wellness, and library requests run
+concurrently in the background with seven-second timeouts and a ten-minute retry
+cooldown; library refreshes are limited to once an hour. Recovery snapshots expire
+after 15 minutes and only today's measurements affect the suggestion. Existing
+Intervals.icu connections may need to reconnect to grant `WELLNESS:READ`.
+The existing `ACTIVITY:WRITE` permission also grants activity read access; it
+must not be requested alongside `ACTIVITY:READ`. Neither wellness nor activities
+are modified by the coach.
+
+Run coach checks with `flutter test test/workout_coach_test.dart
+test/workout_coach_recovery_test.dart test/workout_coach_repository_test.dart
+test/workout_coach_card_test.dart`.
+
 ### Building from source
 
 To build the app from source:

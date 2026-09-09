@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../workout_controller.dart';
 import '../workout_parser.dart';
+import '../workout_profile.dart';
 import '../../device_data.dart';
 import 'arcade_music.dart';
 import 'arcade_lobby.dart';
@@ -512,7 +513,11 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
             animation: ride,
             builder: (context, _) {
               final current = segment;
-              final color = biomeColor(biome);
+              final color = current == null
+                  ? WorkoutPowerZone.selfPaced.color
+                  : (current.type == SegmentType.freeRide || current.type == SegmentType.maxEffort)
+                  ? WorkoutPowerZone.selfPaced.color
+                  : WorkoutPowerZone.forPower(widget.deviceData.ftmsData.targetERG / ride.ftpValue).color;
               final charge = current == null
                   ? 0.0
                   : game.chargeFor(index, current);

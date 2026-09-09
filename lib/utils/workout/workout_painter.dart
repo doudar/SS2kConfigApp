@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'workout_parser.dart';
 import 'workout_constants.dart';
+import 'workout_profile.dart';
 
 /// Optional font used by deterministic screenshot tests. Production renders
 /// continue to use the platform's default font.
@@ -18,11 +19,13 @@ class WorkoutPainter extends CustomPainter {
   final double? currentPower;
   final int? currentHr;
   final int? currentCadence;
-  final List<double>? powerPointsList;  // New parameter for interpolated points
+  final List<double>? powerPointsList; // One sample per workout second.
   final List<double>? hrPointsList;
   final List<double>? cadencePointsList;
-  final bool showLabels; // New parameter to control label visibility
+  final bool showLabels;
   final double pulseValue; // 0.0 to 1.0 for pulse animation
+  final bool highlightCurrent;
+  final bool completed;
 
   WorkoutPainter({
     required this.segments,
@@ -34,140 +37,187 @@ class WorkoutPainter extends CustomPainter {
     this.currentPower,
     this.currentHr,
     this.currentCadence,
-    this.powerPointsList,  // Add this parameter
+    this.powerPointsList,
     this.hrPointsList,
     this.cadencePointsList,
     this.showLabels = true, // Default to showing labels
     this.pulseValue = 0.0,
+    this.highlightCurrent = false,
+    this.completed = false,
   });
+
+  /// All thumbnail and lobby profiles use the same scale and rendering.
+  /// A one-second placeholder keeps an unlimited free ride visible.
+  factory WorkoutPainter.preview(
+    List<WorkoutSegment> segments, {
+    double? peak,
+    double progress = 0,
+    bool highlightCurrent = false,
+    bool completed = false,
+  }) => WorkoutPainter(
+    segments: segments,
+    maxPower: peak ?? profilePeak(segments),
+    totalDuration: segments.fold<double>(
+      0,
+      (sum, s) => sum + max(1, s.duration),
+    ),
+    ftpValue: 1,
+    currentProgress: progress,
+    actualPowerPoints: const {},
+    showLabels: false,
+    highlightCurrent: highlightCurrent,
+    completed: completed,
+  );
+
+  static double profilePeak(List<WorkoutSegment> segments) =>
+      segments.fold<double>(
+        1,
+        (peak, s) => max(
+          peak,
+          max(workoutSegmentPower(s, 0), workoutSegmentPower(s, 1)),
+        ),
+      );
+
+  double get _peak => max(1, maxPower.isFinite ? maxPower : 1);
+
+  // Leave the same small amount of headroom in thumbnails and live graphs.
+  double _heightScale(Size size) =>
+      max(0, size.height - min(8, size.height * .2)) / (_peak * ftpValue);
+
+  /// Public geometry lets interaction and tests use the actual painted ramp.
+  Path segmentOutline(WorkoutSegment segment, Rect bounds, Size size) {
+    double y(double t) {
+      final power = segment.type == SegmentType.freeRide
+          ? .5
+          : workoutSegmentPower(segment, t);
+      return size.height - max(0, power) * ftpValue * _heightScale(size);
+    }
+
+    return Path()
+      ..moveTo(bounds.left, size.height)
+      ..lineTo(bounds.left, y(0))
+      ..lineTo(bounds.right, y(1))
+      ..lineTo(bounds.right, size.height)
+      ..close();
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (segments.isEmpty) return;
-
-    final paint = Paint()..style = PaintingStyle.fill;
-
-    double currentX = 0;
-    // Scale height based on max power in watts
-    final heightScale = size.height / (maxPower * ftpValue);
+    if (segments.isEmpty ||
+        size.isEmpty ||
+        !size.width.isFinite ||
+        !size.height.isFinite ||
+        !totalDuration.isFinite ||
+        totalDuration <= 0 ||
+        !ftpValue.isFinite ||
+        ftpValue <= 0)
+      return;
+    final heightScale = _heightScale(size);
     final widthScale = size.width / totalDuration;
-
-    // Draw segments
-    for (var segment in segments) {
-      final baseColor = _getSegmentColor(segment);
-      final segmentWidth = segment.duration * widthScale;
-
-      // Determine if this segment is active
-      // currentProgress (0-1) * totalDuration = currentTime
-      // currentX = segmentStartTime * widthScale
-      // segmentStartTime = currentX / widthScale
-      // or we can just compare pixels:
-      final currentPixel = currentProgress * totalDuration * widthScale;
-      final bool isActive =
-          currentPixel >= currentX && currentPixel < currentX + segmentWidth;
-
-      // Create gradient colors for 3D effect
-      Color topColor = _lighten(baseColor, 0.2);
-      Color bottomColor = _darken(baseColor, 0.1);
-
-      if (isActive && currentPower != null) {
-        // Apply pulse effect to active segment
-        // Pulse brightness up slightly on 'beat'
-        final brightnessBoost = pulseValue * 0.20; // +0% to +20% lightness
-        topColor = _lighten(topColor, brightnessBoost);
-        bottomColor = _lighten(bottomColor, brightnessBoost);
-      }
-
-      if (segment.isRamp) {
-        // Draw ramp segment
-        final path = Path();
-
-        // For cooldowns, start at powerHigh and end at powerLow
-        // For all other ramps, start at powerLow and end at powerHigh
-        final startPower =
-            segment.type == SegmentType.cooldown ? segment.powerHigh : segment.powerLow;
-        final endPower =
-            segment.type == SegmentType.cooldown ? segment.powerLow : segment.powerHigh;
-
-        final startHeight = size.height - (startPower * ftpValue * heightScale);
-        final endHeight = size.height - (endPower * ftpValue * heightScale);
-
-        path.moveTo(currentX, size.height);
-        path.lineTo(currentX, startHeight);
-        path.lineTo(currentX + segmentWidth, endHeight);
-        path.lineTo(currentX + segmentWidth, size.height);
-        path.close();
-
-        // Apply gradient shader
-        paint.shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [topColor, bottomColor],
-        ).createShader(path.getBounds());
-
-        canvas.drawPath(path, paint);
-      } else {
-        // Draw steady state segment
-        final segmentHeight = segment.powerLow * ftpValue * heightScale;
-        final rect = Rect.fromLTWH(
-          currentX,
-          size.height - segmentHeight,
-          segmentWidth,
-          segmentHeight,
-        );
-
-        // Apply gradient shader
-        paint.shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [topColor, bottomColor],
-        ).createShader(rect);
-
-        canvas.drawRRect(
-          RRect.fromRectAndCorners(
-            rect,
-            topLeft: const Radius.circular(8.0),
-            topRight: const Radius.circular(8.0),
-          ),
-          paint,
-        );
-      }
-
-      // Draw segment border
-      final borderPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..color = const Color.fromARGB(65, 0, 0, 0)
-            .withValues(alpha: WorkoutOpacity.segmentBorder)
-        ..strokeWidth = WorkoutStroke.border;
-
-      canvas.drawRect(
-        Rect.fromLTWH(currentX, 0, segmentWidth, size.height),
-        borderPaint,
-      );
-
-      // Draw power labels during active workout (when currentPower is provided)
-      if (currentPower != null && showLabels) {
-        _drawPowerLabels(
-            canvas, currentX, segmentWidth, size.height, segment, heightScale);
-      }
-
-      // Draw cadence indicator if present
-      if ((segment.cadence != null || segment.cadenceLow != null) && showLabels) {
-        _drawCadenceIndicator(
-            canvas, currentX, segmentWidth, size.height, segment);
-      }
-
-      currentX += segmentWidth;
+    final currentPixel =
+        (currentProgress.isFinite ? currentProgress : 0).clamp(0.0, 1.0) *
+        size.width;
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    // Grids sit behind the translucent profile; compact previews stay clean.
+    if (showLabels) {
+      _drawPowerGrid(canvas, size, heightScale);
     }
+    double currentX = 0;
+    for (final segment in segments) {
+      final segmentWidth = max(1, segment.duration) * widthScale;
+      final end = currentX + segmentWidth;
+      final isActive =
+          (highlightCurrent || currentPower != null) &&
+          currentPixel >= currentX &&
+          currentPixel < end;
+      final bounds = Rect.fromLTWH(currentX, 0, segmentWidth, size.height);
+      final path = segmentOutline(segment, bounds, size);
+      double y(double t) =>
+          size.height -
+          (segment.type == SegmentType.freeRide
+                  ? .5
+                  : max(0, workoutSegmentPower(segment, t))) *
+              ftpValue *
+              heightScale;
+      final stops = workoutZoneStops(segment);
+      for (var i = 0; i < stops.length - 1; i++) {
+        final from = stops[i], to = stops[i + 1];
+        final color = WorkoutPowerZone.forSegment(
+          segment,
+          (from + to) / 2,
+        ).color;
+        final left = currentX + from * segmentWidth;
+        final right = currentX + to * segmentWidth;
+        final portion = Path()
+          ..moveTo(left, size.height)
+          ..lineTo(left, y(from))
+          ..lineTo(right, y(to))
+          ..lineTo(right, size.height)
+          ..close();
+        canvas.drawPath(
+          portion,
+          Paint()
+            ..color = color.withValues(
+              alpha: completed
+                  ? .16
+                  : .40 + (isActive ? pulseValue.clamp(0.0, 1.0) * .10 : 0),
+            ),
+        );
+        canvas.drawLine(
+          Offset(left, y(from)),
+          Offset(right, y(to)),
+          Paint()
+            ..color = color.withValues(alpha: completed ? .4 : 1)
+            ..strokeWidth = 2,
+        );
+      }
 
-    // Draw power grid lines and labels
-    _drawPowerGrid(canvas, size, heightScale);
-    
-    // Draw time grid lines and labels
-    _drawTimeGrid(canvas, size, widthScale);
-
-    // Draw tracer lines (Power, HR, Cadence)
+      if (isActive) {
+        canvas.save();
+        canvas.clipPath(path);
+        canvas.drawRect(
+          Rect.fromLTRB(currentX, 0, currentPixel, size.height),
+          Paint()..color = Colors.white.withValues(alpha: .15),
+        );
+        canvas.drawLine(
+          Offset(currentPixel, 0),
+          Offset(currentPixel, size.height),
+          Paint()
+            ..color = Colors.white
+            ..strokeWidth = 1.5,
+        );
+        canvas.restore();
+      }
+      if (currentPower != null && showLabels && segmentWidth >= 32) {
+        _drawPowerLabels(
+          canvas,
+          currentX,
+          segmentWidth,
+          size.height,
+          segment,
+          heightScale,
+        );
+      }
+      if ((segment.cadence != null || segment.cadenceLow != null) &&
+          showLabels &&
+          segmentWidth >= 56) {
+        _drawCadenceIndicator(
+          canvas,
+          currentX,
+          segmentWidth,
+          size.height,
+          segment,
+        );
+      }
+      currentX = end;
+    }
+    canvas.restore();
+    if (showLabels) _drawTimeGrid(canvas, size, widthScale);
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
     _drawTracerLines(canvas, size, heightScale, widthScale);
+    canvas.restore();
   }
 
   void _drawValueLabel(Canvas canvas, Offset center, String text, Color color) {
@@ -185,213 +235,132 @@ class WorkoutPainter extends CustomPainter {
         fontFamily: debugWorkoutPainterFontFamily,
       ),
     );
-    
+
     // Calculate layout
     textPainter.layout();
-    
+
     // Draw background rounded rect (pill shape)
     final bgPaint = Paint()
       ..color = color.withValues(alpha: 0.7)
       ..style = PaintingStyle.fill;
-      
+
     final padding = 4.0;
     final rect = Rect.fromCenter(
-      center: center, 
-      width: textPainter.width + (padding * 2), 
-      height: textPainter.height + (padding * 1), // slightly less vertical padding
+      center: center,
+      width: textPainter.width + (padding * 2),
+      height:
+          textPainter.height + (padding * 1), // slightly less vertical padding
     );
-    
+
     canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(10.0)), 
-      bgPaint
+      RRect.fromRectAndRadius(rect, const Radius.circular(10.0)),
+      bgPaint,
     );
-    
+
     // Center the text on the point
     textPainter.paint(
-        canvas, 
-        Offset(center.dx - textPainter.width / 2, center.dy - textPainter.height / 2)
+      canvas,
+      Offset(
+        center.dx - textPainter.width / 2,
+        center.dy - textPainter.height / 2,
+      ),
     );
   }
 
-  void _drawTracerLines(Canvas canvas, Size size, double heightScale, double widthScale) {
-    // 1. Draw Power (Bright Blue)
-    if (powerPointsList != null && powerPointsList!.isNotEmpty) {
-      final powerPaint = Paint()
-        ..color = Colors.lightBlueAccent // Bright Blue
-        ..strokeWidth = WorkoutStroke.actualPowerLine
-        ..style = PaintingStyle.stroke;
-
-      final path = Path();
-      bool isFirstPoint = true;
-
-      for (int i = 0; i < powerPointsList!.length; i++) {
-        final watts = powerPointsList![i];
-        final x = i * widthScale;
-        final y = size.height - (watts * heightScale);
-
-        if (isFirstPoint) {
-          path.moveTo(x, y);
-          isFirstPoint = false;
-        } else {
-          path.lineTo(x, y);
-        }
-      }
-      canvas.drawPath(path, powerPaint);
-
-      // Dot or Text
-      if (currentPower != null) {
-        final x = currentProgress * size.width;
-        final y = size.height - (currentPower! * heightScale);
-        final center = Offset(x, y);
-
-        if (showLabels) {
-          _drawValueLabel(canvas, center, '${currentPower!.round()}', Colors.lightBlueAccent);
-        } else {
-          final dotPaint = Paint()
-            ..color = Colors.lightBlueAccent
-            ..style = PaintingStyle.fill;
-          canvas.drawCircle(center, WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
-        }
+  void _drawTracerLines(
+    Canvas canvas,
+    Size size,
+    double heightScale,
+    double widthScale,
+  ) {
+    Iterable<MapEntry<int, double>> samples(List<double> points) sync* {
+      for (var i = 0; i < points.length; i++) {
+        yield MapEntry(i, points[i]);
       }
     }
 
-    // 2. Draw Cadence (Green, Scale 20-130)
-    if (cadencePointsList != null && cadencePointsList!.isNotEmpty) {
-      final cadencePaint = Paint()
-        ..color = Colors.green
-        ..strokeWidth = WorkoutStroke.actualPowerLine
-        ..style = PaintingStyle.stroke;
-
+    void trace({
+      required Iterable<MapEntry<int, double>> points,
+      required Color color,
+      required double Function(double) y,
+      required double? current,
+      bool zeroIsGap = false,
+    }) {
       final path = Path();
-      bool isFirstPoint = true;
-      
-      // Map 20-130 to full height? Or just map it relative to chart?
-      // Usually tracers are overlaid on the full chart area.
-      // 20 -> Bottom (size.height), 130 -> Top (0)
-      double mapCadenceToY(double val) {
-         // Scale 20-130
-         double minVal = 20;
-         double maxVal = 130;
-         double normalized = (val - minVal) / (maxVal - minVal);
-         // Clamp? Usually good idea, but user said Scale is 20-130.
-         // Let's not clamp tightly but allow going off chart? 
-         // Better clamp visual to chart bounds so it doesn't draw over widgets.
-         // But for now, simple linear map.
-         return size.height - (normalized * size.height);
-      }
-
-      for (int i = 0; i < cadencePointsList!.length; i++) {
-        final val = cadencePointsList![i];
-        if (val == 0) continue; // Skip 0 points? User said HR if 0 don't display. Assuming consistent behavior.
-
-        final x = i * widthScale;
-        final y = mapCadenceToY(val);
-
-        if (isFirstPoint) {
-          path.moveTo(x, y);
-          isFirstPoint = false; 
-        } else {
-             path.lineTo(x, y);
+      var connected = false;
+      var hasPoints = false;
+      for (final point in points) {
+        final value = point.value;
+        if (!value.isFinite || value < 0 || (zeroIsGap && value == 0)) {
+          connected = false;
+          continue;
         }
+        final x = point.key * widthScale;
+        if (connected) {
+          path.lineTo(x, y(value));
+        } else {
+          path.moveTo(x, y(value));
+          connected = true;
+        }
+        hasPoints = true;
       }
-      // Re-doing loop to handle gaps better if needed.
-      // Actually simpler: just iterate and draw.
-      path.reset();
-      isFirstPoint = true;
-      for(int i=0; i<cadencePointsList!.length; i++) {
-          final val = cadencePointsList![i];
-          
-          final x = i * widthScale;
-          final y = mapCadenceToY(val);
-          
-          if (isFirstPoint) {
-             path.moveTo(x, y);
-             isFirstPoint = false;
-          } else {
-             path.lineTo(x, y);
-          }
-      }
-      
-      canvas.drawPath(path, cadencePaint);
-
-      // Dot or Text
-      if (currentCadence != null && currentCadence! > 0) {
-         final x = currentProgress * size.width;
-         final y = mapCadenceToY(currentCadence!.toDouble());
-         final center = Offset(x, y);
-
-         if (showLabels) {
-           _drawValueLabel(canvas, center, '$currentCadence', Colors.green);
-         } else {
-           final dotPaint = Paint()
-            ..color = Colors.green
-            ..style = PaintingStyle.fill;
-           canvas.drawCircle(center, WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
-         }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..strokeWidth = WorkoutStroke.actualPowerLine
+          ..style = PaintingStyle.stroke,
+      );
+      if (!hasPoints ||
+          current == null ||
+          !current.isFinite ||
+          current < 0 ||
+          (zeroIsGap && current == 0))
+        return;
+      final center = Offset(
+        (currentProgress.isFinite ? currentProgress : 0).clamp(0.0, 1.0) *
+            size.width,
+        y(current).clamp(0.0, size.height),
+      );
+      if (showLabels) {
+        _drawValueLabel(canvas, center, '${current.round()}', color);
+      } else {
+        canvas.drawCircle(
+          center,
+          WorkoutSizes.actualPowerDotRadius * 1.5,
+          Paint()..color = color,
+        );
       }
     }
 
-    // 3. Draw HR (Red, Scale 30-230)
-    if (hrPointsList != null && hrPointsList!.isNotEmpty) {
-      final hrPaint = Paint()
-        ..color = Colors.red
-        ..strokeWidth = WorkoutStroke.actualPowerLine
-        ..style = PaintingStyle.stroke;
-
-      final path = Path();
-      bool hasPoints = false;
-      
-      double mapHrToY(double val) {
-         double minVal = 30;
-         double maxVal = 230;
-         double normalized = (val - minVal) / (maxVal - minVal);
-         return size.height - (normalized * size.height);
-      }
-      
-      for (int i = 0; i < hrPointsList!.length; i++) {
-        final val = hrPointsList![i];
-        if (val <= 0) {
-            hasPoints = false; // Break continuity
-            continue; 
-        }
-
-        final x = i * widthScale;
-        final y = mapHrToY(val);
-
-        if (!hasPoints) {
-          path.moveTo(x, y);
-          hasPoints = true;
-        } else {
-          path.lineTo(x, y);
-        }
-      }
-      canvas.drawPath(path, hrPaint);
-
-      // Dot or Text
-      if (currentHr != null && currentHr! > 0) {
-         final x = currentProgress * size.width;
-         final y = mapHrToY(currentHr!.toDouble());
-         final center = Offset(x, y);
-
-         if (showLabels) {
-           _drawValueLabel(canvas, center, '$currentHr', Colors.red);
-         } else {
-           final dotPaint = Paint()
-            ..color = Colors.red
-            ..style = PaintingStyle.fill;
-           canvas.drawCircle(center, WorkoutSizes.actualPowerDotRadius * 1.5, dotPaint);
-         }
-      }
-    }
+    trace(
+      points: powerPointsList != null && powerPointsList!.isNotEmpty
+          ? samples(powerPointsList!)
+          : actualPowerPoints.entries,
+      color: Colors.lightBlueAccent,
+      y: (power) => size.height - power * heightScale,
+      current: currentPower,
+    );
+    trace(
+      points: samples(cadencePointsList ?? const []),
+      color: Colors.green,
+      y: (cadence) => size.height * (1 - (cadence - 20) / 110),
+      current: currentCadence?.toDouble(),
+      zeroIsGap: true,
+    );
+    trace(
+      points: samples(hrPointsList ?? const []),
+      color: Colors.red,
+      y: (hr) => size.height * (1 - (hr - 30) / 200),
+      current: currentHr?.toDouble(),
+      zeroIsGap: true,
+    );
   }
-
-  // Renamed/Removed old method signature
-  // void _drawActualPowerTrail(...)
 
   void _drawPowerGrid(Canvas canvas, Size size, double heightScale) {
     // Add left padding for power labels
-    const double leftPadding = 35.0;  // Space for power labels
-    
+    const double leftPadding = 35.0; // Space for power labels
+
     final gridPaint = Paint()
       ..style = PaintingStyle.stroke
       ..color = Colors.grey.withValues(alpha: WorkoutOpacity.gridLines)
@@ -403,9 +372,13 @@ class WorkoutPainter extends CustomPainter {
     );
 
     // Draw horizontal power lines at intervals
-    for (var power = 0.0; power <= maxPower * ftpValue; power += WorkoutGrid.powerLineInterval) {
+    for (
+      var power = 0.0;
+      power <= _peak * ftpValue;
+      power += WorkoutGrid.powerLineInterval
+    ) {
       final y = size.height - (power * heightScale);
-      
+
       // Draw grid line starting after the label space
       canvas.drawLine(
         Offset(showLabels ? leftPadding : 0, y),
@@ -425,9 +398,12 @@ class WorkoutPainter extends CustomPainter {
         );
         textPainter.layout();
         textPainter.paint(
-            canvas,
-            Offset(leftPadding - textPainter.width - 4,
-                y - textPainter.height / 2));
+          canvas,
+          Offset(
+            leftPadding - textPainter.width - 4,
+            y - textPainter.height / 2,
+          ),
+        );
       }
     }
   }
@@ -444,14 +420,14 @@ class WorkoutPainter extends CustomPainter {
     );
 
     // Draw vertical time lines at intervals
-    for (var time = 0.0; time <= totalDuration; time += WorkoutGrid.timeLineInterval) {
+    for (
+      var time = 0.0;
+      time <= totalDuration;
+      time += WorkoutGrid.timeLineInterval
+    ) {
       final x = time * widthScale;
-      
-      canvas.drawLine(
-        Offset(x, 0),
-        Offset(x, size.height),
-        gridPaint,
-      );
+
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
 
       // Draw time labels
       if (showLabels) {
@@ -465,22 +441,30 @@ class WorkoutPainter extends CustomPainter {
         );
         textPainter.layout();
         textPainter.paint(
-            canvas, Offset(x - textPainter.width / 2, size.height + 5));
+          canvas,
+          Offset(x - textPainter.width / 2, size.height + 5),
+        );
       }
     }
   }
 
-  void _drawCadenceIndicator(Canvas canvas, double x, double width, double height, WorkoutSegment segment) {
+  void _drawCadenceIndicator(
+    Canvas canvas,
+    double x,
+    double width,
+    double height,
+    WorkoutSegment segment,
+  ) {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..color = Colors.purple
       ..strokeWidth = WorkoutStroke.cadenceIndicator;
 
     final path = Path();
-    
+
     path.moveTo(x + width / 2, height - WorkoutSizes.cadenceIndicatorHeight);
     path.lineTo(x + width / 2, height);
-    
+
     canvas.drawPath(path, paint);
 
     final textPainter = TextPainter(
@@ -488,9 +472,9 @@ class WorkoutPainter extends CustomPainter {
       textAlign: TextAlign.center,
     );
 
-    final cadenceText = segment.cadence ?? 
-                       '${segment.cadenceLow}-${segment.cadenceHigh}';
-    
+    final cadenceText =
+        segment.cadence ?? '${segment.cadenceLow}-${segment.cadenceHigh}';
+
     textPainter.text = TextSpan(
       text: '$cadenceText rpm',
       style: TextStyle(
@@ -500,7 +484,7 @@ class WorkoutPainter extends CustomPainter {
         fontFamily: debugWorkoutPainterFontFamily,
       ),
     );
-    
+
     textPainter.layout();
     textPainter.paint(
       canvas,
@@ -511,47 +495,25 @@ class WorkoutPainter extends CustomPainter {
     );
   }
 
-  Color _getSegmentColor(WorkoutSegment segment) {
-    // Always use consistent colors for warmup and cooldown
-    if (segment.type == SegmentType.warmup) {
-      return Colors.green.withValues(alpha: WorkoutOpacity.segmentColor);
-    }
-    if (segment.type == SegmentType.cooldown) {
-      return Colors.blue.withValues(alpha: WorkoutOpacity.segmentColor);
-    }
+  Color _getSegmentColor(WorkoutSegment segment) =>
+      WorkoutPowerZone.forSegment(segment).color;
 
-    // For other segments, determine color based on power as % of FTP
-    double powerPercentage = segment.powerLow;
-    if (segment.isRamp) {
-      // For ramps, use the average power
-      powerPercentage = (segment.powerLow + segment.powerHigh) / 2;
-    }
-
-    // Color based on power zones
-    if (powerPercentage <= WorkoutZones.recovery) {
-      return Colors.blue.withValues(alpha: WorkoutOpacity.segmentColor);
-    } else if (powerPercentage <= WorkoutZones.endurance) {
-      return Colors.green.withValues(alpha: WorkoutOpacity.segmentColor);
-    } else if (powerPercentage <= WorkoutZones.tempo) {
-      return Colors.yellow.withValues(alpha: WorkoutOpacity.segmentColor);
-    } else if (powerPercentage <= WorkoutZones.threshold) {
-      return Colors.orange.withValues(alpha: WorkoutOpacity.segmentColor);
-    } else if (powerPercentage <= WorkoutZones.vo2max) {
-      return Colors.deepOrange.withValues(alpha: WorkoutOpacity.segmentColor);
-    } else if (powerPercentage <= WorkoutZones.anaerobic) {
-      return Colors.red.withValues(alpha: WorkoutOpacity.segmentColor);
-    } else {
-      return Colors.purple.withValues(alpha: WorkoutOpacity.segmentColor);
-    }
-  }
-
-  void _drawPowerLabels(Canvas canvas, double x, double width, double height, WorkoutSegment segment, double heightScale) {
+  void _drawPowerLabels(
+    Canvas canvas,
+    double x,
+    double width,
+    double height,
+    WorkoutSegment segment,
+    double heightScale,
+  ) {
     final textPainter = TextPainter(
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.center,
     );
 
-    final color = _getSegmentColor(segment).withValues(alpha: 1.0); // Full opacity for text
+    final color = _getSegmentColor(
+      segment,
+    ).withValues(alpha: 1.0); // Full opacity for text
     final style = TextStyle(
       color: color,
       fontSize: WorkoutFontSizes.small,
@@ -561,23 +523,27 @@ class WorkoutPainter extends CustomPainter {
 
     if (segment.isRamp) {
       // For ramp segments, show both start and end power
-      final startPower = segment.type == SegmentType.cooldown ? segment.powerHigh : segment.powerLow;
-      final endPower = segment.type == SegmentType.cooldown ? segment.powerLow : segment.powerHigh;
-      
+      final startPower = segment.type == SegmentType.cooldown
+          ? segment.powerHigh
+          : segment.powerLow;
+      final endPower = segment.type == SegmentType.cooldown
+          ? segment.powerLow
+          : segment.powerHigh;
+
       // Calculate positions above the power levels
       final startY = height - ((startPower * ftpValue + 20) * heightScale);
       final endY = height - ((endPower * ftpValue + 12) * heightScale);
-      
+
       // Calculate slope angle
       final slopeAngle = atan2(endY - startY, width);
-      
+
       // Start power label
       textPainter.text = TextSpan(
         text: '${(startPower * ftpValue).round()}w',
         style: style,
       );
       textPainter.layout();
-      
+
       canvas.save();
       canvas.translate(x + 4, startY);
       canvas.rotate(slopeAngle);
@@ -590,7 +556,7 @@ class WorkoutPainter extends CustomPainter {
         style: style,
       );
       textPainter.layout();
-      
+
       canvas.save();
       canvas.translate(x + width - textPainter.width - 4, endY);
       canvas.rotate(slopeAngle);
@@ -599,7 +565,7 @@ class WorkoutPainter extends CustomPainter {
     } else {
       // For steady state segments, show single power value 20 watts above
       final yPos = height - ((segment.powerLow * ftpValue + 20) * heightScale);
-      
+
       textPainter.text = TextSpan(
         text: '${(segment.powerLow * ftpValue).round()}w',
         style: style,
@@ -610,20 +576,6 @@ class WorkoutPainter extends CustomPainter {
         Offset(x + (width - textPainter.width) / 2, yPos),
       );
     }
-  }
-
-  Color _lighten(Color color, [double amount = .1]) {
-    assert(amount >= 0 && amount <= 1);
-    final hsl = HSLColor.fromColor(color);
-    final hslLight = hsl.withLightness((hsl.lightness + amount).clamp(0.0, 1.0));
-    return hslLight.toColor();
-  }
-
-  Color _darken(Color color, [double amount = .1]) {
-    assert(amount >= 0 && amount <= 1);
-    final hsl = HSLColor.fromColor(color);
-    final hslDark = hsl.withLightness((hsl.lightness - amount).clamp(0.0, 1.0));
-    return hslDark.toColor();
   }
 
   @override

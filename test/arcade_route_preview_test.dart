@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_route_preview.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_segment_profile.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_parser.dart';
+import 'package:ss2kconfigapp/utils/workout/workout_painter.dart';
 
 void main() {
   final warmup = WorkoutSegment(
@@ -54,15 +55,14 @@ void main() {
   test(
     'route silhouettes actually rise and fall instead of drawing flat maxima',
     () {
-      ArcadeIntervalPainter painter(WorkoutSegment s) => ArcadeIntervalPainter(
-        startPower: arcadeSegmentPower(s, 0),
-        endPower: arcadeSegmentPower(s, 1),
-        peak: 1.6,
-        color: Colors.cyan,
-        current: false,
-      );
-      final rising = painter(warmup).outline(const Size(100, 30));
-      final falling = painter(cooldown).outline(const Size(100, 30));
+      Path outline(WorkoutSegment s) =>
+          WorkoutPainter.preview([s], peak: 1.6).segmentOutline(
+            s,
+            const Rect.fromLTWH(0, 0, 100, 30),
+            const Size(100, 30),
+          );
+      final rising = outline(warmup);
+      final falling = outline(cooldown);
       expect(rising.contains(const Offset(5, 14)), isFalse);
       expect(rising.contains(const Offset(95, 14)), isTrue);
       expect(falling.contains(const Offset(5, 14)), isTrue);

@@ -1,8 +1,9 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../workout_parser.dart';
+import '../workout_painter.dart';
+import '../workout_profile.dart';
 import 'arcade_segment_profile.dart';
-import 'arcade_session.dart';
 import 'arcade_world_painter.dart';
 
 class ArcadeRoutePreview extends StatelessWidget {
@@ -64,13 +65,7 @@ class ArcadeRoutePreview extends StatelessWidget {
                       width: 38,
                       height: 26,
                       child: CustomPaint(
-                        painter: ArcadeIntervalPainter(
-                          startPower: arcadeSegmentPower(segment, 0),
-                          endPower: arcadeSegmentPower(segment, 1),
-                          peak: _peak,
-                          color: biomeColor(biomeFor(segment)),
-                          current: false,
-                        ),
+                        painter: WorkoutPainter.preview([segment], peak: _peak),
                       ),
                     ),
                     title: Text(
@@ -95,13 +90,7 @@ class ArcadeRoutePreview extends StatelessWidget {
     ),
   );
 
-  double get _peak => segments.fold<double>(
-    1.6,
-    (peak, s) => math.max(
-      peak,
-      math.max(arcadeSegmentPower(s, 0), arcadeSegmentPower(s, 1)),
-    ),
-  );
+  double get _peak => WorkoutPainter.profilePeak(segments);
 
   @override
   Widget build(BuildContext context) {
@@ -161,7 +150,7 @@ class ArcadeRoutePreview extends StatelessWidget {
                                     Container(
                                       width: 3,
                                       height: compact ? 22 : 27,
-                                      color: biomeColor(biomeFor(segments[i])),
+                                      color: WorkoutPowerZone.forSegment(segments[i], 0).color,
                                     ),
                                     const SizedBox(width: 7),
                                     Expanded(
@@ -255,7 +244,7 @@ class ArcadeRoutePreview extends StatelessWidget {
                   children: [
                     for (var i = start; i < end; i++)
                       Expanded(
-                        flex: math.max(1, math.min(segments[i].duration, 180)),
+                        flex: math.max(1, segments[i].duration),
                         child: Semantics(
                           label: _description(i),
                           button: true,
@@ -269,20 +258,11 @@ class ArcadeRoutePreview extends StatelessWidget {
                                   horizontal: 1,
                                 ),
                                 child: CustomPaint(
-                                  painter: ArcadeIntervalPainter(
-                                    startPower: arcadeSegmentPower(
-                                      segments[i],
-                                      0,
-                                    ),
-                                    endPower: arcadeSegmentPower(
-                                      segments[i],
-                                      1,
-                                    ),
+                                  painter: WorkoutPainter.preview(
+                                    [segments[i]],
                                     peak: peak,
-                                    color: biomeColor(
-                                      biomeFor(segments[i]),
-                                    ).withValues(alpha: i < current ? .3 : .85),
-                                    current: i == current,
+                                    highlightCurrent: i == current,
+                                    completed: i < current,
                                     progress: progress,
                                   ),
                                 ),
@@ -300,76 +280,4 @@ class ArcadeRoutePreview extends StatelessWidget {
       ),
     );
   }
-}
-
-/// A sloping silhouette for ramps, with elapsed fill on the current interval.
-class ArcadeIntervalPainter extends CustomPainter {
-  const ArcadeIntervalPainter({
-    required this.startPower,
-    required this.endPower,
-    required this.peak,
-    required this.color,
-    required this.current,
-    this.progress = 0,
-  });
-  final double startPower, endPower, peak, progress;
-  final Color color;
-  final bool current;
-
-  Path outline(Size size) {
-    double y(double power) =>
-        size.height -
-        (3 +
-            (power / math.max(1.6, peak)).clamp(0.0, 1.0) *
-                math.max(0, size.height - 5));
-    return Path()..addPolygon([
-      Offset(.75, y(startPower)),
-      Offset(math.max(.75, size.width - .75), y(endPower)),
-      Offset(math.max(.75, size.width - .75), size.height - .75),
-      Offset(.75, size.height - .75),
-    ], true);
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-    final path = outline(size);
-    canvas.save();
-    canvas.clipRect(Offset.zero & size);
-    canvas.drawPath(path, Paint()..color = color);
-    if (current) {
-      canvas.save();
-      canvas.clipPath(path);
-      final x = size.width * progress.clamp(0.0, 1.0);
-      canvas.drawRect(
-        Rect.fromLTWH(0, 0, x, size.height),
-        Paint()..color = Colors.white.withValues(alpha: .25),
-      );
-      canvas.drawLine(
-        Offset(x, 0),
-        Offset(x, size.height),
-        Paint()
-          ..color = Colors.white
-          ..strokeWidth = 1.5,
-      );
-      canvas.restore();
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = Colors.white
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2,
-      );
-    }
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant ArcadeIntervalPainter old) =>
-      startPower != old.startPower ||
-      endPower != old.endPower ||
-      peak != old.peak ||
-      color != old.color ||
-      current != old.current ||
-      progress != old.progress;
 }

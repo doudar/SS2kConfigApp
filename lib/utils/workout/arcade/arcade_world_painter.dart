@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../workout_parser.dart';
+import '../workout_profile.dart';
 import 'arcade_session.dart';
 import 'arcade_rider_art.dart';
 import 'arcade_rider_appearance.dart';
@@ -23,11 +24,19 @@ const arcadeGold = Color(0xffffd477);
 const arcadeInk = Color(0xff080f21);
 
 Color biomeColor(ArcadeBiome biome) => switch (biome) {
-  ArcadeBiome.grove => const Color(0xff53d9b0),
-  ArcadeBiome.coast => const Color(0xff60cdff),
-  ArcadeBiome.neon => const Color(0xffb391ff),
-  ArcadeBiome.volcano => const Color(0xffff8068),
+  ArcadeBiome.grove => WorkoutEffort.easy.color,
+  ArcadeBiome.coast => WorkoutEffort.steady.color,
+  ArcadeBiome.neon => WorkoutEffort.hard.color,
+  ArcadeBiome.volcano => WorkoutEffort.intense.color,
 };
+
+/// Road tiles sample the same target zones as the workout silhouette.
+Color arcadeRoadPowerColor(ArcadeRoadSnapshot road, double distance) {
+  final segment = road.segmentAt(distance);
+  if (segment == null || segment.type == SegmentType.freeRide ||
+      segment.type == SegmentType.maxEffort) return WorkoutPowerZone.selfPaced.color;
+  return WorkoutPowerZone.forPower(road.powerAt(distance)).color;
+}
 
 /// A bounded isometric diorama. Power controls visual travel; the road stretches
 /// to keep its sector boundaries aligned with the authoritative workout clock.
@@ -92,7 +101,7 @@ class ArcadeWorldPainter extends CustomPainter {
     return null;
   }
 
-  Color get accent => biomeColor(biome);
+  Color get accent => arcadeRoadPowerColor(road, road.position);
   ArcadeDroneStyle get _bossStyle => ArcadeLevel
       .values[levelIndex.clamp(0, ArcadeLevel.values.length - 1)]
       .bossStyle;
@@ -284,7 +293,7 @@ class ArcadeWorldPainter extends CustomPainter {
       final worldEnd = (position.floor() - tile).toDouble();
       final segment = road.segmentAt(worldEnd - .5);
       final tileBiome = segment == null ? biome : biomeFor(segment);
-      final color = biomeColor(tileBiome);
+      final color = arcadeRoadPowerColor(road, worldEnd - .5);
       final base = _roadHeight(worldEnd - .5);
       for (final piece
           in road.pieces(worldEnd - 1, worldEnd).toList().reversed) {
@@ -425,7 +434,7 @@ class ArcadeWorldPainter extends CustomPainter {
       final next = nextIndex < road.spans.length
           ? road.spans[nextIndex].segment
           : null;
-      final color = next == null ? arcadeGold : biomeColor(biomeFor(next));
+      final color = next == null ? arcadeGold : WorkoutPowerZone.forSegment(next, 0).color;
       final height = _roadHeight(span.end) + 1;
       ArcadeCheckpointArt.paint(
         canvas,
@@ -694,8 +703,7 @@ class ArcadeWorldPainter extends CustomPainter {
     double width,
     ArcadeRoadPiece piece,
   ) {
-    final segment = piece.segment;
-    final color = biomeColor(biomeFor(segment));
+    final color = arcadeRoadPowerColor(road, (piece.start + piece.end) / 2);
     // The tile starts at its later power; increasing u runs back in time.
     final frontHeight = _roadHeight(piece.end);
     final backHeight = _roadHeight(piece.start);

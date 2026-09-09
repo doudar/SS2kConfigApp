@@ -36,6 +36,23 @@ class _WorkoutControlsState extends State<WorkoutControls> {
   }
 
   @override
+  void didUpdateWidget(covariant WorkoutControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final ftp = widget.workoutController.ftpValue.round();
+    if (ftp == _selectedFTP) return;
+    _selectedFTP = ftp;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_ftpScrollController.hasClients) return;
+      _ftpScrollController.jumpToItem(
+        ((_selectedFTP - minFTP) ~/ ftpStep).clamp(
+          0,
+          (maxFTP - minFTP) ~/ ftpStep,
+        ),
+      );
+    });
+  }
+
+  @override
   void dispose() {
     _ftpScrollController.dispose();
     super.dispose();
