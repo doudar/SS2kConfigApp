@@ -14,6 +14,7 @@ import 'arcade_segment_profile.dart';
 import 'arcade_story_villain_art.dart';
 import 'arcade_checkpoint_art.dart';
 import 'arcade_cage_art.dart';
+import 'arcade_escape.dart';
 import 'arcade_terrain.dart';
 import 'arcade_scenery.dart';
 import 'arcade_levels.dart';
@@ -33,8 +34,10 @@ Color biomeColor(ArcadeBiome biome) => switch (biome) {
 /// Road tiles sample the same target zones as the workout silhouette.
 Color arcadeRoadPowerColor(ArcadeRoadSnapshot road, double distance) {
   final segment = road.segmentAt(distance);
-  if (segment == null || segment.type == SegmentType.freeRide ||
-      segment.type == SegmentType.maxEffort) return WorkoutPowerZone.selfPaced.color;
+  if (segment == null ||
+      segment.type == SegmentType.freeRide ||
+      segment.type == SegmentType.maxEffort)
+    return WorkoutPowerZone.selfPaced.color;
   return WorkoutPowerZone.forPower(road.powerAt(distance)).color;
 }
 
@@ -85,21 +88,7 @@ class ArcadeWorldPainter extends CustomPainter {
   final double? ambientSeconds;
   final ArcadeRiderAppearance rider;
 
-  double? get _escapeDuration {
-    final time = escapeSeconds;
-    if (time == null || !time.isFinite || time < 0) return null;
-    for (final segment in segments) {
-      if (segment.duration <= 0) continue;
-      // A workout starting with a boss goes straight into its aimable battle.
-      // Fifteen seconds on the road, then a brief distant hillside escape.
-      final duration = math.min(segment.duration.toDouble(), 23.0);
-      if (time >= duration || biomeFor(segment) == ArcadeBiome.volcano) {
-        return null;
-      }
-      return duration;
-    }
-    return null;
-  }
+  double? get _escapeDuration => ArcadeEscape.duration(escapeSeconds, segments);
 
   Color get accent => arcadeRoadPowerColor(road, road.position);
   ArcadeDroneStyle get _bossStyle => ArcadeLevel
@@ -434,7 +423,9 @@ class ArcadeWorldPainter extends CustomPainter {
       final next = nextIndex < road.spans.length
           ? road.spans[nextIndex].segment
           : null;
-      final color = next == null ? arcadeGold : WorkoutPowerZone.forSegment(next, 0).color;
+      final color = next == null
+          ? arcadeGold
+          : WorkoutPowerZone.forSegment(next, 0).color;
       final height = _roadHeight(span.end) + 1;
       ArcadeCheckpointArt.paint(
         canvas,
@@ -453,7 +444,7 @@ class ArcadeWorldPainter extends CustomPainter {
   void _getaway(Canvas canvas, Size size) {
     final duration = _escapeDuration;
     if (duration == null) return;
-    final progress = escapeSeconds! / math.min(15.0, duration);
+    final progress = ArcadeEscape.roadProgress(escapeSeconds!, duration);
     if (progress >= 1) return;
     final worldScale = _scaleFor(size);
     final origin = _originFor(size);
@@ -464,7 +455,7 @@ class ArcadeWorldPainter extends CustomPainter {
         ((size.width - origin.dx) / worldScale + 65) / 39 + towDistance;
     final topExit = (origin.dy / worldScale + 20) / 18 + towDistance;
     final exit = math.max(4.0, math.min(rightExit, topExit)) + .5;
-    final ahead = 4.0 + (exit - 4.0) * Curves.easeInQuad.transform(progress);
+    final ahead = 4.0 + (exit - 4.0) * ArcadeEscape.distance(progress);
     final feet = _iso(-ahead, 0, _roadHeight(road.position + ahead));
     final cageFeet = _iso(
       -ahead + towDistance,

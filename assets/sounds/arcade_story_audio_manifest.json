@@ -1,0 +1,2562 @@
+{
+  "source": "Procedural retro character chatter and original Foley; no speech model",
+  "engine": "procedural-retro-v1",
+  "script_sha256": "cd89b39180608229c6b03ab48ae9b9e4d53aca579e499d36c7de0bf3bd7b8861",
+  "scenes": [
+    {
+      "asset": "sounds/arcade_story_intro_0.wav",
+      "kind": "intro",
+      "variant": 0,
+      "chapterMs": [
+        4000,
+        4000,
+        4000,
+        4000
+      ],
+      "frames": 352800,
+      "sha256": "a6470fd3d0fa3104dc29283362245e80644b171e38dc8fea52d0182e9e516c34",
+      "lines": [
+        {
+          "text": "Sun is up. Wheels are ready!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Sun is up. Wheels are ready!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 682048097
+            },
+            {
+              "text": "Sun is up. Wheels are ready!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 682048097
+            },
+            {
+              "text": "Sun is up. Wheels are ready!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 682048097
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1448
+        },
+        {
+          "text": "Your sunshine fuels MY forge! Ha ha ha!",
+          "speaker": "golem",
+          "voices": [
+            {
+              "text": "Your sunshine fuels MY forge! Ha ha ha!",
+              "voice": "chip_boss",
+              "pitch_hz": 108.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1878607237
+            }
+          ],
+          "startMs": 4180,
+          "durationMs": 2532
+        },
+        {
+          "text": "Help! Follow the sparks!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Help! Follow the sparks!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1918796805
+            },
+            {
+              "text": "Help! Follow the sparks!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 1918796805
+            },
+            {
+              "text": "Help! Follow the sparks!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 1918796805
+            }
+          ],
+          "startMs": 8180,
+          "durationMs": 1010
+        },
+        {
+          "text": "Hang on, crew. I’m coming!",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Hang on, crew. I’m coming!",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 2352898946
+            }
+          ],
+          "startMs": 12180,
+          "durationMs": 1250
+        }
+      ],
+      "effects": [
+        {
+          "name": "villainSteps",
+          "startMs": 3200,
+          "gain": 0.2
+        },
+        {
+          "name": "cageDrop",
+          "startMs": 5150,
+          "gain": 0.2
+        },
+        {
+          "name": "cageImpact",
+          "startMs": 6400,
+          "gain": 0.42
+        },
+        {
+          "name": "chainPull",
+          "startMs": 10400,
+          "gain": 0.25
+        },
+        {
+          "name": "bikeStart",
+          "startMs": 12160,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_0_recovered.wav",
+      "kind": "ending",
+      "variant": 0,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "d4cbc033d46c57899df370efaa67d17c0bf4da50d5ce5691725324e0622c05a0",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "Everyone okay? Let’s get you home.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Everyone okay? Let’s get you home.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 3715484580
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1886
+        },
+        {
+          "text": "You did it! Three cheers for our hero!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "You did it! Three cheers for our hero!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1420085561
+            },
+            {
+              "text": "You did it! Three cheers for our hero!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 1420085561
+            },
+            {
+              "text": "You did it! Three cheers for our hero!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 1420085561
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 1586
+        },
+        {
+          "text": "Best crew ever. Now… snacks?",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Now… snacks?",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 969293755
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 1334
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_0_together.wav",
+      "kind": "ending",
+      "variant": 0,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "14f7b5b3be83929a35766772467755e681a08a3c9b8d0aef29ddbd80c6846969",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "We made it. Stay together, crew.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "We made it. Stay together, crew.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 4075190378
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1688
+        },
+        {
+          "text": "Together all the way! Woo-hoo!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 1448
+        },
+        {
+          "text": "Best crew ever. Now… snacks?",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Now… snacks?",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 969293755
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 1334
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_intro_1.wav",
+      "kind": "intro",
+      "variant": 1,
+      "chapterMs": [
+        4000,
+        4000,
+        4000,
+        4000
+      ],
+      "frames": 352800,
+      "sha256": "524f6990383a59333a213abe9a8d6e9e2383e6f0834cb31586abcb07659f5f4e",
+      "lines": [
+        {
+          "text": "One last delivery before sunrise!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "One last delivery before sunrise!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1754956331
+            },
+            {
+              "text": "One last delivery before sunrise!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 1754956331
+            },
+            {
+              "text": "One last delivery before sunrise!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 1754956331
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 2036
+        },
+        {
+          "text": "Lights out, little couriers! Ha ha ha!",
+          "speaker": "golem",
+          "voices": [
+            {
+              "text": "Lights out, little couriers! Ha ha ha!",
+              "voice": "chip_boss",
+              "pitch_hz": 111.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 3500399090
+            }
+          ],
+          "startMs": 4180,
+          "durationMs": 2224
+        },
+        {
+          "text": "Help! Follow the sparks!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Help! Follow the sparks!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1918796805
+            },
+            {
+              "text": "Help! Follow the sparks!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 1918796805
+            },
+            {
+              "text": "Help! Follow the sparks!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 1918796805
+            }
+          ],
+          "startMs": 8180,
+          "durationMs": 1010
+        },
+        {
+          "text": "Hang on, crew. I’m coming!",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Hang on, crew. I’m coming!",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 2352898946
+            }
+          ],
+          "startMs": 12180,
+          "durationMs": 1250
+        }
+      ],
+      "effects": [
+        {
+          "name": "villainSteps",
+          "startMs": 3200,
+          "gain": 0.2
+        },
+        {
+          "name": "cageDrop",
+          "startMs": 5150,
+          "gain": 0.2
+        },
+        {
+          "name": "cageImpact",
+          "startMs": 6400,
+          "gain": 0.42
+        },
+        {
+          "name": "chainPull",
+          "startMs": 10400,
+          "gain": 0.25
+        },
+        {
+          "name": "bikeStart",
+          "startMs": 12160,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_1_recovered.wav",
+      "kind": "ending",
+      "variant": 1,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "d4cbc033d46c57899df370efaa67d17c0bf4da50d5ce5691725324e0622c05a0",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "Everyone okay? Let’s get you home.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Everyone okay? Let’s get you home.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 3715484580
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1886
+        },
+        {
+          "text": "You did it! Three cheers for our hero!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "You did it! Three cheers for our hero!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1420085561
+            },
+            {
+              "text": "You did it! Three cheers for our hero!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 1420085561
+            },
+            {
+              "text": "You did it! Three cheers for our hero!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 1420085561
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 1586
+        },
+        {
+          "text": "Best crew ever. Now… snacks?",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Now… snacks?",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 969293755
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 1334
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_1_together.wav",
+      "kind": "ending",
+      "variant": 1,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "14f7b5b3be83929a35766772467755e681a08a3c9b8d0aef29ddbd80c6846969",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "We made it. Stay together, crew.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "We made it. Stay together, crew.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 4075190378
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1688
+        },
+        {
+          "text": "Together all the way! Woo-hoo!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 1448
+        },
+        {
+          "text": "Best crew ever. Now… snacks?",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Now… snacks?",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 969293755
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 1334
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_intro_2.wav",
+      "kind": "intro",
+      "variant": 2,
+      "chapterMs": [
+        4000,
+        4000,
+        4000,
+        4000
+      ],
+      "frames": 352800,
+      "sha256": "d6faaed6cfb9ffe1792f6e85f1001af09ecf5045d4a037d7620d17dc254867b7",
+      "lines": [
+        {
+          "text": "New wheels! Who wants the first ride?",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "New wheels! Who wants the first ride?",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1828645446
+            },
+            {
+              "text": "New wheels! Who wants the first ride?",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 1828645446
+            },
+            {
+              "text": "New wheels! Who wants the first ride?",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 1828645446
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1448
+        },
+        {
+          "text": "All your wheels belong to ME! Ha ha ha!",
+          "speaker": "golem",
+          "voices": [
+            {
+              "text": "All your wheels belong to ME! Ha ha ha!",
+              "voice": "chip_boss",
+              "pitch_hz": 114.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1244357899
+            }
+          ],
+          "startMs": 4180,
+          "durationMs": 2357
+        },
+        {
+          "text": "Help! Follow the sparks!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Help! Follow the sparks!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1918796805
+            },
+            {
+              "text": "Help! Follow the sparks!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 1918796805
+            },
+            {
+              "text": "Help! Follow the sparks!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 1918796805
+            }
+          ],
+          "startMs": 8180,
+          "durationMs": 1010
+        },
+        {
+          "text": "Hang on, crew. I’m coming!",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Hang on, crew. I’m coming!",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 2352898946
+            }
+          ],
+          "startMs": 12180,
+          "durationMs": 1250
+        }
+      ],
+      "effects": [
+        {
+          "name": "villainSteps",
+          "startMs": 3200,
+          "gain": 0.2
+        },
+        {
+          "name": "cageDrop",
+          "startMs": 5150,
+          "gain": 0.2
+        },
+        {
+          "name": "cageImpact",
+          "startMs": 6400,
+          "gain": 0.42
+        },
+        {
+          "name": "chainPull",
+          "startMs": 10400,
+          "gain": 0.25
+        },
+        {
+          "name": "bikeStart",
+          "startMs": 12160,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_2_recovered.wav",
+      "kind": "ending",
+      "variant": 2,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "d4cbc033d46c57899df370efaa67d17c0bf4da50d5ce5691725324e0622c05a0",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "Everyone okay? Let’s get you home.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Everyone okay? Let’s get you home.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 3715484580
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1886
+        },
+        {
+          "text": "You did it! Three cheers for our hero!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "You did it! Three cheers for our hero!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1420085561
+            },
+            {
+              "text": "You did it! Three cheers for our hero!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 1420085561
+            },
+            {
+              "text": "You did it! Three cheers for our hero!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 1420085561
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 1586
+        },
+        {
+          "text": "Best crew ever. Now… snacks?",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Now… snacks?",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 969293755
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 1334
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_2_together.wav",
+      "kind": "ending",
+      "variant": 2,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "14f7b5b3be83929a35766772467755e681a08a3c9b8d0aef29ddbd80c6846969",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "We made it. Stay together, crew.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "We made it. Stay together, crew.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 4075190378
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1688
+        },
+        {
+          "text": "Together all the way! Woo-hoo!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 1448
+        },
+        {
+          "text": "Best crew ever. Now… snacks?",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Now… snacks?",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 969293755
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 1334
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_intro_3.wav",
+      "kind": "intro",
+      "variant": 3,
+      "chapterMs": [
+        4000,
+        4000,
+        4000,
+        4000
+      ],
+      "frames": 352800,
+      "sha256": "b46a52a93ba062e06ae3a3ed525522916366cfe0807b7e44d09f5ea8c7937c86",
+      "lines": [
+        {
+          "text": "The seedlight is awake. Let’s grow a new trail!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "The seedlight is awake. Let’s grow a new trail!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 591254393
+            },
+            {
+              "text": "The seedlight is awake. Let’s grow a new trail!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 591254393
+            },
+            {
+              "text": "The seedlight is awake. Let’s grow a new trail!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 591254393
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 2024
+        },
+        {
+          "text": "My roots will swallow every trail! Ha ha ha!",
+          "speaker": "golem",
+          "voices": [
+            {
+              "text": "My roots will swallow every trail! Ha ha ha!",
+              "voice": "chip_boss",
+              "pitch_hz": 117.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 110978669
+            }
+          ],
+          "startMs": 4180,
+          "durationMs": 2743
+        },
+        {
+          "text": "Help! Follow the glowing seeds!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Help! Follow the glowing seeds!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 2723840252
+            },
+            {
+              "text": "Help! Follow the glowing seeds!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 2723840252
+            },
+            {
+              "text": "Help! Follow the glowing seeds!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 2723840252
+            }
+          ],
+          "startMs": 8180,
+          "durationMs": 1310
+        },
+        {
+          "text": "Hang on, Pathfinders. We’ll clear this trail!",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Hang on, Pathfinders. We’ll clear this trail!",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1803425629
+            }
+          ],
+          "startMs": 12180,
+          "durationMs": 1676
+        }
+      ],
+      "effects": [
+        {
+          "name": "villainSteps",
+          "startMs": 3200,
+          "gain": 0.2
+        },
+        {
+          "name": "cageDrop",
+          "startMs": 5150,
+          "gain": 0.2
+        },
+        {
+          "name": "cageImpact",
+          "startMs": 6400,
+          "gain": 0.42
+        },
+        {
+          "name": "chainPull",
+          "startMs": 10400,
+          "gain": 0.25
+        },
+        {
+          "name": "bikeStart",
+          "startMs": 12160,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_3_recovered.wav",
+      "kind": "ending",
+      "variant": 3,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "ac469a0c3e9137869741537fd94ae11788f4e1f3ac087fc10e2a1c5c95a0bfcc",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "Everyone okay? Let’s get you home.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Everyone okay? Let’s get you home.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 3715484580
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1886
+        },
+        {
+          "text": "Home at last! Our next trail gets your name!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Home at last! Our next trail gets your name!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1033827486
+            },
+            {
+              "text": "Home at last! Our next trail gets your name!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 1033827486
+            },
+            {
+              "text": "Home at last! Our next trail gets your name!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 1033827486
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 1862
+        },
+        {
+          "text": "Best crew ever. Save me a picnic spot!",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Save me a picnic spot!",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1985563524
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 1886
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_3_together.wav",
+      "kind": "ending",
+      "variant": 3,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "b76908c38202fb3bf367527d59baa8ebb7648a9a6a99ed458d56ce5b51b5425c",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "We made it. Stay together, crew.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "We made it. Stay together, crew.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 4075190378
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1688
+        },
+        {
+          "text": "Together all the way! Woo-hoo!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 1448
+        },
+        {
+          "text": "Best crew ever. Save me a picnic spot!",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Save me a picnic spot!",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 1985563524
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 1886
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_intro_4.wav",
+      "kind": "intro",
+      "variant": 4,
+      "chapterMs": [
+        4000,
+        4000,
+        4000,
+        4000
+      ],
+      "frames": 352800,
+      "sha256": "7884bcb2e8b3ee6ddabee09bec6ca7087ad9f4a2912193542618a336d3beff6c",
+      "lines": [
+        {
+          "text": "Warm hands, full bottles. Ready for the pass!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Warm hands, full bottles. Ready for the pass!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 668402531
+            },
+            {
+              "text": "Warm hands, full bottles. Ready for the pass!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 668402531
+            },
+            {
+              "text": "Warm hands, full bottles. Ready for the pass!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 668402531
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1850
+        },
+        {
+          "text": "Your precious hearth is MINE. Let winter win!",
+          "speaker": "golem",
+          "voices": [
+            {
+              "text": "Your precious hearth is MINE. Let winter win!",
+              "voice": "chip_boss",
+              "pitch_hz": 120.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 3988422615
+            }
+          ],
+          "startMs": 4180,
+          "durationMs": 2556
+        },
+        {
+          "text": "Help! Don’t let our hearth go cold!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Help! Don’t let our hearth go cold!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 3542636563
+            },
+            {
+              "text": "Help! Don’t let our hearth go cold!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 3542636563
+            },
+            {
+              "text": "Help! Don’t let our hearth go cold!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 3542636563
+            }
+          ],
+          "startMs": 8180,
+          "durationMs": 1322
+        },
+        {
+          "text": "Hang on, Rangers. I’ll bring the warmth back!",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Hang on, Rangers. I’ll bring the warmth back!",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 498951061
+            }
+          ],
+          "startMs": 12180,
+          "durationMs": 1676
+        }
+      ],
+      "effects": [
+        {
+          "name": "villainSteps",
+          "startMs": 3200,
+          "gain": 0.2
+        },
+        {
+          "name": "cageDrop",
+          "startMs": 5150,
+          "gain": 0.2
+        },
+        {
+          "name": "cageImpact",
+          "startMs": 6400,
+          "gain": 0.42
+        },
+        {
+          "name": "chainPull",
+          "startMs": 10400,
+          "gain": 0.25
+        },
+        {
+          "name": "bikeStart",
+          "startMs": 12160,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_4_recovered.wav",
+      "kind": "ending",
+      "variant": 4,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "3221e63b3702be3662e391ab70038fa2790eeaee8e4e9426ffe37bcdedeb8829",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "Everyone okay? Let’s get you home.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Everyone okay? Let’s get you home.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 3715484580
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1886
+        },
+        {
+          "text": "Everyone’s home! Hot cocoa for our hero!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Everyone’s home! Hot cocoa for our hero!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 2947529528
+            },
+            {
+              "text": "Everyone’s home! Hot cocoa for our hero!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 2947529528
+            },
+            {
+              "text": "Everyone’s home! Hot cocoa for our hero!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 2947529528
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 2150
+        },
+        {
+          "text": "Best crew ever. Make mine extra marshmallows.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Make mine extra marshmallows.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 2616061521
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 2162
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_4_together.wav",
+      "kind": "ending",
+      "variant": 4,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "5e06d4edd0d3e5799dd735144be4638b682b968507a4ab90037ddb037367b4d4",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "We made it. Stay together, crew.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "We made it. Stay together, crew.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 4075190378
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1688
+        },
+        {
+          "text": "Together all the way! Woo-hoo!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 1448
+        },
+        {
+          "text": "Best crew ever. Make mine extra marshmallows.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Make mine extra marshmallows.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 2616061521
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 2162
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_intro_5.wav",
+      "kind": "intro",
+      "variant": 5,
+      "chapterMs": [
+        4000,
+        4000,
+        4000,
+        4000
+      ],
+      "frames": 352800,
+      "sha256": "ed7d258691579ed56cfcab6fd669bf8f74b1bbe394872d2d4cd6f693e778923b",
+      "lines": [
+        {
+          "text": "Starwheel charged. The midnight relay is on!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Starwheel charged. The midnight relay is on!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 4256665258
+            },
+            {
+              "text": "Starwheel charged. The midnight relay is on!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 4256665258
+            },
+            {
+              "text": "Starwheel charged. The midnight relay is on!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 4256665258
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1862
+        },
+        {
+          "text": "The last star belongs to the void! Ha ha ha!",
+          "speaker": "golem",
+          "voices": [
+            {
+              "text": "The last star belongs to the void! Ha ha ha!",
+              "voice": "chip_boss",
+              "pitch_hz": 123.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 2987435774
+            }
+          ],
+          "startMs": 4180,
+          "durationMs": 2520
+        },
+        {
+          "text": "Help! Follow the starlight!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Help! Follow the starlight!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 4208068419
+            },
+            {
+              "text": "Help! Follow the starlight!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 4208068419
+            },
+            {
+              "text": "Help! Follow the starlight!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 4208068419
+            }
+          ],
+          "startMs": 8180,
+          "durationMs": 1184
+        },
+        {
+          "text": "Hang on, Messengers. This relay isn’t over!",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Hang on, Messengers. This relay isn’t over!",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 771660552
+            }
+          ],
+          "startMs": 12180,
+          "durationMs": 1976
+        }
+      ],
+      "effects": [
+        {
+          "name": "villainSteps",
+          "startMs": 3200,
+          "gain": 0.2
+        },
+        {
+          "name": "cageDrop",
+          "startMs": 5150,
+          "gain": 0.2
+        },
+        {
+          "name": "cageImpact",
+          "startMs": 6400,
+          "gain": 0.42
+        },
+        {
+          "name": "chainPull",
+          "startMs": 10400,
+          "gain": 0.25
+        },
+        {
+          "name": "bikeStart",
+          "startMs": 12160,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_5_recovered.wav",
+      "kind": "ending",
+      "variant": 5,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "c410bc18524ff8b92834e7820763828202624d0b31568931e9a2cbc2a331a7ab",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "Everyone okay? Let’s get you home.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Everyone okay? Let’s get you home.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 3715484580
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1886
+        },
+        {
+          "text": "Crew accounted for! The relay rides again!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Crew accounted for! The relay rides again!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 3958057620
+            },
+            {
+              "text": "Crew accounted for! The relay rides again!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 3958057620
+            },
+            {
+              "text": "Crew accounted for! The relay rides again!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 3958057620
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 2024
+        },
+        {
+          "text": "Best crew ever. Next delivery: midnight snacks!",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Next delivery: midnight snacks!",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 2551364194
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 2024
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    },
+    {
+      "asset": "sounds/arcade_story_ending_5_together.wav",
+      "kind": "ending",
+      "variant": 5,
+      "chapterMs": [
+        3400,
+        3400,
+        3400,
+        3400
+      ],
+      "frames": 299880,
+      "sha256": "99b4b151932b3b07608e903765369d7e290ad86455741c991fc49e9624dd2452",
+      "lines": [
+        {
+          "text": "Look! Our rider is back!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            },
+            {
+              "text": "Look! Our rider is back!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 163901559
+            }
+          ],
+          "startMs": 180,
+          "durationMs": 1184
+        },
+        {
+          "text": "We made it. Stay together, crew.",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "We made it. Stay together, crew.",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 4075190378
+            }
+          ],
+          "startMs": 3580,
+          "durationMs": 1688
+        },
+        {
+          "text": "Together all the way! Woo-hoo!",
+          "speaker": "crew",
+          "voices": [
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_soprano",
+              "pitch_hz": 330.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_alto",
+              "pitch_hz": 258.0,
+              "gain": 0.5,
+              "delay": 0.035,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            },
+            {
+              "text": "Together all the way! Woo-hoo!",
+              "voice": "chip_tenor",
+              "pitch_hz": 204.0,
+              "gain": 0.38,
+              "delay": 0.07,
+              "engine": "procedural-retro-v1",
+              "seed": 489083530
+            }
+          ],
+          "startMs": 6980,
+          "durationMs": 1448
+        },
+        {
+          "text": "Best crew ever. Next delivery: midnight snacks!",
+          "speaker": "hero",
+          "voices": [
+            {
+              "text": "Best crew ever. Next delivery: midnight snacks!",
+              "voice": "chip_hero",
+              "pitch_hz": 190.0,
+              "gain": 1.0,
+              "delay": 0,
+              "engine": "procedural-retro-v1",
+              "seed": 2551364194
+            }
+          ],
+          "startMs": 10380,
+          "durationMs": 2024
+        }
+      ],
+      "effects": [
+        {
+          "name": "bikeBrake",
+          "startMs": 2006,
+          "gain": 0.22
+        },
+        {
+          "name": "footsteps",
+          "startMs": 5100,
+          "gain": 0.2
+        },
+        {
+          "name": "celebration",
+          "startMs": 6800,
+          "gain": 0.24
+        }
+      ]
+    }
+  ],
+  "effects": [
+    {
+      "asset": "sounds/arcade_fx_cageDrop.wav",
+      "frames": 27563,
+      "sha256": "758ac3f98d7b4dab2d5bf7f0f7684219d2ae7b460172099258359cb5cd6d9d62"
+    },
+    {
+      "asset": "sounds/arcade_fx_cageImpact.wav",
+      "frames": 24255,
+      "sha256": "bb60852f25a595932bd32c59509d03a1e4a7e9578660c9927dc4bcdbdd9f33ce"
+    },
+    {
+      "asset": "sounds/arcade_fx_chainPull.wav",
+      "frames": 29768,
+      "sha256": "7165fb3d5aa46b482cdbd6672c04fff19ca22ca323e42132ebe3c76a4442d5c8"
+    },
+    {
+      "asset": "sounds/arcade_fx_villainSteps.wav",
+      "frames": 28665,
+      "sha256": "f3337a0f5507cbac752e6bb2a0a0bba881cdf05d160473740ea574d0b3f978d3"
+    },
+    {
+      "asset": "sounds/arcade_fx_bikeStart.wav",
+      "frames": 22050,
+      "sha256": "82a67c2fc90fa4729dfcd862f7b5cd71a6256067b3bc7fc9f750bb4bb5314d00"
+    },
+    {
+      "asset": "sounds/arcade_fx_bikeBrake.wav",
+      "frames": 18743,
+      "sha256": "e364bbbc60f03051525959ecaefc6a4d3777194f6c4561a2fdcfd6d3fde999c6"
+    },
+    {
+      "asset": "sounds/arcade_fx_footsteps.wav",
+      "frames": 18743,
+      "sha256": "11c3909ff26bcdfbfe9f72024772cc74cfefc3bb3c854780d428727c0bdab818"
+    },
+    {
+      "asset": "sounds/arcade_fx_celebration.wav",
+      "frames": 25358,
+      "sha256": "e5a12044ce353b5b5e1a96b11faf36a8c2f13dc724ea66497b2c7ce87d9ad38d"
+    },
+    {
+      "asset": "sounds/arcade_fx_cageRun.wav",
+      "frames": 55125,
+      "sha256": "b26870811be93ca477afafad832dbe6583c40f128e76b30201553136efb0f3f0"
+    }
+  ]
+}

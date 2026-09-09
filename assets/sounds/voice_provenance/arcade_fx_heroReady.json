@@ -1,0 +1,18 @@
+{
+  "source": "Procedural retro vocal effect; no speech model or recording",
+  "engine": "procedural-retro-v1",
+  "voices": [
+    {
+      "text": "All right!",
+      "voice": "chip_hero",
+      "pitch_hz": 190.0,
+      "gain": 1.0,
+      "delay": 0,
+      "engine": "procedural-retro-v1",
+      "seed": 1775978882
+    }
+  ],
+  "milliseconds": 1100,
+  "sample_rate": 22050,
+  "wav_sha256": "f3201019a6e1586f1e6b8d625c75fe83038aec15e4bea7a8b8ec56604850ad8d"
+}

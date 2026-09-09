@@ -149,10 +149,20 @@ and workout export as Classic.
   battles: turning shoulder cogs, piston limbs, furnace core, exhaust stacks,
   and a moving jaw. Armor cracks and sheds sparks as charged shots land.
 - Opening and ending scenes have character-anchored dialogue bubbles with
-  story-specific taunts, cries for help, and a homecoming conversation. Six
-  original synthesized vocal effects add a mechanical laugh, crew calls and
-  cheers, and hero responses. They follow the effects toggle and stop on skip
-  or backgrounding. Dialogue remains accessible and advances in reduced motion.
+  story-specific taunts, cries for help, and a homecoming conversation. Eighteen
+  prerecorded soundtracks cover every opening and both endings for all six
+  stories. Refined 16-bit-style vocal chatter accompanies the full written
+  script, with three layered retro timbres for the crew and a low boss laugh.
+  Cage descent and impact, chains, villain steps, bike departure and braking,
+  footsteps, and celebration accents are mixed alongside the dialogue.
+  Soundtracks follow the effects toggle, stop on skip, and resume with the paused
+  scene after backgrounding. Dialogue remains accessible in reduced motion.
+  On the road, the fleeing boss has a separate footstep-and-cage-rattle loop
+  that fades with distance and stops when the convoy leaves the road. It follows
+  pause, mute and view visibility, and is absent for boss-first openings.
+  The [voice generation workflow](tool/ARCADE_VOICES.md) uses procedural synthesis.
+  No speech model or API key is required;
+  the app bundles only the finished WAVs and plays them offline.
 - The **audio menu** controls music and sound effects independently. Effects
   start enabled; music is opt-in. Earned energy pickups, bolts, combo upgrades,
   secured sectors, boss arrivals and boss defeats each have their own cue.
@@ -179,7 +189,8 @@ or additional dependencies are required. Original PCM music is checked in under
 `assets/sounds/arcade_*.wav`. Regenerate it with
 `dart run tool/generate_arcade_music.dart`.
 The six formant-synthesized vocal assets are generated separately with
-`python tool/generate_arcade_voices.py` (standard library only).
+`python tool/generate_arcade_voices.py` using NumPy/SciPy; see
+[the audio regeneration guide](tool/ARCADE_VOICES.md) for setup and full soundtracks.
 
 Run arcade checks with
 `flutter test test/arcade_session_test.dart test/arcade_workout_view_test.dart test/arcade_audio_test.dart test/arcade_road_test.dart test/arcade_pedaling_test.dart`.

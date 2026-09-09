@@ -4,7 +4,7 @@ import 'arcade_dialogue.dart';
 import 'arcade_cage_art.dart';
 import 'arcade_music.dart';
 import 'arcade_session.dart';
-import 'arcade_sound_effects.dart';
+import 'arcade_cinematic_audio.dart';
 import 'arcade_story.dart';
 import 'arcade_story_art.dart';
 import 'arcade_story_villain_art.dart';
@@ -41,7 +41,9 @@ class _ArcadeIntroState extends State<ArcadeIntro>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _clock;
   late final ArcadeMusic _music;
-  late final ArcadeSoundEffects _effects;
+  late final ArcadeCinematicTimeline _timeline;
+  late final ArcadeCinematicSound _sound;
+  int _syncRevision = 0;
   bool _foreground = true, _leaving = false, _started = false;
   int _chapter = 0;
   ArcadeDialogue get _dialogue =>
@@ -58,11 +60,12 @@ class _ArcadeIntroState extends State<ArcadeIntro>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _music = ArcadeMusic(onError: () {});
-    _effects = ArcadeSoundEffects(onError: () {});
+    _timeline = ArcadeCinematicTimeline.opening(widget.story.variant);
+    _sound = ArcadeCinematicSound(asset: _timeline.asset);
     _clock =
         AnimationController(
             vsync: this,
-            duration: const Duration(seconds: 16),
+            duration: _timeline.duration,
             animationBehavior: AnimationBehavior.preserve,
           )
           ..addListener(_tick)
@@ -72,14 +75,13 @@ class _ArcadeIntroState extends State<ArcadeIntro>
   }
 
   void _tick() {
-    final next = (_clock.value * 4).floor().clamp(0, 3);
+    final next = _timeline.chapter(_clock.value);
     if (next != _chapter) {
       _chapter = next;
       _music.sync(
         enabled: _foreground && widget.session.musicEnabled,
         biome: _biome,
       );
-      _effects.play([_dialogue.cue]);
     }
   }
 
@@ -89,21 +91,23 @@ class _ArcadeIntroState extends State<ArcadeIntro>
     if (!_started) {
       _started = true;
       _sync();
-      _effects.play([_dialogue.cue]);
     }
   }
 
-  void _sync() {
+  Future<void> _sync() async {
     if (_leaving) return;
+    final revision = ++_syncRevision;
+    _clock.stop();
     _music.sync(
       enabled: _foreground && widget.session.musicEnabled,
       biome: _biome,
     );
-    _effects.setActive(_foreground && widget.session.effectsEnabled);
-    if (_foreground) {
+    await _sound.sync(
+      enabled: _foreground && widget.session.effectsEnabled,
+      position: _timeline.position(_clock.value),
+    );
+    if (mounted && !_leaving && _foreground && revision == _syncRevision) {
       _clock.forward();
-    } else {
-      _clock.stop();
     }
   }
 
@@ -116,9 +120,10 @@ class _ArcadeIntroState extends State<ArcadeIntro>
   void _finish(bool start) {
     if (_leaving || !mounted) return;
     _leaving = true;
+    ++_syncRevision;
     _clock.stop();
     _music.sync(enabled: false, biome: _biome);
-    _effects.setActive(false);
+    _sound.sync(enabled: false, position: _timeline.position(_clock.value));
     Navigator.of(context).pop(start);
   }
 
@@ -127,7 +132,7 @@ class _ArcadeIntroState extends State<ArcadeIntro>
     WidgetsBinding.instance.removeObserver(this);
     _clock.dispose();
     _music.dispose();
-    _effects.dispose();
+    _sound.dispose();
     super.dispose();
   }
 
@@ -204,7 +209,7 @@ class _ArcadeIntroState extends State<ArcadeIntro>
                                 widget.story,
                                 reduced
                                     ? [.12, .4, .66, .9][_chapter]
-                                    : _clock.value,
+                                    : _timeline.visualProgress(_clock.value),
                                 _dialogue,
                                 MediaQuery.textScalerOf(context),
                                 widget.session.rider,
@@ -403,8 +408,8 @@ class _IntroPainter extends CustomPainter {
         Offset(-30 + i * 30, 0),
         Color.lerp(tint, ArcadeStoryArt.mint, i * .25)!,
         cheer: progress < .25 ? .2 : .05,
-        speaking: dialogue.speaker == ArcadeSpeaker.crew && i == 1,
-        clock: progress * 16,
+        speaking: dialogue.speaker == ArcadeSpeaker.crew,
+        clock: progress * 16 + i * .13,
       );
     }
     if (progress >= .25) {

@@ -2,15 +2,17 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'arcade_cues.dart';
 import 'arcade_story.dart';
+import 'arcade_story_audio.g.dart';
 
 enum ArcadeSpeaker { crew, golem, hero }
 
-/// One readable exchange per chapter; shared by bubbles, accessibility and
-/// vocal cue timing so reduced motion and normal playback tell the same story.
+/// One exchange per chapter. Generated text is shared with the prerecorded
+/// soundtracks so bubbles, accessibility and retro chatter follow the same story.
 class ArcadeDialogue {
   const ArcadeDialogue(this.speaker, this.text, this.cue, {this.speakerName});
   final ArcadeSpeaker speaker;
   final String text;
+  // Retained short-reaction category; cutscenes play complete soundtracks.
   final ArcadeCue cue;
   final String? speakerName;
 
@@ -30,48 +32,28 @@ class ArcadeDialogue {
 
   static ArcadeDialogue opening(ArcadeStory story, int chapter) =>
       switch (chapter) {
-        0 => ArcadeDialogue(ArcadeSpeaker.crew, switch (story.variant) {
-          0 => 'Sun is up. Wheels are ready!',
-          1 => 'One last delivery before sunrise!',
-          2 => 'New wheels! Who wants the first ride?',
-          3 => 'The seedlight is awake. Let’s grow a new trail!',
-          4 => 'Warm hands, full bottles. Ready for the pass!',
-          _ => 'Starwheel charged. The midnight relay is on!',
-        }, ArcadeCue.crewHello),
+        0 => ArcadeDialogue(
+          ArcadeSpeaker.crew,
+          arcadeOpeningLines[story.variant][0],
+          ArcadeCue.crewHello,
+        ),
         1 => ArcadeDialogue(
           ArcadeSpeaker.golem,
-          switch (story.variant) {
-            0 => 'Your sunshine fuels MY forge! Ha ha ha!',
-            1 => 'Lights out, little couriers! Ha ha ha!',
-            2 => 'All your wheels belong to ME! Ha ha ha!',
-            3 => 'My roots will swallow every trail! Ha ha ha!',
-            4 => 'Your precious hearth is MINE. Let winter win!',
-            _ => 'The last star belongs to the void! Ha ha ha!',
-          },
+          arcadeOpeningLines[story.variant][1],
           ArcadeCue.golemLaugh,
           speakerName: story.bossName.toUpperCase(),
         ),
-        2 => ArcadeDialogue(ArcadeSpeaker.crew, switch (story.variant) {
-          3 => 'Help! Follow the glowing seeds!',
-          4 => 'Help! Don’t let our hearth go cold!',
-          5 => 'Help! Follow the starlight!',
-          _ => 'Help! Follow the sparks!',
-        }, ArcadeCue.crewAlarm),
-        _ => ArcadeDialogue(ArcadeSpeaker.hero, switch (story.variant) {
-          3 => 'Hang on, Pathfinders. We’ll clear this trail!',
-          4 => 'Hang on, Rangers. I’ll bring the warmth back!',
-          5 => 'Hang on, Messengers. This relay isn’t over!',
-          _ => 'Hang on, crew. I’m coming!',
-        }, ArcadeCue.heroReady),
+        2 => ArcadeDialogue(
+          ArcadeSpeaker.crew,
+          arcadeOpeningLines[story.variant][2],
+          ArcadeCue.crewAlarm,
+        ),
+        _ => ArcadeDialogue(
+          ArcadeSpeaker.hero,
+          arcadeOpeningLines[story.variant][3],
+          ArcadeCue.heroReady,
+        ),
       };
-
-  static int finaleChapter(double progress) => progress < .32
-      ? 0
-      : progress < .64
-      ? 1
-      : progress < .83
-      ? 2
-      : 3;
 
   static ArcadeDialogue ending(
     int chapter, {
@@ -80,34 +62,24 @@ class ArcadeDialogue {
   }) => switch (chapter) {
     0 => const ArcadeDialogue(
       ArcadeSpeaker.crew,
-      'Look! Our rider is back!',
+      arcadeEndingGreeting,
       ArcadeCue.crewHello,
     ),
     1 => ArcadeDialogue(
       ArcadeSpeaker.hero,
-      recovered
-          ? 'Everyone okay? Let’s get you home.'
-          : 'We made it. Stay together, crew.',
+      arcadeEndingRelief[recovered ? 0 : 1],
       ArcadeCue.heroRelief,
     ),
     2 => ArcadeDialogue(
       ArcadeSpeaker.crew,
-      recovered
-          ? switch (story?.variant) {
-              3 => 'Home at last! Our next trail gets your name!',
-              4 => 'Everyone’s home! Hot cocoa for our hero!',
-              5 => 'Crew accounted for! The relay rides again!',
-              _ => 'You did it! Three cheers for our hero!',
-            }
-          : 'Together all the way! Woo-hoo!',
+      recovered ? arcadeEndingCheer[story?.variant ?? 0] : arcadeEndingTogether,
       ArcadeCue.crewCheer,
     ),
-    _ => ArcadeDialogue(ArcadeSpeaker.hero, switch (story?.variant) {
-      3 => 'Best crew ever. Save me a picnic spot!',
-      4 => 'Best crew ever. Make mine extra marshmallows.',
-      5 => 'Best crew ever. Next delivery: midnight snacks!',
-      _ => 'Best crew ever. Now… snacks?',
-    }, ArcadeCue.heroReady),
+    _ => ArcadeDialogue(
+      ArcadeSpeaker.hero,
+      arcadeEndingSignoff[story?.variant ?? 0],
+      ArcadeCue.heroReady,
+    ),
   };
 
   /// Paint in screen coordinates, after the actor transform is restored. Text

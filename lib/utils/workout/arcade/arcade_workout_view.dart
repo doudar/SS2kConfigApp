@@ -11,6 +11,8 @@ import 'arcade_journey_map.dart';
 import 'arcade_lobby_workout.dart';
 import 'arcade_pedaling.dart';
 import 'arcade_sound_effects.dart';
+import 'arcade_escape.dart';
+import 'arcade_escape_sound.dart';
 import 'arcade_session.dart';
 import 'arcade_story.dart';
 import 'arcade_intro.dart';
@@ -54,6 +56,8 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
   int _roadRevision = -1;
   late final ArcadeMusic _music;
   late final ArcadeSoundEffects _effects;
+  final ArcadeEscapeSound _escapeSound = ArcadeEscapeSound();
+  bool _escapeRunning = false;
   late int _lastCueRevision;
   bool get _musicEnabled => game.musicEnabled;
   set _musicEnabled(bool value) => game.musicEnabled = value;
@@ -189,6 +193,12 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     }
     _music.sync(enabled: running && _musicEnabled, biome: biome);
     _effects.setActive(running && _effectsEnabled);
+    _escapeRunning =
+        running &&
+        _effectsEnabled &&
+        game.openingSeen &&
+        !ride.isUnlimitedFreeRide;
+    _syncEscape();
     // Consume even when muted/hidden: re-enabling never replays old rewards.
     if (_lastCueRevision != game.cueRevision) {
       _lastCueRevision = game.cueRevision;
@@ -204,6 +214,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     final seconds =
         (now - previous).inMicroseconds / Duration.microsecondsPerSecond;
     _roadFrameOffset = (_roadFrameOffset + math.max(0, seconds)).clamp(0, .1);
+    _syncEscape();
     _pedaling.advance(
       seconds: seconds,
       cadence: widget.deviceData.ftmsData.cadence.toDouble(),
@@ -211,6 +222,15 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
       // flag. A target/sector transition must not stop a still-pedaling rider.
       // Stale data remains ineligible for rewards in ArcadeSession.
       active: ride.isPlaying,
+    );
+  }
+
+  void _syncEscape() {
+    final seconds = ride.workoutProgressSeconds + _roadFrameOffset;
+    _escapeSound.sync(
+      enabled: _escapeRunning,
+      seconds: seconds,
+      duration: ArcadeEscape.duration(seconds, ride.segments),
     );
   }
 
@@ -222,6 +242,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     _animation.dispose();
     _music.dispose();
     _effects.dispose();
+    _escapeSound.dispose();
     super.dispose();
   }
 
@@ -293,7 +314,8 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
             'Skipping advances the route without awarding skipped time. Your score stays '
             'with this screen when you switch to Classic; loading or restarting a workout '
             'starts a new quest. The audio menu controls music and sound effects '
-            'separately. Effects are on by default; music is optional.',
+            'separately. Effects are on by default; music is optional. '
+            'Characters use retro vocal effects; dialogue appears in speech bubbles.',
           ),
         ),
         actions: [
@@ -515,9 +537,12 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
               final current = segment;
               final color = current == null
                   ? WorkoutPowerZone.selfPaced.color
-                  : (current.type == SegmentType.freeRide || current.type == SegmentType.maxEffort)
+                  : (current.type == SegmentType.freeRide ||
+                        current.type == SegmentType.maxEffort)
                   ? WorkoutPowerZone.selfPaced.color
-                  : WorkoutPowerZone.forPower(widget.deviceData.ftmsData.targetERG / ride.ftpValue).color;
+                  : WorkoutPowerZone.forPower(
+                      widget.deviceData.ftmsData.targetERG / ride.ftpValue,
+                    ).color;
               final charge = current == null
                   ? 0.0
                   : game.chargeFor(index, current);

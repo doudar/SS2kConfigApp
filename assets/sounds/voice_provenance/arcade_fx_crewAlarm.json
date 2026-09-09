@@ -1,0 +1,36 @@
+{
+  "source": "Procedural retro vocal effect; no speech model or recording",
+  "engine": "procedural-retro-v1",
+  "voices": [
+    {
+      "text": "Help!",
+      "voice": "chip_soprano",
+      "pitch_hz": 330.0,
+      "gain": 1.0,
+      "delay": 0,
+      "engine": "procedural-retro-v1",
+      "seed": 1754176461
+    },
+    {
+      "text": "Help!",
+      "voice": "chip_alto",
+      "pitch_hz": 258.0,
+      "gain": 0.5,
+      "delay": 0.035,
+      "engine": "procedural-retro-v1",
+      "seed": 1754176461
+    },
+    {
+      "text": "Help!",
+      "voice": "chip_tenor",
+      "pitch_hz": 204.0,
+      "gain": 0.38,
+      "delay": 0.07,
+      "engine": "procedural-retro-v1",
+      "seed": 1754176461
+    }
+  ],
+  "milliseconds": 1100,
+  "sample_rate": 22050,
+  "wav_sha256": "0d5db541fc24a197a058fac0ee453c5ad95d8b1e26780829f5fddc226d73817c"
+}

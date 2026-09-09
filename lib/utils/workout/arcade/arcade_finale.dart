@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'arcade_dialogue.dart';
 import 'arcade_music.dart';
 import 'arcade_session.dart';
-import 'arcade_sound_effects.dart';
+import 'arcade_cinematic_audio.dart';
 import 'arcade_story.dart';
 import 'arcade_story_art.dart';
 import 'arcade_rider_appearance.dart';
@@ -34,7 +34,9 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _clock;
   late final ArcadeMusic _music;
-  late final ArcadeSoundEffects _effects;
+  late final ArcadeCinematicTimeline _timeline;
+  late final ArcadeCinematicSound _sound;
+  int _syncRevision = 0;
   bool _foreground = true;
   bool _leaving = false;
   int _chapter = 0;
@@ -52,11 +54,15 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _music = ArcadeMusic(onError: () {});
-    _effects = ArcadeSoundEffects(onError: () {});
+    _timeline = ArcadeCinematicTimeline.ending(
+      widget.session.story.variant,
+      recovered: _recovered,
+    );
+    _sound = ArcadeCinematicSound(asset: _timeline.asset);
     _clock =
         AnimationController(
             vsync: this,
-            duration: const Duration(seconds: 12),
+            duration: _timeline.duration,
             animationBehavior: AnimationBehavior.preserve,
           )
           ..addListener(_tick)
@@ -66,10 +72,9 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
   }
 
   void _tick() {
-    final next = ArcadeDialogue.finaleChapter(_clock.value);
+    final next = _timeline.chapter(_clock.value);
     if (_chapter != next) {
       _chapter = next;
-      _effects.play([_dialogue.cue]);
     }
   }
 
@@ -79,21 +84,23 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
     if (!_started) {
       _started = true;
       _sync();
-      _effects.play([_dialogue.cue]);
     }
   }
 
-  void _sync() {
+  Future<void> _sync() async {
     if (_leaving) return;
+    final revision = ++_syncRevision;
+    _clock.stop();
     _music.sync(
       enabled: _foreground && widget.session.musicEnabled,
       biome: ArcadeBiome.coast,
     );
-    _effects.setActive(_foreground && widget.session.effectsEnabled);
-    if (_foreground) {
+    await _sound.sync(
+      enabled: _foreground && widget.session.effectsEnabled,
+      position: _timeline.position(_clock.value),
+    );
+    if (mounted && !_leaving && _foreground && revision == _syncRevision) {
       _clock.forward();
-    } else {
-      _clock.stop();
     }
   }
 
@@ -106,9 +113,10 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
   void _continue() {
     if (_leaving || !mounted) return;
     _leaving = true;
+    ++_syncRevision;
     _clock.stop();
     _music.sync(enabled: false, biome: ArcadeBiome.coast);
-    _effects.setActive(false);
+    _sound.sync(enabled: false, position: _timeline.position(_clock.value));
     Navigator.of(context).pop();
   }
 
@@ -117,7 +125,7 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
     WidgetsBinding.instance.removeObserver(this);
     _clock.dispose();
     _music.dispose();
-    _effects.dispose();
+    _sound.dispose();
     super.dispose();
   }
 
@@ -177,7 +185,9 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
                                 size: Size.infinite,
                                 painter: _FinalePainter(
                                   session.story,
-                                  reduced ? 1 : _clock.value,
+                                  reduced
+                                      ? 1
+                                      : _timeline.visualProgress(_clock.value),
                                   _recovered,
                                   _dialogue,
                                   MediaQuery.textScalerOf(context),
@@ -384,8 +394,8 @@ class _FinalePainter extends CustomPainter {
         Color.lerp(tint, ArcadeStoryArt.mint, i * .3)!,
         cheer: .35 + celebration * .65,
         hop: math.max(0, math.sin(progress * 65 + i)) * (2 + celebration * 5),
-        speaking: dialogue.speaker == ArcadeSpeaker.crew && i == 1,
-        clock: progress * 12,
+        speaking: dialogue.speaker == ArcadeSpeaker.crew,
+        clock: progress * 12 + i * .13,
       );
     }
     if (recovered) {
