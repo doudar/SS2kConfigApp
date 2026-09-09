@@ -1,32 +1,62 @@
 import 'dart:math' as math;
+import 'arcade_drones.dart';
+import 'arcade_levels.dart';
 
 enum ArcadeStoryPhase { opening, chase, homecoming }
 
 /// One cast per workout, retained when switching views or pausing.
 class ArcadeStory {
-  ArcadeStory(this.variant);
-  factory ArcadeStory.random() => ArcadeStory(math.Random().nextInt(3));
+  ArcadeStory(int variant) : variant = variant % 6;
+  factory ArcadeStory.random({int? excluding}) {
+    final random = math.Random();
+    if (excluding == null) return ArcadeStory(random.nextInt(6));
+    final previous = excluding % 6;
+    final choice = random.nextInt(5);
+    return ArcadeStory(choice >= previous ? choice + 1 : choice);
+  }
   final int variant;
+  ArcadeLevel get level => ArcadeLevel.forStoryVariant(variant);
+  String get bossName => level.bossStyle.targetName;
 
-  String get title => switch (variant % 3) {
+  String get title => switch (variant) {
     0 => 'THE STOLEN SUN',
     1 => 'THE LAST LANTERN',
-    _ => 'THE GREAT WHEEL HEIST',
+    2 => 'THE GREAT WHEEL HEIST',
+    3 => 'THE VERDANT VAULT',
+    4 => 'HEART OF WINTER',
+    _ => 'THE MIDNIGHT RELAY',
   };
-  String get crew => switch (variant % 3) {
+  String get crew => switch (variant) {
     0 => 'the Sunwheel mechanics',
     1 => 'the Lantern Couriers',
-    _ => 'the Little Spokes crew',
+    2 => 'the Little Spokes crew',
+    3 => 'the Ruin Pathfinders',
+    4 => 'the Frostline Rangers',
+    _ => 'the Moonlight Messengers',
   };
-  String get home => switch (variant % 3) {
+  String get home => switch (variant) {
     0 => 'SUNWHEEL VILLAGE',
     1 => 'LANTERN HARBOR',
-    _ => 'LITTLE SPOKES WORKSHOP',
+    2 => 'LITTLE SPOKES WORKSHOP',
+    3 => 'THE VERDANT REFUGE',
+    4 => 'FROSTLINE STATION',
+    _ => 'MOONLIGHT DEPOT',
   };
-  String get stolen => switch (variant % 3) {
+  String get stolen => switch (variant) {
     0 => 'the village sun dynamo',
     1 => 'the harbor beacon',
-    _ => 'every wheel in the workshop',
+    2 => 'every wheel in the workshop',
+    3 => 'the seedlight core',
+    4 => 'the mountain hearth',
+    _ => 'the last starwheel',
+  };
+  String get _restoration => switch (variant) {
+    0 => 'Sunwheel Village has its sunshine back',
+    1 => 'the harbor beacon shines again',
+    2 => 'the workshop wheels are rolling again',
+    3 => 'the seedlight is bringing the gardens back to life',
+    4 => 'the mountain hearth is keeping everyone warm',
+    _ => 'the starwheel is lighting the way through the night',
   };
 
   ArcadeStoryFrame frame({
@@ -58,7 +88,7 @@ class ArcadeStory {
   }
 
   String ending(int bosses, int sectors) => bosses > 0
-      ? 'The Gear Golem is broken. $crew are home. You brought the light back.'
+      ? '$bossName is defeated. $crew are home, and $_restoration.'
       : sectors > 0
       ? 'Your energy opened an escape route. $crew made it home!'
       : '$crew found shelter. Every journey starts somewhere. Tonight, you ride home together.';
@@ -80,22 +110,22 @@ class ArcadeStoryFrame {
 
   String get heading => switch (phase) {
     ArcadeStoryPhase.opening => story.title,
-    ArcadeStoryPhase.chase => 'CHASE THE GEAR GOLEM',
+    ArcadeStoryPhase.chase => 'CHASE ${story.bossName.toUpperCase()}',
     ArcadeStoryPhase.homecoming => 'THE ROAD HOME',
   };
 
   String get caption => switch (phase) {
     ArcadeStoryPhase.opening when progress < .28 =>
-      'A quiet morning. ${story.crew} are getting ready to ride.',
+      'A new ride begins. ${story.crew} are getting ready to ride.',
     ArcadeStoryPhase.opening when progress < .65 =>
-      'The Gear Golem stole ${story.stolen} and trapped ${story.crew}!',
+      '${story.bossName} stole ${story.stolen} and trapped ${story.crew}!',
     ArcadeStoryPhase.opening =>
-      'Follow the sparks! Warm up at your target; your interval energy breaks its gears.',
+      'Follow the sparks! Warm up at your target; your interval energy breaks the guardian’s armor.',
     ArcadeStoryPhase.chase =>
       'Stay with your target. Every secured sector opens the way to ${story.crew}.',
     ArcadeStoryPhase.homecoming when progress < .5 =>
       bosses > 0
-          ? 'The forge has fallen. ${story.crew} are following your light home.'
+          ? '${story.bossName} has fallen. ${story.crew} are following your light home.'
           : sectors > 0
           ? 'An escape route is open. Guide ${story.crew} home.'
           : 'The crew found shelter ahead. Ride with them toward home.',

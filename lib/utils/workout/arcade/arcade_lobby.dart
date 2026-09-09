@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../workout_parser.dart';
-import 'arcade_golem_art.dart';
+import 'arcade_enemy_art.dart';
 import 'arcade_lobby_workout.dart';
 import 'arcade_rider_appearance.dart';
 import 'arcade_rider_art.dart';
@@ -27,6 +27,7 @@ class ArcadeLobby extends StatefulWidget {
     required this.onFtp,
     required this.onSelect,
     this.onBrowse,
+    this.onJourney,
     this.loadChoices = ArcadeLobbyWorkout.loadChoices,
   });
 
@@ -41,6 +42,7 @@ class ArcadeLobby extends StatefulWidget {
   final VoidCallback onFtp;
   final ValueChanged<ArcadeLobbyWorkout> onSelect;
   final VoidCallback? onBrowse;
+  final VoidCallback? onJourney;
   final Future<List<ArcadeLobbyWorkout>> Function() loadChoices;
 
   @override
@@ -118,7 +120,7 @@ class _ArcadeLobbyState extends State<ArcadeLobby> {
         ),
         const SizedBox(height: 10),
         Text(
-          'The Gear Golem has its sights on ${widget.story.stolen}. '
+          '${widget.story.bossName} has its sights on ${widget.story.stolen}. '
           '${widget.story.crew} need a rider.',
           style: const TextStyle(color: Color(0xffc3cde0), height: 1.4),
         ),
@@ -126,13 +128,25 @@ class _ArcadeLobbyState extends State<ArcadeLobby> {
           height: wide ? 172 : 138,
           width: double.infinity,
           child: RepaintBoundary(
-            child: CustomPaint(painter: _LaunchArt(widget.rider)),
+            child: CustomPaint(painter: _LaunchArt(widget.rider, widget.story)),
           ),
         ),
-        OutlinedButton.icon(
-          onPressed: widget.onCustomize,
-          icon: const Icon(Icons.checkroom_rounded, size: 18),
-          label: const Text('Style your rider'),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: widget.onCustomize,
+              icon: const Icon(Icons.checkroom_rounded, size: 18),
+              label: const Text('Style your rider'),
+            ),
+            if (widget.onJourney != null)
+              TextButton.icon(
+                onPressed: widget.onJourney,
+                icon: const Icon(Icons.explore_rounded, size: 18),
+                label: const Text('Explore six worlds'),
+              ),
+          ],
         ),
         const SizedBox(height: 10),
         const Text(
@@ -285,9 +299,11 @@ class _ArcadeLobbyState extends State<ArcadeLobby> {
     children: [
       Icon(icon, size: 16, color: arcadeMint),
       const SizedBox(width: 5),
-      Text(
-        text,
-        style: const TextStyle(fontSize: 12, color: Color(0xffc3cde0)),
+      Flexible(
+        child: Text(
+          text,
+          style: const TextStyle(fontSize: 12, color: Color(0xffc3cde0)),
+        ),
       ),
     ],
   );
@@ -451,7 +467,8 @@ class _ArcadeLobbyState extends State<ArcadeLobby> {
 
 /// A launch poster, not a running road. Reuses the actual rider/monster art.
 class _LaunchArt extends CustomPainter {
-  const _LaunchArt(this.rider);
+  const _LaunchArt(this.rider, this.story);
+  final ArcadeStory story;
   final ArcadeRiderAppearance rider;
 
   @override
@@ -479,7 +496,7 @@ class _LaunchArt extends CustomPainter {
     c.save();
     c.translate(83, -10);
     c.scale(.85);
-    ArcadeGolemArt.paint(c, Offset.zero, 0);
+    ArcadeEnemyArt.paint(c, story.level.bossStyle, 0);
     c.restore();
     final plinth = Path()
       ..moveTo(-151, 46)
@@ -508,7 +525,8 @@ class _LaunchArt extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _LaunchArt old) => old.rider != rider;
+  bool shouldRepaint(covariant _LaunchArt old) =>
+      old.rider != rider || old.story.variant != story.variant;
 }
 
 class _WorkoutProfile extends CustomPainter {

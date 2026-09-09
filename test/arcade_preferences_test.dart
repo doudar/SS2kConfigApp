@@ -50,4 +50,19 @@ void main() {
     expect(preferences.effectsEnabled, isFalse);
     await Future.wait(writes);
   });
+  test(
+    'last started story survives reload independently of audio and mode',
+    () async {
+      await ArcadePreferences.saveMusic(true);
+      await ArcadePreferences.saveLastStory(4);
+      await (await SharedPreferences.getInstance()).reload();
+      final saved = await ArcadePreferences.load();
+      expect(saved.lastStoryVariant, 4);
+      expect(saved.musicEnabled, true);
+      SharedPreferences.setMockInitialValues({
+        'workout_arcade_last_story': 'broken',
+      });
+      expect((await ArcadePreferences.load()).lastStoryVariant, isNull);
+    },
+  );
 }

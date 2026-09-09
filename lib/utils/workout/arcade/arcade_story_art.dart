@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'arcade_story.dart';
+import 'arcade_levels.dart';
 import 'arcade_golem_art.dart';
+import 'arcade_story_villain_art.dart';
 import 'arcade_cage_art.dart';
 import 'arcade_rider_art.dart';
 import 'arcade_rider_appearance.dart';
@@ -19,11 +21,8 @@ class ArcadeStoryArt {
     Curves.easeInOut.transform(progress.clamp(0.0, 1.0)),
   )!;
 
-  static Color color(int variant) => const [
-    Color(0xffffce73),
-    Color(0xff81dfff),
-    Color(0xffff9bbd),
-  ][variant % 3];
+  static Color color(int variant) =>
+      Color(ArcadeLevel.forStoryVariant(variant).accentArgb);
 
   static void line(
     Canvas c,
@@ -302,6 +301,28 @@ class ArcadeStoryArt {
     c.restore();
   }
 
+  static void villain(
+    Canvas c,
+    Offset p,
+    double clock, {
+    required ArcadeStory story,
+    bool speaking = false,
+    bool running = false,
+  }) {
+    c.save();
+    c.translate(p.dx, p.dy);
+    c.scale(.62);
+    ArcadeStoryVillainArt.paint(
+      c,
+      Offset.zero,
+      clock,
+      style: story.level.bossStyle,
+      speaking: speaking,
+      running: running,
+    );
+    c.restore();
+  }
+
   static void relic(Canvas c, Offset p, int variant) {
     c.save();
     c.translate(p.dx, p.dy);
@@ -318,7 +339,7 @@ class ArcadeStoryArt {
       ..color = tint
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
-    switch (variant % 3) {
+    switch (variant % 6) {
       case 0:
         c.drawCircle(Offset.zero, 7, Paint()..color = gold);
         for (var i = 0; i < 8; i++) {
@@ -339,12 +360,82 @@ class ArcadeStoryArt {
         c.drawCircle(Offset.zero, 4, Paint()..color = Colors.white);
         line(c, const Offset(-5, -12), const Offset(0, -17), tint, 2);
         line(c, const Offset(0, -17), const Offset(5, -12), tint, 2);
-      default:
+      case 2:
         for (final x in [-8.0, 8.0]) {
           c.drawCircle(Offset(x, 0), 8, stroke);
           line(c, Offset(x - 6, -4), Offset(x + 6, 4), tint, 1);
           line(c, Offset(x - 6, 4), Offset(x + 6, -4), tint, 1);
         }
+      case 3:
+        final pod = Path()
+          ..moveTo(0, -14)
+          ..cubicTo(13, -7, 13, 8, 0, 14)
+          ..cubicTo(-13, 8, -13, -7, 0, -14)
+          ..close();
+        c.drawPath(pod, Paint()..color = Color.lerp(ink, tint, .3)!);
+        c.drawPath(pod, stroke);
+        line(c, const Offset(0, 10), const Offset(0, -7), tint, 1.5);
+        for (final side in [-1.0, 1.0]) {
+          final leaf = Path()
+            ..moveTo(0, -4)
+            ..quadraticBezierTo(side * 2, -15, side * 12, -13)
+            ..quadraticBezierTo(side * 10, -3, 0, -4)
+            ..close();
+          c.drawPath(leaf, Paint()..color = tint);
+        }
+        c.drawCircle(const Offset(0, 3), 3.5, Paint()..color = gold);
+        c.drawCircle(const Offset(-1, 2), 1.2, Paint()..color = Colors.white);
+      case 4:
+        final hearth = Path()
+          ..addPolygon(const [
+            Offset(-13, 12),
+            Offset(-10, -2),
+            Offset(0, -13),
+            Offset(10, -2),
+            Offset(13, 12),
+          ], true);
+        c.drawPath(hearth, Paint()..color = Color.lerp(ink, tint, .2)!);
+        c.drawPath(hearth, stroke);
+        final flame = Path()
+          ..moveTo(0, 10)
+          ..cubicTo(-13, 6, -4, -3, -3, -8)
+          ..quadraticBezierTo(-2, -4, 1, -2)
+          ..quadraticBezierTo(5, -9, 3, -14)
+          ..cubicTo(15, -2, 11, 9, 0, 10)
+          ..close();
+        c.drawPath(flame, Paint()..color = const Color(0xffffa45f));
+        c.drawPath(
+          Path()
+            ..moveTo(0, 8)
+            ..quadraticBezierTo(-5, 4, 1, -3)
+            ..quadraticBezierTo(6, 5, 0, 8)
+            ..close(),
+          Paint()..color = gold,
+        );
+        line(c, const Offset(-14, 14), const Offset(14, 14), tint, 3);
+      default:
+        final gear = Path()
+          ..addPolygon(
+            List.generate(32, (i) {
+              final angle = i * math.pi / 16;
+              final radius = i % 4 < 2 ? 15.0 : 12.0;
+              return Offset(math.cos(angle), math.sin(angle)) * radius;
+            }),
+            true,
+          );
+        c.drawPath(gear, Paint()..color = Color.lerp(ink, tint, .2)!);
+        c.drawPath(gear, stroke);
+        final star = Path()
+          ..addPolygon(
+            List.generate(10, (i) {
+              final angle = -math.pi / 2 + i * math.pi / 5;
+              return Offset(math.cos(angle), math.sin(angle)) *
+                  (i.isEven ? 9 : 4);
+            }),
+            true,
+          );
+        c.drawPath(star, Paint()..color = gold);
+        c.drawCircle(Offset.zero, 2, Paint()..color = Colors.white);
     }
     c.restore();
   }
@@ -385,13 +476,20 @@ class ArcadeStoryArt {
       ArcadeCageArt.chain(
         c,
         const Offset(51, -15),
-        const Offset(65, -10),
+        const Offset(88, -18) +
+            ArcadeStoryVillainArt.towAnchor(
+                  frame.story.level.bossStyle,
+                  clock,
+                  running: running,
+                ) *
+                .62,
         const Color(0xffa2819b),
       );
-      golem(
+      villain(
         c,
         const Offset(88, -18),
         clock,
+        story: frame.story,
         speaking: speaking,
         running: running,
       );

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_cues.dart';
+import 'package:ss2kconfigapp/utils/workout/arcade/arcade_drones.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_music.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_session.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_sound_effects.dart';
@@ -62,6 +63,18 @@ class _Music implements ArcadeMusicOutput {
 }
 
 void main() {
+  test('every enemy has its own attack cue below reward priority', () {
+    final cues = ArcadeDroneStyle.values.map(ArcadeCue.attackFor).toList();
+    expect(cues.toSet().length, ArcadeDroneStyle.values.length);
+    expect(cues.map((cue) => cue.asset).toSet().length, cues.length);
+    for (final style in ArcadeDroneStyle.values) {
+      final cue = ArcadeCue.attackFor(style);
+      expect(cue.asset, 'sounds/arcade_fx_${style.name}Attack.wav');
+      expect(cue.priority, lessThan(ArcadeCue.sectorClear.priority));
+      expect(cue.priority, greaterThan(ArcadeCue.pickup.priority));
+    }
+  });
+
   test('music resumes each biome and ignores duplicate updates', () async {
     final output = _Music();
     final music = ArcadeMusic(

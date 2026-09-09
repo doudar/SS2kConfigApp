@@ -41,8 +41,11 @@ class _ArcadeFinaleState extends State<ArcadeFinale>
   bool _started = false;
   bool get _recovered =>
       widget.session.bossesDefeated > 0 || widget.session.cleared.isNotEmpty;
-  ArcadeDialogue get _dialogue =>
-      ArcadeDialogue.ending(_chapter, recovered: _recovered);
+  ArcadeDialogue get _dialogue => ArcadeDialogue.ending(
+    _chapter,
+    recovered: _recovered,
+    story: widget.session.story,
+  );
 
   @override
   void initState() {

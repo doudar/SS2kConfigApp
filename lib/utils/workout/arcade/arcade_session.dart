@@ -6,6 +6,7 @@ import 'arcade_road.dart';
 import 'arcade_story.dart';
 import 'arcade_drones.dart';
 import 'arcade_rider_appearance.dart';
+import 'arcade_levels.dart';
 
 enum ArcadeBiome { grove, coast, neon, volcano }
 
@@ -21,7 +22,7 @@ extension ArcadeBiomeStory on ArcadeBiome {
     ArcadeBiome.grove => 'Ease into the target. Collect forest energy.',
     ArcadeBiome.coast => 'Find your rhythm. Chase the wheel drones.',
     ArcadeBiome.neon => 'Hold your line. Outride the neon sentinels.',
-    ArcadeBiome.volcano => 'Hold the target to break the Gear Golem!',
+    ArcadeBiome.volcano => 'Hold the target to break the forge guardian!',
   };
 }
 
@@ -48,6 +49,23 @@ class ArcadeSession {
   bool droneInteractionEnabled = false;
   ArcadeStory story = ArcadeStory.random();
   bool openingSeen = false;
+  int? lastStoryVariant;
+  bool _storyChosenForRide = false;
+
+  void restoreStoryPreference(int? variant) {
+    lastStoryVariant = variant;
+    if (!openingSeen && !_storyChosenForRide) {
+      final resuming = (_lastTime ?? 0) > 0 && variant != null;
+      story = resuming
+          ? ArcadeStory(variant)
+          : ArcadeStory.random(excluding: variant);
+      if (resuming) {
+        openingSeen = true;
+        _storyChosenForRide = true;
+      }
+    }
+  }
+
   ArcadeStory? _stagedOpening;
   void stageOpening(ArcadeStory opening) => _stagedOpening = opening;
   void cancelStagedOpening() => _stagedOpening = null;
@@ -68,6 +86,10 @@ class ArcadeSession {
   bool onTarget = false;
   bool hasSignal = false;
   bool finished = false;
+  double _riddenSeconds = 0;
+  double get riddenSeconds => _riddenSeconds;
+  ArcadeLevel get level => ArcadeLevel.forStoryVariant(story.variant);
+  int get difficultyIndex => ArcadeDifficulty.forRideSeconds(_riddenSeconds);
   String? reward;
   double _rewardUntil = 0;
   double _energySeconds = 0;
@@ -114,7 +136,8 @@ class ArcadeSession {
           if (cleared.add(sector)) {
             bossesDefeated++;
             _points += 500;
-            reward = 'GEAR GOLEM DEFEATED  +500';
+            reward =
+                '${drones.snapshot().targetName.toUpperCase()} DEFEATED  +500';
             _rewardUntil = seconds + 5;
             _cues.add(ArcadeCue.bossDefeat);
           }
@@ -122,13 +145,10 @@ class ArcadeSession {
         case ArcadeDroneEvent.bossCounter:
           final stolen = math.min(score, ArcadeDrones.theftPoints);
           _points = math.max(0.0, _points - ArcadeDrones.theftPoints);
-          reward = event == ArcadeDroneEvent.bossCounter
-              ? 'GOLEM COUNTERATTACK · −$stolen POINTS'
-              : stolen > 0
-              ? 'DRONE STOLE $stolen POINTS!'
-              : 'DRONE ESCAPED · NO POINTS TO STEAL';
+          final enemy = drones.snapshot().style;
+          reward = '${enemy.attackName.toUpperCase()} · −$stolen POINTS';
           _rewardUntil = seconds + 4;
-          _cues.add(ArcadeCue.crewAlarm);
+          _cues.add(ArcadeCue.attackFor(enemy));
       }
     }
   }
@@ -179,6 +199,7 @@ class ArcadeSession {
     required bool freshSignal,
     double ftp = 200,
     bool endless = false,
+    double? riddenSeconds,
   }) {
     road.update(
       segments: segments,
@@ -200,7 +221,8 @@ class ArcadeSession {
         (_lastTime != null && seconds < _lastTime!)) {
       _points = 0;
       drones.reset();
-      story = ArcadeStory.random();
+      story = ArcadeStory.random(excluding: lastStoryVariant);
+      _storyChosenForRide = false;
       openingSeen = false;
       streakSeconds = 0;
       _offTargetSeconds = 0;
@@ -214,14 +236,27 @@ class ArcadeSession {
       _wasPlaying = false;
       _skip = false;
       _energySeconds = 0;
+      _riddenSeconds = 0;
     }
     // Adopt the cast shown before Play, including when the controller rewinds
     // a completed workout on restart. Cancelled cutscenes never reset rewards.
     if (playing && _stagedOpening != null) {
       story = _stagedOpening!;
       openingSeen = true;
+      lastStoryVariant = story.variant;
+      _storyChosenForRide = true;
       _stagedOpening = null;
     }
+    if (!_storyChosenForRide &&
+        seconds > 0 &&
+        !playing &&
+        lastStoryVariant != null) {
+      // A restored paused workout keeps the cast from its last actual start.
+      story = ArcadeStory(lastStoryVariant!);
+      openingSeen = true;
+      _storyChosenForRide = true;
+    }
+    if (playing) _storyChosenForRide = true;
     _segments = segments;
     final previous = _lastTime;
     final wasPlaying = _wasPlaying;
@@ -240,6 +275,12 @@ class ArcadeSession {
                 (watts - target).abs() <= math.max(10, target * .10)));
     if (seconds > _rewardUntil) reward = null;
     final delta = previous == null ? 0.0 : seconds - previous;
+    if (riddenSeconds != null && riddenSeconds.isFinite) {
+      // The controller excludes skipped intervals and restores resumed time.
+      _riddenSeconds = math.max(0, riddenSeconds);
+    } else if (!_skip && wasPlaying && playing && delta > 0 && delta <= 1.5) {
+      _riddenSeconds += delta;
+    }
     final currentBiome = biomeFor(segments[index]);
     final chapter = story.frame(
       seconds: seconds,
@@ -260,11 +301,12 @@ class ArcadeSession {
       onTarget: onTarget,
       sector: index,
       style: currentBiome == ArcadeBiome.volcano
-          ? ArcadeDroneStyle.golem
+          ? level.bossStyle
           : currentBiome == ArcadeBiome.neon
           ? ArcadeDroneStyle.sentinel
           : ArcadeDroneStyle.wheel,
       skipped: _skip,
+      levelIndex: difficultyIndex,
       bossHits: (segments[index].duration / 30).ceil().clamp(1, 6),
     );
     if (!_skip &&

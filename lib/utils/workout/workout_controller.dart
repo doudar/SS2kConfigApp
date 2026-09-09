@@ -503,6 +503,12 @@ class WorkoutController extends ChangeNotifier {
           _workoutProgressTime < segmentStartTime + segments[i].duration) {
         // If this is the last segment, stop the workout
         if (i == segments.length - 1) {
+          // Completing the route by skipping must not count its remaining
+          // duration as ridden time, including Arcade enemy difficulty.
+          _skippedTime += (totalDuration - _workoutProgressTime).clamp(
+            0,
+            double.infinity,
+          );
           progressPosition = 1.0;
           _workoutProgressTime = totalDuration;
           isPlaying = false;

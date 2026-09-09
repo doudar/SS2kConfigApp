@@ -204,7 +204,16 @@ void main() {
       ];
       sample(0);
       expect(road.snapshot().spans[1].length, closeTo(12, 1e-9));
-      expect(road.snapshot().pieces(9, 30).toList(), hasLength(3));
+      final pieces = road.snapshot().pieces(9, 30).toList();
+      expect(pieces.first.start, 9);
+      expect(pieces.last.end, 30);
+      expect(pieces.map((piece) => piece.end), containsAll([10, 14, 22]));
+      for (var index = 0; index < pieces.length; index++) {
+        expect(pieces[index].end, greaterThan(pieces[index].start));
+        expect(pieces[index].startPower.isFinite, isTrue);
+        expect(pieces[index].endPower.isFinite, isTrue);
+        if (index > 0) expect(pieces[index].start, pieces[index - 1].end);
+      }
       segments = [];
       sample(0);
       expect(road.snapshot().pieces(-12, 12), isEmpty);

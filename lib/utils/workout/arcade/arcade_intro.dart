@@ -7,6 +7,7 @@ import 'arcade_session.dart';
 import 'arcade_sound_effects.dart';
 import 'arcade_story.dart';
 import 'arcade_story_art.dart';
+import 'arcade_story_villain_art.dart';
 import 'arcade_rider_appearance.dart';
 
 /// A pre-ride cinematic. It never starts or changes the workout controller.
@@ -134,11 +135,11 @@ class _ArcadeIntroState extends State<ArcadeIntro>
     0 =>
       'A new day in ${widget.story.home}. ${widget.story.crew} are getting ready to ride.',
     1 =>
-      'The Gear Golem strikes! It steals ${widget.story.stolen} and traps ${widget.story.crew}.',
+      '${widget.story.bossName} strikes! It steals ${widget.story.stolen} and traps ${widget.story.crew}.',
     2 =>
-      'The Golem is escaping to the Crank Forge. There is still time to bring everyone home.',
+      '${widget.story.bossName} is escaping through ${widget.story.level.title}. There is still time to bring everyone home.',
     _ =>
-      'Chase the sparks. Ride at your target to power the blaster, break the Golem and save the crew.',
+      'Chase the sparks. Ride at your target to power the blaster, stop ${widget.story.bossName} and save the crew.',
   };
 
   @override
@@ -376,10 +377,20 @@ class _IntroPainter extends CustomPainter {
       ((progress - .20) / .14).clamp(0.0, 1.0),
     );
     final monster = Offset(100 + (exitX - 100) * (1 - approach), -35);
+    final bossStyle = story.level.bossStyle;
+    final villainRunning = approach < 1 || escape > 0;
+    final villainClock = progress * 16;
+    final villainHead =
+        ArcadeStoryVillainArt.head(
+          bossStyle,
+          villainClock,
+          running: villainRunning,
+        ) *
+        .62;
     speakerHead =
         convoy +
         (dialogue.speaker == ArcadeSpeaker.golem
-            ? monster + const Offset(0, -24)
+            ? monster + villainHead
             : const Offset(0, -35));
     c.save();
     c.translate(convoy.dx, convoy.dy);
@@ -404,7 +415,13 @@ class _IntroPainter extends CustomPainter {
       ArcadeCageArt.chain(
         c,
         cage + const Offset(51, -23),
-        monster + const Offset(-27, 12),
+        monster +
+            ArcadeStoryVillainArt.towAnchor(
+                  bossStyle,
+                  villainClock,
+                  running: villainRunning,
+                ) *
+                .62,
         const Color(0xffa2819b),
       );
     }
@@ -412,12 +429,13 @@ class _IntroPainter extends CustomPainter {
       c.save();
       c.translate(monster.dx, monster.dy);
       if (approach < 1) c.scale(-1, 1);
-      ArcadeStoryArt.golem(
+      ArcadeStoryArt.villain(
         c,
         Offset.zero,
         progress * 16,
+        story: story,
         speaking: dialogue.speaker == ArcadeSpeaker.golem,
-        running: approach < 1 || escape > 0,
+        running: villainRunning,
       );
       c.restore();
     }

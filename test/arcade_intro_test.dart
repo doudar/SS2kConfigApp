@@ -10,6 +10,7 @@ void main() {
     WidgetTester tester,
     void Function(bool) completed, {
     bool reduced = false,
+    ArcadeStory? story,
   }) async {
     final session = ArcadeSession()..effectsEnabled = false;
     await tester.pumpWidget(
@@ -22,7 +23,11 @@ void main() {
           builder: (context) => Scaffold(
             body: TextButton(
               onPressed: () async => completed(
-                await ArcadeIntro.show(context, session, session.story),
+                await ArcadeIntro.show(
+                  context,
+                  session,
+                  story ?? ArcadeStory(0),
+                ),
               ),
               child: const Text('PLAY'),
             ),
@@ -60,19 +65,60 @@ void main() {
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
-    await open(tester, (_) {}, reduced: true);
-    expect(find.bySemanticsLabel(RegExp('THE CREW:')), findsOneWidget);
-    await tester.pump(const Duration(seconds: 4));
-    expect(find.bySemanticsLabel(RegExp('GEAR GOLEM:')), findsOneWidget);
-    await tester.pump(const Duration(seconds: 4));
-    expect(
-      find.bySemanticsLabel(RegExp('Help! Follow the sparks!')),
-      findsOneWidget,
-    );
-    await tester.pump(const Duration(seconds: 4));
-    expect(find.bySemanticsLabel(RegExp('YOU: Hang on, crew')), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    try {
+      await open(tester, (_) {}, reduced: true);
+      expect(find.bySemanticsLabel(RegExp('THE CREW:')), findsOneWidget);
+      await tester.pump(const Duration(seconds: 4));
+      expect(find.bySemanticsLabel(RegExp('GEAR GOLEM:')), findsOneWidget);
+      await tester.pump(const Duration(seconds: 4));
+      expect(
+        find.bySemanticsLabel(RegExp('Help! Follow the sparks!')),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 4));
+      expect(
+        find.bySemanticsLabel(RegExp('YOU: Hang on, crew')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('each episode presents its own villain throughout the opening', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      for (var variant = 0; variant < 6; variant++) {
+        final story = ArcadeStory(variant);
+        await open(tester, (_) {}, story: story, reduced: true);
+        await tester.pump(const Duration(seconds: 4));
+        expect(
+          find.bySemanticsLabel(RegExp('${story.bossName.toUpperCase()}:')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            '${story.bossName} strikes! It steals ${story.stolen} and traps ${story.crew}.',
+          ),
+          findsOneWidget,
+        );
+        await tester.pump(const Duration(seconds: 4));
+        expect(
+          find.text(
+            '${story.bossName} is escaping through ${story.level.title}. There is still time to bring everyone home.',
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.byKey(const ValueKey('arcade-intro-start')));
+        await tester.pumpAndSettle();
+      }
+    } finally {
+      semantics.dispose();
+    }
   });
 
   testWidgets('backgrounding pauses the opening; completion starts once', (

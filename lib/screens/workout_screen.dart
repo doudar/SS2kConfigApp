@@ -161,6 +161,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
         target: deviceData.ftmsData.targetERG.toDouble(),
         ftp: _workoutController.ftpValue,
         endless: _workoutController.isUnlimitedFreeRide,
+        riddenSeconds: _workoutController.elapsedSeconds.toDouble(),
         freshSignal:
             lastUpdate != null &&
             DateTime.now().difference(lastUpdate) < const Duration(seconds: 3),
@@ -231,6 +232,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     _arcadeSession.musicEnabled = preferences.musicEnabled;
     _arcadeSession.effectsEnabled = preferences.effectsEnabled;
     _arcadeSession.rider = preferences.rider;
+    _arcadeSession.restoreStoryPreference(preferences.lastStoryVariant);
     _setArcadeMode(preferences.arcadeMode, persist: false);
     setState(() => _arcadePreferencesLoaded = true);
   }

@@ -10,10 +10,13 @@ import 'arcade_story_art.dart';
 import 'arcade_drones.dart';
 import 'arcade_drone_art.dart';
 import 'arcade_segment_profile.dart';
-import 'arcade_golem_art.dart';
+import 'arcade_story_villain_art.dart';
 import 'arcade_checkpoint_art.dart';
 import 'arcade_cage_art.dart';
 import 'arcade_terrain.dart';
+import 'arcade_scenery.dart';
+import 'arcade_levels.dart';
+import 'arcade_enemy_art.dart';
 
 const arcadeMint = Color(0xff74ffd3);
 const arcadeGold = Color(0xffffd477);
@@ -45,6 +48,8 @@ class ArcadeWorldPainter extends CustomPainter {
     this.reducedMotion = false,
     this.escapeSeconds,
     this.showCheckpoints = true,
+    this.levelIndex = 0,
+    this.ambientSeconds,
     this.rider = const ArcadeRiderAppearance(),
   });
 
@@ -65,6 +70,10 @@ class ArcadeWorldPainter extends CustomPainter {
   // Null before the opening or for an endless ride with no destination.
   final double? escapeSeconds;
   final bool showCheckpoints;
+  final int levelIndex;
+
+  /// The same bounded between-tick interpolation used by the road and combat.
+  final double? ambientSeconds;
   final ArcadeRiderAppearance rider;
 
   double? get _escapeDuration {
@@ -84,6 +93,10 @@ class ArcadeWorldPainter extends CustomPainter {
   }
 
   Color get accent => biomeColor(biome);
+  ArcadeDroneStyle get _bossStyle => ArcadeLevel
+      .values[levelIndex.clamp(0, ArcadeLevel.values.length - 1)]
+      .bossStyle;
+  Color get _skyAccent => Color.lerp(accent, _sceneryTint, .9)!;
   late final double _heightScale =
       1.6 /
       segments.fold<double>(
@@ -195,7 +208,7 @@ class ArcadeWorldPainter extends CustomPainter {
           end: Alignment.bottomCenter,
           colors: [
             const Color(0xff10182f),
-            Color.lerp(arcadeInk, accent, .12)!,
+            Color.lerp(arcadeInk, _skyAccent, .18)!,
             arcadeInk,
           ],
         ).createShader(Offset.zero & size),
@@ -215,7 +228,7 @@ class ArcadeWorldPainter extends CustomPainter {
     canvas.drawCircle(
       moon,
       47,
-      Paint()..color = accent.withValues(alpha: .045),
+      Paint()..color = _skyAccent.withValues(alpha: .045),
     );
     canvas.drawCircle(
       moon,
@@ -223,8 +236,8 @@ class ArcadeWorldPainter extends CustomPainter {
       Paint()
         ..shader = LinearGradient(
           colors: [
-            accent.withValues(alpha: .55),
-            accent.withValues(alpha: .04),
+            _skyAccent.withValues(alpha: .55),
+            _skyAccent.withValues(alpha: .04),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -236,12 +249,17 @@ class ArcadeWorldPainter extends CustomPainter {
     canvas.drawOval(
       const Rect.fromLTWH(-60, -13, 120, 26),
       Paint()
-        ..color = accent.withValues(alpha: .30)
+        ..color = _skyAccent.withValues(alpha: .30)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
     canvas.restore();
     _workoutHills(canvas, size);
+    ArcadeAmbient.paint(
+      canvas,
+      size,
+      ArcadeAmbient.at(ambientSeconds ?? seconds, reducedMotion: reducedMotion),
+    );
 
     final scale = _scaleFor(size);
     final worldOrigin = _originFor(size);
@@ -278,43 +296,43 @@ class ArcadeWorldPainter extends CustomPainter {
         );
       }
       final seed = position.floor() - tile;
-      if (seed % 3 == 0) {
-        _block(
+      // Fixed sector starts keep the deeper scenery anchored when power changes.
+      final spanStart = _sceneryEntryAt(worldEnd - .5);
+      final depth = ArcadeScenery.depth(worldEnd - spanStart);
+      for (var side = 0; side < 2; side++) {
+        final variation = ArcadeScenery.seed(seed, side + 1);
+        // A staggered 3-tile grid with occasional empty islands keeps the road
+        // readable. At most two props per visible tile, regardless of ride length.
+        if ((seed + side) % 3 != 0 || variation % 5 == 0) continue;
+        final v = side == 0 ? -3.6 : 2.7;
+        final islandColor = Color.lerp(_islandTint, color, .12)!;
+        _block(canvas, u, v, 1.25, 1.15, base - 4, islandColor);
+        final p = _iso(u + .5, v + .5, base);
+        ArcadeScenery.paint(
           canvas,
-          u,
-          -3.3,
-          1.4,
-          1.3,
-          base - 3,
-          Color.lerp(color, arcadeInk, .6)!,
+          p,
+          kind: ArcadeScenery.kind(
+            biome: tileBiome,
+            tile: seed,
+            side: side,
+            depth: depth,
+            levelIndex: levelIndex,
+          ),
+          accent: Color.lerp(color, _sceneryTint, .9)!,
+          variant: variation,
+          animation: animation,
+          reducedMotion: reducedMotion,
+          levelIndex: levelIndex,
         );
-        final p = _iso(u + .5, -2.8, base);
-        if (tileBiome == ArcadeBiome.grove || tileBiome == ArcadeBiome.coast) {
-          _tree(canvas, p, color, seed % 2 == 0 ? 1 : .7);
-        } else {
-          _crystal(canvas, p, color, 35 + seed.abs() % 35);
+        if (side == 1 && variation % 3 == 0) {
+          _line(
+            canvas,
+            p + const Offset(0, 35),
+            p + const Offset(0, 81),
+            color.withValues(alpha: .12),
+            2,
+          );
         }
-      }
-      if (seed % 4 == 0) {
-        _block(
-          canvas,
-          u,
-          2.5,
-          1,
-          1,
-          base - 5,
-          Color.lerp(color, arcadeInk, .65)!,
-        );
-        final p = _iso(u + .4, 2.9, base);
-        _crystal(canvas, p, color, 22);
-        // Falling light beneath floating islands.
-        _line(
-          canvas,
-          p + const Offset(0, 35),
-          p + const Offset(0, 92),
-          color.withValues(alpha: .12),
-          3,
-        );
       }
       if (tile < -1 && tile > -9 && seed % 2 == 0) {
         final p = _iso(
@@ -446,7 +464,11 @@ class ArcadeWorldPainter extends CustomPainter {
     );
     final tint = ArcadeStoryArt.color(story?.story.variant ?? 0);
     final clock = reducedMotion ? 0.0 : escapeSeconds!;
-    final hand = ArcadeGolemArt.runningHand(clock, -1);
+    final hand = ArcadeStoryVillainArt.towAnchor(
+      _bossStyle,
+      clock,
+      running: true,
+    );
     ArcadeCageArt.chain(
       canvas,
       cageFeet + const Offset(-35.7, -16.1),
@@ -457,7 +479,13 @@ class ArcadeWorldPainter extends CustomPainter {
     canvas.translate(feet.dx, feet.dy);
     // Undo the world's reflection so the runner faces the same way as the bike.
     canvas.scale(-.62, .62);
-    ArcadeGolemArt.paint(canvas, const Offset(0, -56), clock, running: true);
+    ArcadeStoryVillainArt.paint(
+      canvas,
+      const Offset(0, -56),
+      clock,
+      style: _bossStyle,
+      running: true,
+    );
     canvas.restore();
     canvas.save();
     canvas.translate(cageFeet.dx, cageFeet.dy);
@@ -543,7 +571,8 @@ class ArcadeWorldPainter extends CustomPainter {
         ..close();
       canvas.drawPath(
         silhouette,
-        Paint()..color = Color.lerp(arcadeInk, accent, .045 + layer * .025)!,
+        Paint()
+          ..color = Color.lerp(arcadeInk, _skyAccent, .045 + layer * .025)!,
       );
     }
 
@@ -552,7 +581,7 @@ class ArcadeWorldPainter extends CustomPainter {
     canvas.drawPath(
       outline,
       Paint()
-        ..color = accent.withValues(alpha: .20)
+        ..color = _skyAccent.withValues(alpha: .20)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
     );
@@ -602,11 +631,12 @@ class ArcadeWorldPainter extends CustomPainter {
           : 0.0;
       final opacity =
           (run / .15).clamp(0.0, 1.0) * ((1 - run) / .15).clamp(0.0, 1.0);
-      ArcadeGolemArt.runningOutline(
+      ArcadeStoryVillainArt.outline(
         canvas,
         Offset.lerp(start, end, t)!,
         reducedMotion ? 0 : escapeSeconds!,
-        const Color(0xffff666f).withValues(alpha: opacity),
+        style: _bossStyle,
+        color: const Color(0xffff666f).withValues(alpha: opacity),
         slope: math.atan2(end.dy - start.dy, end.dx - start.dx),
       );
     }
@@ -710,34 +740,48 @@ class ArcadeWorldPainter extends CustomPainter {
     );
   }
 
-  void _tree(Canvas c, Offset p, Color color, double scale) {
-    _line(c, p, p + Offset(0, -30 * scale), const Color(0xff82677a), 5);
-    for (var i = 0; i < 3; i++) {
-      final y = p.dy - 13 * scale - i * 14 * scale;
-      _polygon(c, [
-        Offset(p.dx, y - 28 * scale),
-        Offset(p.dx + 20 * scale, y),
-        Offset(p.dx - 20 * scale, y),
-      ], Color.lerp(color, arcadeInk, i * .14)!);
-    }
-  }
+  Color get _sceneryTint => Color(
+    ArcadeLevel
+        .values[levelIndex.clamp(0, ArcadeLevel.values.length - 1)]
+        .accentArgb,
+  );
 
-  void _crystal(Canvas c, Offset p, Color color, num height) {
-    _polygon(c, [
-      p,
-      p + const Offset(-11, -9),
-      p + Offset(-3, -height.toDouble()),
-      p + const Offset(10, -10),
-    ], color.withValues(alpha: .85));
-    _polygon(c, [
-      p,
-      p + Offset(-3, -height.toDouble()),
-      p + const Offset(10, -10),
-    ], Color.lerp(color, Colors.white, .25)!);
+  // Soil belongs to the journey world. ERG power still colors the road edges.
+  Color get _islandTint => const [
+    Color(0xff416952),
+    Color(0xff566333),
+    Color(0xffab7547),
+    Color(0xff668bab),
+    Color(0xff655086),
+    Color(0xff924d73),
+  ][levelIndex.clamp(0, 5)];
+
+  double _sceneryEntryAt(double distance) {
+    var low = 0;
+    var high = road.spans.length;
+    while (low < high) {
+      final middle = (low + high) ~/ 2;
+      if (road.spans[middle].end <= distance) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return road.spans.isEmpty
+        ? 0
+        : road.spans[math.min(low, road.spans.length - 1)].start;
   }
 
   void _boss(Canvas c, Offset p) {
-    ArcadeGolemArt.paint(c, p, animation, damage: charge);
+    c.save();
+    c.translate(p.dx, p.dy);
+    ArcadeEnemyArt.paint(
+      c,
+      _bossStyle,
+      reducedMotion ? 0 : animation,
+      damage: charge,
+    );
+    c.restore();
   }
 
   void _cyclist(Canvas c, Offset p) {

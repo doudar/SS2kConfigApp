@@ -157,7 +157,9 @@ void main() {
       controller.isPlaying = true;
       game.hasSignal = true;
       data.ftmsData.cadence = 60;
-      await tester.runAsync(() => controller.updateFTP(200));
+      // Mock preferences need no real I/O; keep notifications and their queued
+      // Arcade saves in the widget test's zone.
+      await controller.updateFTP(200);
       await tester.pump();
       ArcadeWorldPainter world() => tester
           .widgetList<CustomPaint>(find.byType(CustomPaint))
@@ -200,7 +202,9 @@ void main() {
         closeTo(.3 * math.pi, .001),
       );
       controller.isPlaying = false;
-      await tester.runAsync(() => controller.updateFTP(200));
+      // Mock preferences need no real I/O; keep notifications and their queued
+      // Arcade saves in the widget test's zone.
+      await controller.updateFTP(200);
       await tester.pump(const Duration(milliseconds: 100));
       expect(phase(), beforePause);
       expect(find.byKey(const ValueKey('arcade-lobby')), findsNothing);
@@ -245,6 +249,7 @@ void main() {
       final savedAudio = await ArcadePreferences.load();
       expect(savedAudio.musicEnabled, isTrue);
       expect(savedAudio.effectsEnabled, isFalse);
+      expect(savedAudio.lastStoryVariant, game.story.variant);
       expect(tester.takeException(), isNull);
       await tester.tap(find.byTooltip('How to play'));
       await tester.pumpAndSettle();
@@ -263,7 +268,9 @@ void main() {
         freshSignal: true,
       );
       controller.isPlaying = true;
-      await tester.runAsync(() => controller.updateFTP(200));
+      // Mock preferences need no real I/O; keep notifications and their queued
+      // Arcade saves in the widget test's zone.
+      await controller.updateFTP(200);
       void readyDrone({ArcadeDroneStyle style = ArcadeDroneStyle.wheel}) {
         for (var i = 0; i < 1200 && !game.drones.snapshot().ready; i++) {
           game.drones.update(

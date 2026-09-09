@@ -83,16 +83,19 @@ void main() {
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
-    await open(tester, () {}, reduced: true);
-    expect(find.bySemanticsLabel(RegExp('THE CREW: Look!')), findsOneWidget);
-    await tester.pump(const Duration(seconds: 4));
-    expect(find.bySemanticsLabel(RegExp('YOU: We made it')), findsOneWidget);
-    await tester.pump(const Duration(seconds: 4));
-    expect(
-      find.bySemanticsLabel(RegExp('Together all the way!')),
-      findsOneWidget,
-    );
-    expect(tester.takeException(), isNull);
+    try {
+      await open(tester, () {}, reduced: true);
+      expect(find.bySemanticsLabel(RegExp('THE CREW: Look!')), findsOneWidget);
+      await tester.pump(const Duration(seconds: 4));
+      expect(find.bySemanticsLabel(RegExp('YOU: We made it')), findsOneWidget);
+      await tester.pump(const Duration(seconds: 4));
+      expect(
+        find.bySemanticsLabel(RegExp('Together all the way!')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
   });
 }

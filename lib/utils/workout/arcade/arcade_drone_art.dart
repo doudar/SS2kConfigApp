@@ -1,7 +1,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'arcade_drones.dart';
-import 'arcade_golem_art.dart';
+import 'arcade_enemy_art.dart';
+import 'arcade_enemy_attacks.dart';
 
 /// The same pose drives drawing and pointer hit testing, including reduced
 /// motion, viewport scaling, banking and the interpolated workout clock.
@@ -22,13 +23,70 @@ class ArcadeDroneLayout {
     double fit(double value, double low, double high) =>
         low <= high ? value.clamp(low, high) : (low + high) / 2;
     Offset hover(double clock) {
+      final level = frame.levelIndex.clamp(0, 5);
+      final pace = 1 + level * .10;
+      final t = clock * pace;
+      final amplitude = 18.0 + level * 7;
+      final phase = frame.serial.toDouble();
+      final dart = math.sin(t * 1.7 + phase);
+      final drift = switch (frame.style) {
+        ArcadeDroneStyle.wheel => Offset(
+          math.sin(t * 1.6 + phase) * amplitude,
+          math.sin(t * 2.3) * (8 + level * 2),
+        ),
+        // Broad patrol sweeps with a quiet vertical hover.
+        ArcadeDroneStyle.sentinel => Offset(
+          math.sin(t * .85 + phase) * amplitude,
+          math.sin(t * 1.2) * (4 + level),
+        ),
+        // Low scuttling, with two small steps per sideways stride.
+        ArcadeDroneStyle.beetle => Offset(
+          math.sin(t * 1.15 + phase) * amplitude,
+          -math.pow(math.sin(t * 2.3), 2).toDouble() * (8 + level * 2),
+        ),
+        // Smooth dart / pause / dart motion instead of frame-random jitter.
+        ArcadeDroneStyle.wasp => Offset(
+          dart * (1.5 - .5 * dart * dart) * amplitude,
+          math.sin(t * 3.4 + phase) * (10 + level * 2),
+        ),
+        ArcadeDroneStyle.orb => Offset(
+          math.cos(t * 1.45 + phase) * amplitude,
+          math.sin(t * 1.45 + phase) * (12 + level * 3),
+        ),
+        // Heavy pacing and a deliberate lift on each footfall.
+        ArcadeDroneStyle.golem => Offset(
+          math.sin(t * .65 + phase) * amplitude * .65,
+          -math.pow(math.sin(t * 1.3), 2).toDouble() * (6 + level),
+        ),
+        ArcadeDroneStyle.bramble => Offset(
+          math.sin(t * .55 + phase) * amplitude * .7,
+          math.sin(t * 1.1 + .8) * (5 + level * 1.5),
+        ),
+        ArcadeDroneStyle.duneScorpion => Offset(
+          (math.sin(t * 1.5 + phase) + math.sin(t * 4.5 + phase) * .16) *
+              amplitude *
+              .85,
+          math.sin(t * 6) * (2 + level * .6),
+        ),
+        // Deliberate glacial figure eight.
+        ArcadeDroneStyle.frostWarden => Offset(
+          math.sin(t * .7 + phase) * amplitude,
+          math.sin(t * 1.4 + phase * 2) * (8 + level * 2),
+        ),
+        ArcadeDroneStyle.stormRay => Offset(
+          math.sin(t * 1.05 + phase) * amplitude,
+          math.cos(t * 2.1 + phase * 2) * (15 + level * 3),
+        ),
+        // A small epicycle gives the hovering regent an otherworldly orbit.
+        ArcadeDroneStyle.voidRegent => Offset(
+          (math.cos(t * .8 + phase) * .75 + math.cos(t * 2.4 + phase) * .25) *
+              amplitude,
+          math.sin(t * .8 + phase) * (14 + level * 3),
+        ),
+      };
       final p =
           worldOrigin +
-          Offset(
-                164 + frame.hoverX + math.sin(clock * 1.6 + frame.serial) * 18,
-                -135 + frame.hoverY + math.sin(clock * 2.3) * 8,
-              ) *
-              scale;
+          (Offset(164 + frame.hoverX, -135 + frame.hoverY) + drift) * scale;
       return Offset(
         fit(
           p.dx,
@@ -63,14 +121,28 @@ class ArcadeDroneLayout {
     final locked =
         frame.phase == ArcadeDronePhase.firing ||
         frame.phase == ArcadeDronePhase.exploding;
-    position = hover(locked ? frame.lockClock : frame.clock);
-    bank = math.sin(frame.clock * 1.6) * .09;
+    final poseClock = locked ? frame.lockClock : frame.clock;
+    position = hover(poseClock);
+    attackOrigin = hover(reducedMotion ? 0 : frame.lockClock);
+    final bankAmount = switch (frame.style) {
+      ArcadeDroneStyle.wasp => .17,
+      ArcadeDroneStyle.sentinel => .035,
+      ArcadeDroneStyle.beetle => .045,
+      ArcadeDroneStyle.orb => 0.0,
+      _ => .09,
+    };
+    bank =
+        math.sin(poseClock * (1.6 + frame.levelIndex.clamp(0, 5) * .1)) *
+        bankAmount;
     if (frame.phase == ArcadeDronePhase.entering) {
       position = approach(frame.age / ArcadeDrones.entrySeconds, frame.clock);
       bank = -.3 * (1 - frame.age / ArcadeDrones.entrySeconds);
     } else if (frame.phase == ArcadeDronePhase.departing && !frame.isBoss) {
       final t = Curves.easeInCubic.transform(
-        (frame.age / ArcadeDrones.departureSeconds).clamp(0.0, 1.0),
+        // Hold long enough to fire the special before escaping with the loot.
+        ((frame.age - (frame.stolePoints ? .45 : 0)) /
+                (ArcadeDrones.departureSeconds - (frame.stolePoints ? .45 : 0)))
+            .clamp(0.0, 1.0),
       );
       position = Offset.lerp(
         approach(frame.departureEntry, frame.lockClock),
@@ -78,6 +150,25 @@ class ArcadeDroneLayout {
         t,
       )!;
       bank = -.4 * t;
+    } else if (frame.phase == ArcadeDronePhase.departing && frame.stolePoints) {
+      final t = (frame.age / ArcadeDrones.departureSeconds).clamp(0.0, 1.0);
+      final direction = muzzle - attackOrigin;
+      final reach = switch (frame.style) {
+        ArcadeDroneStyle.golem => 24.0,
+        ArcadeDroneStyle.bramble => 12.0,
+        ArcadeDroneStyle.duneScorpion => 28.0,
+        ArcadeDroneStyle.frostWarden => 8.0,
+        ArcadeDroneStyle.stormRay => 32.0,
+        ArcadeDroneStyle.voidRegent => 5.0,
+        _ => 0.0,
+      };
+      position =
+          Offset.lerp(attackOrigin, hover(frame.clock), t)! +
+          direction /
+              math.max(1, direction.distance) *
+              math.sin(t * math.pi) *
+              reach *
+              scale;
     }
     if (reducedMotion) {
       position = hover(0);
@@ -90,6 +181,7 @@ class ArcadeDroneLayout {
   final Offset muzzle;
   late final double bodyScale;
   late Offset position;
+  late final Offset attackOrigin;
   late double bank;
 
   bool contains(Offset tap) {
@@ -133,11 +225,7 @@ class ArcadeDroneArt {
     required bool reducedMotion,
   }) {
     if (!frame.visible || size.isEmpty) return;
-    final tint = frame.isBoss
-        ? const Color(0xffff9760)
-        : frame.style == ArcadeDroneStyle.sentinel
-        ? const Color(0xffbc9aff)
-        : const Color(0xff72d7ff);
+    final tint = ArcadeEnemyArt.tint(frame.style);
     final bodyScale = layout.bodyScale;
     final position = layout.position;
     final bank = layout.bank;
@@ -234,6 +322,14 @@ class ArcadeDroneArt {
     }
 
     if (frame.phase == ArcadeDronePhase.departing && frame.stolePoints) {
+      ArcadeEnemyAttacks.paint(
+        c,
+        frame,
+        source: layout.attackOrigin,
+        target: muzzle,
+        scale: bodyScale,
+        reducedMotion: reducedMotion,
+      );
       // Coins zip from the rider toward the escaping thief; scoring happens
       // once in the session, never in this animation.
       for (var i = 0; i < 3; i++) {
@@ -346,20 +442,33 @@ class ArcadeDroneArt {
       c.translate(position.dx, position.dy);
       c.scale(bodyScale);
       c.rotate(bank);
-      if (frame.isBoss) {
-        ArcadeGolemArt.paint(
+      if (frame.isBoss ||
+          frame.style == ArcadeDroneStyle.beetle ||
+          frame.style == ArcadeDroneStyle.wasp ||
+          frame.style == ArcadeDroneStyle.orb) {
+        ArcadeEnemyArt.paint(
           c,
-          Offset.zero,
+          frame.style,
           reducedMotion ? 0 : frame.clock,
           damage: frame.damage,
-          firing: !reducedMotion && frame.phase == ArcadeDronePhase.exploding,
-          speaking:
+          hit: !reducedMotion && frame.phase == ArcadeDronePhase.exploding,
+          counter:
               frame.phase == ArcadeDronePhase.departing && frame.stolePoints,
         );
       } else {
         _body(c, frame.style, tint, reducedMotion ? 0 : frame.clock);
       }
       c.restore();
+    }
+    if (frame.attackWarning) {
+      ArcadeEnemyAttacks.paintWarning(
+        c,
+        frame,
+        source: position,
+        target: muzzle,
+        scale: bodyScale,
+        reducedMotion: reducedMotion,
+      );
     }
     c.restore();
   }

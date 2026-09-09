@@ -51,19 +51,41 @@ A Flutter-based mobile application for controlling and configuring SmartSpin2K d
 ### Crank Quest arcade workouts
 
 Open a workout and tap the **gamepad** in the app bar to enter Arcade mode.
-Classic remains the default, and you can switch views during a ride. Arcade
+Your last mode is remembered, and you can switch views during a ride. Arcade
 uses the same ERG controller, pause/stop/skip actions, FTP setting, audio coach,
 and workout export as Classic.
 
 - Workout segments generate floating isometric roads: recovery groves, coastal
-  endurance routes, neon tempo climbs, and Gear Golem battles at 105% FTP or above.
+  endurance routes, neon tempo climbs, and guardian battles at 105% FTP or above.
   Ramps use their average intensity to choose a biome.
+- Before starting, Arcade opens a lobby with the selected workout profile, local
+  workout choices, rider styling, and a six-world journey map. Tap **Explore six
+  worlds** or the Crank Quest heading to see the destinations and their guardians.
+- One story level is chosen for the entire ride, with a matching world and boss:
+  **The Stolen Sun** (Gear Golem / Sunwheel Meadows), **The Last Lantern**
+  (Storm Ray / Stormworks), **The Great Wheel Heist** (Dune Scorpion / Copper
+  Dunes), **The Verdant Vault** (Bramble Titan / Overgrown Ruins), **Heart of
+  Winter** (Frost Warden / Frostline), or **The Midnight Relay** (Void Regent /
+  Eclipse Citadel). Each has its own crew, stolen treasure, and dialogue.
+  New rides avoid the last started story, remembered between app sessions.
+  Pausing, changing intervals, or switching Classic/Arcade preserves the cast.
+- Enemy difficulty increases every eight minutes ridden, capped at six tiers.
+  This changes motion and available small-enemy types, never the chosen story,
+  world, workout targets or hit requirements. Skipped/paused time does not
+  increase difficulty, and a resumed workout restores its elapsed-time tier.
+- Floating roadside islands now have varied pines, broadleaf trees, birches,
+  palms, reeds, mushrooms, ruins, crystals, coral, vents, and aerial technology.
+  Deeper into a long interval, new landmark varieties appear. Positions are
+  deterministic and remain attached to the road when power changes its forecast.
+  Rare rabbits inhabit islands; occasional birds and cargo planes cross the sky.
+  Ambient encounters are sparse and use the existing scene clock, with no extra
+  timers or unbounded particle systems. Reduced motion suppresses flybys.
 - The distant hills trace the full workout: interval duration sets their width
   and prescribed FTP intensity sets their height, with beveled interval shoulders
   and sloping ramps. A tiny gold cyclist and trail mark progress along the ridge.
-- Each workout rolls one of three rescue stories with a different crew, stolen
+- Each workout rolls one of six rescue stories with a different crew, stolen
   object and hometown. Pressing Play on a fresh Arcade ride shows a 16-second
-  cutscene: the village, the Gear Golem's heist, the capture and the cyclist's
+  cutscene: the village, the selected villain's heist, the capture and the cyclist's
   pursuit. The ERG timer starts after the scene; **Skip & start ride** starts
   immediately, and **Back** cancels. Resuming does not replay it. The cast stays
   consistent through the ending, and the heist is not replayed in the riding view.
@@ -101,17 +123,28 @@ and workout export as Classic.
   during encounters; a gold ring and countdown mark the shooting window.
   Pausing, stale telemetry, Classic, and modal screens freeze combat. A sector
   change or skip releases an unshot drone without theft; committed shots finish.
+  Later difficulty tiers introduce Sprocket Beetles, Chain Wasps, and Pulse Orbs alongside
+  the original wheel drones and sentinels. Each encounter captures its difficulty and
+  motion pattern on arrival; a difficulty change never morphs a target mid-shot.
+  Higher difficulty tiers move further and less predictably, capped at tier six, while
+  charge time, aiming window, hitboxes, theft limits, and encounter gaps stay fair.
   Drone kills are counted at the finish without changing workout targets or
   awarding extra score. Effects respect the audio toggle, and reduced motion
   preserves the same tap targets without flybys or debris.
 - Spend 65% of a non-boss interval on target to secure its sector (+150 points).
   Bosses share the drone blaster: six seconds on target charge a shot, then tap
-  the Golem within eight seconds. Only hits damage its shield. Each started
+  the guardian within eight seconds. Only hits damage its shield. Each started
   30 seconds of a hard interval adds an armor hit, capped at six; the final hit
   awards +500 once. A miss or expired shot triggers a counterattack costing up
   to 50 points, followed by another charge cycle. Bosses stay in the fight.
   Recovery earns energy too. Free rides reward pedaling with
   positive power. Missing/stale telemetry and skipped time earn no credit.
+- Each world has its own hard-interval guardian: Gear Golem, Bramble Titan,
+  Dune Scorpion, Frost Warden, Storm Ray, and Void Regent. They have distinct
+  silhouettes, armor, and movement, and share the same charged-shot rules.
+  Boss hit requirements depend on interval duration, not difficulty, so short
+  hard intervals remain winnable. The opening, cage getaway, distant silhouette
+  and battle all show the selected story villain.
 - The Gear Golem shares its animated forge body across story scenes and boss
   battles: turning shoulder cogs, piston limbs, furnace core, exhaust stacks,
   and a moving jaw. Armor cracks and sheds sparks as charged shots land.

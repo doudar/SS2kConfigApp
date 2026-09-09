@@ -10,17 +10,20 @@ class ArcadePreferences {
     this.musicEnabled = false,
     this.effectsEnabled = true,
     this.rider = const ArcadeRiderAppearance(),
+    this.lastStoryVariant,
   });
 
   final bool arcadeMode;
   final bool musicEnabled;
   final bool effectsEnabled;
   final ArcadeRiderAppearance rider;
+  final int? lastStoryVariant;
 
   static const _modeKey = 'workout_arcade_mode';
   static const _musicKey = 'workout_arcade_music';
   static const _effectsKey = 'workout_arcade_effects';
   static const _riderKey = 'workout_arcade_rider';
+  static const _storyKey = 'workout_arcade_last_story';
   static Future<void> _pendingSave = Future<void>.value();
 
   static Future<ArcadePreferences> load() async {
@@ -33,6 +36,7 @@ class ArcadePreferences {
         musicEnabled: prefs.getBool(_musicKey) ?? false,
         effectsEnabled: prefs.getBool(_effectsKey) ?? true,
         rider: _loadRider(prefs),
+        lastStoryVariant: _loadStory(prefs),
       );
     } catch (error) {
       debugPrint('Unable to load arcade preferences: $error');
@@ -43,6 +47,13 @@ class ArcadePreferences {
   static Future<void> saveMode(bool enabled) => _save(_modeKey, enabled);
   static Future<void> saveMusic(bool enabled) => _save(_musicKey, enabled);
   static Future<void> saveEffects(bool enabled) => _save(_effectsKey, enabled);
+  static int? _loadStory(SharedPreferences prefs) {
+    final value = prefs.get(_storyKey);
+    return value is int && value >= 0 && value < 6 ? value : null;
+  }
+
+  static Future<void> saveLastStory(int variant) =>
+      _save(_storyKey, variant % 6);
   static Future<void> saveRider(ArcadeRiderAppearance rider) =>
       _save(_riderKey, jsonEncode(rider.toJson()));
 
@@ -65,6 +76,8 @@ class ArcadePreferences {
         final prefs = await SharedPreferences.getInstance();
         final saved = value is bool
             ? await prefs.setBool(key, value)
+            : value is int
+            ? await prefs.setInt(key, value)
             : await prefs.setString(key, value as String);
         if (!saved) {
           debugPrint('Unable to save arcade preference: $key');

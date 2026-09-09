@@ -6,6 +6,7 @@ import '../workout_parser.dart';
 import '../../device_data.dart';
 import 'arcade_music.dart';
 import 'arcade_lobby.dart';
+import 'arcade_journey_map.dart';
 import 'arcade_lobby_workout.dart';
 import 'arcade_pedaling.dart';
 import 'arcade_sound_effects.dart';
@@ -60,6 +61,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
   bool _foreground = true;
   bool _dialogOpen = false;
   bool _starting = false;
+  int? _lastSavedStoryVariant;
 
   bool get _showLobby =>
       !ride.isPlaying &&
@@ -168,6 +170,12 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
         (ModalRoute.of(context)?.isCurrent ?? true) &&
         TickerMode.valuesOf(context).enabled;
     final running = visible && ride.isPlaying;
+    if (running && _lastSavedStoryVariant != game.story.variant) {
+      // Covers both starting here and joining Arcade from Classic mid-ride.
+      _lastSavedStoryVariant = game.story.variant;
+      game.lastStoryVariant = game.story.variant;
+      unawaited(ArcadePreferences.saveLastStory(game.story.variant));
+    }
     game.droneInteractionEnabled = running;
     if (running && !MediaQuery.disableAnimationsOf(context)) {
       if (!_animation.isAnimating) {
@@ -216,6 +224,22 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     super.dispose();
   }
 
+  Future<void> _journey() async {
+    _dialogOpen = true;
+    _sync();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => ArcadeJourneyMap(story: game.story),
+      );
+    } finally {
+      if (mounted) {
+        _dialogOpen = false;
+        _sync();
+      }
+    }
+  }
+
   Future<void> _customizeRider() async {
     _dialogOpen = true;
     _sync();
@@ -245,7 +269,9 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
         content: const SingleChildScrollView(
           child: Text(
             'Your workout is the world. Recovery grows forests, endurance opens the coast, '
-            'tempo lights up the neon city, and hard intervals awaken the Gear Golem.\n\n'
+            'tempo lights up the neon city, and hard intervals summon the world’s guardian.\n\n'
+            'Each ride has its own story world and boss. Tap the Crank Quest heading to explore the stories. '
+            'As you ride longer, enemies weave further and new types appear; the charge and aiming times stay the same.\n\n'
             'Stay within 10% of your ERG target (with a 10 W minimum window) to collect energy. '
             'Every 15 seconds on target builds your multiplier, up to 4×. '
             'You have 3 seconds to settle when your power drifts.\n\n'
@@ -260,7 +286,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
             'Your score never falls below zero. Going off target holds your charge. '
             'Pausing, lost telemetry, dialogs and Classic freeze encounters; sector changes release unshot drones without a penalty.\n\n'
             'Bosses use the same six-second charge and eight-second tap window. '
-            'Aim at the Gear Golem to crack its armor. Longer hard intervals need more hits (one to six). '
+            'Aim at the guardian to crack its armor. Longer hard intervals need more hits (one to six). '
             'A miss or expired shot lets it counterattack for up to 50 points; recharge and try again. '
             'Only landed shots damage the boss. The final hit earns 500 points.\n\n'
             'Skipping advances the route without awarding skipped time. Your score stays '
@@ -296,7 +322,9 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     if (segments.isEmpty) return;
     final previousStory = game.story;
     final opening = ride.workoutProgressSeconds > 0
-        ? ArcadeStory.random()
+        ? ArcadeStory.random(
+            excluding: game.lastStoryVariant ?? game.story.variant,
+          )
         : game.story;
     _starting = true;
     _dialogOpen = true;
@@ -404,6 +432,8 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
           seconds: ride.workoutProgressSeconds,
           animation: _animation.value * 120,
           biome: biome,
+          levelIndex: game.level.index,
+          ambientSeconds: ride.workoutProgressSeconds + _roadFrameOffset,
           onTarget: game.onTarget,
           charge: charge,
           pedalPhase: _pedaling.phase,
@@ -508,28 +538,46 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                         child: Row(
                           children: [
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'CRANK QUEST',
-                                    style: TextStyle(
-                                      color: arcadeMint,
-                                      fontSize: compact ? 17 : 22,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 2,
+                              child: Tooltip(
+                                message: 'Journey map',
+                                child: InkWell(
+                                  onTap: _journey,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 4,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'CRANK QUEST',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: arcadeMint,
+                                            fontSize: compact ? 17 : 22,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 2,
+                                          ),
+                                        ),
+                                        Text(
+                                          _showLobby
+                                              ? 'EXPLORE SIX WORLDS  ›'
+                                              : 'LEVEL ${game.level.number} · ${game.level.title.toUpperCase()}  ›',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Color(game.level.accentArgb),
+                                            fontSize: 9,
+                                            letterSpacing: .5,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  if (!compact)
-                                    const Text(
-                                      'A LITTLE FURTHER. A LITTLE LEGENDARY.',
-                                      style: TextStyle(
-                                        color: Color(0xff889ab8),
-                                        fontSize: 8,
-                                        letterSpacing: 1.1,
-                                      ),
-                                    ),
-                                ],
+                                ),
                               ),
                             ),
                             IconButton(
@@ -614,6 +662,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                             onCustomize: _customizeRider,
                             onFtp: _ftp,
                             onBrowse: widget.onBrowseWorkouts,
+                            onJourney: _journey,
                             onSelect: _selectWorkout,
                           ),
                         )
@@ -755,7 +804,9 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
         ? 'QUEST COMPLETE · ${game.rank}'
         : game.reward ??
               (chapter.phase == ArcadeStoryPhase.chase
-                  ? biome.title
+                  ? (drone.visible && drone.isBoss
+                        ? drone.targetName.toUpperCase()
+                        : biome.title)
                   : chapter.heading);
     final status = game.finished
         ? '${game.cleared.length} sectors · ${game.bossesDefeated} bosses · best ${game.bestCombo}×'

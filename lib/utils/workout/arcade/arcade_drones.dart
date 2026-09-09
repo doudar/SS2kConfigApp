@@ -1,6 +1,55 @@
 import 'dart:math' as math;
 
-enum ArcadeDroneStyle { wheel, sentinel, golem }
+enum ArcadeDroneStyle {
+  wheel,
+  sentinel,
+  beetle,
+  wasp,
+  orb,
+  golem,
+  bramble,
+  duneScorpion,
+  frostWarden,
+  stormRay,
+  voidRegent,
+}
+
+extension ArcadeDroneStyleInfo on ArcadeDroneStyle {
+  String get attackName => switch (this) {
+    ArcadeDroneStyle.wheel => 'Gear Disc',
+    ArcadeDroneStyle.sentinel => 'Twin Laser',
+    ArcadeDroneStyle.beetle => 'Bolt Barrage',
+    ArcadeDroneStyle.wasp => 'Chain Sting',
+    ArcadeDroneStyle.orb => 'Pulse Wave',
+    ArcadeDroneStyle.golem => 'Gear Smash',
+    ArcadeDroneStyle.bramble => 'Thorn Lash',
+    ArcadeDroneStyle.duneScorpion => 'Venom Volley',
+    ArcadeDroneStyle.frostWarden => 'Ice Lance',
+    ArcadeDroneStyle.stormRay => 'Lightning Arc',
+    ArcadeDroneStyle.voidRegent => 'Star Siphon',
+  };
+  bool get isBoss => switch (this) {
+    ArcadeDroneStyle.wheel ||
+    ArcadeDroneStyle.sentinel ||
+    ArcadeDroneStyle.beetle ||
+    ArcadeDroneStyle.wasp ||
+    ArcadeDroneStyle.orb => false,
+    _ => true,
+  };
+  String get targetName => switch (this) {
+    ArcadeDroneStyle.wheel => 'Wheel Drone',
+    ArcadeDroneStyle.sentinel => 'Sentinel',
+    ArcadeDroneStyle.beetle => 'Sprocket Beetle',
+    ArcadeDroneStyle.wasp => 'Chain Wasp',
+    ArcadeDroneStyle.orb => 'Pulse Orb',
+    ArcadeDroneStyle.golem => 'Gear Golem',
+    ArcadeDroneStyle.bramble => 'Bramble Titan',
+    ArcadeDroneStyle.duneScorpion => 'Dune Scorpion',
+    ArcadeDroneStyle.frostWarden => 'Frost Warden',
+    ArcadeDroneStyle.stormRay => 'Storm Ray',
+    ArcadeDroneStyle.voidRegent => 'Void Regent',
+  };
+}
 
 enum ArcadeDronePhase {
   dormant,
@@ -43,15 +92,16 @@ class ArcadeDroneFrame {
     this.sector = 0,
     this.hits = 0,
     this.requiredHits = 1,
+    this.levelIndex = 0,
   });
   final ArcadeDronePhase phase;
   final ArcadeDroneStyle style;
   final int serial, entrySide;
-  final int sector, hits, requiredHits;
-  bool get isBoss => style == ArcadeDroneStyle.golem;
+  final int sector, hits, requiredHits, levelIndex;
+  bool get isBoss => style.isBoss;
   double get damage => (hits / requiredHits).clamp(0.0, 1.0);
   bool get defeated => isBoss && hits >= requiredHits;
-  String get targetName => isBoss ? 'Gear Golem' : 'drone';
+  String get targetName => style.targetName;
   final double age, clock, charge, lockClock, departureEntry, hoverX, hoverY;
 
   /// Shot endpoint in viewport fractions, so resizing preserves its direction.
@@ -60,34 +110,45 @@ class ArcadeDroneFrame {
   bool get visible =>
       phase != ArcadeDronePhase.dormant && phase != ArcadeDronePhase.rearming;
   bool get ready => phase == ArcadeDronePhase.ready;
+
+  /// A readable wind-up at the end of the existing tap window. A hit cancels it.
+  bool get attackWarning => ready && secondsLeft <= 2;
   double get secondsLeft => math.max(
     0.0,
     (ready ? ArcadeDrones.readySeconds : ArcadeDrones.hoverSeconds) - age,
   );
-  String get status => isBoss
+  String get status => attackWarning
+      ? '${style.attackName.toUpperCase()} IN ${secondsLeft.ceil()}s · TAP ${targetName.toUpperCase()}!'
+      : isBoss
       ? switch (phase) {
           ArcadeDronePhase.hovering =>
-            'GOLEM SHIELD ${((1 - damage) * 100).ceil()}% · CHARGE BLASTER',
+            '${targetName.toUpperCase()} SHIELD ${((1 - damage) * 100).ceil()}% · CHARGE BLASTER',
           ArcadeDronePhase.ready =>
-            'TAP THE GOLEM! · ${secondsLeft.ceil()}s · ${requiredHits - hits} HITS LEFT',
-          ArcadeDronePhase.firing =>
-            shotHit ? 'DIRECT HIT!' : 'MISSED THE GOLEM!',
+            'TAP ${targetName.toUpperCase()}! · ${secondsLeft.ceil()}s · ${requiredHits - hits} HITS LEFT',
+          ArcadeDronePhase.firing => shotHit ? 'DIRECT HIT!' : 'MISSED!',
           ArcadeDronePhase.exploding =>
-            defeated ? 'GEAR GOLEM DEFEATED!' : 'ARMOR CRACKED · RECHARGE!',
+            defeated
+                ? '${targetName.toUpperCase()} DEFEATED!'
+                : 'ARMOR CRACKED · RECHARGE!',
           ArcadeDronePhase.departing =>
-            stolePoints ? 'GOLEM COUNTERATTACK!' : 'LEAVING THE FORGE',
+            stolePoints
+                ? '${style.attackName.toUpperCase()}!'
+                : 'BOSS RETREATING',
           _ => 'CHARGE YOUR BLASTER',
         }
       : switch (phase) {
-          ArcadeDronePhase.entering => 'DRONE INBOUND · CHARGE YOUR BLASTER',
+          ArcadeDronePhase.entering =>
+            '${targetName.toUpperCase()} INBOUND · CHARGE YOUR BLASTER',
           ArcadeDronePhase.hovering =>
             'BLASTER ${(charge * 100).floor()}% · ${secondsLeft.ceil()}s TO CHARGE',
           ArcadeDronePhase.ready =>
-            'TAP THE DRONE! · ${secondsLeft.ceil()}s · MISS COSTS ${ArcadeDrones.theftPoints} PTS',
+            'TAP ${targetName.toUpperCase()}! · ${secondsLeft.ceil()}s · MISS COSTS ${ArcadeDrones.theftPoints} PTS',
           ArcadeDronePhase.firing => shotHit ? 'GOOD SHOT!' : 'MISSED!',
-          ArcadeDronePhase.exploding => 'DRONE DOWN!',
+          ArcadeDronePhase.exploding => '${targetName.toUpperCase()} DOWN!',
           ArcadeDronePhase.departing =>
-            stolePoints ? 'DRONE STOLE POINTS!' : 'DRONE RETREATING',
+            stolePoints
+                ? '${style.attackName.toUpperCase()} · POINTS STOLEN!'
+                : 'DRONE RETREATING',
           _ => 'SKIES CLEAR',
         };
 }
@@ -113,8 +174,8 @@ class ArcadeDrones {
       _aimX = 0,
       _aimY = 0;
   int _serial = 0, _entrySide = 0;
-  int _encounterSector = 0, _hits = 0, _requiredHits = 1;
-  bool get _isBoss => _style == ArcadeDroneStyle.golem;
+  int _encounterSector = 0, _hits = 0, _requiredHits = 1, _levelIndex = 0;
+  bool get _isBoss => _style.isBoss;
   int? _sector;
   bool _playing = false, _shotHit = false, _stolePoints = false;
   int destroyed = 0;
@@ -127,6 +188,7 @@ class ArcadeDrones {
     _serial = destroyed = 0;
     _hits = 0;
     _requiredHits = 1;
+    _levelIndex = 0;
     _style = ArcadeDroneStyle.wheel;
     _sector = null;
     _playing = _shotHit = _stolePoints = false;
@@ -144,9 +206,26 @@ class ArcadeDrones {
     _enter(ArcadeDronePhase.rearming);
   }
 
-  void _arrive(ArcadeDroneStyle style, int sector, int bossHits) {
-    _style = style;
+  void _arrive(
+    ArcadeDroneStyle style,
+    int sector,
+    int bossHits,
+    int levelIndex,
+  ) {
+    // Difficulty and appearance are fixed until this encounter ends.
+    final level = levelIndex.clamp(0, 5);
+    final pool = [
+      ArcadeDroneStyle.wheel,
+      ArcadeDroneStyle.sentinel,
+      if (level >= 1) ArcadeDroneStyle.beetle,
+      if (level >= 2) ArcadeDroneStyle.wasp,
+      if (level >= 3) ArcadeDroneStyle.orb,
+    ];
+    _style = !style.isBoss && level > 0
+        ? pool[_random.nextInt(pool.length)]
+        : style;
     _encounterSector = sector;
+    _levelIndex = levelIndex.clamp(0, 5);
     _hits = 0;
     _requiredHits = _isBoss ? bossHits.clamp(1, 6) : 1;
     _serial++;
@@ -211,6 +290,7 @@ class ArcadeDrones {
     required ArcadeDroneStyle style,
     bool skipped = false,
     int bossHits = 3,
+    int levelIndex = 0,
   }) {
     final events = <ArcadeDroneEvent>[];
     final changed = _sector != null && _sector != sector;
@@ -228,14 +308,12 @@ class ArcadeDrones {
     if (!playing) return events;
     // A hard interval starts its boss immediately, even if a drone's random
     // encounter gap was still counting down in the preceding sector.
-    if (_phase == ArcadeDronePhase.rearming &&
-        enabled &&
-        style == ArcadeDroneStyle.golem) {
-      _arrive(style, sector, bossHits);
+    if (_phase == ArcadeDronePhase.rearming && enabled && style.isBoss) {
+      _arrive(style, sector, bossHits, levelIndex);
     }
     if (_phase == ArcadeDronePhase.dormant && enabled) {
-      if (style == ArcadeDroneStyle.golem) {
-        _arrive(style, sector, bossHits);
+      if (style.isBoss) {
+        _arrive(style, sector, bossHits, levelIndex);
       } else {
         _schedule();
       }
@@ -263,6 +341,7 @@ class ArcadeDrones {
       remaining -= step;
       if (_phase == ArcadeDronePhase.hovering &&
           _energy >= energySeconds - 1e-9) {
+        _energy = energySeconds;
         _enter(ArcadeDronePhase.ready);
         events.add(ArcadeDroneEvent.ready);
       } else if (_age >= _duration - 1e-9) {
@@ -305,12 +384,12 @@ class ArcadeDrones {
                 enabled &&
                 !changed &&
                 _encounterSector == sector &&
-                style == ArcadeDroneStyle.golem) {
+                style.isBoss) {
               _energy = 0;
               _stolePoints = false;
               _enter(ArcadeDronePhase.hovering);
-            } else if (enabled && style == ArcadeDroneStyle.golem) {
-              _arrive(style, sector, bossHits);
+            } else if (enabled && style.isBoss) {
+              _arrive(style, sector, bossHits, levelIndex);
             } else if (enabled) {
               _schedule();
             } else {
@@ -318,7 +397,7 @@ class ArcadeDrones {
             }
           case ArcadeDronePhase.rearming:
             if (enabled) {
-              _arrive(style, sector, bossHits);
+              _arrive(style, sector, bossHits, levelIndex);
             } else {
               _enter(ArcadeDronePhase.dormant);
             }
@@ -353,6 +432,7 @@ class ArcadeDrones {
       sector: _encounterSector,
       hits: _hits,
       requiredHits: _requiredHits,
+      levelIndex: _levelIndex,
     );
   }
 }
