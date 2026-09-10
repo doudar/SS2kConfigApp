@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../widgets/workout_ftp_dialog.dart';
+import '../../widgets/workout_menu_button.dart';
 import 'workout_lobby_choice.dart';
 import 'workout_painter.dart';
 import 'workout_parser.dart';
@@ -21,6 +23,7 @@ class WorkoutLobby extends StatefulWidget {
     required this.onFtp,
     required this.onSelect,
     required this.onBrowse,
+    this.onOpenMenu,
     this.loadChoices = WorkoutLobbyChoice.loadChoices,
   });
 
@@ -32,6 +35,7 @@ class WorkoutLobby extends StatefulWidget {
   final ValueChanged<double> onFtp;
   final ValueChanged<WorkoutLobbyChoice> onSelect;
   final VoidCallback onBrowse;
+  final VoidCallback? onOpenMenu;
   final Future<List<WorkoutLobbyChoice>> Function() loadChoices;
 
   @override
@@ -131,41 +135,9 @@ class _WorkoutLobbyState extends State<WorkoutLobby> {
   }
 
   Future<void> _editFtp() async {
-    var ftp = widget.ftp.clamp(50.0, 500.0);
     final result = await showDialog<double>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, update) => AlertDialog(
-          title: const Text('Workout FTP'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '${ftp.round()} W',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              Slider(
-                value: ftp,
-                min: 50,
-                max: 500,
-                divisions: 450,
-                label: '${ftp.round()} W',
-                onChanged: (value) => update(() => ftp = value),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, ftp),
-              child: const Text('Apply'),
-            ),
-          ],
-        ),
-      ),
+      builder: (context) => WorkoutFtpDialog(initialFtp: widget.ftp),
     );
     if (mounted && result != null) widget.onFtp(result);
   }
@@ -381,6 +353,8 @@ class _WorkoutLobbyState extends State<WorkoutLobby> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (widget.onOpenMenu != null)
+                        WorkoutMenuButton(onPressed: widget.onOpenMenu!),
                       IntervalsTodayCard(
                         ftp: widget.ftp,
                         onSelect: widget.onSelect,

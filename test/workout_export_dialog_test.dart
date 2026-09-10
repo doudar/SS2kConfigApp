@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ss2kconfigapp/utils/workout/workout_uploads.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_export_dialog.dart';
 
 void main() {
@@ -44,15 +46,22 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  WorkoutExportDialog chooser({bool strava = true, bool intervals = true}) =>
-      WorkoutExportDialog(
-        workoutName: 'Long threshold intervals and a well-earned cooldown',
-        duration: '01:12:34',
-        averagePower: 218,
-        averageCadence: 88,
-        stravaConnected: strava,
-        intervalsConnected: intervals,
-      );
+  WorkoutExportDialog chooser({
+    bool strava = true,
+    bool intervals = true,
+    WorkoutExportChoice initialChoice = const WorkoutExportChoice(
+      uploadToStrava: true,
+      uploadToIntervals: true,
+    ),
+  }) => WorkoutExportDialog(
+    workoutName: 'Long threshold intervals and a well-earned cooldown',
+    duration: '01:12:34',
+    averagePower: 218,
+    averageCadence: 88,
+    stravaConnected: strava,
+    intervalsConnected: intervals,
+    initialChoice: initialChoice,
+  );
 
   testWidgets(
     'save chooser fits narrow, short and desktop layouts with large text',
@@ -80,22 +89,128 @@ void main() {
     },
   );
 
-  testWidgets('each destination returns the existing export action', (
+  Future<void> tapVisible(WidgetTester tester, String label) async {
+    await tester.ensureVisible(find.text(label));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(label));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('choose both, either or neither app before saving', (
     tester,
   ) async {
-    for (final entry in {
-      'Save FIT file': 'save',
-      'Strava': 'strava',
-      'Intervals.icu': 'intervals',
-      'Discard workout': 'discard',
-    }.entries) {
-      Object? choice;
-      await open(tester, chooser(), onResult: (value) => choice = value);
-      await tester.ensureVisible(find.text(entry.key));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(entry.key));
-      await tester.pumpAndSettle();
-      expect(choice, entry.value);
+    for (final strava in [true, false]) {
+      for (final intervals in [true, false]) {
+        WorkoutExportChoice? choice;
+        await open(
+          tester,
+          chooser(),
+          onResult: (value) => choice = value as WorkoutExportChoice?,
+        );
+        if (!strava) await tapVisible(tester, 'Strava');
+        if (!intervals) await tapVisible(tester, 'Intervals.icu');
+        expect(choice, isNull);
+        expect(find.text('Save your ride'), findsOneWidget);
+        await tapVisible(
+          tester,
+          strava || intervals ? 'Save & upload' : 'Save FIT file',
+        );
+        expect(choice!.uploadToStrava, strava);
+        expect(choice!.uploadToIntervals, intervals);
+        expect(choice!.discard, isFalse);
+      }
+    }
+  });
+
+  testWidgets('next ride remembers choices, including save only', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    for (final intervals in [true, false]) {
+      WorkoutExportChoice? choice;
+      await open(
+        tester,
+        chooser(),
+        onResult: (value) => choice = value as WorkoutExportChoice?,
+      );
+      await tapVisible(tester, 'Strava');
+      if (!intervals) await tapVisible(tester, 'Intervals.icu');
+      await tapVisible(tester, intervals ? 'Save & upload' : 'Save FIT file');
+      await choice!.savePreferences(
+        prefs,
+        stravaConnected: true,
+        intervalsConnected: true,
+      );
+      await open(
+        tester,
+        chooser(initialChoice: WorkoutExportChoice.loadPreferences(prefs)),
+      );
+      final boxes = tester
+          .widgetList<CheckboxListTile>(find.byType(CheckboxListTile))
+          .toList();
+      expect(boxes[0].value, isFalse);
+      expect(boxes[1].value, intervals);
+      await tapVisible(tester, 'Discard workout');
+    }
+  });
+
+  testWidgets(
+    'disconnected app is never selected even with a saved preference',
+    (tester) async {
+      WorkoutExportChoice? choice;
+      await open(
+        tester,
+        chooser(strava: false),
+        onResult: (value) => choice = value as WorkoutExportChoice?,
+      );
+      expect(find.text('Strava'), findsNothing);
+      await tapVisible(tester, 'Save & upload');
+      expect(choice!.uploadToStrava, isFalse);
+      expect(choice!.uploadToIntervals, isTrue);
+    },
+  );
+
+  test(
+    'disconnected and discarded choices preserve remembered preferences',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      await const WorkoutExportChoice(
+        uploadToStrava: true,
+      ).savePreferences(prefs, stravaConnected: true, intervalsConnected: true);
+      await const WorkoutExportChoice().savePreferences(
+        prefs,
+        stravaConnected: false,
+        intervalsConnected: true,
+      );
+      await const WorkoutExportChoice(
+        discard: true,
+      ).savePreferences(prefs, stravaConnected: true, intervalsConnected: true);
+      final remembered = WorkoutExportChoice.loadPreferences(prefs);
+      expect(remembered.uploadToStrava, isTrue);
+      expect(remembered.uploadToIntervals, isFalse);
+    },
+  );
+
+  test('all uploads run once and report independent failures', () async {
+    for (final failFirst in [false, true]) {
+      final calls = <String>[];
+      final progress = <String>[];
+      final result = await uploadWorkoutToApps({
+        'Strava': () async {
+          calls.add('Strava');
+          if (failFirst) throw Exception('offline');
+          return true;
+        },
+        'Intervals.icu': () async {
+          calls.add('Intervals.icu');
+          return failFirst;
+        },
+      }, onUploading: progress.add);
+      expect(calls, ['Strava', 'Intervals.icu']);
+      expect(progress, calls);
+      expect(result, {'Strava': !failFirst, 'Intervals.icu': failFirst});
     }
   });
 
@@ -115,10 +230,22 @@ void main() {
       Object? result;
       await open(
         tester,
-        const WorkoutSavedDialog(filePath: path),
+        const WorkoutSavedDialog(
+          filePath: path,
+          uploadResults: {'Strava': true, 'Intervals.icu': false},
+        ),
         onResult: (value) => result = value,
       );
       expect(find.text('workout_2026-09-04T12-00-00.fit'), findsOneWidget);
+      expect(find.text('Uploaded to Strava'), findsOneWidget);
+      expect(
+        find.text(
+          'Could not upload to Intervals.icu. Your saved file is safe.',
+        ),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.text('Saved location'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Saved location'));
       await tester.pumpAndSettle();
       expect(find.text(path), findsOneWidget);

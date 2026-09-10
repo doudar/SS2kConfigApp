@@ -1,6 +1,10 @@
+import '../workout_playback_bar.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../../widgets/workout_dialog.dart';
+import '../../../widgets/workout_header_action.dart';
+import '../../../widgets/workout_ftp_dialog.dart';
 import '../workout_controller.dart';
 import '../workout_parser.dart';
 import '../workout_profile.dart';
@@ -33,6 +37,8 @@ class ArcadeWorkoutView extends StatefulWidget {
     required this.onExit,
     this.onBrowseWorkouts,
     this.onWorkoutLoaded,
+    this.onOpenMenu,
+    this.hasDeviceHeader = false,
   });
 
   final WorkoutController controller;
@@ -42,6 +48,8 @@ class ArcadeWorkoutView extends StatefulWidget {
   final VoidCallback onExit;
   final VoidCallback? onBrowseWorkouts;
   final VoidCallback? onWorkoutLoaded;
+  final Future<void> Function()? onOpenMenu;
+  final bool hasDeviceHeader;
 
   @override
   State<ArcadeWorkoutView> createState() => _ArcadeWorkoutViewState();
@@ -286,7 +294,8 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     _sync();
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => WorkoutDialog(
+        icon: Icons.help_outline_rounded,
         title: const Text('Welcome to Crank Quest'),
         content: const SingleChildScrollView(
           child: Text(
@@ -372,44 +381,79 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     }
   }
 
+  Future<void> _openRideMenu() async {
+    final open = widget.onOpenMenu;
+    if (open == null || _dialogOpen) return;
+    _dialogOpen = true;
+    _sync();
+    try {
+      await open();
+    } finally {
+      if (mounted) {
+        _dialogOpen = false;
+        _sync();
+      }
+    }
+  }
+
+  Future<void> _audioSettings() async {
+    _dialogOpen = true;
+    _sync();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, update) => WorkoutDialog(
+            title: const Text('Arcade audio'),
+            icon: Icons.volume_up_rounded,
+            subtitle: 'Set the soundtrack for your ride.',
+            showClose: true,
+            content: WorkoutSettingsPanel(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Music'),
+                    value: _musicEnabled,
+                    onChanged: (value) {
+                      setState(() => _musicEnabled = value);
+                      update(() {});
+                      unawaited(ArcadePreferences.saveMusic(value));
+                      _sync();
+                    },
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Sound effects'),
+                    value: _effectsEnabled,
+                    onChanged: (value) {
+                      setState(() => _effectsEnabled = value);
+                      update(() {});
+                      unawaited(ArcadePreferences.saveEffects(value));
+                      _sync();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        _dialogOpen = false;
+        _sync();
+      }
+    }
+  }
+
   Future<void> _ftp() async {
-    var ftp = ride.ftpValue.clamp(50, 500).toDouble();
     _dialogOpen = true;
     _sync();
     final result = await showDialog<double>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Workout FTP'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '${ftp.round()} W',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              Slider(
-                value: ftp,
-                min: 50,
-                max: 500,
-                divisions: 450,
-                label: '${ftp.round()} W',
-                onChanged: (value) => setDialogState(() => ftp = value),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, ftp),
-              child: const Text('Apply'),
-            ),
-          ],
-        ),
-      ),
+      builder: (context) => WorkoutFtpDialog(initialFtp: ride.ftpValue),
     );
     if (!mounted) return;
     _dialogOpen = false;
@@ -558,125 +602,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                   final sideHud = compact && constraints.maxWidth > 550;
                   return Column(
                     children: [
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          16,
-                          compact ? 2 : 10,
-                          8,
-                          4,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Tooltip(
-                                message: 'Journey map',
-                                child: InkWell(
-                                  onTap: _journey,
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 4,
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'CRANK QUEST',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: arcadeMint,
-                                            fontSize: compact ? 17 : 22,
-                                            fontWeight: FontWeight.w900,
-                                            letterSpacing: 2,
-                                          ),
-                                        ),
-                                        Text(
-                                          _showLobby
-                                              ? 'EXPLORE SIX WORLDS  ›'
-                                              : 'LEVEL ${game.level.number} · ${game.level.title.toUpperCase()}  ›',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: Color(game.level.accentArgb),
-                                            fontSize: 9,
-                                            letterSpacing: .5,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Customize rider',
-                              onPressed: _customizeRider,
-                              icon: const Icon(
-                                Icons.checkroom_rounded,
-                                size: 21,
-                              ),
-                            ),
-                            PopupMenuButton<String>(
-                              tooltip: 'Arcade audio',
-                              onSelected: (value) {
-                                setState(() {
-                                  if (value == 'music')
-                                    _musicEnabled = !_musicEnabled;
-                                  if (value == 'effects')
-                                    _effectsEnabled = !_effectsEnabled;
-                                });
-                                // Persist explicit menu choices, not temporary
-                                // audio-player failures that mute this session.
-                                if (value == 'music') {
-                                  unawaited(
-                                    ArcadePreferences.saveMusic(_musicEnabled),
-                                  );
-                                }
-                                if (value == 'effects') {
-                                  unawaited(
-                                    ArcadePreferences.saveEffects(
-                                      _effectsEnabled,
-                                    ),
-                                  );
-                                }
-                                _sync();
-                              },
-                              itemBuilder: (_) => [
-                                CheckedPopupMenuItem(
-                                  value: 'music',
-                                  checked: _musicEnabled,
-                                  child: const Text('Music'),
-                                ),
-                                CheckedPopupMenuItem(
-                                  value: 'effects',
-                                  checked: _effectsEnabled,
-                                  child: const Text('Sound effects'),
-                                ),
-                              ],
-                              icon: Icon(
-                                _musicEnabled || _effectsEnabled
-                                    ? Icons.volume_up
-                                    : Icons.volume_off,
-                                color: _musicEnabled || _effectsEnabled
-                                    ? arcadeMint
-                                    : Colors.white54,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'How to play',
-                              onPressed: _help,
-                              icon: const Icon(Icons.help_outline, size: 21),
-                            ),
-                            IconButton(
-                              tooltip: 'Return to Classic',
-                              onPressed: widget.onExit,
-                              icon: const Icon(Icons.show_chart, size: 22),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _toolbar(compact, constraints.maxWidth < 650),
                       if (_showLobby)
                         Expanded(
                           child: ArcadeLobby(
@@ -753,67 +679,21 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                           ),
                         ),
                         _routeStrip(compact),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-                          child: Row(
-                            children: [
-                              IconButton(
-                                tooltip: 'Stop Workout',
-                                onPressed:
-                                    ride.isPlaying ||
-                                        ride.workoutProgressSeconds > 0
-                                    ? widget.onStop
-                                    : null,
-                                icon: const Icon(Icons.stop_circle_outlined),
-                                color: const Color(0xffff9d9d),
-                              ),
-                              Expanded(
-                                child: FilledButton.icon(
-                                  onPressed: ride.segments.isEmpty
-                                      ? null
-                                      : _playPause,
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: arcadeMint,
-                                    foregroundColor: arcadeInk,
-                                  ),
-                                  icon: Icon(
-                                    ride.isPlaying
-                                        ? Icons.pause
-                                        : Icons.play_arrow,
-                                  ),
-                                  label: Text(
-                                    ride.isPlaying
-                                        ? 'PAUSE'
-                                        : ride.workoutProgressSeconds > 0 &&
-                                              !game.finished
-                                        ? 'RESUME'
-                                        : 'PLAY',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                tooltip: 'Skip Segment',
-                                onPressed: ride.isPlaying && !ride.isFreeRide
-                                    ? () {
-                                        game.willSkip();
-                                        ride.skipToNextSegment();
-                                      }
-                                    : null,
-                                icon: const Icon(Icons.skip_next),
-                              ),
-                              TextButton(
-                                onPressed: _ftp,
-                                child: Text(
-                                  'FTP ${ride.ftpValue.round()}',
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                              ),
-                            ],
-                          ),
+                        WorkoutPlaybackBar(
+                          playing: ride.isPlaying,
+                          hasProgress: ride.workoutProgressSeconds > 0,
+                          finished: game.finished,
+                          freeRide: ride.isFreeRide,
+                          ftp: ride.ftpValue,
+                          onPlayPause: ride.segments.isEmpty
+                              ? null
+                              : _playPause,
+                          onStop: widget.onStop,
+                          onSkip: () {
+                            game.willSkip();
+                            ride.skipToNextSegment();
+                          },
+                          onFtp: _ftp,
                         ),
                       ],
                     ],
@@ -824,6 +704,110 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _toolbar(bool compact, bool narrow) {
+    // The device header hides only while riding. Keep one visible entry point.
+    final inGameNavigation = !widget.hasDeviceHeader || ride.isPlaying;
+    final title = Tooltip(
+      message: 'Journey map',
+      child: InkWell(
+        onTap: _journey,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'CRANK QUEST',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: arcadeMint,
+                  fontSize: compact ? 17 : 22,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2,
+                ),
+              ),
+              Text(
+                _showLobby
+                    ? 'EXPLORE SIX WORLDS  ›'
+                    : 'LEVEL ${game.level.number} · ${game.level.title.toUpperCase()}  ›',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Color(game.level.accentArgb),
+                  fontSize: 9,
+                  letterSpacing: .5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final actions = <Widget>[
+      if (inGameNavigation && widget.onOpenMenu != null)
+        WorkoutHeaderAction(
+          stacked: narrow,
+          label: 'Ride menu',
+          icon: Icons.menu_rounded,
+          onPressed: _openRideMenu,
+        ),
+      WorkoutHeaderAction(
+        stacked: narrow,
+        label: 'Rider',
+        tooltip: 'Customize rider',
+        icon: Icons.checkroom_rounded,
+        onPressed: _customizeRider,
+      ),
+      WorkoutHeaderAction(
+        stacked: narrow,
+        label: 'Audio',
+        tooltip: 'Arcade audio',
+        icon: _musicEnabled || _effectsEnabled
+            ? Icons.volume_up
+            : Icons.volume_off,
+        onPressed: _audioSettings,
+      ),
+      WorkoutHeaderAction(
+        stacked: narrow,
+        label: 'Help',
+        tooltip: 'How to play',
+        icon: Icons.help_outline,
+        onPressed: _help,
+      ),
+      if (inGameNavigation)
+        WorkoutHeaderAction(
+          stacked: narrow,
+          label: 'Classic mode',
+          tooltip: 'Return to Classic',
+          icon: Icons.show_chart,
+          onPressed: widget.onExit,
+        ),
+    ];
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, compact ? 2 : 10, 8, 4),
+      child: narrow
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                title,
+                Row(
+                  children: [
+                    for (final action in actions) Expanded(child: action),
+                  ],
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(child: title),
+                ...actions,
+              ],
+            ),
     );
   }
 

@@ -7,6 +7,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -15,6 +16,7 @@ import './device_data.dart';
 import './snackbar.dart';
 import './presets.dart';
 import './constants.dart';
+import '../widgets/settings_backup_name_dialog.dart';
 
 class PresetSharing {
   // Export preset as .ss2k file
@@ -23,9 +25,11 @@ class PresetSharing {
     DeviceData deviceData,
     String fileName,
   ) async {
+    Directory? exportDirectory;
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final String filePath = '${directory.path}/$fileName.ss2k';
+      final directory = await getTemporaryDirectory();
+      exportDirectory = await directory.createTemp('ss2k_settings_');
+      final String filePath = '${exportDirectory.path}/$fileName.ss2k';
 
       // Convert settings to JSON, excluding sensitive data and complex objects
       List<Map<String, dynamic>> exportList = [];
@@ -39,6 +43,7 @@ class PresetSharing {
       String jsonContent = jsonEncode(exportList);
 
       await File(filePath).writeAsString(jsonContent);
+      if (!context.mounted) return;
 
       // Get the RenderBox for positioning the share dialog on macOS
       final RenderBox? box = context.findRenderObject() as RenderBox?;
@@ -53,155 +58,205 @@ class PresetSharing {
       final result = await SharePlus.instance.share(
         ShareParams(
           files: [XFile(filePath)],
-          text: 'SmartSpin2k Settings Preset',
+          text: 'SmartSpin2k settings',
           subject: fileName,
           sharePositionOrigin: sharePositionOrigin,
         ),
       );
 
-      // Clean up temporary file
-      await File(filePath).delete();
-
       if (context.mounted) {
         switch (result.status) {
           case ShareResultStatus.success:
-            Snackbar.show(ABC.c, "Preset exported successfully", success: true);
+            Snackbar.show(
+              ABC.c,
+              'Settings file shared or saved.',
+              success: true,
+            );
             break;
           case ShareResultStatus.dismissed:
-            Snackbar.show(ABC.c, "Export cancelled", success: false);
             break;
           case ShareResultStatus.unavailable:
-            Snackbar.show(ABC.c, "Sharing not available", success: false);
+            // Some platforms show the share sheet but cannot report its result.
             break;
         }
       }
     } catch (e) {
       if (context.mounted) {
-        Snackbar.show(ABC.c, "Failed to export preset: $e", success: false);
+        Snackbar.show(
+          ABC.c,
+          'Could not export the settings file. Please try again.',
+          success: false,
+        );
       }
+    } finally {
+      if (exportDirectory != null)
+        await exportDirectory.delete(recursive: true);
     }
   }
 
-  // Import preset from .ss2k or .json file
+  // Keep file selection separate from decoding and the save/load decision.
   static Future<void> importPreset(
     BuildContext context,
     DeviceData deviceData,
     BluetoothDevice device,
   ) async {
     try {
-      // Pick file
       final pickedFile = await FilePicker.pickFile(type: FileType.any);
-
       if (pickedFile == null || !context.mounted) return;
-
-      final String jsonContent = utf8.decode(await pickedFile.readAsBytes());
-
-      // Get filename without extension for save name
-      String saveName = pickedFile.name;
-      if (saveName.toLowerCase().endsWith('.ss2k')) {
-        saveName = saveName.substring(0, saveName.length - 5);
-      } else if (saveName.toLowerCase().endsWith('.json')) {
-        saveName = saveName.substring(0, saveName.length - 5);
+      final jsonContent = utf8.decode(await pickedFile.readAsBytes());
+      if (!context.mounted) return;
+      await importPresetContent(
+        context,
+        deviceData,
+        device,
+        jsonContent,
+        pickedFile.name,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        Snackbar.show(
+          ABC.c,
+          'Could not open this file. Choose a SmartSpin2k .ss2k or .json settings file.',
+          success: false,
+        );
       }
+    }
+  }
 
-      // Check for duplicate name
-      // Note: We need to access shared prefs to check for duplicates, which is done in PresetManager
-      // Since isPresetNameExists isn't public, we'll try to save and let the user decide if they want to overwrite
-      // via the UI logic we'll add here
+  static Future<void> importPresetContent(
+    BuildContext context,
+    DeviceData deviceData,
+    BluetoothDevice device,
+    String jsonContent,
+    String fileName,
+  ) async {
+    late final List<Map<String, dynamic>> mergedConfig;
+    try {
+      final decoded = jsonDecode(jsonContent);
+      if (decoded is! List ||
+          decoded.isEmpty ||
+          decoded.any((item) => item is! Map || item['vName'] is! String)) {
+        throw const FormatException('Invalid settings file');
+      }
+      final imported = {
+        for (final item in decoded) item['vName'] as String: item,
+      };
+      final hasSettings = deviceData.customCharacteristic.any(
+        (item) =>
+            item['isSetting'] == true &&
+            item['vName'] != ssidVname &&
+            item['vName'] != passwordVname &&
+            (imported[item['vName']]?['value'] != null ||
+                imported[item['vName']]?['defaultData'] != null),
+      );
+      if (!hasSettings) throw const FormatException('No matching settings');
 
-      bool shouldSave = true;
-      // We'll skip the duplicate check here for simplicity and rely on the fact that saving overwrites
-      // or we could implement a check here if needed.
+      mergedConfig = deviceData.customCharacteristic.map((item) {
+        final current = Map<String, dynamic>.from(item);
+        if (current['vName'] != ssidVname &&
+            current['vName'] != passwordVname) {
+          final match = imported[current['vName']];
+          if (match != null && (match['value'] ?? match['defaultData']) != null)
+            current['value'] = match['value'] ?? match['defaultData'];
+        }
+        return current;
+      }).toList();
+    } catch (e) {
+      if (context.mounted) {
+        Snackbar.show(
+          ABC.c,
+          'This file does not contain usable SmartSpin2k settings. Choose a .ss2k or compatible .json settings file.',
+          success: false,
+        );
+      }
+      return;
+    }
 
-      if (shouldSave) {
-        // Parse JSON content to validate it
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final existingNames = prefs.getStringList('backups_list') ?? [];
+      existingNames.sort();
+      if (!context.mounted) return;
+      final suggestedName = fileName.replaceFirst(
+        RegExp(r'\.(ss2k|json)$', caseSensitive: false),
+        '',
+      );
+      final saveName = await showDialog<String>(
+        context: context,
+        builder: (_) => SettingsBackupNameDialog(
+          title: 'Import from a file',
+          description:
+              'Add “$fileName” to your saved copies in this app. Your SmartSpin2k stays as it is until you choose to load the settings.',
+          actionLabel: 'Import copy',
+          initialName: suggestedName,
+          existingNames: existingNames,
+        ),
+      );
+      if (saveName == null || !context.mounted) return;
+
+      final saved = await PresetManager.savePreset(
+        context,
+        deviceData,
+        saveName,
+        settings: mergedConfig,
+        showSuccess: false,
+      );
+      if (!saved || !context.mounted) return;
+
+      final applyNow = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Copy imported'),
+          scrollable: true,
+          content: Text(
+            '“$saveName” is saved in this app.\n\nLoad it onto your SmartSpin2k now? This replaces the device settings. Your current Wi-Fi name and password will stay the same.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep for later'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Load onto SmartSpin2k'),
+            ),
+          ],
+        ),
+      );
+      if (applyNow == true && context.mounted) {
+        deviceData.customCharacteristic = mergedConfig;
         try {
-          // Validate structure by decoding
-          final dynamic decoded = jsonDecode(jsonContent);
-          if (decoded is! List) throw FormatException("Invalid preset format");
-
-          // Create merged version
-          List<dynamic> currentConfig = List.from(
-            deviceData.customCharacteristic,
-          );
-          List<dynamic> importedConfig = decoded;
-
-          List<Map<String, dynamic>> mergedConfig = currentConfig.map((item) {
-            var currentMap = Map<String, dynamic>.from(item);
-
-            if (currentMap['vName'] == ssidVname ||
-                currentMap['vName'] == passwordVname) {
-              return currentMap;
-            }
-
-            var matchingImported = importedConfig.where(
-              (element) => element['vName'] == currentMap['vName'],
-            );
-            var importedItem = matchingImported.isNotEmpty
-                ? matchingImported.first
-                : null;
-
-            if (importedItem != null) {
-              if (importedItem['value'] != null) {
-                currentMap['value'] = importedItem['value'];
-              } else if (importedItem['defaultData'] != null) {
-                // Fallback for legacy files
-                currentMap['value'] = importedItem['defaultData'];
-              }
-            }
-            return currentMap;
-          }).toList();
-
-          // Apply to DeviceData temporarily to save
-          var oldSettings = deviceData.customCharacteristic;
-          deviceData.customCharacteristic = mergedConfig;
-
-          await PresetManager.savePreset(context, deviceData, saveName);
-
-          // Restore old settings until user explicitly loads it
-          deviceData.customCharacteristic = oldSettings;
-
+          await deviceData.saveAllSettings(device);
           if (context.mounted) {
-            // Ask if user wants to apply it now
-            bool? applyNow = await showDialog<bool>(
-              context: context,
-              builder: (BuildContext context) {
-                return AlertDialog(
-                  title: Text('Import Successful'),
-                  content: Text(
-                    'Preset "$saveName" imported. Do you want to apply these settings to your device now?',
-                  ),
-                  actions: <Widget>[
-                    TextButton(
-                      child: Text('No, save only'),
-                      onPressed: () => Navigator.of(context).pop(false),
-                    ),
-                    FilledButton(
-                      child: Text('Yes, apply now'),
-                      onPressed: () => Navigator.of(context).pop(true),
-                    ),
-                  ],
-                );
-              },
+            Snackbar.show(
+              ABC.c,
+              '“$saveName” loaded onto SmartSpin2k.',
+              success: true,
             );
-
-            if (applyNow == true) {
-              deviceData.customCharacteristic = mergedConfig;
-              await deviceData.saveAllSettings(device);
-              Snackbar.show(ABC.c, "Settings applied to device", success: true);
-            } else {
-              Snackbar.show(ABC.c, "Preset saved to My Files", success: true);
-            }
           }
         } catch (e) {
           if (context.mounted) {
-            Snackbar.show(ABC.c, "Invalid preset file: $e", success: false);
+            Snackbar.show(
+              ABC.c,
+              'Copy imported, but could not load it onto SmartSpin2k. Reconnect and try “Load saved settings”.',
+              success: false,
+            );
           }
         }
+      } else if (context.mounted) {
+        Snackbar.show(
+          ABC.c,
+          '“$saveName” saved in this app. Use “Load saved settings” when you need it.',
+          success: true,
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        Snackbar.show(ABC.c, "Failed to import preset: $e", success: false);
+        Snackbar.show(
+          ABC.c,
+          'Could not import the settings copy. Please try again.',
+          success: false,
+        );
       }
     }
   }

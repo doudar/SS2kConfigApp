@@ -441,8 +441,8 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
       key: _scaffoldKey,
       child: MaterialApp(
         navigatorKey: _navigatorKey,
-        themeMode: themeProvider.themeMode,
-        theme: themeProvider.lightTheme,
+        themeMode: ThemeMode.dark,
+        theme: themeProvider.darkTheme,
         darkTheme: themeProvider.darkTheme,
         home: screen,
         navigatorObservers: [BluetoothAdapterStateObserver()],

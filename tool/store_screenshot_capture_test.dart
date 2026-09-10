@@ -107,17 +107,18 @@ Future<void> _loadCaptureFonts() async {
 
 Future<ThemeData> _loadDarkTheme(WidgetTester tester) async {
   final provider = ThemeProvider();
-  for (
-    var attempt = 0;
-    attempt < 100 && provider.darkTheme == null;
-    attempt++
-  ) {
+  var ready = false;
+  void onLoaded() => ready = true;
+  provider.addListener(onLoaded);
+  for (var attempt = 0; attempt < 100 && !ready; attempt++) {
     await tester.pump(const Duration(milliseconds: 10));
   }
-  final theme = provider.darkTheme;
-  if (theme == null) {
+  provider.removeListener(onLoaded);
+  if (!ready) {
     throw StateError('SmartSpin2k dark theme did not finish loading.');
   }
+  final theme = provider.darkTheme;
+  provider.dispose();
   return theme.copyWith(
     textTheme: theme.textTheme.apply(fontFamily: 'StoreSans'),
     primaryTextTheme: theme.primaryTextTheme.apply(fontFamily: 'StoreSans'),
@@ -252,7 +253,6 @@ void main() {
       '${Directory.current.path}/assets/Anthonys_Mix.zwo',
     ).readAsStringSync();
     SharedPreferences.setMockInitialValues(<String, Object>{
-      'theme_mode': ThemeMode.dark.toString(),
       'workout_tts_enabled': false,
       'power_table_swap_axes': false,
       'workout_content': workoutContent,

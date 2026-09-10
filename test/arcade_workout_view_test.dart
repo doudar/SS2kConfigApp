@@ -109,6 +109,18 @@ void main() {
                   session: game,
                   onStop: () {},
                   onExit: () => exits++,
+                  onOpenMenu: () => showDialog<void>(
+                    context: key.currentContext!,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Menu opened'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Back to ride'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -123,6 +135,12 @@ void main() {
           findsNothing,
         );
         expect(find.byTooltip('Arcade audio'), findsOneWidget);
+        await tester.tap(find.byTooltip('Ride menu'));
+        await tester.pumpAndSettle();
+        expect(find.text('Menu opened'), findsOneWidget);
+        expect(controller.isPlaying, isFalse);
+        await tester.tap(find.text('Back to ride'));
+        await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         if (const bool.fromEnvironment('ARCADE_SCREENSHOTS')) {
           final boundary =
@@ -217,33 +235,30 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester
-            .widget<CheckedPopupMenuItem<String>>(
-              find.widgetWithText(CheckedPopupMenuItem<String>, 'Music'),
+            .widget<SwitchListTile>(
+              find.widgetWithText(SwitchListTile, 'Music'),
             )
-            .checked,
+            .value,
         isFalse,
       );
       expect(
         tester
-            .widget<CheckedPopupMenuItem<String>>(
-              find.widgetWithText(
-                CheckedPopupMenuItem<String>,
-                'Sound effects',
-              ),
+            .widget<SwitchListTile>(
+              find.widgetWithText(SwitchListTile, 'Sound effects'),
             )
-            .checked,
+            .value,
         isTrue,
       );
-      await tester.tap(
-        find.widgetWithText(CheckedPopupMenuItem<String>, 'Sound effects'),
-      );
+      await tester.tap(find.widgetWithText(SwitchListTile, 'Sound effects'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Close'));
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.volume_off), findsOneWidget);
       await tester.tap(find.byTooltip('Arcade audio'));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.widgetWithText(CheckedPopupMenuItem<String>, 'Music'),
-      );
+      await tester.tap(find.widgetWithText(SwitchListTile, 'Music'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Close'));
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.volume_up), findsOneWidget);
       final savedAudio = await ArcadePreferences.load();
@@ -254,6 +269,8 @@ void main() {
       await tester.tap(find.byTooltip('How to play'));
       await tester.pumpAndSettle();
       expect(find.text('Welcome to Crank Quest'), findsOneWidget);
+      await tester.ensureVisible(find.text('LET’S RIDE'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('LET’S RIDE'));
       await tester.pumpAndSettle();
 

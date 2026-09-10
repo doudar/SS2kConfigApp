@@ -18,7 +18,6 @@ import 'main_device_screen.dart';
 import '../utils/snackbar.dart';
 import '../utils/device_data.dart';
 import '../widgets/scan_result_tile.dart';
-import '../widgets/theme_cycle_button.dart';
 import '../utils/demo.dart';
 import 'onboarding/onboarding_wizard.dart';
 import '../utils/onboarding/wizard_session.dart';
@@ -543,7 +542,6 @@ class _ScanScreenState extends State<ScanScreen> {
               ),
             ],
           ),
-          actions: [const ThemeCycleButton()],
         ),
         body: Stack(
           children: [

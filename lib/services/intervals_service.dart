@@ -4,6 +4,7 @@ import 'dart:io' show Platform, HttpServer, InternetAddress, ContentType, HttpRe
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import '../widgets/workout_dialog.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/env.dart';
@@ -94,7 +95,8 @@ class IntervalsService {
     // Show instructions dialog
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => WorkoutDialog(
+        icon: Icons.link_rounded,
         title: const Text('Connecting to Intervals.icu'),
         content: const Text(
           'You will be redirected to Intervals.icu to authorize SmartSpin2k.\n\n'

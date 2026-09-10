@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'workout_parser.dart';
 import 'workout_constants.dart';
 import 'workout_profile.dart';
+import 'workout_visuals.dart';
 
 /// Optional font used by deterministic screenshot tests. Production renders
 /// continue to use the platform's default font.
@@ -27,6 +28,10 @@ class WorkoutPainter extends CustomPainter {
   final bool highlightCurrent;
   final bool completed;
 
+  /// Limits vertical magnification in the live view, equally for targets and
+  /// measured power. Thumbnail proportions remain independent of watt units.
+  final double? maxPixelsPerWatt;
+
   WorkoutPainter({
     required this.segments,
     required this.maxPower,
@@ -44,6 +49,7 @@ class WorkoutPainter extends CustomPainter {
     this.pulseValue = 0.0,
     this.highlightCurrent = false,
     this.completed = false,
+    this.maxPixelsPerWatt,
   });
 
   /// All thumbnail and lobby profiles use the same scale and rendering.
@@ -81,8 +87,17 @@ class WorkoutPainter extends CustomPainter {
   double get _peak => max(1, maxPower.isFinite ? maxPower : 1);
 
   // Leave the same small amount of headroom in thumbnails and live graphs.
-  double _heightScale(Size size) =>
-      max(0, size.height - min(8, size.height * .2)) / (_peak * ftpValue);
+  double _heightScale(Size size) {
+    final scale =
+        max(0, size.height - min(8, size.height * .2)) / (_peak * ftpValue);
+    final limit = maxPixelsPerWatt;
+    return limit != null && limit.isFinite && limit > 0
+        ? min(scale, limit)
+        : scale;
+  }
+
+  double powerY(double watts, Size size) =>
+      size.height - watts * _heightScale(size);
 
   /// Public geometry lets interaction and tests use the actual painted ramp.
   Path segmentOutline(WorkoutSegment segment, Rect bounds, Size size) {
@@ -113,6 +128,7 @@ class WorkoutPainter extends CustomPainter {
         ftpValue <= 0)
       return;
     final heightScale = _heightScale(size);
+    if (!heightScale.isFinite || heightScale <= 0) return;
     final widthScale = size.width / totalDuration;
     final currentPixel =
         (currentProgress.isFinite ? currentProgress : 0).clamp(0.0, 1.0) *
@@ -220,53 +236,6 @@ class WorkoutPainter extends CustomPainter {
     canvas.restore();
   }
 
-  void _drawValueLabel(Canvas canvas, Offset center, String text, Color color) {
-    final textPainter = TextPainter(
-      textDirection: TextDirection.ltr,
-      textAlign: TextAlign.center,
-    );
-
-    textPainter.text = TextSpan(
-      text: text,
-      style: TextStyle(
-        color: Colors.white,
-        fontWeight: FontWeight.bold,
-        fontSize: 10.0,
-        fontFamily: debugWorkoutPainterFontFamily,
-      ),
-    );
-
-    // Calculate layout
-    textPainter.layout();
-
-    // Draw background rounded rect (pill shape)
-    final bgPaint = Paint()
-      ..color = color.withValues(alpha: 0.7)
-      ..style = PaintingStyle.fill;
-
-    final padding = 4.0;
-    final rect = Rect.fromCenter(
-      center: center,
-      width: textPainter.width + (padding * 2),
-      height:
-          textPainter.height + (padding * 1), // slightly less vertical padding
-    );
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(10.0)),
-      bgPaint,
-    );
-
-    // Center the text on the point
-    textPainter.paint(
-      canvas,
-      Offset(
-        center.dx - textPainter.width / 2,
-        center.dy - textPainter.height / 2,
-      ),
-    );
-  }
-
   void _drawTracerLines(
     Canvas canvas,
     Size size,
@@ -304,12 +273,22 @@ class WorkoutPainter extends CustomPainter {
         }
         hasPoints = true;
       }
+      // A narrow dark halo separates readings from the coloured target tops.
+      final stroke = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
       canvas.drawPath(
         path,
-        Paint()
+        stroke
+          ..color = WorkoutVisuals.ink.withValues(alpha: .65)
+          ..strokeWidth = WorkoutStroke.actualPowerLine + 2,
+      );
+      canvas.drawPath(
+        path,
+        stroke
           ..color = color
-          ..strokeWidth = WorkoutStroke.actualPowerLine
-          ..style = PaintingStyle.stroke,
+          ..strokeWidth = WorkoutStroke.actualPowerLine,
       );
       if (!hasPoints ||
           current == null ||
@@ -322,35 +301,36 @@ class WorkoutPainter extends CustomPainter {
             size.width,
         y(current).clamp(0.0, size.height),
       );
-      if (showLabels) {
-        _drawValueLabel(canvas, center, '${current.round()}', color);
-      } else {
-        canvas.drawCircle(
-          center,
-          WorkoutSizes.actualPowerDotRadius * 1.5,
-          Paint()..color = color,
-        );
-      }
+      canvas.drawCircle(
+        center,
+        6,
+        Paint()..color = color.withValues(alpha: .16),
+      );
+      canvas.drawCircle(
+        center,
+        WorkoutSizes.actualPowerDotRadius * 1.5,
+        Paint()..color = color,
+      );
     }
 
     trace(
       points: powerPointsList != null && powerPointsList!.isNotEmpty
           ? samples(powerPointsList!)
           : actualPowerPoints.entries,
-      color: Colors.lightBlueAccent,
-      y: (power) => size.height - power * heightScale,
+      color: WorkoutVisuals.power,
+      y: (power) => powerY(power, size),
       current: currentPower,
     );
     trace(
       points: samples(cadencePointsList ?? const []),
-      color: Colors.green,
+      color: WorkoutVisuals.cadence,
       y: (cadence) => size.height * (1 - (cadence - 20) / 110),
       current: currentCadence?.toDouble(),
       zeroIsGap: true,
     );
     trace(
       points: samples(hrPointsList ?? const []),
-      color: Colors.red,
+      color: WorkoutVisuals.heartRate,
       y: (hr) => size.height * (1 - (hr - 30) / 200),
       current: currentHr?.toDouble(),
       zeroIsGap: true,
@@ -371,12 +351,15 @@ class WorkoutPainter extends CustomPainter {
       textAlign: TextAlign.right,
     );
 
-    // Draw horizontal power lines at intervals
-    for (
-      var power = 0.0;
-      power <= _peak * ftpValue;
-      power += WorkoutGrid.powerLineInterval
-    ) {
+    final topWatts = size.height / heightScale;
+    if (!topWatts.isFinite) return;
+    final interval = max(
+      WorkoutGrid.powerLineInterval,
+      (topWatts / (10 * WorkoutGrid.powerLineInterval)).ceil() *
+          WorkoutGrid.powerLineInterval,
+    );
+    // Label the entire visible watt scale, including the extra headroom.
+    for (var power = 0.0; power <= topWatts; power += interval) {
       final y = size.height - (power * heightScale);
 
       // Draw grid line starting after the label space
@@ -391,7 +374,7 @@ class WorkoutPainter extends CustomPainter {
         textPainter.text = TextSpan(
           text: '${power.round()}w',
           style: TextStyle(
-            color: Colors.grey[600],
+            color: WorkoutVisuals.muted,
             fontSize: WorkoutFontSizes.small,
             fontFamily: debugWorkoutPainterFontFamily,
           ),
@@ -434,7 +417,7 @@ class WorkoutPainter extends CustomPainter {
         textPainter.text = TextSpan(
           text: '${(time / 60).round()}min',
           style: TextStyle(
-            color: Colors.grey[600],
+            color: WorkoutVisuals.muted,
             fontSize: WorkoutFontSizes.small,
             fontFamily: debugWorkoutPainterFontFamily,
           ),

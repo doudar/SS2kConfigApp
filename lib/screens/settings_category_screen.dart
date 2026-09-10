@@ -11,6 +11,8 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../widgets/setting_tile.dart';
 import '../widgets/ss2k_app_bar.dart';
+import '../widgets/device_settings_style.dart';
+import '../utils/workout/workout_visuals.dart';
 import '../utils/device_data.dart';
 import '../utils/constants.dart';
 
@@ -56,13 +58,13 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
     };
     deviceData.charReceived.addListener(_charReceivedListener!);
 
-    _characteristicChangeSubscription = deviceData.characteristicChanges.listen((
-      event,
-    ) {
-      if (mounted && _categorySettingNames.contains(event.vName)) {
-        setState(() {});
-      }
-    });
+    _characteristicChangeSubscription = deviceData.characteristicChanges.listen(
+      (event) {
+        if (mounted && _categorySettingNames.contains(event.vName)) {
+          setState(() {});
+        }
+      },
+    );
 
     unawaited(
       deviceData.requestSettingsForType(widget.device, widget.settingType),
@@ -99,47 +101,72 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: SS2KAppBar(
-        device: widget.device,
-        title: widget.title,
-        firmwareOnlyDeviceHeader: true,
-      ),
-      body: Center(
-        child: Builder(
-          builder: (context) {
-            Size _size = MediaQuery.of(context).size;
-            List<Widget> settingsTiles = buildSettingsList(context);
-
-            return SizedBox(
-              height: _size.height * .90,
-              width: _size.width * .80,
-              child: settingsTiles.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          CircularProgressIndicator(),
-                          SizedBox(height: 20),
-                          Text(
-                            "Refreshing Data",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
+  Widget build(BuildContext context) => DeviceSettingsSurface(
+    child: Builder(
+      builder: (context) {
+        final tiles = buildSettingsList(context);
+        final accent = DeviceSettingsStyle.accent(widget.settingType);
+        return Scaffold(
+          appBar: SS2KAppBar(
+            device: widget.device,
+            title: widget.title,
+            firmwareOnlyDeviceHeader: true,
+          ),
+          body: SafeArea(
+            top: false,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 820),
+                child: tiles.isEmpty
+                    ? const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 20),
+                            Text(
+                              'Refreshing Data',
+                              style: TextStyle(color: WorkoutVisuals.muted),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.all(12),
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(4, 8, 4, 20),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  DeviceSettingsStyle.icon(widget.settingType),
+                                  color: accent,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    DeviceSettingsStyle.description(
+                                      widget.settingType,
+                                    ),
+                                    style: const TextStyle(
+                                      color: WorkoutVisuals.muted,
+                                      fontSize: 14,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                          ...tiles,
                         ],
                       ),
-                    )
-                  : ListView(
-                      clipBehavior: Clip.antiAlias,
-                      children: settingsTiles,
-                    ),
-            );
-          },
-        ),
-      ),
-    );
-  }
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
 }

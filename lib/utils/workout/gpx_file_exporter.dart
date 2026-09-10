@@ -2,10 +2,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/strava_service.dart';
 import '../../services/intervals_service.dart';
 import 'workout_controller.dart';
 import 'workout_export_dialog.dart';
+import 'workout_uploads.dart';
 import 'bike_shape_generator.dart';
 import 'gpx_to_fit.dart';
 import 'workout_coach_repository.dart';
@@ -113,13 +115,14 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
 
     final isStravaConnected = await StravaService.isAuthenticated();
     final isIntervalsConnected = await IntervalsService.isAuthenticated();
+    final prefs = await SharedPreferences.getInstance();
 
     if (_tryCloseDialogIfShown(context, optionsDialogShown)) {
       optionsDialogShown = false;
     }
 
     if (!context.mounted) return;
-    final String? exportChoice = await showDialog<String>(
+    final exportChoice = await showDialog<WorkoutExportChoice>(
       context: context,
       builder: (BuildContext context) => WorkoutExportDialog(
         workoutName: workoutController.workoutName ?? 'Indoor ride',
@@ -130,17 +133,23 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         averageCadence: workoutController.averageCadence,
         stravaConnected: isStravaConnected,
         intervalsConnected: isIntervalsConnected,
+        initialChoice: WorkoutExportChoice.loadPreferences(prefs),
       ),
     );
 
-    if (exportChoice == 'save' ||
-        exportChoice == 'strava' ||
-        exportChoice == 'intervals') {
+    if (exportChoice == null) return;
+    if (!exportChoice.discard) {
+      await exportChoice.savePreferences(
+        prefs,
+        stravaConnected: isStravaConnected,
+        intervalsConnected: isIntervalsConnected,
+      );
+      if (!context.mounted) return;
       await exportWorkoutFile(
         context,
         workoutController,
-        uploadToStrava: exportChoice == 'strava',
-        uploadToIntervals: exportChoice == 'intervals',
+        uploadToStrava: exportChoice.uploadToStrava,
+        uploadToIntervals: exportChoice.uploadToIntervals,
       );
     }
 
@@ -227,74 +236,34 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         );
         WorkoutCoachRepository.invalidateLocal();
 
-        if (uploadToStrava) {
-          if (context.mounted) {
-            // Show uploading indicator
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Uploading to Strava...'),
-                duration: Duration(seconds: 1),
+        final uploadResults = await uploadWorkoutToApps(
+          {
+            if (uploadToStrava)
+              'Strava': () => StravaService.uploadActivity(
+                fitFilePath,
+                workoutName,
+                'Workout completed using SmartSpin2k',
               ),
-            );
-          }
-
-          progressMessage.value = 'Uploading to Strava...';
-          final success = await StravaService.uploadActivity(
-            fitFilePath,
-            workoutName,
-            'Workout completed using SmartSpin2k',
-          );
-
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  success
-                      ? 'Successfully uploaded to Strava'
-                      : 'Failed to upload to Strava',
-                ),
-                backgroundColor: success ? Colors.green : Colors.red,
+            if (uploadToIntervals)
+              'Intervals.icu': () => IntervalsService.uploadWorkout(
+                fitFilePath,
+                workoutName,
+                'Workout completed using SmartSpin2k',
               ),
-            );
-          }
-        } else if (uploadToIntervals) {
-          if (context.mounted) {
-            // Show uploading indicator
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Uploading to Intervals.icu...'),
-                duration: Duration(seconds: 1),
-              ),
-            );
-          }
-
-          progressMessage.value = 'Uploading to Intervals.icu...';
-          final success = await IntervalsService.uploadWorkout(
-            fitFilePath,
-            workoutName,
-            'Workout completed using SmartSpin2k',
-          );
-
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  success
-                      ? 'Successfully uploaded to Intervals.icu'
-                      : 'Failed to upload to Intervals.icu',
-                ),
-                backgroundColor: success ? const Color(0xFF1B4F72) : Colors.red,
-              ),
-            );
-          }
-        } else if (context.mounted) {
+          },
+          onUploading: (app) => progressMessage.value = 'Uploading to $app...',
+        );
+        if (context.mounted) {
           if (_tryCloseDialogIfShown(context, progressDialogShown)) {
             progressDialogShown = false;
           }
           final bool? shouldShare = await showDialog<bool>(
             context: context,
             builder: (BuildContext context) {
-              return WorkoutSavedDialog(filePath: fitFilePath);
+              return WorkoutSavedDialog(
+                filePath: fitFilePath,
+                uploadResults: uploadResults,
+              );
             },
           );
 

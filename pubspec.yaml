@@ -61,10 +61,9 @@ flutter:
 
   assets:
     - assets/
+    - assets/device_previews/
     - assets/images/
     - assets/workout_library/
-    - assets/appainter_theme.json
-    - assets/appainter_theme_dark.json
     - assets/sounds/
     - pubspec.yaml
 

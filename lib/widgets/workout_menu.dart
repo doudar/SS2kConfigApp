@@ -1,5 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'workout_dialog.dart';
+import 'intervals_workout_folder_dialog.dart';
+import 'workout_ftp_dialog.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../screens/calibration_screen.dart';
 import '../services/intervals_service.dart';
@@ -42,12 +45,17 @@ class WorkoutMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      icon: const Icon(Icons.more_vert),
-      tooltip: 'Workout Menu',
-      onPressed: () => _showMenuDialog(context),
+    return Tooltip(
+      message: 'Workout Menu',
+      child: TextButton.icon(
+        icon: const Icon(Icons.menu_rounded),
+        label: const Text('Menu'),
+        onPressed: () => show(context),
+      ),
     );
   }
+
+  Future<void> show(BuildContext context) => _showMenuDialog(context);
 
   Future<void> _showAssetWorkoutFolder(BuildContext context) async {
     await WorkoutLibrary.showAssetWorkoutsDialog(
@@ -64,19 +72,16 @@ class WorkoutMenu extends StatelessWidget {
   }
 
   Future<bool> _confirmWorkoutReplacement(BuildContext context) async {
+    if (!workoutController.isPlaying && workoutController.workoutProgressSeconds == 0) return true;
     final shouldReplace = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        content: const Text('This will replace your existing workout. Are you sure?'),
+      builder: (dialogContext) => WorkoutDialog(
+        title: const Text('Switch workouts?'),
+        icon: Icons.swap_horiz_rounded,
+        content: const Text('Your current ride will be replaced. Save it first if you want to keep it.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Go Back'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Replace'),
-          ),
+          OutlinedButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Keep current ride')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Switch workouts')),
         ],
       ),
     );
@@ -84,105 +89,149 @@ class WorkoutMenu extends StatelessWidget {
     return shouldReplace ?? false;
   }
 
-  Future<void> _showMenuDialog(BuildContext context) async {
+  Future<void> _showMenuDialog(BuildContext context, {_MenuAction? initialAction}) async {
+    var openedInitialAction = false;
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360),
-            child: SizedBox(
-              height: 420,
-              child: Column(
+        if (!openedInitialAction && initialAction != null) {
+          openedInitialAction = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (dialogContext.mounted) _handleAction(dialogContext, initialAction);
+          });
+        }
+        return WorkoutDialog(
+          title: const Text('Ride menu'),
+          icon: Icons.pedal_bike_rounded,
+          subtitle: 'Your next ride, your settings, all right here.',
+          showClose: true,
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _menuTile(
+                dialogContext,
+                _MenuAction.selectWorkout,
+                Icons.folder_open_rounded,
+                'Choose a workout',
+                subtitle: 'Browse your library or import a workout file',
+              ),
+              _menuTile(
+                dialogContext,
+                _MenuAction.freeRide,
+                Icons.all_inclusive_rounded,
+                'Just ride',
+                subtitle: 'No plan. Pedal at your own pace.',
+              ),
+              _menuGroup(
+                title: 'Ride settings',
+                subtitle: 'Voice, messages and trainer',
+                icon: Icons.tune_rounded,
                 children: [
-                  Container(
-                    color: Theme.of(context).colorScheme.surfaceDim,
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Workout Menu',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          tooltip: 'Close',
-                          onPressed: () => Navigator.of(dialogContext).pop(),
-                        ),
-                      ],
-                    ),
+                  _menuTile(
+                    dialogContext,
+                    _MenuAction.audioCoach,
+                    Icons.record_voice_over_rounded,
+                    'Voice coach',
+                    subtitle: 'Spoken guidance during your ride',
                   ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: ListView(
-                      children: [
-                        _menuTile(dialogContext, context, _MenuAction.freeRide, Icons.pedal_bike, 'Free Ride'),
-                        _menuTile(dialogContext, context, _MenuAction.importZwo, Icons.file_upload, 'Import ZWO'),
-                        const Divider(),
-                        _menuTile(
-                            dialogContext, context, _MenuAction.selectWorkout, Icons.folder_open, 'Workout Library'),
-                        _menuTile(dialogContext, context, _MenuAction.completedActivities, Icons.history,
-                            'Completed Activities'),
-                        const Divider(),
-                        _menuTile(
-                            dialogContext, context, _MenuAction.connectedAccounts, Icons.link, 'Connected Accounts'),
-                        _menuTile(dialogContext, context, _MenuAction.calibrate, Icons.tune, 'Calibrate Trainer'),
-                        _menuTile(dialogContext, context, _MenuAction.workoutText, Icons.text_fields, 'Workout Text'),
-                        _menuTile(
-                            dialogContext, context, _MenuAction.audioCoach, Icons.record_voice_over, 'Audio Coach'),
-                      ],
-                    ),
+                  _menuTile(
+                    dialogContext,
+                    _MenuAction.workoutText,
+                    Icons.text_fields_rounded,
+                    'On-screen messages',
+                    subtitle: 'Text size and scrolling speed',
                   ),
-                  Container(
-                    color: Theme.of(context).colorScheme.surfaceDim,
-                    padding: const EdgeInsets.all(8.0),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        child: const Text('CLOSE'),
-                      ),
-                    ),
+                  _menuTile(
+                    dialogContext,
+                    _MenuAction.ftp,
+                    Icons.bolt_rounded,
+                    'Power target (FTP)',
+                    subtitle: 'Set your workout intensity baseline',
+                  ),
+                  _menuTile(
+                    dialogContext,
+                    _MenuAction.calibrate,
+                    Icons.build_outlined,
+                    'Trainer setup',
+                    subtitle: 'Calibrate your trainer when needed',
                   ),
                 ],
               ),
-            ),
+              _menuGroup(
+                title: 'My training',
+                subtitle: 'Past rides and connected apps',
+                icon: Icons.history_rounded,
+                children: [
+                  _menuTile(
+                    dialogContext,
+                    _MenuAction.completedActivities,
+                    Icons.history_rounded,
+                    'Past rides',
+                    subtitle: 'Review, share or manage saved activities',
+                  ),
+                  _menuTile(
+                    dialogContext,
+                    _MenuAction.connectedAccounts,
+                    Icons.link_rounded,
+                    'Connected apps',
+                    subtitle: 'Strava and Intervals.icu',
+                  ),
+                ],
+              ),
+            ],
           ),
+          actions: [
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              icon: const Icon(Icons.arrow_back_rounded),
+              label: const Text('Back to ride'),
+            ),
+          ],
         );
       },
     );
   }
 
-  Widget _menuTile(
-    BuildContext dialogContext,
-    BuildContext parentContext,
-    _MenuAction action,
-    IconData icon,
-    String label, {
-    Widget? trailing,
-  }) {
-    return ListTile(
+  Widget _menuGroup({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required List<Widget> children,
+  }) => Card(
+    child: ExpansionTile(
       leading: Icon(icon),
-      title: Text(label),
-      trailing: trailing,
-      onTap: () {
-        Navigator.of(dialogContext).pop();
-        _handleAction(parentContext, action);
-      },
-    );
-  }
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Text(subtitle),
+      tilePadding: const EdgeInsets.all(16),
+      childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
+      shape: const Border(),
+      collapsedShape: const Border(),
+      children: children,
+    ),
+  );
+
+  Widget _menuTile(BuildContext context, _MenuAction action, IconData icon, String label, {String? subtitle}) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: WorkoutActionTile(
+          icon: icon,
+          title: label,
+          subtitle: subtitle,
+          // Keep this hub on the navigator stack. Close, back and cancellation in
+          // a child all reveal the same menu, including its expanded groups.
+          onTap: () => _handleAction(context, action),
+        ),
+      );
 
   void _handleAction(BuildContext context, _MenuAction action) {
     switch (action) {
+      case _MenuAction.ftp:
+        _showFtpDialog(context);
+        break;
       case _MenuAction.freeRide:
         _startFreeRide(context);
-        break;
-      case _MenuAction.importZwo:
-        _importZwo(context);
         break;
       case _MenuAction.selectWorkout:
         _showWorkoutLibrary(context, selectionMode: true);
@@ -209,6 +258,14 @@ class WorkoutMenu extends StatelessWidget {
     }
   }
 
+  Future<void> _showFtpDialog(BuildContext context) async {
+    final result = await showDialog<double>(
+      context: context,
+      builder: (_) => WorkoutFtpDialog(initialFtp: workoutController.ftpValue),
+    );
+    if (result != null && context.mounted) await workoutController.updateFTP(result);
+  }
+
   void _runAfterDialogClose(BuildContext dialogContext, VoidCallback action) {
     Navigator.pop(dialogContext);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -221,7 +278,8 @@ class WorkoutMenu extends StatelessWidget {
     final shouldReplace = await _confirmWorkoutReplacement(context);
     if (!shouldReplace) return;
 
-    const freeRideZwo = '<?xml version="1.0" encoding="UTF-8"?>'
+    const freeRideZwo =
+        '<?xml version="1.0" encoding="UTF-8"?>'
         '<workout_file>'
         '  <name>Free Ride</name>'
         '  <description>Open ride - ride at your own pace</description>'
@@ -258,10 +316,7 @@ class WorkoutMenu extends StatelessWidget {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Loading today\'s workout from Intervals.icu...'),
-          duration: Duration(seconds: 2),
-        ),
+        const SnackBar(content: Text('Loading today\'s workout from Intervals.icu...'), duration: Duration(seconds: 2)),
       );
 
       final todaysWorkout = await IntervalsService.getTodaysWorkout();
@@ -306,12 +361,9 @@ class WorkoutMenu extends StatelessWidget {
         ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading today\'s workout: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error loading today\'s workout: $e'), backgroundColor: Colors.red));
     }
   }
 
@@ -359,113 +411,13 @@ class WorkoutMenu extends StatelessWidget {
             }
           }
 
-          Future<Map<String, dynamic>?> pickWorkoutFromFolder(Map<String, dynamic> folder) async {
+          Future<Map<String, dynamic>?> pickWorkoutFromFolder(Map<String, dynamic> folder) {
             return showDialog<Map<String, dynamic>>(
               context: dialogCtx,
-              builder: (ctx) {
-                final folderStack = <Map<String, dynamic>>[folder];
-
-                return StatefulBuilder(
-                  builder: (ctx2, setState) {
-                    Map<String, dynamic> currentFolder = folderStack.last;
-                    final children = (currentFolder['children'] is List)
-                        ? List<Map<String, dynamic>>.from(
-                            (currentFolder['children'] as List)
-                                .whereType<Map>()
-                                .map((e) => Map<String, dynamic>.from(e)),
-                          )
-                        : <Map<String, dynamic>>[];
-
-                    final subfolders = children.where((c) => c['children'] is List).toList();
-                    final workouts =
-                        children.where((c) => c['workout_doc'] != null || c['workout_file'] != null).toList();
-
-                    return AlertDialog(
-                      title: Text('Workouts • ${currentFolder['name'] ?? 'Folder'}'),
-                      content: SizedBox(
-                        width: double.maxFinite,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (folderStack.length > 1)
-                              ListTile(
-                                dense: true,
-                                leading: const Icon(Icons.arrow_back),
-                                title: const Text('Go back'),
-                                onTap: () {
-                                  setState(() {
-                                    folderStack.removeLast();
-                                  });
-                                },
-                              ),
-                            if (folderStack.length > 1) const Divider(height: 8),
-                            Expanded(
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                itemCount: subfolders.length + workouts.length,
-                                itemBuilder: (context, index) {
-                                  if (index < subfolders.length) {
-                                    final folder = subfolders[index];
-                                    final name = (folder['name'] ?? 'Folder').toString();
-                                    return ListTile(
-                                      leading: const Icon(Icons.folder),
-                                      title: Text(name),
-                                      trailing: const Icon(Icons.chevron_right, size: 18),
-                                      onTap: () {
-                                        setState(() {
-                                          folderStack.add(folder);
-                                        });
-                                      },
-                                    );
-                                  }
-
-                                  final workout = workouts[index - subfolders.length];
-                                  final name = (workout['name'] ?? 'Workout').toString();
-                                  String formatDuration(int seconds) {
-                                    final h = seconds ~/ 3600;
-                                    final m = (seconds % 3600) ~/ 60;
-                                    final s = seconds % 60;
-                                    String two(int v) => v.toString().padLeft(2, '0');
-                                    if (h > 0) return '${two(h)}:${two(m)}:${two(s)}';
-                                    return '${two(m)}:${two(s)}';
-                                  }
-
-                                  final movingTime = (workout['moving_time'] is int)
-                                      ? workout['moving_time'] as int
-                                      : int.tryParse('${workout['moving_time'] ?? ''}') ?? 0;
-                                  final load = (workout['icu_training_load'] is num)
-                                      ? (workout['icu_training_load'] as num).toInt()
-                                      : int.tryParse('${workout['icu_training_load'] ?? ''}') ?? 0;
-                                  final intensity = (workout['icu_intensity'] is num)
-                                      ? (workout['icu_intensity'] as num).toDouble()
-                                      : double.tryParse('${workout['icu_intensity'] ?? ''}') ?? 0.0;
-
-                                  final subtitleParts = <String>[];
-                                  if (movingTime > 0) subtitleParts.add(formatDuration(movingTime));
-                                  if (load > 0) subtitleParts.add('TL $load');
-                                  if (intensity > 0) subtitleParts.add('IF ${intensity.toStringAsFixed(2)}');
-                                  final subtitle = subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
-
-                                  return ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                                    minLeadingWidth: 130,
-                                    leading: _buildIntervalsThumbnail(context, workout),
-                                    title: Text(name),
-                                    subtitle: subtitle != null ? Text(subtitle) : null,
-                                    onTap: () => Navigator.of(ctx2).pop(workout),
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      actions: [TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('BACK'))],
-                    );
-                  },
-                );
-              },
+              builder: (_) => IntervalsWorkoutFolderDialog(
+                folder: folder,
+                thumbnailBuilder: _buildIntervalsThumbnail,
+              ),
             );
           }
 
@@ -479,18 +431,11 @@ class WorkoutMenu extends StatelessWidget {
                 WidgetsBinding.instance.addPostFrameCallback((_) => loadFolders(setState));
               }
 
-              final todayTile = ListTile(
-                leading: Image.asset(
-                  'assets/intervals.png',
-                  width: 50,
-                  height: 50,
-                ),
+              final todayTile = WorkoutOptionTile(
+                leading: Image.asset('assets/intervals.png', width: 50, height: 50),
                 title: const Text("Today's Intervals.icu Workout"),
                 subtitle: const Text('Load planned workout for today'),
-                onTap: () => _runAfterDialogClose(
-                  dialogCtx,
-                  () => _loadTodaysWorkoutFromIntervals(context),
-                ),
+                onTap: () => _runAfterDialogClose(dialogCtx, () => _loadTodaysWorkoutFromIntervals(context)),
               );
 
               Widget buildFoldersList() {
@@ -499,28 +444,19 @@ class WorkoutMenu extends StatelessWidget {
                   itemCount: folders.length + 1,
                   itemBuilder: (ctx2, index) {
                     if (index == 0) {
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          todayTile,
-                          const Divider(height: 1),
-                        ],
-                      );
+                      return Column(mainAxisSize: MainAxisSize.min, children: [todayTile, const Divider(height: 1)]);
                     }
 
                     final f = folders[index - 1];
                     final name = (f['name'] ?? 'Folder').toString();
                     final count = (f['children'] is List) ? (f['children'] as List).length : 0;
-                    return ListTile(
+                    return WorkoutOptionTile(
                       leading: const Icon(Icons.folder),
                       title: Text(name),
                       subtitle: Text('$count items'),
                       trailing: const Icon(Icons.chevron_right, size: 18),
                       onTap: () async {
-                        final rootFolder = {
-                          'name': name,
-                          'children': f['children'] ?? [],
-                        };
+                        final rootFolder = {'name': name, 'children': f['children'] ?? []};
                         final selectedWorkout = await pickWorkoutFromFolder(rootFolder);
                         if (selectedWorkout != null && dialogCtx.mounted) {
                           Navigator.of(dialogCtx).pop(selectedWorkout);
@@ -557,11 +493,12 @@ class WorkoutMenu extends StatelessWidget {
                 );
               }
 
-              return AlertDialog(
+              return WorkoutDialog(
+                listBody: true,
+                icon: Icons.folder_open_rounded,
                 title: Row(
                   children: [
-                    const Text('Intervals.icu'),
-                    const Spacer(),
+                    const Expanded(child: Text('Intervals.icu')),
                     IconButton(
                       icon: const Icon(Icons.refresh),
                       tooltip: 'Refresh',
@@ -574,8 +511,8 @@ class WorkoutMenu extends StatelessWidget {
                   child: isLoading && !hasFolders
                       ? buildLoadingList()
                       : hasFolders
-                          ? buildFoldersList()
-                          : buildEmptyList(),
+                      ? buildFoldersList()
+                      : buildEmptyList(),
                 ),
                 actions: [TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('CLOSE'))],
               );
@@ -585,16 +522,11 @@ class WorkoutMenu extends StatelessWidget {
       ).then((selectedWorkout) async {
         if (selectedWorkout == null) return;
 
-        final zwoContent = _convertIntervalsWorkoutToZwo(
-          Map<String, dynamic>.from(selectedWorkout),
-        );
+        final zwoContent = _convertIntervalsWorkoutToZwo(Map<String, dynamic>.from(selectedWorkout));
 
         if (zwoContent == null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Selected item has no workout data'),
-              backgroundColor: Colors.red,
-            ),
+            const SnackBar(content: Text('Selected item has no workout data'), backgroundColor: Colors.red),
           );
           return;
         }
@@ -604,10 +536,7 @@ class WorkoutMenu extends StatelessWidget {
           return;
         }
 
-        await _saveIntervalsWorkoutToLibrary(
-          Map<String, dynamic>.from(selectedWorkout),
-          zwoContent,
-        );
+        await _saveIntervalsWorkoutToLibrary(Map<String, dynamic>.from(selectedWorkout), zwoContent);
         workoutController.loadWorkout(zwoContent);
         onWorkoutLoaded(zwoContent, name: (selectedWorkout['name'] ?? 'Intervals.icu Workout').toString());
         ScaffoldMessenger.of(context).showSnackBar(
@@ -618,19 +547,13 @@ class WorkoutMenu extends StatelessWidget {
         );
       });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error picking Intervals.icu workout: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error picking Intervals.icu workout: $e'), backgroundColor: Colors.red));
     }
   }
 
-  Future<void> _saveIntervalsWorkoutToLibrary(
-    Map<String, dynamic> workout,
-    String zwoContent,
-  ) async {
+  Future<void> _saveIntervalsWorkoutToLibrary(Map<String, dynamic> workout, String zwoContent) async {
     final workoutName = (workout['name'] ?? 'Intervals.icu Workout').toString();
     final thumb = await _getOrGenerateIntervalsThumb(workout);
     final thumbnailData = thumb ?? base64Encode(utf8.encode('placeholder'));
@@ -654,12 +577,7 @@ class WorkoutMenu extends StatelessWidget {
         }
         return ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: Image.memory(
-            base64Decode(data),
-            width: 120,
-            height: 70,
-            fit: BoxFit.cover,
-          ),
+          child: Image.memory(base64Decode(data), width: 120, height: 70, fit: BoxFit.cover),
         );
       },
     );
@@ -674,11 +592,7 @@ class WorkoutMenu extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       alignment: Alignment.center,
-      child: Icon(
-        Icons.fitness_center,
-        color: Theme.of(context).colorScheme.outline,
-        size: 20,
-      ),
+      child: Icon(Icons.fitness_center, color: Theme.of(context).colorScheme.outline, size: 20),
     );
 
     if (!isLoading) {
@@ -724,189 +638,133 @@ class WorkoutMenu extends StatelessWidget {
     if (zwoContent == null) return null;
 
     final workoutName = (workout['name'] ?? 'Intervals.icu Workout').toString();
-    return WorkoutStorage.getOrGenerateWorkoutThumbnail(
-      workoutName: workoutName,
-      workoutContent: zwoContent,
-    );
+    return WorkoutStorage.getOrGenerateWorkoutThumbnail(workoutName: workoutName, workoutContent: zwoContent);
   }
 
   /// Reuse the library's existing load/resume flows from the Arcade lobby.
-  void showWorkoutLibrary(BuildContext context) =>
-      _showWorkoutLibrary(context, selectionMode: true);
+  void showWorkoutLibrary(BuildContext context) => _showMenuDialog(context, initialAction: _MenuAction.selectWorkout);
 
   void _showWorkoutLibrary(BuildContext context, {required bool selectionMode}) {
     final rootContext = context;
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.8,
-          height: MediaQuery.of(context).size.height * 0.8,
-          padding: EdgeInsets.all(WorkoutPadding.standard),
-          child: Column(
-            children: [
-              Text(
-                'Workout Library',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              SizedBox(height: WorkoutSpacing.medium),
-              Expanded(
-                child: WorkoutLibrary(
-                  selectionMode: selectionMode,
-                  onClose: () => Navigator.pop(context),
-                  headerWidgets: selectionMode
-                      ? [
-                          FutureBuilder<bool>(
-                            future: IntervalsService.isAuthenticated(),
-                            builder: (futureContext, snapshot) {
-                              if (snapshot.connectionState == ConnectionState.waiting) {
-                                return const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 8.0),
-                                  child: LinearProgressIndicator(),
-                                );
-                              }
+      builder: (ctx) => WorkoutDialog(
+        title: const Text('Choose a workout'),
+        icon: Icons.folder_open_rounded,
+        subtitle: 'Find your next ride.',
+        showClose: true,
+        listBody: true,
+        showListScrollHint: false,
+        content: WorkoutLibrary(
+          selectionMode: selectionMode,
 
-                              final isConnected = snapshot.data == true;
-                              if (!isConnected) {
-                                return Card(
-                                  child: ListTile(
-                                    leading: Image.asset(
-                                      'assets/intervals.png',
-                                      width: 50,
-                                      height: 50,
-                                    ),
-                                    title: const Text('Connect Intervals.icu for more workouts'),
-                                    onTap: () => _runAfterDialogClose(
-                                      ctx,
-                                      () => WorkoutConnectedAccounts.showConnectedAccountsDialog(rootContext),
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              return Card(
-                                child: Column(
-                                  children: [
-                                    ListTile(
-                                      leading: Image.asset(
-                                        'assets/intervals.png',
-                                        width: 50,
-                                        height: 50,
-                                      ),
-                                      title: const Text('Intervals.icu Library'),
-                                      subtitle: const Text('Browse folders & workouts'),
-                                      trailing: const Icon(Icons.chevron_right, size: 18),
-                                      onTap: () => _runAfterDialogClose(
-                                        ctx,
-                                        () => _pickWorkoutFromIntervals(rootContext),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                          Card(
-                            child: ListTile(
-                              leading: Image.asset(
-                                'assets/ss2kv3.png',
-                                width: 50,
-                                height: 50,
-                              ),
-                              title: const Text('SmartSpin2k Library'),
-                              subtitle: const Text('Bundled workouts'),
-                              trailing: const Icon(Icons.chevron_right, size: 18),
-                              onTap: () => _runAfterDialogClose(
-                                ctx,
-                                () => _showAssetWorkoutFolder(rootContext),
-                              ),
-                            ),
-                          ),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
-                              child: Text(
-                                'Imported Workouts:',
-                                style: Theme.of(context).textTheme.titleSmall,
-                              ),
-                            ),
-                          ),
-                        ]
-                      : const [],
-                  onWorkoutSelected: (name, content, isInProgress) async {
-                    if (!isInProgress) {
-                      final shouldReplace = await _confirmWorkoutReplacement(context);
-                      if (!shouldReplace) {
-                        return;
-                      }
-                      Navigator.pop(context);
-                      workoutController.loadWorkout(content, isResume: false);
-                      onWorkoutLoaded(content, name: workoutController.workoutName);
-                      return;
-                    }
-
-                    final action = await showDialog<String>(
-                      context: context,
-                      builder: (dialogContext) => AlertDialog(
-                        title: Text(name),
-                        content: const Text('Resume this workout or restart from the beginning?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(dialogContext, 'cancel'),
-                            child: const Text('CANCEL'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(dialogContext, 'restart'),
-                            child: const Text('RESTART'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(dialogContext, 'resume'),
-                            child: const Text('RESUME'),
-                          ),
-                        ],
-                      ),
-                    );
-
-                    if (action == 'resume') {
-                      final shouldReplace = await _confirmWorkoutReplacement(context);
-                      if (!shouldReplace) {
-                        return;
-                      }
-                      Navigator.pop(context);
-                      final restored = await workoutController.restoreSavedWorkoutState();
-                      if (restored) {
-                        onWorkoutLoaded(content, name: workoutController.workoutName);
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Unable to resume in-progress workout.'),
-                            backgroundColor: Colors.red,
-                          ),
+          headerWidgets: selectionMode
+              ? [
+                  WorkoutOptionTile(
+                    leading: const Icon(Icons.file_upload_outlined),
+                    title: const Text('Import a workout file'),
+                    subtitle: const Text('Choose a .zwo file from your device'),
+                    onTap: () => _runAfterDialogClose(ctx, () => _importZwo(rootContext)),
+                  ),
+                  FutureBuilder<bool>(
+                    future: IntervalsService.isAuthenticated(),
+                    builder: (futureContext, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8.0),
+                          child: LinearProgressIndicator(),
                         );
                       }
-                      return;
-                    }
 
-                    if (action == 'restart') {
-                      final shouldReplace = await _confirmWorkoutReplacement(context);
-                      if (!shouldReplace) {
-                        return;
-                      }
-                      Navigator.pop(context);
-                      await workoutController.clearInProgressFile();
-                      await WorkoutStorage.clearWorkoutState();
-                      workoutController.loadWorkout(content, isResume: false);
-                      onWorkoutLoaded(content, name: workoutController.workoutName);
-                    }
-                  },
-                  onWorkoutDeleted: (name) async {
-                    await WorkoutStorage.deleteWorkout(name);
-                  },
-                ),
+                      final isConnected = snapshot.data == true;
+                      return WorkoutOptionTile(
+                        leading: Image.asset('assets/intervals.png', width: 50, height: 50),
+                        title: Text(isConnected ? 'Intervals.icu Library' : 'Connect Intervals.icu for more workouts'),
+                        subtitle: isConnected ? const Text('Browse folders & workouts') : null,
+                        trailing: const Icon(Icons.chevron_right, size: 18),
+                        onTap: () => _runAfterDialogClose(ctx, () {
+                          if (isConnected) {
+                            _pickWorkoutFromIntervals(rootContext);
+                          } else {
+                            WorkoutConnectedAccounts.showConnectedAccountsDialog(rootContext);
+                          }
+                        }),
+                      );
+                    },
+                  ),
+                  WorkoutOptionTile(
+                    leading: Image.asset('assets/ss2kv3.png', width: 50, height: 50),
+                    title: const Text('SmartSpin2k Library'),
+                    subtitle: const Text('Bundled workouts'),
+                    trailing: const Icon(Icons.chevron_right, size: 18),
+                    onTap: () => _runAfterDialogClose(ctx, () => _showAssetWorkoutFolder(rootContext)),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+                      child: Text('Imported Workouts:', style: Theme.of(context).textTheme.titleSmall),
+                    ),
+                  ),
+                ]
+              : const [],
+          onWorkoutSelected: (name, content, isInProgress) async {
+            if (!isInProgress) {
+              final shouldReplace = await _confirmWorkoutReplacement(context);
+              if (!shouldReplace) {
+                return;
+              }
+              Navigator.pop(context);
+              workoutController.loadWorkout(content, isResume: false);
+              onWorkoutLoaded(content, name: workoutController.workoutName);
+              return;
+            }
+
+            final action = await showDialog<String>(
+              context: context,
+              builder: (dialogContext) => WorkoutDialog(
+                title: Text(name),
+                content: const Text('Resume this workout or restart from the beginning?'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(dialogContext, 'cancel'), child: const Text('CANCEL')),
+                  TextButton(onPressed: () => Navigator.pop(dialogContext, 'restart'), child: const Text('RESTART')),
+                  TextButton(onPressed: () => Navigator.pop(dialogContext, 'resume'), child: const Text('RESUME')),
+                ],
               ),
-            ],
-          ),
+            );
+
+            if (action == 'resume') {
+              final shouldReplace = await _confirmWorkoutReplacement(context);
+              if (!shouldReplace) {
+                return;
+              }
+              Navigator.pop(context);
+              final restored = await workoutController.restoreSavedWorkoutState();
+              if (restored) {
+                onWorkoutLoaded(content, name: workoutController.workoutName);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Unable to resume in-progress workout.'), backgroundColor: Colors.red),
+                );
+              }
+              return;
+            }
+
+            if (action == 'restart') {
+              final shouldReplace = await _confirmWorkoutReplacement(context);
+              if (!shouldReplace) {
+                return;
+              }
+              Navigator.pop(context);
+              await workoutController.clearInProgressFile();
+              await WorkoutStorage.clearWorkoutState();
+              workoutController.loadWorkout(content, isResume: false);
+              onWorkoutLoaded(content, name: workoutController.workoutName);
+            }
+          },
+          onWorkoutDeleted: (name) async {
+            await WorkoutStorage.deleteWorkout(name);
+          },
         ),
       ),
     );
@@ -920,8 +778,16 @@ class WorkoutMenu extends StatelessWidget {
   }
 
   void _showCalibrationDialog(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => CalibrationScreen(device: device)),
+    showDialog<void>(
+      context: context,
+      builder: (_) => WorkoutDialog(
+        title: const Text('Trainer setup'),
+        icon: Icons.tune_rounded,
+        subtitle: 'Set up your trainer for a smooth ride.',
+        showClose: true,
+        listBody: true,
+        content: CalibrationScreen(device: device, embedded: true),
+      ),
     );
   }
 
@@ -929,88 +795,94 @@ class WorkoutMenu extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) {
-        return StatefulBuilder(builder: (ctx2, setState) {
-          return AlertDialog(
-            title: const Text('Workout Text Settings'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Font Size: ${WorkoutTextStyle.scrollingText.toInt()}'),
-                Slider(
-                  value: WorkoutTextStyle.scrollingText,
-                  min: 24,
-                  max: 72,
-                  divisions: 12,
-                  label: WorkoutTextStyle.scrollingText.toInt().toString(),
-                  onChanged: (value) {
-                    setState(() => WorkoutTextStyle.scrollingText = value);
-                    WorkoutTextEventOverlay.saveTextSettings(value, WorkoutTextStyle.scrollSpeed);
-                  },
-                ),
-                const SizedBox(height: 16),
-                Text('Scroll Speed: ${WorkoutTextStyle.scrollSpeed.toInt()} px/s'),
-                Slider(
-                  value: WorkoutTextStyle.scrollSpeed,
-                  min: 50,
-                  max: 300,
-                  divisions: 25,
-                  label: WorkoutTextStyle.scrollSpeed.toInt().toString(),
-                  onChanged: (value) {
-                    setState(() => WorkoutTextStyle.scrollSpeed = value);
-                    WorkoutTextEventOverlay.saveTextSettings(WorkoutTextStyle.scrollingText, value);
-                  },
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (ctx3) {
-                        final testSegment = WorkoutSegment(
-                          type: SegmentType.steadyState,
-                          duration: 60,
-                          powerLow: 100,
-                          powerHigh: 150,
-                          textEvents: [
-                            TextEvent(
-                              timeOffset: 0,
-                              message:
-                                  'Text Size ${WorkoutTextStyle.scrollingText.toInt()} , Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
+        return StatefulBuilder(
+          builder: (ctx2, setState) {
+            return WorkoutDialog(
+              title: const Text('On-screen messages'),
+              icon: Icons.text_fields_rounded,
+              subtitle: 'Adjust the messages shown during your ride.',
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  WorkoutSettingSlider(
+                    label: 'Font Size',
+                    valueLabel: '${WorkoutTextStyle.scrollingText.toInt()}',
+                    value: WorkoutTextStyle.scrollingText,
+                    min: 24,
+                    max: 72,
+                    divisions: 12,
+                    onChanged: (value) {
+                      setState(() => WorkoutTextStyle.scrollingText = value);
+                      WorkoutTextEventOverlay.saveTextSettings(value, WorkoutTextStyle.scrollSpeed);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  WorkoutSettingSlider(
+                    label: 'Scroll Speed',
+                    valueLabel: '${WorkoutTextStyle.scrollSpeed.toInt()} px/s',
+                    value: WorkoutTextStyle.scrollSpeed,
+                    min: 50,
+                    max: 300,
+                    divisions: 25,
+                    onChanged: (value) {
+                      setState(() => WorkoutTextStyle.scrollSpeed = value);
+                      WorkoutTextEventOverlay.saveTextSettings(WorkoutTextStyle.scrollingText, value);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton(
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx3) {
+                          final testSegment = WorkoutSegment(
+                            type: SegmentType.steadyState,
+                            duration: 60,
+                            powerLow: 100,
+                            powerHigh: 150,
+                            textEvents: [
+                              TextEvent(
+                                timeOffset: 0,
+                                message:
+                                    'Text Size ${WorkoutTextStyle.scrollingText.toInt()} , Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
+                              ),
+                            ],
+                          );
+                          return WorkoutDialog(
+                            title: const Text('Preview workout text'),
+                            icon: Icons.text_fields_rounded,
+                            content: SizedBox(
+                              width: double.maxFinite,
+                              child: WorkoutTextEventOverlay(
+                                currentSegment: testSegment,
+                                secondsIntoSegment: 0,
+                                ttsSettings: ttsSettings,
+                                workoutController: workoutController,
+                                testText:
+                                    'Text Size ${WorkoutTextStyle.scrollingText.toInt()} x Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
+                              ),
                             ),
-                          ],
-                        );
-                        return AlertDialog(
-                          content: SizedBox(
-                            width: double.maxFinite,
-                            child: WorkoutTextEventOverlay(
-                              currentSegment: testSegment,
-                              secondsIntoSegment: 0,
-                              ttsSettings: ttsSettings,
-                              workoutController: workoutController,
-                              testText:
-                                  'Text Size ${WorkoutTextStyle.scrollingText.toInt()} x Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
-                            ),
-                          ),
-                          actions: [TextButton(onPressed: () => Navigator.pop(ctx3), child: const Text('CLOSE'))],
-                        );
-                      },
-                    );
-                  },
-                  child: const Text('TEST SETTINGS'),
-                ),
-              ],
-            ),
-            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CLOSE'))],
-          );
-        });
+                            actions: [TextButton(onPressed: () => Navigator.pop(ctx3), child: const Text('CLOSE'))],
+                          );
+                        },
+                      );
+                    },
+                    child: const Text('TEST SETTINGS'),
+                  ),
+                ],
+              ),
+              actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CLOSE'))],
+            );
+          },
+        );
       },
     );
   }
 }
 
 enum _MenuAction {
+  ftp,
   freeRide,
-  importZwo,
   selectWorkout,
   audioCoach,
   connectedAccounts,

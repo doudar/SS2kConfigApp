@@ -5,6 +5,8 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../utils/workout/workout_painter.dart';
 import '../utils/workout/workout_metrics.dart';
+import '../utils/workout/classic_workout_preview.dart';
+import '../utils/workout/workout_visuals.dart';
 import '../utils/workout/workout_constants.dart';
 import '../utils/workout/workout_controller.dart';
 import '../utils/workout/workout_storage.dart';
@@ -22,6 +24,7 @@ import '../utils/workout/workout_text_event_overlay.dart';
 import '../utils/workout/workout_controls.dart';
 import '../utils/workout/workout_summary.dart';
 import '../widgets/ss2k_app_bar.dart';
+import '../widgets/workout_header_action.dart';
 import '../widgets/workout_menu.dart';
 import '../widgets/power_table_chart.dart';
 import '../utils/stream_extensions.dart';
@@ -45,8 +48,8 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     with TickerProviderStateMixin {
   String? _workoutName;
   bool _arcadeMode = false;
-  bool _arcadePreferencesLoaded = false;
   bool _arcadeFullscreen = false;
+  bool _arcadePreferencesLoaded = false;
   bool _completionPending = false;
   bool _startingWorkout = false;
   final ArcadeSession _arcadeSession = ArcadeSession();
@@ -74,22 +77,6 @@ class _WorkoutScreenState extends State<WorkoutScreen>
   double _overlayLeft = 10;
   final double _overlayWidth = 300;
   final double _overlayHeight = 180;
-
-  void _toggleOverlay() {
-    setState(() {
-      switch (_overlayMode) {
-        case OverlayMode.none:
-          _overlayMode = OverlayMode.overview;
-          break;
-        case OverlayMode.overview:
-          _overlayMode = OverlayMode.powerTable;
-          break;
-        case OverlayMode.powerTable:
-          _overlayMode = OverlayMode.none;
-          break;
-      }
-    });
-  }
 
   void _initializeAnimationControllers() {
     _metricsAndSummaryFadeController = AnimationController(
@@ -149,7 +136,6 @@ class _WorkoutScreenState extends State<WorkoutScreen>
       if (!mounted) return;
       if (_isDisposing) return; // Skip any animation updates while disposing
       _syncClassicPulse();
-
       final fullscreen = _arcadeMode && _workoutController.isPlaying;
       if (_arcadeFullscreen != fullscreen) {
         setState(() => _arcadeFullscreen = fullscreen);
@@ -560,6 +546,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
       expanded: _arcadeFullscreen,
       arcade: _arcadeMode
           ? ArcadeWorkoutView(
+              hasDeviceHeader: true,
               controller: _workoutController,
               deviceData: deviceData,
               session: _arcadeSession,
@@ -568,6 +555,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
               onBrowseWorkouts: () =>
                   _workoutMenu().showWorkoutLibrary(context),
               onWorkoutLoaded: _onWorkoutLoaded,
+              onOpenMenu: () => _workoutMenu().show(context),
             )
           : null,
       overlay: AnimatedBuilder(
@@ -586,9 +574,11 @@ class _WorkoutScreenState extends State<WorkoutScreen>
         device: widget.device,
         title: _workoutName ?? '',
         firmwareOnlyDeviceHeader: true,
+        mobileActionRow: true,
         actions: [
-          IconButton(
-            icon: Icon(_arcadeMode ? Icons.show_chart : Icons.sports_esports),
+          WorkoutHeaderAction(
+            label: _arcadeMode ? 'Classic mode' : 'Arcade mode',
+            icon: _arcadeMode ? Icons.show_chart : Icons.sports_esports,
             tooltip: _arcadeMode
                 ? 'Classic workout mode'
                 : 'Arcade workout mode',
@@ -596,18 +586,33 @@ class _WorkoutScreenState extends State<WorkoutScreen>
           ),
           if (!_arcadeMode &&
               MediaQuery.of(context).orientation == Orientation.landscape)
-            IconButton(
-              icon: Icon(
-                _overlayMode == OverlayMode.none
-                    ? Icons.layers_clear
-                    : _overlayMode == OverlayMode.overview
-                    ? Icons.map
-                    : Icons.grid_on,
+            MenuAnchor(
+              builder: (context, menu, child) => WorkoutHeaderAction(
+                label: 'Graph tools',
+                icon: Icons.layers_outlined,
+                onPressed: () => menu.isOpen ? menu.close() : menu.open(),
               ),
-              onPressed: _toggleOverlay,
-              tooltip: 'Toggle Overlay',
+              menuChildren: [
+                for (final entry in const {
+                  OverlayMode.none: 'No overlay',
+                  OverlayMode.overview: 'Workout overview',
+                  OverlayMode.powerTable: 'Power table',
+                }.entries)
+                  MenuItemButton(
+                    leadingIcon: Icon(
+                      _overlayMode == entry.key ? Icons.check : Icons.remove,
+                    ),
+                    onPressed: () => setState(() => _overlayMode = entry.key),
+                    child: Text(entry.value),
+                  ),
+              ],
             ),
-          _workoutMenu(),
+          WorkoutHeaderAction(
+            label: 'Ride menu',
+            icon: Icons.menu_rounded,
+            tooltip: 'Workouts and ride settings',
+            onPressed: () => _workoutMenu().show(context),
+          ),
         ],
       ),
       body: AnimatedBuilder(
@@ -623,253 +628,276 @@ class _WorkoutScreenState extends State<WorkoutScreen>
                 excluding: _arcadeMode || _showWorkoutLobby,
                 child: IgnorePointer(
                   ignoring: _arcadeMode || _showWorkoutLobby,
-                  child: Column(
-                    children: [
-                      Stack(
-                        children: [
-                          AnimatedBuilder(
-                            animation: _workoutController,
-                            builder: (context, _) => WorkoutSummary(
-                              workoutController: _workoutController,
-                              fadeAnimation: _metricsAndSummaryFadeAnimation,
-                            ),
-                          ),
-                          StreamBuilder<CharacteristicChangeEvent>(
-                            stream: deviceData.characteristicChanges
-                                .where((event) => event.type == 'ftms')
-                                .debounce(const Duration(milliseconds: 100)),
-                            builder: (context, snapshot) => WorkoutMetrics(
-                              deviceData: deviceData,
-                              fadeAnimation: _metricsAndSummaryFadeAnimation,
-                              elapsedTime: _workoutController.elapsedSeconds,
-                              timeToNextSegment: _workoutController
-                                  .currentSegmentTimeRemaining,
-                              totalDuration: _workoutController.totalDuration,
-                              speedMph: _workoutController.speedMph,
-                              totalDistance: _workoutController.totalDistance,
-                              workoutProgressSeconds:
-                                  _workoutController.workoutProgressSeconds,
-                              isUnlimitedFreeRide:
-                                  _workoutController.isUnlimitedFreeRide,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Expanded(
-                        child: _workoutController.segments.isEmpty
-                            ? const Center(child: CircularProgressIndicator())
-                            : LayoutBuilder(
-                                builder: (context, constraints) {
-                                  return Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      AnimatedBuilder(
-                                        animation: Listenable.merge([
-                                          _zoomAnimation,
-                                          _pulseController,
-                                          _workoutController,
-                                        ]),
-                                        builder: (context, child) {
-                                          return LayoutBuilder(
-                                            builder: (context, graphConstraints) {
-                                              final totalWidth =
-                                                  calculateWorkoutGraphWidth(
-                                                    viewportWidth:
-                                                        graphConstraints
-                                                            .maxWidth,
-                                                    workoutDurationSeconds:
-                                                        _workoutController
-                                                            .totalDuration,
-                                                    visibleMinutes:
-                                                        _zoomAnimation.value,
-                                                  );
+                  child: ClassicWorkoutSurface(
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          child: !_workoutController.isPlaying
+                              ? WorkoutSummary(
+                                  workoutController: _workoutController,
+                                  fadeAnimation:
+                                      _metricsAndSummaryFadeAnimation,
+                                )
+                              : StreamBuilder<CharacteristicChangeEvent>(
+                                  stream: deviceData.characteristicChanges
+                                      .where((event) => event.type == 'ftms')
+                                      .debounce(
+                                        const Duration(milliseconds: 100),
+                                      ),
+                                  builder: (context, snapshot) =>
+                                      WorkoutMetrics(
+                                        deviceData: deviceData,
+                                        fadeAnimation:
+                                            _metricsAndSummaryFadeAnimation,
+                                        elapsedTime:
+                                            _workoutController.elapsedSeconds,
+                                        timeToNextSegment: _workoutController
+                                            .currentSegmentTimeRemaining,
+                                        totalDuration:
+                                            _workoutController.totalDuration,
+                                        speedMph: _workoutController.speedMph,
+                                        totalDistance:
+                                            _workoutController.totalDistance,
+                                        workoutProgressSeconds:
+                                            _workoutController
+                                                .workoutProgressSeconds,
+                                        isUnlimitedFreeRide: _workoutController
+                                            .isUnlimitedFreeRide,
+                                      ),
+                                ),
+                        ),
+                        const WorkoutTraceLegend(),
+                        Expanded(
+                          child: _workoutController.segments.isEmpty
+                              ? const Center(child: CircularProgressIndicator())
+                              : LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    return Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        AnimatedBuilder(
+                                          animation: Listenable.merge([
+                                            _zoomAnimation,
+                                            _pulseController,
+                                            _workoutController,
+                                          ]),
+                                          builder: (context, child) {
+                                            return LayoutBuilder(
+                                              builder: (context, graphConstraints) {
+                                                final verticalPadding =
+                                                    (graphConstraints
+                                                                .maxHeight /
+                                                            5)
+                                                        .clamp(
+                                                          0.0,
+                                                          WorkoutPadding
+                                                              .standard,
+                                                        );
+                                                final labelSpace =
+                                                    (graphConstraints
+                                                                .maxHeight /
+                                                            5)
+                                                        .clamp(
+                                                          0.0,
+                                                          WorkoutSpacing.medium,
+                                                        );
+                                                final totalWidth =
+                                                    calculateWorkoutGraphWidth(
+                                                      viewportWidth:
+                                                          graphConstraints
+                                                              .maxWidth,
+                                                      workoutDurationSeconds:
+                                                          _workoutController
+                                                              .totalDuration,
+                                                      visibleMinutes:
+                                                          _zoomAnimation.value,
+                                                    );
 
-                                              return SingleChildScrollView(
-                                                physics:
-                                                    const NeverScrollableScrollPhysics(),
-                                                controller: _scrollController,
-                                                scrollDirection:
-                                                    Axis.horizontal,
-                                                child: RepaintBoundary(
-                                                  child: SizedBox(
-                                                    width: totalWidth,
-                                                    child: Stack(
-                                                      children: [
-                                                        Padding(
-                                                          padding:
-                                                              EdgeInsets.all(
-                                                                WorkoutPadding
-                                                                    .standard,
-                                                              ),
-                                                          child: Column(
-                                                            children: [
-                                                              Expanded(
-                                                                child: CustomPaint(
-                                                                  painter: WorkoutPainter(
-                                                                    segments:
-                                                                        _workoutController
-                                                                            .segments,
-                                                                    maxPower:
-                                                                        _workoutController
-                                                                            .maxPower,
-                                                                    totalDuration:
-                                                                        _workoutController
-                                                                            .totalDuration,
-                                                                    ftpValue:
-                                                                        _workoutController
-                                                                            .ftpValue,
-                                                                    currentProgress:
-                                                                        _workoutController
-                                                                            .progressPosition,
-                                                                    actualPowerPoints:
-                                                                        _workoutController
-                                                                            .actualPowerPoints,
-                                                                    currentPower:
-                                                                        _workoutController
-                                                                            .isPlaying
-                                                                        ? deviceData
-                                                                              .ftmsData
-                                                                              .watts
-                                                                              .toDouble()
-                                                                        : null,
-                                                                    currentHr:
-                                                                        _workoutController
-                                                                            .isPlaying
-                                                                        ? deviceData
-                                                                              .ftmsData
-                                                                              .heartRate
-                                                                        : null,
-                                                                    currentCadence:
-                                                                        _workoutController
-                                                                            .isPlaying
-                                                                        ? deviceData
-                                                                              .ftmsData
-                                                                              .cadence
-                                                                        : null,
-                                                                    powerPointsList:
-                                                                        _workoutController
-                                                                            .getPowerPointsUpToNow(),
-                                                                    hrPointsList:
-                                                                        _workoutController
-                                                                            .getHrPointsUpToNow(),
-                                                                    cadencePointsList:
-                                                                        _workoutController
-                                                                            .getCadencePointsUpToNow(),
-                                                                    pulseValue:
-                                                                        _pulseController
-                                                                            .value,
+                                                return SingleChildScrollView(
+                                                  physics:
+                                                      const NeverScrollableScrollPhysics(),
+                                                  controller: _scrollController,
+                                                  scrollDirection:
+                                                      Axis.horizontal,
+                                                  child: RepaintBoundary(
+                                                    child: SizedBox(
+                                                      width: totalWidth,
+                                                      child: Stack(
+                                                        children: [
+                                                          Padding(
+                                                            padding: EdgeInsets.symmetric(
+                                                              horizontal:
+                                                                  WorkoutPadding
+                                                                      .standard,
+                                                              vertical:
+                                                                  verticalPadding,
+                                                            ),
+                                                            child: Column(
+                                                              children: [
+                                                                Expanded(
+                                                                  child: CustomPaint(
+                                                                    painter: WorkoutPainter(
+                                                                      showLabels:
+                                                                          graphConstraints
+                                                                              .maxHeight >=
+                                                                          80,
+                                                                      maxPixelsPerWatt:
+                                                                          .75,
+                                                                      segments:
+                                                                          _workoutController
+                                                                              .segments,
+                                                                      maxPower:
+                                                                          _workoutController
+                                                                              .maxPower,
+                                                                      totalDuration:
+                                                                          _workoutController
+                                                                              .totalDuration,
+                                                                      ftpValue:
+                                                                          _workoutController
+                                                                              .ftpValue,
+                                                                      currentProgress:
+                                                                          _workoutController
+                                                                              .progressPosition,
+                                                                      actualPowerPoints:
+                                                                          _workoutController
+                                                                              .actualPowerPoints,
+                                                                      currentPower:
+                                                                          _workoutController
+                                                                              .isPlaying
+                                                                          ? deviceData.ftmsData.watts.toDouble()
+                                                                          : null,
+                                                                      currentHr:
+                                                                          _workoutController
+                                                                              .isPlaying
+                                                                          ? deviceData.ftmsData.heartRate
+                                                                          : null,
+                                                                      currentCadence:
+                                                                          _workoutController
+                                                                              .isPlaying
+                                                                          ? deviceData.ftmsData.cadence
+                                                                          : null,
+                                                                      powerPointsList:
+                                                                          _workoutController
+                                                                              .getPowerPointsUpToNow(),
+                                                                      hrPointsList:
+                                                                          _workoutController
+                                                                              .getHrPointsUpToNow(),
+                                                                      cadencePointsList:
+                                                                          _workoutController
+                                                                              .getCadencePointsUpToNow(),
+                                                                      pulseValue:
+                                                                          _pulseController
+                                                                              .value,
+                                                                    ),
+                                                                    child:
+                                                                        Container(),
                                                                   ),
-                                                                  child:
-                                                                      Container(),
                                                                 ),
-                                                              ),
-                                                              SizedBox(
-                                                                height:
-                                                                    WorkoutSpacing
-                                                                        .medium,
-                                                              ),
-                                                            ],
-                                                          ),
-                                                        ),
-                                                        if (_workoutController
-                                                            .isPlaying)
-                                                          Positioned(
-                                                            left:
-                                                                _workoutController
-                                                                        .progressPosition *
-                                                                    (totalWidth -
-                                                                        (2 *
-                                                                            WorkoutPadding.standard)) +
-                                                                WorkoutPadding
-                                                                    .standard,
-                                                            top: WorkoutPadding
-                                                                .standard,
-                                                            bottom:
-                                                                WorkoutSpacing
-                                                                    .medium +
-                                                                WorkoutPadding
-                                                                    .standard,
-                                                            child: Container(
-                                                              width: WorkoutSizes
-                                                                  .progressIndicatorWidth,
-                                                              color:
-                                                                  const Color.fromARGB(
-                                                                    255,
-                                                                    0,
-                                                                    0,
-                                                                    0,
-                                                                  ).withValues(
-                                                                    alpha: WorkoutOpacity
-                                                                        .segmentBorder,
-                                                                  ),
+                                                                SizedBox(
+                                                                  height:
+                                                                      labelSpace,
+                                                                ),
+                                                              ],
                                                             ),
                                                           ),
-                                                      ],
+                                                          if (_workoutController
+                                                              .isPlaying)
+                                                            Positioned(
+                                                              left:
+                                                                  _workoutController
+                                                                          .progressPosition *
+                                                                      (totalWidth -
+                                                                          (2 *
+                                                                              WorkoutPadding.standard)) +
+                                                                  WorkoutPadding
+                                                                      .standard,
+                                                              top:
+                                                                  verticalPadding,
+                                                              bottom:
+                                                                  labelSpace +
+                                                                  verticalPadding,
+                                                              child: Container(
+                                                                width: WorkoutSizes
+                                                                    .progressIndicatorWidth,
+                                                                color: WorkoutVisuals
+                                                                    .mint
+                                                                    .withValues(
+                                                                      alpha: WorkoutOpacity
+                                                                          .segmentBorder,
+                                                                    ),
+                                                              ),
+                                                            ),
+                                                        ],
+                                                      ),
                                                     ),
                                                   ),
-                                                ),
-                                              );
-                                            },
-                                          );
-                                        },
-                                      ),
-                                      Positioned(
-                                        top: _overlayTop,
-                                        left: _overlayLeft,
-                                        child: GestureDetector(
-                                          onPanUpdate: (details) {
-                                            setState(() {
-                                              _overlayTop =
-                                                  (_overlayTop +
-                                                          details.delta.dy)
-                                                      .clamp(
-                                                        0.0,
-                                                        constraints.maxHeight -
-                                                            _overlayHeight,
-                                                      );
-                                              _overlayLeft =
-                                                  (_overlayLeft +
-                                                          details.delta.dx)
-                                                      .clamp(
-                                                        0.0,
-                                                        constraints.maxWidth -
-                                                            _overlayWidth,
-                                                      );
-                                            });
+                                                );
+                                              },
+                                            );
                                           },
-                                          child: AnimatedBuilder(
-                                            animation: _workoutController,
-                                            builder: (context, _) =>
-                                                _buildOverlay(),
+                                        ),
+                                        Positioned(
+                                          top: _overlayTop,
+                                          left: _overlayLeft,
+                                          child: GestureDetector(
+                                            onPanUpdate: (details) {
+                                              setState(() {
+                                                _overlayTop =
+                                                    (_overlayTop +
+                                                            details.delta.dy)
+                                                        .clamp(
+                                                          0.0,
+                                                          constraints
+                                                                  .maxHeight -
+                                                              _overlayHeight,
+                                                        );
+                                                _overlayLeft =
+                                                    (_overlayLeft +
+                                                            details.delta.dx)
+                                                        .clamp(
+                                                          0.0,
+                                                          constraints.maxWidth -
+                                                              _overlayWidth,
+                                                        );
+                                              });
+                                            },
+                                            child: AnimatedBuilder(
+                                              animation: _workoutController,
+                                              builder: (context, _) =>
+                                                  _buildOverlay(),
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      Positioned(
-                                        bottom: 10,
-                                        left: 0,
-                                        right: 0,
-                                        child: AnimatedBuilder(
-                                          animation: _workoutController,
-                                          builder: (context, _) =>
-                                              WorkoutControls(
-                                                workoutController:
-                                                    _workoutController,
-                                                onStopWorkout:
-                                                    _showStopWorkoutDialog,
-                                                onSkipSegment: () {
-                                                  _arcadeSession.willSkip();
-                                                  _workoutController
-                                                      .skipToNextSegment();
-                                                },
-                                              ),
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              ),
-                      ),
-                    ],
+                                      ],
+                                    );
+                                  },
+                                ),
+                        ),
+                        ClassicWorkoutDock(
+                          controls: WorkoutControls(
+                            workoutController: _workoutController,
+                            onStopWorkout: _showStopWorkoutDialog,
+                            onSkipSegment: () {
+                              _arcadeSession.willSkip();
+                              _workoutController.skipToNextSegment();
+                            },
+                          ),
+                          preview: _workoutController.segments.isEmpty
+                              ? const SizedBox.shrink()
+                              : ClassicWorkoutPreview(
+                                  segments: _workoutController.segments,
+                                  index: _workoutController.segments.indexOf(
+                                    _workoutController.currentSegment!,
+                                  ),
+                                  seconds:
+                                      _workoutController.workoutProgressSeconds,
+                                  ftp: _workoutController.ftpValue,
+                                  endless:
+                                      _workoutController.isUnlimitedFreeRide,
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

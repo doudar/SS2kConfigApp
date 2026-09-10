@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'workout/workout_constants.dart';
 import 'constants.dart';
+import 'workout/workout_visuals.dart';
 
 /// Optional font used by deterministic screenshot tests. Production renders
 /// continue to use the platform's default font.
@@ -17,6 +18,7 @@ class PowerTablePainter extends CustomPainter {
   final double? homingMax;
   // false: Resistance(Y)/Watts(X), true: Watts(Y)/Resistance(X)
   final bool swapAxes;
+  final bool refinedStyle;
 
   PowerTablePainter({
     required this.powerTableData,
@@ -26,17 +28,18 @@ class PowerTablePainter extends CustomPainter {
     this.homingMin,
     this.homingMax,
     required this.swapAxes,
+    this.refinedStyle = false,
   });
 
   final leftPadding = 20.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    _drawAxisLabels(canvas, size);
+    if (!refinedStyle) _drawAxisLabels(canvas, size);
 
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = WorkoutStroke.actualPowerLine;
+      ..strokeWidth = refinedStyle ? 1.8 : WorkoutStroke.actualPowerLine;
 
     _drawGrid(canvas, size);
 
@@ -96,7 +99,9 @@ class PowerTablePainter extends CustomPainter {
   void _drawGrid(Canvas canvas, Size size) {
     final gridPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.grey.withValues(alpha: WorkoutOpacity.gridLines)
+      ..color = refinedStyle
+          ? WorkoutVisuals.muted.withValues(alpha: .16)
+          : Colors.grey.withValues(alpha: WorkoutOpacity.gridLines)
       ..strokeWidth = WorkoutStroke.border;
 
     final textPainter = TextPainter(
@@ -110,13 +115,21 @@ class PowerTablePainter extends CustomPainter {
       homingMax ?? max(maxResistance, MIN_RESISTANCE_RANGE),
     );
     double range = maxRes - minRes;
+    final divisions = refinedStyle ? (size.height / 55).floor().clamp(2, 5) : 5;
+    final powerStep = refinedStyle
+        ? (MIN_POWER_RANGE /
+                      max(2, ((size.width - leftPadding) / 65).floor()) /
+                      100)
+                  .ceil() *
+              100.0
+        : 100.0;
 
     if (!swapAxes) {
       // Resistance on Y axis
       for (
         double resistance = minRes;
         resistance <= maxRes;
-        resistance += range / 5
+        resistance += range / divisions
       ) {
         final y = size.height - ((resistance - minRes) * size.height / range);
         canvas.drawLine(
@@ -128,7 +141,7 @@ class PowerTablePainter extends CustomPainter {
         textPainter.text = TextSpan(
           text: resistance.round().toString(),
           style: TextStyle(
-            color: Colors.grey[600],
+            color: refinedStyle ? WorkoutVisuals.muted : Colors.grey[600],
             fontSize: WorkoutFontSizes.small,
             fontFamily: debugPowerTablePainterFontFamily,
           ),
@@ -137,7 +150,7 @@ class PowerTablePainter extends CustomPainter {
         final double labelX = leftPadding + 4;
         textPainter.paint(canvas, Offset(labelX, y - textPainter.height / 2));
       }
-      for (double watts = 0; watts <= MIN_POWER_RANGE; watts += 100) {
+      for (double watts = 0; watts <= MIN_POWER_RANGE; watts += powerStep) {
         final x =
             leftPadding +
             (watts * (size.width - leftPadding) / MIN_POWER_RANGE);
@@ -146,7 +159,7 @@ class PowerTablePainter extends CustomPainter {
           textPainter.text = TextSpan(
             text: '${watts.toInt()}w',
             style: TextStyle(
-              color: Colors.grey[600],
+              color: refinedStyle ? WorkoutVisuals.muted : Colors.grey[600],
               fontSize: WorkoutFontSizes.small,
               fontFamily: debugPowerTablePainterFontFamily,
             ),
@@ -162,7 +175,7 @@ class PowerTablePainter extends CustomPainter {
       for (
         double watts = 0;
         watts <= MIN_POWER_RANGE;
-        watts += MIN_POWER_RANGE / 5
+        watts += MIN_POWER_RANGE / divisions
       ) {
         final y = size.height - (watts * size.height / MIN_POWER_RANGE);
         canvas.drawLine(
@@ -173,7 +186,7 @@ class PowerTablePainter extends CustomPainter {
         textPainter.text = TextSpan(
           text: '${watts.toInt()}w',
           style: TextStyle(
-            color: Colors.grey[600],
+            color: refinedStyle ? WorkoutVisuals.muted : Colors.grey[600],
             fontSize: WorkoutFontSizes.small,
             fontFamily: debugPowerTablePainterFontFamily,
           ),
@@ -195,7 +208,7 @@ class PowerTablePainter extends CustomPainter {
           textPainter.text = TextSpan(
             text: resistance.round().toString(),
             style: TextStyle(
-              color: Colors.grey[600],
+              color: refinedStyle ? WorkoutVisuals.muted : Colors.grey[600],
               fontSize: WorkoutFontSizes.small,
               fontFamily: debugPowerTablePainterFontFamily,
             ),
@@ -266,7 +279,8 @@ class PowerTablePainter extends CustomPainter {
         maxResistance != oldDelegate.maxResistance ||
         homingMin != oldDelegate.homingMin ||
         homingMax != oldDelegate.homingMax ||
-        swapAxes != oldDelegate.swapAxes;
+        swapAxes != oldDelegate.swapAxes ||
+        refinedStyle != oldDelegate.refinedStyle;
   }
 }
 
@@ -291,6 +305,7 @@ class PowerTableOverlayPainter extends CustomPainter {
     required this.swapAxes,
     this.drawAxisEffects = true,
     this.drawPosition = true,
+    this.refinedStyle = false,
   }) : super(repaint: repaint);
 
   final Animation<double> animation;
@@ -306,6 +321,7 @@ class PowerTableOverlayPainter extends CustomPainter {
   final bool swapAxes;
   final bool drawAxisEffects;
   final bool drawPosition;
+  final bool refinedStyle;
 
   static const double leftPadding = 20.0;
 
@@ -346,7 +362,7 @@ class PowerTableOverlayPainter extends CustomPainter {
     final yRatio = yMax == 0 ? 0.0 : (yValue / yMax).clamp(0.0, 1.0);
     final xRatio = xMax == 0 ? 0.0 : (xValue / xMax).clamp(0.0, 1.0);
 
-    const barThickness = 20.0;
+    final barThickness = refinedStyle ? 4.0 : 20.0;
     const flameColors = <Color>[
       Colors.blueAccent,
       Colors.cyanAccent,
@@ -367,7 +383,9 @@ class PowerTableOverlayPainter extends CustomPainter {
           2 + barThickness,
           size.height,
         ),
-        flameColors,
+        refinedStyle
+            ? [WorkoutVisuals.power, WorkoutVisuals.mint]
+            : flameColors,
         isVertical: true,
         ratio: yRatio,
       );
@@ -383,7 +401,9 @@ class PowerTableOverlayPainter extends CustomPainter {
           leftPadding + barWidth,
           -15 + barThickness,
         ),
-        flameColors,
+        refinedStyle
+            ? [WorkoutVisuals.power, WorkoutVisuals.mint]
+            : flameColors,
         isVertical: false,
         ratio: xRatio,
       );
@@ -503,6 +523,17 @@ class PowerTableOverlayPainter extends CustomPainter {
       ..color = _getCadenceColor(cadence)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(x, y), 6, paint);
+    if (refinedStyle) {
+      canvas.drawCircle(
+        Offset(x, y),
+        8,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+      canvas.drawCircle(Offset(x, y), 2, Paint()..color = WorkoutVisuals.ink);
+    }
   }
 
   Color _getCadenceColor(int cadence) {
@@ -518,6 +549,7 @@ class PowerTableOverlayPainter extends CustomPainter {
         homingMax != oldDelegate.homingMax ||
         tableDivisor != oldDelegate.tableDivisor ||
         swapAxes != oldDelegate.swapAxes ||
+        refinedStyle != oldDelegate.refinedStyle ||
         drawAxisEffects != oldDelegate.drawAxisEffects ||
         drawPosition != oldDelegate.drawPosition ||
         !identical(positionHistory, oldDelegate.positionHistory);

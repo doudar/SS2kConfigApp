@@ -12,6 +12,8 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import "../utils/snackbar.dart";
 import '../utils/device_data.dart';
 import '../utils/constants.dart';
+import 'device_settings_style.dart';
+import '../utils/workout/workout_visuals.dart';
 
 class sliderCard extends StatefulWidget {
   const sliderCard({super.key, required this.device, required this.c});
@@ -36,14 +38,14 @@ class _sliderCardState extends State<sliderCard> {
     _charSubscription = deviceData.characteristicChanges
         .where((event) => event.vName == c["vName"])
         .listen((event) {
-      if (!mounted || _userIsInteracting) return;
-      final newVal = double.tryParse(c["value"]?.toString() ?? "");
-      if (newVal != null && newVal != _currentSliderValue) {
-        setState(() {
-          _currentSliderValue = newVal;
+          if (!mounted || _userIsInteracting) return;
+          final newVal = double.tryParse(c["value"]?.toString() ?? "");
+          if (newVal != null && newVal != _currentSliderValue) {
+            setState(() {
+              _currentSliderValue = newVal;
+            });
+          }
         });
-      }
-    });
   }
 
   @override
@@ -67,12 +69,20 @@ class _sliderCardState extends State<sliderCard> {
       if (inputNumber < c["min"]) {
         c["value"] = c["min"].toString();
         var _min = c["min"];
-        Snackbar.show(ABC.c, "Entered value is below minimum $_min", success: false);
+        Snackbar.show(
+          ABC.c,
+          "Entered value is below minimum $_min",
+          success: false,
+        );
         controller.text = c["value"];
       } else if (inputNumber > c["max"]) {
         c["value"] = c["max"].toString();
         var _max = c["max"];
-        Snackbar.show(ABC.c, "Entered value is above maximum $_max", success: false);
+        Snackbar.show(
+          ABC.c,
+          "Entered value is above maximum $_max",
+          success: false,
+        );
         controller.text = c["value"];
       }
     }
@@ -82,145 +92,147 @@ class _sliderCardState extends State<sliderCard> {
 
   Color _getTileColor() {
     if (c["value"] == noFirmSupport) return deactiveBackgroundColor;
-    return (c["settingType"] as SettingType).color;
+    return DeviceSettingsStyle.accent(c["settingType"] as SettingType);
   }
 
   @override
   Widget build(BuildContext context) {
     Color baseColor = _getTileColor();
     return Card(
-      elevation: 15,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(15),
-      ),
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: WorkoutVisuals.panel,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(15),
-          gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                baseColor.withValues(alpha: 0.7),
-                baseColor.withValues(alpha: 0.3),
-              ],
-            ),
-        ),
+        decoration: DeviceSettingsStyle.panel(baseColor),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Column(children: <Widget>[
-            Text((c["humanReadableName"]), 
-              style: TextStyle(
-                fontSize: 32, 
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                shadows: [
-                    Shadow(
-                      offset: Offset(1.0, 1.0),
-                      blurRadius: 3.0,
-                      color: Colors.black45,
-                    ),
-                  ],
-              ), 
-              textAlign: TextAlign.center
-            ),
-            SizedBox(height: 10),
-            Text((c["value"]), 
-              style: TextStyle(
-                fontSize: 24,
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                shadows: [
-                    Shadow(
-                      offset: Offset(1.0, 1.0),
-                      blurRadius: 3.0,
-                      color: Colors.black45,
-                    ),
-                  ],
+          child: Column(
+            children: <Widget>[
+              Text(
+                (c["humanReadableName"]),
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center
-            ),
-            SizedBox(height: 10),
-            TextField(
-              controller: this.controller,
-              decoration: InputDecoration(
-                prefixIcon: Icon(Icons.edit_attributes),
-                fillColor: Colors.white,
-                filled: true,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              SizedBox(height: 10),
+              Text(
+                (c["value"]),
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
               ),
-              style: TextStyle(
-                fontSize: 30,
-                color: Colors.black,
+              SizedBox(height: 10),
+              TextField(
+                controller: this.controller,
+                decoration: InputDecoration(
+                  labelText: 'Value',
+                  helperText: '${c["min"]} – ${c["max"]}',
+                  prefixIcon: Icon(Icons.edit_attributes),
+                  fillColor: WorkoutVisuals.ink,
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                style: TextStyle(fontSize: 24, color: Colors.white),
+                textAlign: TextAlign.center,
+                onSubmitted: (t) {
+                  this.verifyInput(t);
+                  this.deviceData.writeToSS2k(this.widget.device, this.c);
+                  setState(() {});
+                  return this.widget.c["value"];
+                },
               ),
-              textAlign: TextAlign.center,
-              onSubmitted: (t) {
-                this.verifyInput(t);
-                this.deviceData.writeToSS2k(this.widget.device, this.c);
-                setState(() {});
-                return this.widget.c["value"];
-              },
-            ),
-            const SizedBox(height: 15),
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                activeTrackColor: Colors.white,
-                inactiveTrackColor: Colors.white24,
-                thumbColor: Colors.white,
-                overlayColor: Colors.white.withAlpha(32),
-                valueIndicatorTextStyle: TextStyle(
-                  color: baseColor,
+              const SizedBox(height: 15),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: baseColor,
+                  inactiveTrackColor: Colors.white24,
+                  thumbColor: baseColor,
+                  overlayColor: Colors.white.withAlpha(32),
+                  valueIndicatorTextStyle: TextStyle(color: baseColor),
+                ),
+                child: Slider(
+                  min: c["min"].toDouble(),
+                  max: c["max"].toDouble(),
+                  label: this._currentSliderValue.toStringAsFixed(
+                    deviceData.getPrecision(c),
+                  ),
+                  divisions: 100,
+                  value: constrainValue(this._currentSliderValue),
+                  onChangeStart: (double v) {
+                    _userIsInteracting = true;
+                  },
+                  onChanged: (double v) {
+                    setState(() {
+                      this._currentSliderValue = v;
+                      this.widget.c["value"] = this._currentSliderValue
+                          .toStringAsFixed(deviceData.getPrecision(c));
+                      controller.text = this.widget.c["value"];
+                    });
+                  },
+                  onChangeEnd: (double v) {
+                    _userIsInteracting = false;
+                    setState(() {
+                      this._currentSliderValue = v;
+                      this.widget.c["value"] = this._currentSliderValue
+                          .toStringAsFixed(deviceData.getPrecision(c));
+                      controller.text = this.widget.c["value"];
+                      this.deviceData.writeToSS2k(this.widget.device, this.c);
+                    });
+                  },
                 ),
               ),
-              child: Slider(
-                min: c["min"].toDouble(),
-                max: c["max"].toDouble(),
-                label: this._currentSliderValue.toStringAsFixed(deviceData.getPrecision(c)),
-                divisions: 100,
-                value: constrainValue(this._currentSliderValue),
-                onChangeStart: (double v) {
-                  _userIsInteracting = true;
-                },
-                onChanged: (double v) {
-                  setState(() {
-                    this._currentSliderValue = v;
-                    this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(deviceData.getPrecision(c));
-                    controller.text = this.widget.c["value"];
-                  });
-                },
-                onChangeEnd: (double v) {
-                  _userIsInteracting = false;
-                  setState(() {
-                    this._currentSliderValue = v;
-                    this.widget.c["value"] = this._currentSliderValue.toStringAsFixed(deviceData.getPrecision(c));
-                    controller.text = this.widget.c["value"];
-                    this.deviceData.writeToSS2k(this.widget.device, this.c);
-                  });
-                },
-              ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: <Widget>[
-                TextButton(
-                    child: const Text('BACK', style: TextStyle(color: Colors.white)),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  TextButton(
+                    child: const Text(
+                      'BACK',
+                      style: TextStyle(color: Colors.white),
+                    ),
                     onPressed: () {
                       Navigator.pop(context);
-                    }),
-                const SizedBox(width: 8),
-                TextButton(
-                    child: const Text('SAVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      backgroundColor: WorkoutVisuals.mint,
+                      foregroundColor: WorkoutVisuals.ink,
+                      minimumSize: const Size(80, 48),
+                    ),
+                    child: const Text(
+                      'SAVE',
+                      style: TextStyle(
+                        color: WorkoutVisuals.ink,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                     onPressed: () async {
                       //Find the save command and execute it
-                      await this
-                          .deviceData
-                          .writeCommand(this.widget.device, saveVname);
+                      await this.deviceData.writeCommand(
+                        this.widget.device,
+                        saveVname,
+                      );
                       if (!mounted) return;
                       Navigator.pop(context);
-                    }),
-                const SizedBox(width: 8),
-              ],
-            ),
-          ]),
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

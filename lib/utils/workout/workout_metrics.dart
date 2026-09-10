@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../device_data.dart';
 import 'workout_constants.dart';
 import 'workout_metric_row.dart';
+import 'workout_visuals.dart';
 
 class WorkoutMetrics extends StatelessWidget {
   final DeviceData deviceData;
@@ -44,7 +45,9 @@ class WorkoutMetrics extends StatelessWidget {
       WorkoutMetric.distance(miles: (totalDistance ?? 0.0) / 1609.34),
       WorkoutMetric(
         label: 'Next Block',
-        value: isUnlimitedFreeRide ? '--:--:--' : _formatDuration(timeToNextSegment),
+        value: isUnlimitedFreeRide
+            ? '--:--:--'
+            : _formatDuration(timeToNextSegment),
       ),
       WorkoutMetric.remainingTime(
         totalSeconds: totalDuration.round(),
@@ -58,13 +61,19 @@ class WorkoutMetrics extends StatelessWidget {
       child: FadeTransition(
         opacity: ReverseAnimation(fadeAnimation),
         child: Card(
+          color: WorkoutVisuals.ink,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Colors.white10),
+          ),
           margin: EdgeInsets.symmetric(
             horizontal: WorkoutPadding.small,
             vertical: WorkoutSpacing.small,
           ),
           child: Padding(
             padding: EdgeInsets.symmetric(
-              horizontal: WorkoutPadding.standard,
+              horizontal: WorkoutPadding.small,
               vertical: WorkoutPadding.small,
             ),
             child: SizedBox(
@@ -81,7 +90,7 @@ class WorkoutMetrics extends StatelessWidget {
     final hours = seconds ~/ 3600;
     final minutes = (seconds % 3600) ~/ 60;
     final remainingSeconds = seconds % 60;
-    
+
     return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 }

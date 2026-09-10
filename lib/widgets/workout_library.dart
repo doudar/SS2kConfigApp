@@ -1,13 +1,15 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'workout_dialog.dart';
+import 'workout_scroll_hint.dart';
 import 'package:flutter/services.dart' show AssetManifest, rootBundle;
 import '../utils/workout/workout_storage.dart';
-import '../utils/workout/workout_constants.dart';
 import '../utils/workout/workout_parser.dart';
 
 class WorkoutLibrary extends StatefulWidget {
   final bool selectionMode; // true for selection, false for deletion
-  final void Function(String name, String content, bool isInProgress)? onWorkoutSelected;
+  final void Function(String name, String content, bool isInProgress)?
+  onWorkoutSelected;
   final void Function(String name, String content)? onWorkoutReset;
   final Function(String name)? onWorkoutDeleted;
   final List<Widget> headerWidgets;
@@ -30,8 +32,11 @@ class WorkoutLibrary extends StatefulWidget {
         final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
         assets = manifest.listAssets();
       } catch (_) {
-        final manifestContent = await rootBundle.loadString('AssetManifest.json');
-        final Map<String, dynamic> manifest = jsonDecode(manifestContent) as Map<String, dynamic>;
+        final manifestContent = await rootBundle.loadString(
+          'AssetManifest.json',
+        );
+        final Map<String, dynamic> manifest =
+            jsonDecode(manifestContent) as Map<String, dynamic>;
         assets = manifest.keys;
       }
 
@@ -51,7 +56,10 @@ class WorkoutLibrary extends StatefulWidget {
 
   static String _titleFromPath(String path) {
     final fileName = path.split('/').last;
-    final name = fileName.replaceAll(RegExp(r'\.zwo$', caseSensitive: false), '');
+    final name = fileName.replaceAll(
+      RegExp(r'\.zwo$', caseSensitive: false),
+      '',
+    );
     return name.replaceAll('_', ' ');
   }
 
@@ -73,8 +81,10 @@ class WorkoutLibrary extends StatefulWidget {
     if (!context.mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => WorkoutDialog(
         title: const Text('Workout Library'),
+        icon: Icons.folder_open_rounded,
+        listBody: true,
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
@@ -87,13 +97,17 @@ class WorkoutLibrary extends StatefulWidget {
                 builder: (context, contentSnapshot) {
                   final content = contentSnapshot.data;
                   final summary = _buildWorkoutSummaryText(content);
-                  return ListTile(
-                    leading: _buildWorkoutThumbnail(name: workout.name, content: content),
+                  return WorkoutOptionTile(
+                    leading: _buildWorkoutThumbnail(
+                      name: workout.name,
+                      content: content,
+                    ),
                     title: Text(workout.name),
                     subtitle: summary,
                     onTap: () async {
                       Navigator.pop(ctx);
-                      final workoutContent = content ?? await rootBundle.loadString(workout.path);
+                      final workoutContent =
+                          content ?? await rootBundle.loadString(workout.path);
                       onSelected(workout.name, workoutContent);
                     },
                   );
@@ -102,7 +116,12 @@ class WorkoutLibrary extends StatefulWidget {
             },
           ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CLOSE'))],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CLOSE'),
+          ),
+        ],
       ),
     );
   }
@@ -146,11 +165,7 @@ Widget _buildWorkoutThumbnail({
 }
 
 Widget _workoutThumbnailPlaceholder() {
-  return Container(
-    width: 100,
-    height: 60,
-    color: Colors.grey[300],
-  );
+  return Container(width: 100, height: 60, color: Colors.grey[300]);
 }
 
 Text? _buildWorkoutSummaryText(String? content) {
@@ -212,7 +227,8 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
     for (final workout in workouts) {
       final name = workout['name'] as String?;
       if (name == null) continue;
-      if (_selectedWorkouts.contains(name) && name != WorkoutStorage.defaultWorkoutName) {
+      if (_selectedWorkouts.contains(name) &&
+          name != WorkoutStorage.defaultWorkoutName) {
         await WorkoutStorage.deleteWorkout(name);
         widget.onWorkoutDeleted?.call(name);
       }
@@ -240,60 +256,67 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
         }
 
         final workouts = snapshot.data!;
-        final selectableWorkouts = workouts
-            .where((workout) {
-              final name = workout['name'];
-              return name != WorkoutStorage.defaultWorkoutName && name != _inProgressWorkoutName;
-            })
-            .toList();
+        final selectableWorkouts = workouts.where((workout) {
+          final name = workout['name'];
+          return name != WorkoutStorage.defaultWorkoutName &&
+              name != _inProgressWorkoutName;
+        }).toList();
         final totalSelectable = selectableWorkouts.length;
         final selectedCount = _selectedWorkouts.length;
-        final allSelected = totalSelectable > 0 && selectedCount == totalSelectable;
+        final allSelected =
+            totalSelectable > 0 && selectedCount == totalSelectable;
 
         return Column(
           children: [
             Expanded(
-              child: ListView.builder(
-                padding: EdgeInsets.all(WorkoutPadding.standard),
-                itemCount: widget.headerWidgets.length + workouts.length,
-                itemBuilder: (context, index) {
-                  if (index < widget.headerWidgets.length) {
-                    return widget.headerWidgets[index];
-                  }
+              child: WorkoutScrollHint(
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: widget.headerWidgets.length + workouts.length,
+                  itemBuilder: (context, index) {
+                    if (index < widget.headerWidgets.length) {
+                      return widget.headerWidgets[index];
+                    }
 
-                  final workoutIndex = index - widget.headerWidgets.length;
-                  final workout = workouts[workoutIndex];
-                  final name = workout['name'] as String? ?? '';
-                  final isInProgress = name == _inProgressWorkoutName;
-                  final isSelectable =
-                      name != WorkoutStorage.defaultWorkoutName && !isInProgress;
-                  final isSelected = _selectedWorkouts.contains(name);
-                  return _WorkoutTile(
-                    name: name,
-                    content: workout['content'],
-                    selectionMode: widget.selectionMode,
-                    isSelected: isSelected,
-                    canSelect: isSelectable,
-                    isInProgress: isInProgress,
-                    onSelected: widget.onWorkoutSelected,
-                    onReset: widget.onWorkoutReset,
-                    onSelectionChanged: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedWorkouts.add(name);
-                        } else {
-                          _selectedWorkouts.remove(name);
-                        }
-                      });
-                    },
-                  );
-                },
+                    final workoutIndex = index - widget.headerWidgets.length;
+                    final workout = workouts[workoutIndex];
+                    final name = workout['name'] as String? ?? '';
+                    final isInProgress = name == _inProgressWorkoutName;
+                    final isSelectable =
+                        name != WorkoutStorage.defaultWorkoutName &&
+                        !isInProgress;
+                    final isSelected = _selectedWorkouts.contains(name);
+                    return _WorkoutTile(
+                      name: name,
+                      content: workout['content'],
+                      selectionMode: widget.selectionMode,
+                      isSelected: isSelected,
+                      canSelect: isSelectable,
+                      isInProgress: isInProgress,
+                      onSelected: widget.onWorkoutSelected,
+                      onReset: widget.onWorkoutReset,
+                      onSelectionChanged: (selected) {
+                        setState(() {
+                          if (selected) {
+                            _selectedWorkouts.add(name);
+                          } else {
+                            _selectedWorkouts.remove(name);
+                          }
+                        });
+                      },
+                    );
+                  },
+                ),
               ),
             ),
             const Divider(height: 1),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-              child: Row(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8.0,
+                vertical: 4.0,
+              ),
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Checkbox(
                     value: allSelected,
@@ -305,7 +328,9 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
                               if (value == true) {
                                 _selectedWorkouts.addAll(
                                   selectableWorkouts
-                                      .map((workout) => workout['name'] as String)
+                                      .map(
+                                        (workout) => workout['name'] as String,
+                                      )
                                       .where((name) => name.isNotEmpty),
                                 );
                               }
@@ -320,17 +345,23 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
                         : () async {
                             final confirmed = await showDialog<bool>(
                               context: context,
-                              builder: (context) => AlertDialog(
+                              builder: (context) => WorkoutDialog(
                                 title: const Text('Delete Workouts'),
-                                content: Text('Delete $selectedCount selected workouts?'),
+                                content: Text(
+                                  'Delete $selectedCount selected workouts?',
+                                ),
                                 actions: [
                                   TextButton(
-                                    onPressed: () => Navigator.pop(context, false),
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
                                     child: const Text('CANCEL'),
                                   ),
                                   TextButton(
-                                    onPressed: () => Navigator.pop(context, true),
-                                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.red,
+                                    ),
                                     child: const Text('DELETE'),
                                   ),
                                 ],
@@ -345,7 +376,7 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
                     label: const Text('DELETE'),
                     style: TextButton.styleFrom(foregroundColor: Colors.red),
                   ),
-                  const Spacer(),
+
                   if (widget.onClose != null)
                     TextButton(
                       onPressed: widget.onClose,
@@ -365,7 +396,8 @@ class _WorkoutTile extends StatelessWidget {
   final String name;
   final String content;
   final bool selectionMode;
-  final void Function(String name, String content, bool isInProgress)? onSelected;
+  final void Function(String name, String content, bool isInProgress)?
+  onSelected;
   final void Function(String name, String content)? onReset;
   final bool isSelected;
   final bool canSelect;
@@ -388,68 +420,19 @@ class _WorkoutTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final summary = _buildWorkoutSummaryText(content);
 
-    return Card(
-      margin: EdgeInsets.only(bottom: WorkoutPadding.standard),
-      child: InkWell(
-        onTap: selectionMode ? () => onSelected?.call(name, content, isInProgress) : null,
-        child: Padding(
-          padding: EdgeInsets.all(WorkoutPadding.standard),
-          child: Row(
-            children: [
-              if (canSelect)
-                Checkbox(
-                  value: isSelected,
-                  onChanged: (value) => onSelectionChanged(value == true),
-                ),
-              // Thumbnail
-              _buildWorkoutThumbnail(name: name, content: content),
-              SizedBox(width: WorkoutSpacing.medium),
-              // Workout name and details
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            name,
-                            style: Theme.of(context).textTheme.titleMedium,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (isInProgress)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8.0),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'In Progress',
-                                style: Theme.of(context).textTheme.labelSmall,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    SizedBox(height: WorkoutSpacing.xsmall),
-                    if (summary != null)
-                      DefaultTextStyle.merge(
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).textTheme.bodySmall?.color,
-                        ),
-                        child: summary,
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return WorkoutOptionTile(
+      leading: _buildWorkoutThumbnail(name: name, content: content),
+      trailing: canSelect
+          ? Checkbox(
+              value: isSelected,
+              onChanged: (value) => onSelectionChanged(value == true),
+            )
+          : null,
+      title: Text(isInProgress ? '$name (In Progress)' : name),
+      subtitle: summary,
+      onTap: selectionMode
+          ? () => onSelected?.call(name, content, isInProgress)
+          : null,
     );
   }
 }

@@ -1,193 +1,47 @@
 import 'package:flutter/material.dart';
-import 'workout_constants.dart';
+import '../../widgets/workout_ftp_dialog.dart';
+import 'workout_playback_bar.dart';
 import 'workout_controller.dart';
 import 'sounds.dart';
 
-class WorkoutControls extends StatefulWidget {
+class WorkoutControls extends StatelessWidget {
   final WorkoutController workoutController;
   final VoidCallback onStopWorkout;
   final VoidCallback? onSkipSegment;
 
   const WorkoutControls({
-    Key? key,
+    super.key,
     required this.workoutController,
     required this.onStopWorkout,
     this.onSkipSegment,
-  }) : super(key: key);
-
-  @override
-  State<WorkoutControls> createState() => _WorkoutControlsState();
-}
-
-class _WorkoutControlsState extends State<WorkoutControls> {
-  static const int minFTP = 50;
-  static const int maxFTP = 500;
-  static const int ftpStep = 1;
-  late int _selectedFTP;
-  late final FixedExtentScrollController _ftpScrollController;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedFTP = widget.workoutController.ftpValue.round();
-    _ftpScrollController = FixedExtentScrollController(
-      initialItem: (_selectedFTP - minFTP) ~/ ftpStep,
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant WorkoutControls oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final ftp = widget.workoutController.ftpValue.round();
-    if (ftp == _selectedFTP) return;
-    _selectedFTP = ftp;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_ftpScrollController.hasClients) return;
-      _ftpScrollController.jumpToItem(
-        ((_selectedFTP - minFTP) ~/ ftpStep).clamp(
-          0,
-          (maxFTP - minFTP) ~/ ftpStep,
-        ),
-      );
-    });
-  }
-
-  @override
-  void dispose() {
-    _ftpScrollController.dispose();
-    super.dispose();
-  }
+  });
 
   @override
   Widget build(BuildContext context) {
-    final bool hasStarted = widget.workoutController.workoutProgressSeconds > 0;
-    return Container(
-      height: 220,
-      padding: EdgeInsets.symmetric(vertical: WorkoutPadding.small),
-      child: Stack(
-        alignment: Alignment.bottomCenter,
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(36),
-              border: Border.all(color: Colors.white24, width: 1),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  offset: const Offset(0, 6),
-                  blurRadius: 8,
-                ),
-              ],
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.grey[800]!, Colors.black],
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (widget.workoutController.isPlaying || hasStarted)
-                  IconButton(
-                    icon: const Icon(Icons.stop_circle),
-                    iconSize: 42,
-                    color: Colors.redAccent,
-                    tooltip: 'Stop Workout',
-                    onPressed: widget.onStopWorkout,
-                  ),
-                IconButton(
-                  icon: Icon(
-                    widget.workoutController.isPlaying
-                        ? Icons.pause_circle_filled
-                        : Icons.play_circle_filled,
-                  ),
-                  iconSize: 56,
-                  color: Colors.greenAccent,
-                  tooltip: widget.workoutController.isPlaying
-                      ? 'Pause'
-                      : 'Play',
-                  onPressed: () {
-                    if (!widget.workoutController.isPlaying) {
-                      workoutSoundGenerator.playButtonSound();
-                    }
-                    widget.workoutController.togglePlayPause();
-                  },
-                ),
-                if (widget.workoutController.isPlaying &&
-                    !widget.workoutController.isFreeRide)
-                  IconButton(
-                    icon: const Icon(Icons.skip_next),
-                    iconSize: 42,
-                    color: Colors.white,
-                    tooltip: 'Skip Segment',
-                    onPressed:
-                        widget.onSkipSegment ??
-                        widget.workoutController.skipToNextSegment,
-                  ),
-              ],
-            ),
-          ),
-          Positioned(
-            right: WorkoutPadding.standard,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('FTP: '),
-                Container(
-                  width: 80,
-                  height: 220,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: ListWheelScrollView.useDelegate(
-                    controller: _ftpScrollController,
-                    useMagnifier: true,
-                    magnification: 1.3,
-                    clipBehavior: Clip.none,
-                    overAndUnderCenterOpacity: .2,
-                    itemExtent: 40,
-                    perspective: 0.01,
-                    diameterRatio: 2,
-                    physics: const FixedExtentScrollPhysics(),
-                    onSelectedItemChanged: (index) {
-                      setState(() {
-                        _selectedFTP = minFTP + (index * ftpStep);
-                        widget.workoutController.updateFTP(
-                          _selectedFTP.toDouble(),
-                        );
-                      });
-                    },
-                    childDelegate: ListWheelChildBuilderDelegate(
-                      childCount: ((maxFTP - minFTP) ~/ ftpStep) + 1,
-                      builder: (context, index) {
-                        final value = minFTP + (index * ftpStep);
-                        return Container(
-                          alignment: Alignment.center,
-                          child: Text(
-                            value.toString(),
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: value == _selectedFTP
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                const Text('W'),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return WorkoutPlaybackBar(
+      playing: workoutController.isPlaying,
+      hasProgress: workoutController.workoutProgressSeconds > 0,
+      finished: workoutController.progressPosition >= 1,
+      freeRide: workoutController.isFreeRide,
+      ftp: workoutController.ftpValue,
+      onPlayPause: workoutController.segments.isEmpty
+          ? null
+          : () {
+              if (!workoutController.isPlaying)
+                workoutSoundGenerator.playButtonSound();
+              workoutController.togglePlayPause();
+            },
+      onStop: onStopWorkout,
+      onSkip: onSkipSegment ?? workoutController.skipToNextSegment,
+      onFtp: () async {
+        final ftp = await showDialog<double>(
+          context: context,
+          builder: (_) =>
+              WorkoutFtpDialog(initialFtp: workoutController.ftpValue),
+        );
+        if (ftp != null && context.mounted)
+          await workoutController.updateFTP(ftp);
+      },
     );
   }
 }

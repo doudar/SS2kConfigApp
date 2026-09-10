@@ -11,9 +11,8 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../utils/device_data.dart';
 import '../utils/device_transport_state.dart';
-import '../widgets/metric_card.dart';
+import '../utils/workout/workout_visuals.dart';
 import '../widgets/ss2k_app_bar.dart';
-import '../widgets/power_table_chart.dart';
 
 class ShifterScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -33,12 +32,25 @@ class _ShifterScreenState extends State<ShifterScreen> {
   ConnectedEpochWatcher? _watcher;
   StreamSubscription<CharacteristicChangeEvent>?
   _characteristicChangeSubscription;
-  double _chartOpacity = 0.15;
-  bool _showOpacityControl = false;
-  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
-      GlobalKey<ScaffoldMessengerState>();
-  final GlobalKey<PowerTableChartState> _chartKey =
-      GlobalKey<PowerTableChartState>();
+  Timer? _freshnessTimer;
+  String _telemetryStatus = '';
+
+  bool get _canShift => deviceData.isSimulated || deviceData.isTransportActive;
+
+  String get _currentTelemetryStatus {
+    if (deviceData.isSimulated) return 'DEMO';
+    if (!deviceData.isTransportActive) return 'DISCONNECTED';
+    final last = deviceData.lastFtmsUpdate;
+    if (last == null) return 'WAITING FOR TELEMETRY';
+    return DateTime.now().difference(last) > const Duration(seconds: 6)
+        ? 'TELEMETRY PAUSED'
+        : 'LIVE TELEMETRY';
+  }
+
+  void _updateStatus() {
+    if (!mounted) return;
+    setState(() => _telemetryStatus = _currentTelemetryStatus);
+  }
 
   @override
   void initState() {
@@ -49,14 +61,20 @@ class _ShifterScreenState extends State<ShifterScreen> {
     _displayedShifterValue = ValueNotifier("Connecting");
     _syncShifterValueFromCache();
 
-    //special setup for demo mode
+    _telemetryStatus = _currentTelemetryStatus;
+    deviceData.transportState.addListener(_updateStatus);
+    _subscribeToDeviceUpdates();
+    // Local stale-data indicator only. This timer never requests device data.
+    _freshnessTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_telemetryStatus != _currentTelemetryStatus) _updateStatus();
+    });
+
+    // Special setup for demo mode.
     if (deviceData.isSimulated) {
-      _displayedShifterValue.value = "0";
       return;
     }
 
     // Subscribe before requesting so a fast response cannot be missed.
-    _subscribeToDeviceUpdates();
     unawaited(deviceData.ensureFtmsNotifications(widget.device));
     unawaited(_refreshAuthoritativeShifterValue());
 
@@ -79,6 +97,8 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
   @override
   void dispose() {
+    _freshnessTimer?.cancel();
+    deviceData.transportState.removeListener(_updateStatus);
     _watcher?.dispose();
     _characteristicChangeSubscription?.cancel();
     _displayedShifterValue.dispose();
@@ -131,10 +151,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
         _applyAuthoritativeShifterValue(event.value);
       }
 
-      // Keep simulated watts in sync with FTMS mode, matching the live updates used by the power table chart
-      if (deviceData.FTMSmode == 0 || deviceData.simulateTargetWatts == false) {
-        deviceData.simulatedTargetWatts = "";
-      }
+      // FTMS telemetry and custom status already arrive on this shared stream.
+      // Never clear or rewrite the cache while presenting another app's ride.
+      _updateStatus();
     });
   }
 
@@ -154,17 +173,26 @@ class _ShifterScreenState extends State<ShifterScreen> {
         // app writes have responses, the final device value wins (including a
         // clamped or rejected shift).
         _displayedShifterValue.value = _confirmedShifterValue ?? "Connecting";
+        // An accepted shift can equal the optimistic value, so the notifier
+        // alone will not rebuild the pending/ready label.
+        setState(() {});
       }
     }
   }
 
   void shift(int amount) {
+    if (!_canShift) return;
     if (_displayedShifterValue.value != "Connecting") {
       final current = int.tryParse(_displayedShifterValue.value);
       if (current == null) {
         return;
       }
       final optimisticValue = (current + amount).toString();
+      if (deviceData.isSimulated) {
+        _confirmedShifterValue = optimisticValue;
+        _displayedShifterValue.value = optimisticValue;
+        return;
+      }
       final shiftValue = Map<String, dynamic>.from(_shifterCharacteristic)
         ..["value"] = optimisticValue;
 
@@ -177,217 +205,103 @@ class _ShifterScreenState extends State<ShifterScreen> {
     WakelockPlus.enable();
   }
 
-  Widget _buildShiftButton(
-    IconData icon,
-    VoidCallback onPressed, {
-    double height = 150,
+  String? _cached(String name) {
+    for (final c in deviceData.customCharacteristic) {
+      if (c['vName'] != name) continue;
+      final value = c['value']?.toString();
+      return value != null && _isValidShifterValue(value) ? value : null;
+    }
+    return null;
+  }
+
+  Widget _reading(
+    String label,
+    String value,
+    String unit,
+    Color color, {
+    bool compact = false,
   }) {
-    return SizedBox(
-      height: height,
-      width: height * 0.8,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          elevation: 5,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(height * 0.15)),
-          ),
-          padding: EdgeInsets.zero,
-        ),
-        child: Icon(icon, size: height * 0.4),
-        onPressed: onPressed,
-      ),
-    );
-  }
-
-  Widget _buildGearDisplay(String gearNumber, {double fontSize = 48}) {
+    final scaler = MediaQuery.textScalerOf(context);
     return Container(
-      padding: EdgeInsets.symmetric(
-        vertical: fontSize * 0.3,
-        horizontal: fontSize * 0.6,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: compact ? 10 : 14),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(fontSize * 0.3),
+        color: WorkoutVisuals.panel,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: .18)),
       ),
-      child: Text(
-        gearNumber,
-        style: TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ScaffoldMessenger(
-      key: _scaffoldMessengerKey,
-      child: Scaffold(
-        appBar: SS2KAppBar(
-          device: widget.device,
-          title: "Virtual Shifter",
-          firmwareOnlyDeviceHeader: true,
-        ),
-        body: Stack(
-          children: [
-            // Background Chart
-            Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 32.0),
-                child: Opacity(
-                  opacity: _chartOpacity,
-                  child: IgnorePointer(
-                    child: PowerTableChart(
-                      key: _chartKey,
-                      device: widget.device,
-                      deviceData: deviceData,
-                      pollTargetPosition: false,
-                      initialDataLoadDelay: const Duration(seconds: 15),
-                    ),
-                  ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: scaler.scale(10) * 2.4,
+            child: Center(
+              child: Text(
+                label,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: WorkoutVisuals.muted,
+                  fontSize: 10,
+                  height: 1.2,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: .6,
                 ),
               ),
             ),
-            // Foreground Content
-            Positioned.fill(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final double availH = constraints.maxHeight;
-                  // Calculate dynamic sizes based on available height
-                  double buttonHeight = (availH * 0.22).clamp(60.0, 160.0);
-                  double gearFontSize = (buttonHeight * 0.4).clamp(24.0, 48.0);
-
-                  return Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.max,
-                    children: [
-                      SizedBox(height: 8),
-                      StreamBuilder<CharacteristicChangeEvent>(
-                        stream: deviceData.characteristicChanges,
-                        builder: (context, snapshot) {
-                          return SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: <Widget>[
-                                if (deviceData.simulatedTargetWatts != "")
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8.0,
-                                    ),
-                                    child: MetricBox(
-                                      value: deviceData.simulatedTargetWatts
-                                          .toString(),
-                                      label: 'Target Watts',
-                                    ),
-                                  ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8.0,
-                                  ),
-                                  child: MetricBox(
-                                    value: deviceData.ftmsData.watts.toString(),
-                                    label: 'Watts',
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8.0,
-                                  ),
-                                  child: MetricBox(
-                                    value: deviceData.ftmsData.cadence.toString(),
-                                    label: 'RPM',
-                                  ),
-                                ),
-                                if (deviceData.ftmsData.heartRate != 0)
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8.0,
-                                    ),
-                                    child: MetricBox(
-                                      value: deviceData.ftmsData.heartRate
-                                          .toString(),
-                                      label: 'BPM',
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                      SizedBox(height: 12),
-                      _buildShiftButton(Icons.arrow_upward, () {
-                        shift(1);
-                      }, height: buttonHeight),
-                      Spacer(flex: 1),
-                      ValueListenableBuilder<String>(
-                        valueListenable: _displayedShifterValue,
-                        builder: (context, gearValue, child) {
-                          return _buildGearDisplay(
-                            gearValue,
-                            fontSize: gearFontSize,
-                          );
-                        },
-                      ),
-                      Spacer(flex: 1),
-                      _buildShiftButton(Icons.arrow_downward, () {
-                        shift(-1);
-                      }, height: buttonHeight),
-                      Spacer(flex: 1),
-                    ],
-                  );
-                },
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: scaler.scale(compact ? 22 : 36),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                style: TextStyle(
+                  color: color,
+                  fontSize: compact ? 22 : 36,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
               ),
             ),
-            Positioned(
-              right: 16,
-              bottom: 24,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Material(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surface.withValues(alpha: 0.9),
-                    shape: const CircleBorder(),
-                    elevation: 4,
-                    child: IconButton(
-                      tooltip: _showOpacityControl
-                          ? 'Hide power table opacity'
-                          : 'Show power table opacity',
-                      icon: Icon(
-                        _showOpacityControl
-                            ? Icons.opacity
-                            : Icons.opacity_outlined,
-                      ),
-                      onPressed: () => setState(
-                        () => _showOpacityControl = !_showOpacityControl,
-                      ),
-                    ),
-                  ),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 320),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
-                      transitionBuilder: (child, animation) =>
-                          FadeTransition(opacity: animation, child: child),
-                      child: _showOpacityControl
-                          ? Padding(
-                              key: const ValueKey('opacityControl'),
-                              padding: const EdgeInsets.only(top: 8),
-                              child: _buildOpacityControl(context),
-                            )
-                          : const SizedBox.shrink(
-                              key: ValueKey('opacityControlEmpty'),
-                            ),
-                    ),
-                  ),
-                ],
-              ),
+          ),
+          if (unit.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              unit,
+              style: const TextStyle(color: WorkoutVisuals.muted, fontSize: 11),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _shiftButton({required bool up, required bool enabled}) {
+    final color = up ? WorkoutVisuals.mint : WorkoutVisuals.power;
+    return SizedBox(
+      height: 100 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0),
+      child: FilledButton(
+        onPressed: enabled ? () => shift(up ? 1 : -1) : null,
+        style: FilledButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: WorkoutVisuals.ink,
+          disabledBackgroundColor: WorkoutVisuals.panel,
+          disabledForegroundColor: WorkoutVisuals.muted,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: color.withValues(alpha: .25)),
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(up ? Icons.arrow_upward : Icons.arrow_downward, size: 32),
+            const SizedBox(height: 6),
+            Text(
+              up ? 'Shift up' : 'Shift down',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
             ),
           ],
         ),
@@ -395,39 +309,260 @@ class _ShifterScreenState extends State<ShifterScreen> {
     );
   }
 
-  Widget _buildOpacityControl(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: const [
-          BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4)),
+  Widget _gearControls() => ValueListenableBuilder<String>(
+    valueListenable: _displayedShifterValue,
+    builder: (context, value, _) {
+      final known = int.tryParse(value) != null;
+      final enabled = _canShift && known;
+      final gear = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        child: Column(
+          children: [
+            const Text(
+              'VIRTUAL GEAR',
+              style: TextStyle(
+                color: WorkoutVisuals.mint,
+                fontSize: 11,
+                letterSpacing: 1.6,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            Text(
+              known ? value : '—',
+              maxLines: 1,
+              style: TextStyle(
+                color: _canShift ? Colors.white : WorkoutVisuals.muted,
+                fontSize: 72,
+                fontWeight: FontWeight.w800,
+                height: 1.15,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            Text(
+              !_canShift
+                  ? 'Reconnect to shift'
+                  : !known
+                  ? 'Waiting for gear'
+                  : _pendingShiftWrites > 0
+                  ? 'Shifting…'
+                  : 'Ready to shift',
+              style: const TextStyle(color: WorkoutVisuals.muted, fontSize: 12),
+            ),
+          ],
+        ),
+      );
+      return LayoutBuilder(
+        builder: (context, box) {
+          final down = _shiftButton(up: false, enabled: enabled);
+          final up = _shiftButton(up: true, enabled: enabled);
+          if (box.maxWidth >= 600) {
+            return Row(
+              children: [
+                Expanded(child: down),
+                Expanded(flex: 2, child: gear),
+                Expanded(child: up),
+              ],
+            );
+          }
+          return Column(
+            children: [
+              gear,
+              Row(
+                children: [
+                  Expanded(child: down),
+                  const SizedBox(width: 12),
+                  Expanded(child: up),
+                ],
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final ftms = deviceData.ftmsData;
+    final hasTelemetry =
+        deviceData.isSimulated || deviceData.lastFtmsUpdate != null;
+    final live = _telemetryStatus == 'LIVE TELEMETRY' || deviceData.isSimulated;
+    final target = _cached(simulatedTargetWattsVname);
+    final incline = double.tryParse(_cached(inclineVname) ?? '');
+    final metrics = IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _reading(
+              'POWER',
+              hasTelemetry ? '${ftms.watts}' : '—',
+              'W',
+              live ? WorkoutVisuals.power : WorkoutVisuals.muted,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _reading(
+              'CADENCE',
+              hasTelemetry ? '${ftms.cadence}' : '—',
+              'rpm',
+              live ? WorkoutVisuals.cadence : WorkoutVisuals.muted,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _reading(
+              'HEART RATE',
+              hasTelemetry && ftms.heartRate > 0 ? '${ftms.heartRate}' : '—',
+              'bpm',
+              live ? WorkoutVisuals.heartRate : WorkoutVisuals.muted,
+            ),
+          ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    );
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'LAST REPORTED BY SMARTSPIN2K',
+          style: TextStyle(
+            color: WorkoutVisuals.muted,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 10),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('Power Table Opacity'),
-              const Spacer(),
-              Text('${(_chartOpacity * 100).round()}%'),
+              Expanded(
+                child: _reading(
+                  'TARGET',
+                  target ?? '—',
+                  'W',
+                  WorkoutVisuals.gold,
+                  compact: true,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _reading(
+                  'INCLINE',
+                  incline?.toStringAsFixed(1) ?? '—',
+                  '%',
+                  WorkoutVisuals.mint,
+                  compact: true,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _reading(
+                  'MOTOR TARGET',
+                  _cached(targetPositionVname) ?? '—',
+                  'steps',
+                  WorkoutVisuals.power,
+                  compact: true,
+                ),
+              ),
             ],
           ),
-          Slider(
-            value: _chartOpacity,
-            min: 0.05,
-            max: 0.5,
-            divisions: 9,
-            label: '${(_chartOpacity * 100).round()}%',
-            onChanged: (value) {
-              setState(() {
-                _chartOpacity = value;
-              });
-            },
-          ),
-        ],
+        ),
+      ],
+    );
+    return Scaffold(
+      backgroundColor: WorkoutVisuals.ink,
+      appBar: SS2KAppBar(
+        device: widget.device,
+        title: 'Virtual Shifter',
+        firmwareOnlyDeviceHeader: true,
+        // Gear confirmation below is the only custom read needed on entry.
+        // Retain connection monitoring, without periodic firmware requests.
+        deviceHeaderCustomRefreshEnabled: false,
+      ),
+      body: SafeArea(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final padding = constraints.maxWidth < 400 ? 12.0 : 20.0;
+            return SingleChildScrollView(
+              padding: EdgeInsets.all(padding),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            live ? Icons.sensors : Icons.sensors_off,
+                            size: 16,
+                            color: live
+                                ? WorkoutVisuals.mint
+                                : WorkoutVisuals.gold,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _telemetryStatus,
+                              style: TextStyle(
+                                color: live
+                                    ? WorkoutVisuals.mint
+                                    : WorkoutVisuals.gold,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ),
+                          if (hasTelemetry && !live)
+                            const Text(
+                              'Last values',
+                              style: TextStyle(
+                                color: WorkoutVisuals.muted,
+                                fontSize: 11,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (constraints.maxWidth >= 700 &&
+                          constraints.maxHeight < 500)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  metrics,
+                                  const SizedBox(height: 20),
+                                  details,
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 24),
+                            Expanded(child: _gearControls()),
+                          ],
+                        )
+                      else ...[
+                        metrics,
+                        const SizedBox(height: 12),
+                        _gearControls(),
+                        const SizedBox(height: 24),
+                        details,
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

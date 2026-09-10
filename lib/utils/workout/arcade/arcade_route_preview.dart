@@ -16,6 +16,7 @@ class ArcadeRoutePreview extends StatelessWidget {
     required this.endless,
     required this.compact,
     required this.cleared,
+    this.workoutLabels = false,
   });
   final List<WorkoutSegment> segments;
   final int index;
@@ -24,6 +25,9 @@ class ArcadeRoutePreview extends StatelessWidget {
   final bool endless;
   final bool compact;
   final Set<int> cleared;
+
+  /// Reuse the interval strip in Classic without the expedition terminology.
+  final bool workoutLabels;
 
   double _start(int i) =>
       segments.take(i).fold<double>(0, (sum, s) => sum + s.duration);
@@ -150,7 +154,10 @@ class ArcadeRoutePreview extends StatelessWidget {
                                     Container(
                                       width: 3,
                                       height: compact ? 22 : 27,
-                                      color: WorkoutPowerZone.forSegment(segments[i], 0).color,
+                                      color: WorkoutPowerZone.forSegment(
+                                        segments[i],
+                                        0,
+                                      ).color,
                                     ),
                                     const SizedBox(width: 7),
                                     Expanded(
@@ -204,7 +211,9 @@ class ArcadeRoutePreview extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Text(
                         seconds >= total
-                            ? 'ROUTE COMPLETE'
+                            ? (workoutLabels
+                                  ? 'WORKOUT COMPLETE'
+                                  : 'ROUTE COMPLETE')
                             : 'FINISH IN ${arcadeIntervalDuration(remaining)}',
                         style: const TextStyle(
                           color: arcadeMint,
@@ -220,7 +229,7 @@ class ArcadeRoutePreview extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      'ROUTE ${segments.isEmpty ? 0 : current + 1}/${segments.length}',
+                      '${workoutLabels ? 'INTERVAL' : 'ROUTE'} ${segments.isEmpty ? 0 : current + 1}/${segments.length}',
                       style: const TextStyle(
                         color: Colors.white54,
                         fontSize: 9,
@@ -230,7 +239,7 @@ class ArcadeRoutePreview extends StatelessWidget {
                   ),
                   Text(
                     endless
-                        ? 'ENDLESS EXPEDITION'
+                        ? (workoutLabels ? 'FREE RIDE' : 'ENDLESS EXPEDITION')
                         : '${arcadeIntervalDuration(seconds)} / ${arcadeIntervalDuration(total)}',
                     style: const TextStyle(color: Colors.white54, fontSize: 9),
                   ),

@@ -43,6 +43,9 @@ flutter precache --ios
 # Install Flutter dependencies
 flutter pub get
 
+# Bundle small previews of the current screens before the archive build.
+flutter test tool/generate_device_previews_test.dart
+
 # Work around Flutter regenerating its aggregate Swift package at iOS 13.
 /bin/sh ios/ci_scripts/patch_flutter_spm_deployment_target.sh
 

@@ -17,7 +17,7 @@ All screenshots are opaque PNG files. The source UI is preserved without invente
 
 ## Capture and regenerate
 
-The capture harness starts Flutter's headless test renderer, mounts the production screen widgets with `DeviceData.setupDemoData()`, loads the bundled workout, and captures each exact store viewport at 2× resolution. The power-table screenshot loads `source/store-preview.ptab` through the app's production `.ptab` parser. Its smooth, separated cadence arcs are modeled after `assets/resistanceChart.png`:
+The capture harness starts Flutter's headless test renderer, mounts the production screen widgets with `DeviceData.setupDemoData()`, loads the bundled workout, and captures each exact store viewport at 2× resolution. The power-table screenshot loads `source/store-preview.ptab` through the app's production `.ptab` parser. Its smooth, separated cadence arcs are modeled after `store_assets/source/legacy_device_tiles/resistanceChart.png`:
 
 ```sh
 flutter test tool/store_screenshot_capture_test.dart

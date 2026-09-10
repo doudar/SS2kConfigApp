@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../../widgets/workout_dialog.dart';
 import 'arcade_rider_appearance.dart';
 import 'arcade_rider_art.dart';
 
@@ -70,8 +71,8 @@ class _ArcadeRiderCustomizerState extends State<ArcadeRiderCustomizer> {
                     shape: CircleBorder(
                       side: BorderSide(
                         color: selected == color
-                            ? Colors.white
-                            : Colors.white24,
+                            ? Theme.of(context).colorScheme.onSurface
+                            : Theme.of(context).colorScheme.outline,
                         width: selected == color ? 3 : 1,
                       ),
                     ),
@@ -102,148 +103,97 @@ class _ArcadeRiderCustomizerState extends State<ArcadeRiderCustomizer> {
   );
 
   @override
-  Widget build(BuildContext context) => Theme(
-    data: ThemeData.dark(useMaterial3: true).copyWith(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xff74ffd3),
-        brightness: Brightness.dark,
-      ),
-    ),
-    child: Dialog(
-      constraints: const BoxConstraints(maxWidth: 540),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      backgroundColor: const Color(0xff10182f),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      clipBehavior: Clip.antiAlias,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * .88,
+  Widget build(BuildContext context) => WorkoutDialog(
+    title: const Text('Your rider'),
+    icon: Icons.checkroom_rounded,
+    subtitle: 'Choose your look for Crank Quest.',
+    content: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        WorkoutSettingsPanel(
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height < 450 ? 100 : 160,
+            width: double.infinity,
+            child: CustomPaint(painter: _RiderPreview(rider)),
+          ),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () =>
+                setState(() => rider = const ArcadeRiderAppearance()),
+            icon: const Icon(Icons.restart_alt_rounded),
+            label: const Text('Reset rider appearance'),
+          ),
+        ),
+        colors(
+          'Skin',
+          rider.skin,
+          skin,
+          (color) => rider.copyWith(skin: color),
+        ),
+        colors(
+          'Hair',
+          rider.hair,
+          hair,
+          (color) => rider.copyWith(hair: color),
+        ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Your rider',
-                      style: TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Reset rider appearance',
-                    onPressed: () =>
-                        setState(() => rider = const ArcadeRiderAppearance()),
-                    icon: const Icon(Icons.restart_alt_rounded),
-                  ),
-                ],
+            for (final style in ArcadeHairStyle.values)
+              ChoiceChip(
+                label: Text(switch (style) {
+                  ArcadeHairStyle.short => 'Short',
+                  ArcadeHairStyle.curls => 'Curls',
+                  ArcadeHairStyle.ponytail => 'Ponytail',
+                }),
+                selected: rider.hairStyle == style,
+                onSelected: (_) =>
+                    setState(() => rider = rider.copyWith(hairStyle: style)),
               ),
-            ),
-            // A still preview uses the exact same vector art as the workout.
-            SizedBox(
-              height: MediaQuery.sizeOf(context).height < 450 ? 100 : 160,
-              width: double.infinity,
-              child: CustomPaint(painter: _RiderPreview(rider)),
-            ),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    colors(
-                      'Skin',
-                      rider.skin,
-                      skin,
-                      (color) => rider.copyWith(skin: color),
-                    ),
-                    colors(
-                      'Hair',
-                      rider.hair,
-                      hair,
-                      (color) => rider.copyWith(hair: color),
-                    ),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        for (final style in ArcadeHairStyle.values)
-                          ChoiceChip(
-                            label: Text(switch (style) {
-                              ArcadeHairStyle.short => 'Short',
-                              ArcadeHairStyle.curls => 'Curls',
-                              ArcadeHairStyle.ponytail => 'Ponytail',
-                            }),
-                            selected: rider.hairStyle == style,
-                            onSelected: (_) => setState(
-                              () => rider = rider.copyWith(hairStyle: style),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    colors(
-                      'Jersey',
-                      rider.jersey,
-                      kit,
-                      (color) => rider.copyWith(jersey: color),
-                    ),
-                    colors(
-                      'Shorts',
-                      rider.shorts,
-                      kit,
-                      (color) => rider.copyWith(shorts: color),
-                    ),
-                    colors(
-                      'Helmet',
-                      rider.helmet,
-                      kit,
-                      (color) => rider.copyWith(helmet: color),
-                    ),
-                    colors(
-                      'Bike',
-                      rider.bike,
-                      kit,
-                      (color) => rider.copyWith(bike: color),
-                    ),
-                    colors(
-                      'Shoes & gloves',
-                      rider.shoes,
-                      kit,
-                      (color) => rider.copyWith(shoes: color),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: OverflowBar(
-                spacing: 12,
-                overflowSpacing: 8,
-                alignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: () => Navigator.of(context).pop(rider),
-                    icon: const Icon(Icons.check_rounded),
-                    label: const Text('Apply look'),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
-      ),
+        const SizedBox(height: 18),
+        colors(
+          'Jersey',
+          rider.jersey,
+          kit,
+          (color) => rider.copyWith(jersey: color),
+        ),
+        colors(
+          'Shorts',
+          rider.shorts,
+          kit,
+          (color) => rider.copyWith(shorts: color),
+        ),
+        colors(
+          'Helmet',
+          rider.helmet,
+          kit,
+          (color) => rider.copyWith(helmet: color),
+        ),
+        colors('Bike', rider.bike, kit, (color) => rider.copyWith(bike: color)),
+        colors(
+          'Shoes & gloves',
+          rider.shoes,
+          kit,
+          (color) => rider.copyWith(shoes: color),
+        ),
+      ],
     ),
+    actions: [
+      OutlinedButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton.icon(
+        onPressed: () => Navigator.of(context).pop(rider),
+        icon: const Icon(Icons.check_rounded),
+        label: const Text('Apply look'),
+      ),
+    ],
   );
 }
 

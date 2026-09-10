@@ -12,17 +12,16 @@ class _LivePositionRepaint extends ChangeNotifier {
 
 class PowerTableChart extends StatefulWidget {
   static const List<Color> lineColors = <Color>[
-    Colors.purple,
-    Colors.indigo,
-    Colors.blue,
-    Colors.cyan,
-    Colors.teal,
-    Colors.green,
-    Colors.lime,
-    Colors.orange,
-    Colors.red,
-    Colors.pink,
-    Colors.brown,
+    Color(0xffbb9aff),
+    Color(0xff949dff),
+    Color(0xff7abaff),
+    Color(0xff77d9ff),
+    Color(0xff74e2df),
+    Color(0xff74ffd3),
+    Color(0xffa9ec88),
+    Color(0xffffdc7b),
+    Color(0xffffa66c),
+    Color(0xffff8392),
   ];
 
   static const List<int> cadenceTicks = <int>[
@@ -43,6 +42,8 @@ class PowerTableChart extends StatefulWidget {
   final bool pollTargetPosition;
   final Duration pollInterval;
   final Duration initialDataLoadDelay;
+  final bool refinedStyle;
+  final ValueChanged<bool>? onAxisOrientationChanged;
 
   const PowerTableChart({
     Key? key,
@@ -51,6 +52,8 @@ class PowerTableChart extends StatefulWidget {
     this.pollTargetPosition = true,
     this.pollInterval = const Duration(seconds: 5),
     this.initialDataLoadDelay = Duration.zero,
+    this.refinedStyle = false,
+    this.onAxisOrientationChanged,
   }) : super(key: key);
 
   @override
@@ -77,6 +80,7 @@ class PowerTableChartState extends State<PowerTableChart>
   Timer? _targetPositionTimer;
   Timer? _cadenceLinesTimer;
   Timer? _initialDataLoadTimer;
+  bool _requestingCadenceLines = false;
   StreamSubscription<CharacteristicChangeEvent>?
   _characteristicChangeSubscription;
   StreamSubscription<FtmsData>? _ftmsDataSubscription;
@@ -178,13 +182,17 @@ class PowerTableChartState extends State<PowerTableChart>
     final saved = prefs.getBool(_prefsSwapAxesKey) ?? false;
     if (mounted) {
       setState(() => _swapAxes = saved);
+      widget.onAxisOrientationChanged?.call(saved);
     }
   }
 
   Future<void> toggleAxisOrientation() async {
-    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() => _swapAxes = !_swapAxes);
-    await prefs.setBool(_prefsSwapAxesKey, _swapAxes);
+    final value = _swapAxes;
+    widget.onAxisOrientationChanged?.call(value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefsSwapAxesKey, value);
   }
 
   void _startTargetPositionPolling() {
@@ -242,18 +250,28 @@ class PowerTableChartState extends State<PowerTableChart>
 
   Future<void> requestAllCadenceLines() async {
     if (!mounted ||
+        _requestingCadenceLines ||
         !widget.deviceData.isTransportActive ||
         widget.deviceData.isPowerTableTransferInProgress) {
       return;
     }
-    for (int i = 0; i < 10; i++) {
-      if (!mounted || widget.deviceData.isPowerTableTransferInProgress) return;
-      await widget.deviceData.requestSetting(
-        widget.device,
-        powerTableDataVname,
-        extraByte: i,
-      );
-      await Future.delayed(const Duration(milliseconds: 1000));
+    _requestingCadenceLines = true;
+    try {
+      for (int i = 0; i < 10; i++) {
+        if (!mounted ||
+            !widget.deviceData.isTransportActive ||
+            widget.deviceData.isPowerTableTransferInProgress) {
+          return;
+        }
+        await widget.deviceData.requestSetting(
+          widget.device,
+          powerTableDataVname,
+          extraByte: i,
+        );
+        await Future.delayed(const Duration(milliseconds: 1000));
+      }
+    } finally {
+      _requestingCadenceLines = false;
     }
   }
 
@@ -342,6 +360,7 @@ class PowerTableChartState extends State<PowerTableChart>
               child: CustomPaint(
                 size: chartSize,
                 painter: PowerTableOverlayPainter(
+                  refinedStyle: widget.refinedStyle,
                   repaint: _pulseController,
                   animation: _pulseController,
                   colors: colors,
@@ -367,6 +386,7 @@ class PowerTableChartState extends State<PowerTableChart>
               child: CustomPaint(
                 size: chartSize,
                 painter: PowerTablePainter(
+                  refinedStyle: widget.refinedStyle,
                   powerTableData: _cachedPowerTableData,
                   cadences: cadences,
                   colors: colors,
@@ -381,6 +401,7 @@ class PowerTableChartState extends State<PowerTableChart>
               child: CustomPaint(
                 size: chartSize,
                 painter: PowerTableOverlayPainter(
+                  refinedStyle: widget.refinedStyle,
                   repaint: _livePositionRepaint,
                   animation: _pulseController,
                   colors: colors,

@@ -9,6 +9,45 @@ import 'package:ss2kconfigapp/utils/workout/workout_parser.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_storage.dart';
 
 void main() {
+  test('live power keeps target alignment without magnifying small errors', () {
+    final block = WorkoutSegment(
+      type: SegmentType.steadyState,
+      duration: 60,
+      powerLow: .8,
+    );
+    for (final height in [180.0, 400.0, 900.0]) {
+      final size = Size(600, height);
+      final painter = WorkoutPainter(
+        segments: [block],
+        maxPower: 1.2,
+        totalDuration: 60,
+        ftpValue: 250,
+        currentProgress: .5,
+        actualPowerPoints: const {},
+        maxPixelsPerWatt: .75,
+      );
+      final targetY = painter
+          .segmentOutline(block, Offset.zero & size, size)
+          .getBounds()
+          .top;
+      expect(painter.powerY(200, size), closeTo(targetY, 1e-4));
+      expect(
+        (painter.powerY(202, size) - targetY).abs(),
+        lessThanOrEqualTo(1.5),
+      );
+      expect(
+        (painter.powerY(198, size) - targetY).abs(),
+        lessThanOrEqualTo(1.5),
+      );
+      // Large misses and coasting remain proportional, with no target snapping.
+      expect(
+        targetY - painter.powerY(240, size),
+        closeTo(20 * (targetY - painter.powerY(202, size)), 1e-3),
+      );
+      expect(painter.powerY(0, size), height);
+    }
+  });
+
   final segments = WorkoutParser.parseZwoFile('''
     <workout_file><name>Shared profile</name><workout>
     <Warmup Duration="300" PowerLow="0.4" PowerHigh="0.7"/>

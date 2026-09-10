@@ -18,6 +18,9 @@ import '../widgets/dropdown_card.dart';
 
 import '../utils/device_data.dart';
 import '../utils/stream_extensions.dart';
+import 'device_settings_style.dart';
+import 'ss2k_app_bar.dart';
+import '../utils/workout/workout_visuals.dart';
 
 class SettingTile extends StatefulWidget {
   final BluetoothDevice device;
@@ -70,33 +73,68 @@ class SettingEditor extends StatelessWidget {
         );
     }
 
-    return Card(
-      color: Colors.black12,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Text(
-            c["textDescription"],
-            style: const TextStyle(color: Colors.white),
-          ),
-          const SizedBox(height: 10),
-          Center(
-            child: Hero(
-              tag: c["vName"],
-              child: Material(type: MaterialType.transparency, child: editor),
+    return DeviceSettingsSurface(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              c['textDescription']?.toString() ?? '',
+              style: const TextStyle(
+                color: WorkoutVisuals.muted,
+                fontSize: 14,
+                height: 1.5,
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            "Settings are immediate for the current session.\nClick save to make them persistent.",
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white),
-          ),
-        ],
+            const SizedBox(height: 20),
+            editor,
+            const SizedBox(height: 20),
+            const Text(
+              'Changes apply to this session. Save keeps them after a restart.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: WorkoutVisuals.muted,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+/// Shared editor route retains the branded header without refreshing settings.
+class SettingEditScreen extends StatelessWidget {
+  const SettingEditScreen({super.key, required this.device, required this.c});
+  final BluetoothDevice device;
+  final Map c;
+
+  @override
+  Widget build(BuildContext context) => DeviceSettingsSurface(
+    child: Scaffold(
+      appBar: SS2KAppBar(
+        device: device,
+        title: 'Edit Setting',
+        firmwareOnlyDeviceHeader: true,
+        deviceHeaderCustomRefreshEnabled: false,
+      ),
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 620),
+              child: SettingEditor(device: device, c: c),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class _SettingTileState extends State<SettingTile> {
@@ -150,144 +188,86 @@ class _SettingTileState extends State<SettingTile> {
     return _ret;
   }
 
-  Color _getTileColor() {
-    if (c["value"] == noFirmSupport) return deactiveBackgroundColor;
-    return (c["settingType"] as SettingType).color;
-  }
-
   @override
   Widget build(BuildContext context) {
-    SizedBox(height: 10);
-    Color baseColor = _getTileColor();
-
-    return Hero(
-      tag: c["vName"],
+    final unsupported = c['value'] == noFirmSupport;
+    final accent = unsupported
+        ? WorkoutVisuals.muted
+        : DeviceSettingsStyle.accent(c['settingType'] as SettingType);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
       child: Material(
-        type: MaterialType.transparency,
-        child: Card(
-          margin: EdgeInsets.fromLTRB(10, 5, 10, 5),
-          elevation: 4,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
+        color: WorkoutVisuals.panel,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: accent.withValues(alpha: .25)),
+        ),
+        child: ListTile(
+          enabled: !unsupported,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 10,
           ),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(15),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  baseColor.withValues(alpha: 0.7),
-                  baseColor.withValues(alpha: 0.3),
-                ],
-              ),
+          title: Text(
+            c['humanReadableName'].toString(),
+            style: TextStyle(
+              color: unsupported ? WorkoutVisuals.muted : Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
             ),
-            child: ListTile(
-              contentPadding: EdgeInsets.symmetric(
-                vertical: 25.0,
-                horizontal: 16.0,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      (c["humanReadableName"]),
-                      textAlign: TextAlign.left,
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            shadows: [
-                              Shadow(
-                                offset: Offset(1.0, 1.0),
-                                blurRadius: 15.0,
-                                color: Colors.black45,
-                              ),
-                            ],
-                          ),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    valueFormatter(),
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
-                  SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            _value,
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 18,
-                              shadows: [
-                                Shadow(
-                                  offset: Offset(1.0, 1.0),
-                                  blurRadius: 15.0,
-                                  color: Colors.black45,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 8),
-                      Icon(Icons.edit, color: Colors.white54, size: 20),
-                    ],
+                ),
+                if (!unsupported) ...[
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.edit_outlined,
+                    color: WorkoutVisuals.muted,
+                    size: 16,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          trailing: IconButton(
+            tooltip: 'About ${c['humanReadableName']}',
+            icon: const Icon(Icons.info_outline, color: WorkoutVisuals.muted),
+            onPressed: () => showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: Text(c['humanReadableName']),
+                content: Text(
+                  c['textDescription'] ?? 'No description available.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
                   ),
                 ],
               ),
-              // tileColor property removed as we use Container decoration
-              trailing: IconButton(
-                icon: Icon(Icons.info_outline, color: Colors.white),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (BuildContext context) {
-                      return AlertDialog(
-                        title: Text(c["humanReadableName"]),
-                        content: Text(
-                          c["textDescription"] ?? "No description available.",
-                        ),
-                        actions: [
-                          TextButton(
-                            child: Text("Close"),
-                            onPressed: () {
-                              Navigator.of(context).pop();
-                            },
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-              onTap: () {
-                if (c["value"] == noFirmSupport) {
-                } else {
-                  Navigator.push(
-                    context,
-                    fadeRoute(
-                      Scaffold(
-                        appBar: AppBar(title: const Text('Edit Setting')),
-                        body: Center(
-                          child: SingleChildScrollView(
-                            child: SettingEditor(device: widget.device, c: c),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }
-              },
             ),
           ),
+          onTap: unsupported
+              ? null
+              : () => Navigator.push(
+                  context,
+                  fadeRoute(SettingEditScreen(device: widget.device, c: c)),
+                ),
         ),
       ),
     );

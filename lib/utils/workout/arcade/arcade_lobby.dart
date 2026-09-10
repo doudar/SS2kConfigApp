@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../../widgets/workout_menu_button.dart';
 import '../workout_parser.dart';
 import '../workout_painter.dart';
 import '../workout_account_prompt.dart';
@@ -30,6 +31,7 @@ class ArcadeLobby extends StatefulWidget {
     required this.onFtp,
     required this.onSelect,
     this.onBrowse,
+    this.onOpenMenu,
     this.onJourney,
     this.loadChoices = ArcadeLobbyWorkout.loadChoices,
   });
@@ -45,6 +47,7 @@ class ArcadeLobby extends StatefulWidget {
   final VoidCallback onFtp;
   final ValueChanged<ArcadeLobbyWorkout> onSelect;
   final VoidCallback? onBrowse;
+  final VoidCallback? onOpenMenu;
   final VoidCallback? onJourney;
   final Future<List<ArcadeLobbyWorkout>> Function() loadChoices;
 
@@ -374,7 +377,9 @@ class _ArcadeLobbyState extends State<ArcadeLobby> {
                           height: 32,
                           width: double.infinity,
                           child: CustomPaint(
-                            painter: WorkoutPainter.preview(choice.workout.segments),
+                            painter: WorkoutPainter.preview(
+                              choice.workout.segments,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -436,6 +441,8 @@ class _ArcadeLobbyState extends State<ArcadeLobby> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (widget.onOpenMenu != null)
+                  WorkoutMenuButton(onPressed: widget.onOpenMenu!),
                 IntervalsTodayCard(ftp: widget.ftp, onSelect: widget.onSelect),
                 if (wide)
                   Row(

@@ -183,6 +183,11 @@ and workout export as Classic.
   or stopping shrinks it back to reveal the header; Classic always keeps it.
   The header stays mounted to preserve connection monitoring, and expansion
   preserves the active Arcade state. Reduced motion switches layouts directly.
+  Named header buttons provide the mode switch, ride menu, and Classic graph tools.
+  Phones put those actions on a separate row below the device name. While the
+  header is hidden during an Arcade ride, labeled in-game mode/menu buttons appear;
+  pausing removes those copies as the header returns. Landing screens use the
+  header menu rather than repeating it in the workout content.
 
 The world is drawn with Flutter `CustomPainter`; no game engine, network assets,
 or additional dependencies are required. Original PCM music is checked in under
@@ -217,6 +222,16 @@ Profiles, time in zones, and arcade roads share a single palette: teal recovery
 orange threshold (105%), coral VO2 max (120%), and violet anaerobic (above 120%).
 Ramps change color at zone boundaries; free rides and max efforts use neutral gray.
 Arcade encounters and scenery categories remain independent of these display zones.
+
+Classic uses Arcade's navy panels and interactive bottom interval preview, with
+upcoming targets, countdowns, and tap-to-open interval details. The reorderable
+metrics use equal-width tiles, centered tabular numbers, and separate unit rows.
+Classic and Arcade share the same full-width playback and FTP control row,
+positioned below the preview. Power traces and target blocks share a linear
+scale capped at 0.75 logical pixels per watt, so small differences stay visually
+small on tall screens. Trace colors match the metrics, with rounded lines and
+subtle endpoint highlights. Cadence/heart-rate scaling and recorded samples are
+unchanged.
 
 The selected workout also shows planned time in each training zone,
 with watt ranges based on the current FTP. On wide screens this sits below the

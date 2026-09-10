@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/device_data.dart';
 import '../utils/constants.dart';
+import 'device_settings_style.dart';
+import '../utils/workout/workout_visuals.dart';
 import '../utils/demo.dart';
 import '../utils/ble_sensor_services.dart';
 
@@ -143,7 +145,7 @@ class _DropdownCardState extends State<DropdownCard> {
 
   Color _getTileColor() {
     if (widget.c["value"] == noFirmSupport) return deactiveBackgroundColor;
-    return (widget.c["settingType"] as SettingType).color;
+    return DeviceSettingsStyle.accent(widget.c["settingType"] as SettingType);
   }
 
   @override
@@ -153,28 +155,21 @@ class _DropdownCardState extends State<DropdownCard> {
     return Center(
       child: Container(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.6,
-          maxWidth: MediaQuery.of(context).size.width * 0.9,
+          maxHeight: (MediaQuery.of(context).size.height * 0.6).clamp(
+            360.0,
+            640.0,
+          ),
+          maxWidth: 620,
         ),
         child: Card(
-          elevation: 8,
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          color: WorkoutVisuals.panel,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(18),
           ),
           child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(15),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  baseColor.withValues(
-                    alpha: 0.95,
-                  ), // Higher opacity for legibility
-                  baseColor.withValues(alpha: 0.7),
-                ],
-              ),
-            ),
+            decoration: DeviceSettingsStyle.panel(baseColor),
             padding: const EdgeInsets.symmetric(vertical: 16.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -186,13 +181,6 @@ class _DropdownCardState extends State<DropdownCard> {
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(1, 1),
-                          blurRadius: 3,
-                          color: Colors.black45,
-                        ),
-                      ],
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -203,14 +191,7 @@ class _DropdownCardState extends State<DropdownCard> {
                   child: Text(
                     "Current: ${this.widget.c["value"]}",
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.white70,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(1, 1),
-                          blurRadius: 2,
-                          color: Colors.black45,
-                        ),
-                      ],
+                      color: WorkoutVisuals.muted,
                     ),
                   ),
                 ),
@@ -249,7 +230,7 @@ class _DropdownCardState extends State<DropdownCard> {
 
                                 return Material(
                                   color: isSelected
-                                      ? Colors.white.withValues(alpha: 0.2)
+                                      ? baseColor.withValues(alpha: 0.16)
                                       : Colors.transparent,
                                   borderRadius: BorderRadius.circular(8),
                                   child: InkWell(
@@ -274,13 +255,6 @@ class _DropdownCardState extends State<DropdownCard> {
                                                     : FontWeight.normal,
                                                 fontSize: 16,
                                                 color: Colors.white,
-                                                shadows: [
-                                                  Shadow(
-                                                    offset: Offset(1, 1),
-                                                    blurRadius: 1,
-                                                    color: Colors.black26,
-                                                  ),
-                                                ],
                                               ),
                                             ),
                                           ),
@@ -303,8 +277,10 @@ class _DropdownCardState extends State<DropdownCard> {
                 Divider(height: 24, color: Colors.white24),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: <Widget>[
                       if (!demoModeBypass.value)
                         TextButton.icon(
@@ -318,7 +294,7 @@ class _DropdownCardState extends State<DropdownCard> {
                                 )
                               : const Icon(
                                   Icons.refresh,
-                                  color: Colors.white70,
+                                  color: WorkoutVisuals.muted,
                                 ),
                           label: Text(
                             isScanning ? 'SCANNING…' : 'SCAN',
@@ -343,7 +319,6 @@ class _DropdownCardState extends State<DropdownCard> {
                                   }
                                 },
                         ),
-                      Spacer(),
                       TextButton(
                         child: const Text(
                           'BACK',
@@ -356,8 +331,8 @@ class _DropdownCardState extends State<DropdownCard> {
                       const SizedBox(width: 8),
                       FilledButton(
                         style: FilledButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: baseColor,
+                          backgroundColor: WorkoutVisuals.mint,
+                          foregroundColor: WorkoutVisuals.ink,
                         ),
                         child: const Text(
                           'SAVE',

@@ -11,10 +11,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/device_data.dart';
 import '../utils/constants.dart';
-
+import 'device_settings_style.dart';
+import '../utils/workout/workout_visuals.dart';
 
 class boolCard extends StatefulWidget {
-  const boolCard({super.key, required this.device,required this.c});
+  const boolCard({super.key, required this.device, required this.c});
   final BluetoothDevice device;
   final Map c;
   @override
@@ -32,8 +33,8 @@ class _boolCardState extends State<boolCard> {
     _charSubscription = deviceData.characteristicChanges
         .where((event) => event.vName == widget.c["vName"])
         .listen((event) {
-      if (mounted) setState(() {});
-    });
+          if (mounted) setState(() {});
+        });
   }
 
   @override
@@ -44,7 +45,7 @@ class _boolCardState extends State<boolCard> {
 
   Color _getTileColor() {
     if (widget.c["value"] == noFirmSupport) return deactiveBackgroundColor;
-    return (widget.c["settingType"] as SettingType).color;
+    return DeviceSettingsStyle.accent(widget.c["settingType"] as SettingType);
   }
 
   @override
@@ -53,87 +54,100 @@ class _boolCardState extends State<boolCard> {
     return Column(
       children: <Widget>[
         Card(
-          elevation: 15,
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          color: WorkoutVisuals.panel,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(18),
           ),
           child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(15),
-              gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    baseColor.withValues(alpha: 0.7),
-                    baseColor.withValues(alpha: 0.3),
-                  ],
-                ),
-            ),
+            decoration: DeviceSettingsStyle.panel(baseColor),
             padding: const EdgeInsets.all(16.0),
-            child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-              Text((this.widget.c["humanReadableName"]), 
-                style: TextStyle(
-                  fontSize: 32, 
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  shadows: [
-                    Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black45)
-                  ]
-                ), 
-                textAlign: TextAlign.center
-              ),
-              SizedBox(height: 10),
-              Text(
-                (bool.parse(this.widget.c["value"]) ? "On" : "Off"), 
-                style: TextStyle(
-                  fontSize: 24,
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  shadows: [
-                    Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black45)
-                  ]
-                ), 
-                textAlign: TextAlign.center
-              ),
-              Switch(
-                value: bool.parse(this.widget.c["value"]),
-                activeThumbColor: Colors.white,
-                activeTrackColor: Colors.white54,
-                inactiveThumbColor: Colors.white,
-                inactiveTrackColor: Colors.black26,
-                onChanged: (b) {
-                  this.widget.c["value"] = b.toString();
-                  this.deviceData.writeToSS2k(this.widget.device, this.widget.c);
-                  setState(() {});
-                  return this.widget.c["value"];
-                },
-              ),
-              const SizedBox(height: 15),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: <Widget>[
-                  TextButton(
-                      child: const Text('BACK', style: TextStyle(color: Colors.white)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  (this.widget.c["humanReadableName"]),
+                  style: TextStyle(
+                    fontSize: 24,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 10),
+                Text(
+                  (bool.parse(this.widget.c["value"]) ? "On" : "Off"),
+                  style: TextStyle(
+                    fontSize: 24,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                Switch(
+                  value: bool.parse(this.widget.c["value"]),
+                  activeThumbColor: WorkoutVisuals.ink,
+                  activeTrackColor: baseColor,
+                  inactiveThumbColor: WorkoutVisuals.muted,
+                  inactiveTrackColor: Colors.black26,
+                  onChanged: (b) {
+                    this.widget.c["value"] = b.toString();
+                    this.deviceData.writeToSS2k(
+                      this.widget.device,
+                      this.widget.c,
+                    );
+                    setState(() {});
+                    return this.widget.c["value"];
+                  },
+                ),
+                const SizedBox(height: 15),
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    TextButton(
+                      child: const Text(
+                        'BACK',
+                        style: TextStyle(color: Colors.white),
+                      ),
                       onPressed: () {
                         Navigator.pop(context);
-                      }),
-                  const SizedBox(width: 8),
-                  TextButton(
-                      child: const Text('SAVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: WorkoutVisuals.mint,
+                        foregroundColor: WorkoutVisuals.ink,
+                        minimumSize: const Size(80, 48),
+                      ),
+                      child: const Text(
+                        'SAVE',
+                        style: TextStyle(
+                          color: WorkoutVisuals.ink,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                       onPressed: () async {
                         //Find the save command and execute it
-                        await this
-                            .deviceData
-                            .writeCommand(this.widget.device, saveVname);
+                        await this.deviceData.writeCommand(
+                          this.widget.device,
+                          saveVname,
+                        );
                         if (!mounted) return;
                         Navigator.pop(context);
-                      }),
-                  const SizedBox(width: 8),
-                ],
-              ),
-            ]),
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-      ]);
+      ],
+    );
   }
 }

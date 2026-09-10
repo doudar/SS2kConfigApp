@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../widgets/workout_dialog.dart';
+import 'workout_uploads.dart';
 
 class WorkoutEndDialog extends StatelessWidget {
   const WorkoutEndDialog({
@@ -17,22 +19,16 @@ class WorkoutEndDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return _ExportShell(
+    return WorkoutDialog(
       icon: Icons.flag_rounded,
       eyebrow: 'WRAP UP YOUR RIDE',
-      title: 'Ready to finish?',
+      title: const Text('Ready to finish?'),
       subtitle: 'You can save or upload your workout next.',
-      child: Column(
+      content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: colors.onSurface.withValues(alpha: .035),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: colors.outline.withValues(alpha: .15)),
-            ),
+          WorkoutSettingsPanel(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -61,10 +57,7 @@ class WorkoutEndDialog extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          OverflowBar(
-            alignment: MainAxisAlignment.end,
-            spacing: 12,
-            overflowSpacing: 10,
+          WorkoutDialogActions(
             children: [
               OutlinedButton(
                 onPressed: () => Navigator.of(context).pop(false),
@@ -84,7 +77,7 @@ class WorkoutEndDialog extends StatelessWidget {
 }
 
 /// Presentation shared by the Classic and Arcade workout export flows.
-class WorkoutExportDialog extends StatelessWidget {
+class WorkoutExportDialog extends StatefulWidget {
   const WorkoutExportDialog({
     super.key,
     required this.workoutName,
@@ -93,6 +86,10 @@ class WorkoutExportDialog extends StatelessWidget {
     required this.averageCadence,
     required this.stravaConnected,
     required this.intervalsConnected,
+    this.initialChoice = const WorkoutExportChoice(
+      uploadToStrava: true,
+      uploadToIntervals: true,
+    ),
   });
 
   final String workoutName;
@@ -101,34 +98,40 @@ class WorkoutExportDialog extends StatelessWidget {
   final double? averageCadence;
   final bool stravaConnected;
   final bool intervalsConnected;
+  final WorkoutExportChoice initialChoice;
+
+  @override
+  State<WorkoutExportDialog> createState() => _WorkoutExportDialogState();
+}
+
+class _WorkoutExportDialogState extends State<WorkoutExportDialog> {
+  late bool _strava =
+      widget.stravaConnected && widget.initialChoice.uploadToStrava;
+  late bool _intervals =
+      widget.intervalsConnected && widget.initialChoice.uploadToIntervals;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     String metric(double? value, String unit) =>
         value != null && value.isFinite ? '${value.round()} $unit' : '—';
-    void choose(String destination) => Navigator.of(context).pop(destination);
-    return _ExportShell(
+
+    return WorkoutDialog(
       icon: Icons.directions_bike_rounded,
       eyebrow: 'YOUR WORKOUT',
-      title: 'Save your ride',
-      subtitle: 'Keep the effort. Take it with you.',
-      child: Column(
+      title: const Text('Save your ride'),
+      subtitle:
+          'Save a FIT file on this device and send your ride to your apps.',
+      content: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: colors.onSurface.withValues(alpha: .035),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: colors.outline.withValues(alpha: .15)),
-            ),
+          WorkoutSettingsPanel(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  workoutName,
+                  widget.workoutName,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: colors.onSurface,
@@ -139,16 +142,20 @@ class WorkoutExportDialog extends StatelessWidget {
                   spacing: 22,
                   runSpacing: 16,
                   children: [
-                    _RideMetric(Icons.timer_outlined, 'Ride time', duration),
+                    _RideMetric(
+                      Icons.timer_outlined,
+                      'Ride time',
+                      widget.duration,
+                    ),
                     _RideMetric(
                       Icons.bolt_rounded,
                       'Avg power',
-                      metric(averagePower, 'W'),
+                      metric(widget.averagePower, 'W'),
                     ),
                     _RideMetric(
                       Icons.rotate_right_rounded,
                       'Avg cadence',
-                      metric(averageCadence, 'rpm'),
+                      metric(widget.averageCadence, 'rpm'),
                     ),
                   ],
                 ),
@@ -156,47 +163,58 @@ class WorkoutExportDialog extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 22),
-          _ExportDestination(
-            icon: Icons.download_rounded,
-            title: 'Save FIT file',
-            subtitle: 'Keep a copy on this device',
-            primary: true,
-            onTap: () => choose('save'),
-          ),
-          if (stravaConnected || intervalsConnected) ...[
-            const SizedBox(height: 22),
-            Text(
-              'UPLOAD TO A CONNECTED APP',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1,
-                color: colors.onSurfaceVariant,
+          if (widget.stravaConnected || widget.intervalsConnected) ...[
+            const WorkoutSectionLabel('UPLOAD TO YOUR APPS'),
+            const SizedBox(height: 6),
+            const Text('Choose any or all. We will remember for next time.'),
+            const SizedBox(height: 10),
+            WorkoutSettingsPanel(
+              child: Column(
+                children: [
+                  if (widget.stravaConnected)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text('Strava'),
+                      value: _strava,
+                      onChanged: (value) => setState(() => _strava = value!),
+                    ),
+                  if (widget.intervalsConnected)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text('Intervals.icu'),
+                      value: _intervals,
+                      onChanged: (value) => setState(() => _intervals = value!),
+                    ),
+                ],
               ),
             ),
-            const SizedBox(height: 10),
-            if (stravaConnected)
-              _ExportDestination(
-                icon: Icons.landscape_rounded,
-                title: 'Strava',
-                subtitle: 'Upload this ride to your activities',
-                onTap: () => choose('strava'),
-              ),
-            if (stravaConnected && intervalsConnected)
-              const SizedBox(height: 10),
-            if (intervalsConnected)
-              _ExportDestination(
-                icon: Icons.stacked_line_chart_rounded,
-                title: 'Intervals.icu',
-                subtitle: 'Upload this ride to your training calendar',
-                onTap: () => choose('intervals'),
-              ),
+            const SizedBox(height: 22),
           ],
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(
+              WorkoutExportChoice(
+                uploadToStrava: _strava,
+                uploadToIntervals: _intervals,
+              ),
+            ),
+            icon: Icon(
+              _strava || _intervals
+                  ? Icons.cloud_upload_outlined
+                  : Icons.download_rounded,
+            ),
+            label: Text(
+              _strava || _intervals ? 'Save & upload' : 'Save FIT file',
+            ),
+          ),
           const SizedBox(height: 16),
           Align(
             alignment: Alignment.center,
             child: TextButton(
-              onPressed: () => choose('discard'),
+              onPressed: () => Navigator.of(
+                context,
+              ).pop(const WorkoutExportChoice(discard: true)),
               style: TextButton.styleFrom(
                 foregroundColor: colors.onSurfaceVariant,
               ),
@@ -214,11 +232,11 @@ class WorkoutExportProgressDialog extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => _ExportShell(
+  Widget build(BuildContext context) => WorkoutDialog(
     icon: Icons.sync_rounded,
     eyebrow: 'WORKOUT FILE',
-    title: 'One moment…',
-    child: Column(
+    title: const Text('One moment…'),
+    content: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -234,29 +252,28 @@ class WorkoutExportProgressDialog extends StatelessWidget {
 }
 
 class WorkoutSavedDialog extends StatelessWidget {
-  const WorkoutSavedDialog({super.key, required this.filePath});
+  const WorkoutSavedDialog({
+    super.key,
+    required this.filePath,
+    this.uploadResults = const {},
+  });
   final String filePath;
+  final Map<String, bool> uploadResults;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final filename = filePath.split(RegExp(r'[/\\]')).last;
-    return _ExportShell(
+    return WorkoutDialog(
       icon: Icons.check_circle_outline_rounded,
       eyebrow: 'READY TO GO',
-      title: 'Workout saved',
-      subtitle: 'Your FIT file is ready to share.',
-      child: Column(
+      title: const Text('Workout saved'),
+      subtitle: 'Your FIT file is saved on this device and ready to share.',
+      content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: colors.onSurface.withValues(alpha: .035),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: colors.outline.withValues(alpha: .15)),
-            ),
+          WorkoutSettingsPanel(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -287,6 +304,29 @@ class WorkoutSavedDialog extends StatelessWidget {
               ],
             ),
           ),
+          for (final result in uploadResults.entries)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    result.value
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    color: result.value ? colors.primary : colors.error,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      result.value
+                          ? 'Uploaded to ${result.key}'
+                          : 'Could not upload to ${result.key}. Your saved file is safe.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 8),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
@@ -308,10 +348,7 @@ class WorkoutSavedDialog extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          OverflowBar(
-            spacing: 12,
-            overflowSpacing: 10,
-            alignment: MainAxisAlignment.end,
+          WorkoutDialogActions(
             children: [
               OutlinedButton(
                 onPressed: () => Navigator.of(context).pop(false),
@@ -325,114 +362,6 @@ class WorkoutSavedDialog extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ExportShell extends StatelessWidget {
-  const _ExportShell({
-    required this.icon,
-    required this.eyebrow,
-    required this.title,
-    this.subtitle,
-    required this.child,
-  });
-  final IconData icon;
-  final String eyebrow;
-  final String title;
-  final String? subtitle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return Dialog(
-      constraints: const BoxConstraints(maxWidth: 520),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(26),
-        side: BorderSide(color: colors.outline.withValues(alpha: .18)),
-      ),
-      backgroundColor: colors.surface,
-      surfaceTintColor: Colors.transparent,
-      clipBehavior: Clip.antiAlias,
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    colors.primary.withValues(alpha: .12),
-                    colors.surface,
-                  ],
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: colors.primary.withValues(alpha: .10),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Icon(icon, color: colors.primary, size: 25),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          eyebrow,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.4,
-                            color: colors.primary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  Semantics(
-                    namesRoute: true,
-                    header: true,
-                    child: Text(
-                      title,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: colors.onSurface,
-                      ),
-                    ),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      subtitle!,
-                      style: TextStyle(
-                        color: colors.onSurfaceVariant,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-              child: child,
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -456,9 +385,11 @@ class _RideMetric extends StatelessWidget {
           children: [
             Icon(icon, size: 14, color: colors.onSurfaceVariant),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
+              ),
             ),
           ],
         ),
@@ -472,86 +403,6 @@ class _RideMetric extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ExportDestination extends StatelessWidget {
-  const _ExportDestination({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-    this.primary = false,
-  });
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-  final bool primary;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final foreground = primary ? colors.onPrimary : colors.onSurface;
-    return Material(
-      color: primary ? colors.primary : colors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: primary
-              ? colors.primary
-              : colors.outline.withValues(alpha: .25),
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Semantics(
-        button: true,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 25,
-                  color: primary ? foreground : colors.primary,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          color: foreground,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          color: primary
-                              ? foreground.withValues(alpha: .9)
-                              : colors.onSurfaceVariant,
-                          fontSize: 12,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(Icons.arrow_forward_rounded, size: 18, color: foreground),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

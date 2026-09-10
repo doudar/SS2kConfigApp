@@ -19,6 +19,7 @@ import '../utils/onboarding/wizard_step_machine.dart';
 import '../widgets/setting_tile.dart';
 import '../widgets/homing_proximity_gauge.dart';
 import '../widgets/ss2k_app_bar.dart';
+import '../widgets/workout_scroll_hint.dart';
 
 const String _troubleshootingUrl = 'https://docs.smartspin2k.com/documentation/troubleshooting';
 
@@ -45,7 +46,11 @@ class CalibrationScreen extends StatefulWidget {
   final BluetoothDevice device;
   final bool showDeviceHeader;
 
-  const CalibrationScreen({Key? key, required this.device, this.showDeviceHeader = true}) : super(key: key);
+  /// Workout settings supply their own shared dialog chrome.
+  final bool embedded;
+
+  const CalibrationScreen({Key? key, required this.device, this.showDeviceHeader = true, this.embedded = false})
+    : super(key: key);
 
   @override
   State<CalibrationScreen> createState() => _CalibrationScreenState();
@@ -192,14 +197,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
     await Navigator.of(context).push<void>(
       fadeRoute(
-        Scaffold(
-          appBar: AppBar(title: const Text('Edit Setting')),
-          body: Center(
-            child: SingleChildScrollView(
-              child: SettingEditor(device: widget.device, c: setting),
-            ),
-          ),
-        ),
+          SettingEditScreen(device: widget.device, c: setting),
       ),
     );
     if (mounted) setState(() {});
@@ -301,6 +299,19 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     // green success callout.
     final progress = _pageIndex == 1 && _showVerdict ? 1.0 : (_pageIndex + 1) / _pageCount;
 
+    final content = Column(
+      children: [
+        LinearProgressIndicator(value: progress),
+        Expanded(
+          child: PageView(
+            controller: _pageController,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [_buildBeforeYouStartPage(), _buildRunningPage(), _buildTroubleshootPage()],
+          ),
+        ),
+      ],
+    );
+    if (widget.embedded) return content;
     return Scaffold(
       appBar: SS2KAppBar(
         device: widget.device,
@@ -308,18 +319,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         showDeviceHeader: widget.showDeviceHeader,
         deviceHeaderCustomRefreshEnabled: false,
       ),
-      body: Column(
-        children: [
-          LinearProgressIndicator(value: progress),
-          Expanded(
-            child: PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [_buildBeforeYouStartPage(), _buildRunningPage(), _buildTroubleshootPage()],
-            ),
-          ),
-        ],
-      ),
+      body: content,
     );
   }
 
@@ -826,9 +826,11 @@ class _CalibrationPage extends StatelessWidget {
     return Column(
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+          child: WorkoutScrollHint(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+            ),
           ),
         ),
         if (primaryLabel != null || secondaryLabel != null)
