@@ -91,10 +91,12 @@ class SettingEditor extends StatelessWidget {
             const SizedBox(height: 20),
             editor,
             const SizedBox(height: 20),
-            const Text(
-              'Changes apply to this session. Save keeps them after a restart.',
+            Text(
+              c['settingType'] == SettingType.network
+                  ? 'Save keeps your network settings and offers a reboot to apply changes.'
+                  : 'Changes apply to this session. Save keeps them after a restart.',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: WorkoutVisuals.muted,
                 fontSize: 12,
                 height: 1.5,

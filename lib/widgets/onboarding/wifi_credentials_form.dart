@@ -5,10 +5,10 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../../utils/device_data.dart';
 import '../../utils/constants.dart';
+import '../network_settings_save.dart';
 
 /// Inline SSID + password form for the wizard WiFi step.
-/// Writes [ssidVname] and [passwordVname] to the SS2k via [DeviceData.writeToSS2k],
-/// then triggers [saveVname] to persist to LittleFS.
+/// Saves WiFi credentials together and offers a reboot when they change.
 class WifiCredentialsForm extends StatefulWidget {
   final BluetoothDevice device;
 
@@ -24,6 +24,9 @@ class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
   final TextEditingController _passwordController = TextEditingController();
   bool _passwordVisible = false;
   bool _saved = false;
+  bool _saving = false;
+  String? _savedSsid;
+  String? _savedPassword;
   StreamSubscription<CharacteristicChangeEvent>? _sub;
 
   @override
@@ -41,15 +44,15 @@ class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
     _sub = _bleData.characteristicChanges
         .where((e) => e.vName == ssidVname || e.vName == passwordVname)
         .listen((e) {
-      if (!mounted) return;
-      if (e.vName == ssidVname) {
-        final v = _charFor(ssidVname)?['value'] as String? ?? '';
-        if (_ssidController.text != v) _ssidController.text = v;
-      } else {
-        final v = _charFor(passwordVname)?['value'] as String? ?? '';
-        if (_passwordController.text != v) _passwordController.text = v;
-      }
-    });
+          if (!mounted || _saving) return;
+          if (e.vName == ssidVname) {
+            final v = _charFor(ssidVname)?['value'] as String? ?? '';
+            if (_ssidController.text != v) _ssidController.text = v;
+          } else {
+            final v = _charFor(passwordVname)?['value'] as String? ?? '';
+            if (_passwordController.text != v) _passwordController.text = v;
+          }
+        });
   }
 
   @override
@@ -65,20 +68,43 @@ class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
       .firstWhere((c) => c?['vName'] == vName, orElse: () => null);
 
   Future<void> _save() async {
+    if (_saving) return;
     final ssidMap = _charFor(ssidVname);
     final pwMap = _charFor(passwordVname);
-    if (ssidMap != null) {
-      ssidMap['value'] = _ssidController.text.trim();
-      await _bleData.writeToSS2k(widget.device, ssidMap);
+    if (ssidMap == null || pwMap == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'WiFi settings are not available yet. Please try again.',
+          ),
+        ),
+      );
+      return;
     }
-    if (pwMap != null) {
-      pwMap['value'] = _passwordController.text;
-      await _bleData.writeToSS2k(widget.device, pwMap);
-    }
-    // Persist to LittleFS.
-    await _bleData.writeCommand(widget.device, saveVname);
+    final ssid = _ssidController.text.trim();
+    final password = _passwordController.text;
+    _savedSsid ??= ssidMap['value'] as String? ?? '';
+    _savedPassword ??= pwMap['value'] as String? ?? '';
+    setState(() => _saving = true);
+    final saved = await saveNetworkSettings(
+      context: context,
+      deviceData: _bleData,
+      device: widget.device,
+      settings: [
+        {...ssidMap, 'value': ssid},
+        {...pwMap, 'value': password},
+      ],
+      changed: ssid != _savedSsid || password != _savedPassword,
+    );
     if (!mounted) return;
-    setState(() => _saved = true);
+    setState(() {
+      _saving = false;
+      _saved = saved;
+      if (saved) {
+        _savedSsid = ssid;
+        _savedPassword = password;
+      }
+    });
   }
 
   @override
@@ -88,6 +114,7 @@ class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
       children: [
         TextField(
           controller: _ssidController,
+          enabled: !_saving,
           decoration: const InputDecoration(
             labelText: 'Network name (SSID)',
             border: OutlineInputBorder(),
@@ -98,13 +125,17 @@ class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
         const SizedBox(height: 12),
         TextField(
           controller: _passwordController,
+          enabled: !_saving,
           obscureText: !_passwordVisible,
           decoration: InputDecoration(
             labelText: 'Password',
             border: const OutlineInputBorder(),
             suffixIcon: IconButton(
-              icon: Icon(_passwordVisible ? Icons.visibility : Icons.visibility_off),
-              onPressed: () => setState(() => _passwordVisible = !_passwordVisible),
+              icon: Icon(
+                _passwordVisible ? Icons.visibility : Icons.visibility_off,
+              ),
+              onPressed: () =>
+                  setState(() => _passwordVisible = !_passwordVisible),
             ),
           ),
           textInputAction: TextInputAction.done,
@@ -115,7 +146,7 @@ class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
         Row(
           children: [
             FilledButton(
-              onPressed: _save,
+              onPressed: _saving ? null : _save,
               child: const Text('Save to SmartSpin2k'),
             ),
             if (_saved) ...[

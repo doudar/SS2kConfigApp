@@ -2741,6 +2741,15 @@ class DeviceData {
     }
   }
 
+  /// Sends a command while allowing callers to handle failures themselves.
+  Future<void> writeCommandStrict(BluetoothDevice device, String name) async {
+    if (isSimulated) return;
+    if (!configAppCompatibleFirmware && name == saveVname) {
+      throw StateError('Saving settings requires compatible firmware');
+    }
+    await _writeCommandStrict(device, name);
+  }
+
   Future<void> _writeCommandStrict(BluetoothDevice device, String name) async {
     Map<String, dynamic>? command;
     for (final c in customCharacteristic) {

@@ -12,6 +12,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/device_data.dart';
 import '../utils/constants.dart';
 import 'device_settings_style.dart';
+import 'network_settings_save.dart';
 import '../utils/workout/workout_visuals.dart';
 
 class boolCard extends StatefulWidget {
@@ -25,11 +26,16 @@ class boolCard extends StatefulWidget {
 class _boolCardState extends State<boolCard> {
   late DeviceData deviceData;
   StreamSubscription<CharacteristicChangeEvent>? _charSubscription;
+  bool _saving = false;
+  late final String _initialValue;
+  bool get _isNetworkSetting => widget.c['settingType'] == SettingType.network;
+  String? _networkValue;
 
   @override
   void initState() {
     super.initState();
     deviceData = DeviceDataManager.forDevice(this.widget.device);
+    _initialValue = widget.c['value'];
     _charSubscription = deviceData.characteristicChanges
         .where((event) => event.vName == widget.c["vName"])
         .listen((event) {
@@ -77,7 +83,9 @@ class _boolCardState extends State<boolCard> {
                 ),
                 SizedBox(height: 10),
                 Text(
-                  (bool.parse(this.widget.c["value"]) ? "On" : "Off"),
+                  (bool.parse(_networkValue ?? this.widget.c["value"])
+                      ? "On"
+                      : "Off"),
                   style: TextStyle(
                     fontSize: 24,
                     color: Colors.white,
@@ -86,20 +94,26 @@ class _boolCardState extends State<boolCard> {
                   textAlign: TextAlign.center,
                 ),
                 Switch(
-                  value: bool.parse(this.widget.c["value"]),
+                  value: bool.parse(_networkValue ?? this.widget.c["value"]),
                   activeThumbColor: WorkoutVisuals.ink,
                   activeTrackColor: baseColor,
                   inactiveThumbColor: WorkoutVisuals.muted,
                   inactiveTrackColor: Colors.black26,
-                  onChanged: (b) {
-                    this.widget.c["value"] = b.toString();
-                    this.deviceData.writeToSS2k(
-                      this.widget.device,
-                      this.widget.c,
-                    );
-                    setState(() {});
-                    return this.widget.c["value"];
-                  },
+                  onChanged: _saving
+                      ? null
+                      : (b) {
+                          if (_isNetworkSetting) {
+                            setState(() => _networkValue = b.toString());
+                            return;
+                          }
+                          this.widget.c["value"] = b.toString();
+                          this.deviceData.writeToSS2k(
+                            this.widget.device,
+                            this.widget.c,
+                          );
+                          setState(() {});
+                          return this.widget.c["value"];
+                        },
                 ),
                 const SizedBox(height: 15),
                 Wrap(
@@ -130,15 +144,35 @@ class _boolCardState extends State<boolCard> {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      onPressed: () async {
-                        //Find the save command and execute it
-                        await this.deviceData.writeCommand(
-                          this.widget.device,
-                          saveVname,
-                        );
-                        if (!mounted) return;
-                        Navigator.pop(context);
-                      },
+                      onPressed: _saving
+                          ? null
+                          : () async {
+                              if (_isNetworkSetting) {
+                                setState(() => _saving = true);
+                                final value =
+                                    _networkValue ?? widget.c['value'];
+                                final saved = await saveNetworkSettings(
+                                  context: context,
+                                  deviceData: deviceData,
+                                  device: widget.device,
+                                  settings: [
+                                    {...widget.c, 'value': value},
+                                  ],
+                                  changed: value != _initialValue,
+                                );
+                                if (!mounted) return;
+                                setState(() => _saving = false);
+                                if (saved) Navigator.pop(context);
+                                return;
+                              }
+                              //Find the save command and execute it
+                              await this.deviceData.writeCommand(
+                                this.widget.device,
+                                saveVname,
+                              );
+                              if (!mounted) return;
+                              Navigator.pop(context);
+                            },
                     ),
                     const SizedBox(width: 8),
                   ],

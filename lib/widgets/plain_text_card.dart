@@ -9,6 +9,7 @@ import 'dart:async';
 
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'device_settings_style.dart';
+import 'network_settings_save.dart';
 import '../utils/workout/workout_visuals.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -29,12 +30,16 @@ class _plainTextCardState extends State<plainTextCard> {
   late DeviceData deviceData;
   final String _currentValue = "Current Value: ";
   StreamSubscription<CharacteristicChangeEvent>? _charSubscription;
+  bool _saving = false;
+  late final String _initialValue;
+  bool get _isNetworkSetting => c['settingType'] == SettingType.network;
 
   @override
   void initState() {
     super.initState();
     deviceData = DeviceDataManager.forDevice(this.widget.device);
     controller.text = c["value"];
+    _initialValue = controller.text;
     _charSubscription = deviceData.characteristicChanges
         .where((event) => event.vName == c["vName"])
         .listen((event) {
@@ -66,6 +71,34 @@ class _plainTextCardState extends State<plainTextCard> {
     return isValid;
   }
 
+  Future<void> _saveNetworkSetting() async {
+    if (_saving) return;
+    final value = controller.text.trim();
+    if (value.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Invalid input! Please check your input and try again.',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() => _saving = true);
+    final saved = await saveNetworkSettings(
+      context: context,
+      deviceData: deviceData,
+      device: widget.device,
+      settings: [
+        {...c, 'value': value},
+      ],
+      changed: value != _initialValue,
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (saved) Navigator.pop(context);
+  }
+
   Color _getTileColor() {
     if (c["value"] == noFirmSupport) return deactiveBackgroundColor;
     return DeviceSettingsStyle.accent(c["settingType"] as SettingType);
@@ -74,6 +107,7 @@ class _plainTextCardState extends State<plainTextCard> {
   Widget passwordTextField() {
     return TextField(
       controller: this.controller,
+      enabled: !_saving,
       obscureText: !passwordVisible,
       decoration: InputDecoration(
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
@@ -101,6 +135,10 @@ class _plainTextCardState extends State<plainTextCard> {
       textInputAction: TextInputAction.done,
       style: TextStyle(color: Colors.white, fontSize: 24),
       onSubmitted: (t) {
+        if (_isNetworkSetting) {
+          unawaited(_saveNetworkSetting());
+          return;
+        }
         this.verifyInput(t);
         this.deviceData.writeToSS2k(this.widget.device, this.c);
         setState(() {});
@@ -112,6 +150,7 @@ class _plainTextCardState extends State<plainTextCard> {
   Widget regularTextField() {
     return TextField(
       controller: this.controller,
+      enabled: !_saving,
       decoration: InputDecoration(
         hintText: "Type Here",
         hintStyle: TextStyle(fontWeight: FontWeight.w200),
@@ -124,6 +163,10 @@ class _plainTextCardState extends State<plainTextCard> {
       textAlign: TextAlign.center,
       textInputAction: TextInputAction.done,
       onSubmitted: (t) {
+        if (_isNetworkSetting) {
+          unawaited(_saveNetworkSetting());
+          return;
+        }
         this.verifyInput(t);
         this.deviceData.writeToSS2k(this.widget.device, this.c);
         setState(() {});
@@ -209,32 +252,38 @@ class _plainTextCardState extends State<plainTextCard> {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    onPressed: () async {
-                      // Use the controller's text for validation
-                      bool inputIsValid = verifyInput(controller.text);
-                      if (inputIsValid) {
-                        // Proceed with saving if input is valid
-                        await this.deviceData.writeToSS2k(
-                          this.widget.device,
-                          this.widget.c,
-                        );
-                        await this.deviceData.writeCommand(
-                          this.widget.device,
-                          saveVname,
-                        );
-                        if (!mounted) return;
-                        Navigator.pop(context);
-                      } else {
-                        // Handle invalid input, e.g., show an error message
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Invalid input! Please check your input and try again.',
-                            ),
-                          ),
-                        );
-                      }
-                    },
+                    onPressed: _saving
+                        ? null
+                        : () async {
+                            if (_isNetworkSetting) {
+                              await _saveNetworkSetting();
+                              return;
+                            }
+                            // Use the controller's text for validation
+                            bool inputIsValid = verifyInput(controller.text);
+                            if (inputIsValid) {
+                              // Proceed with saving if input is valid
+                              await this.deviceData.writeToSS2k(
+                                this.widget.device,
+                                this.widget.c,
+                              );
+                              await this.deviceData.writeCommand(
+                                this.widget.device,
+                                saveVname,
+                              );
+                              if (!mounted) return;
+                              Navigator.pop(context);
+                            } else {
+                              // Handle invalid input, e.g., show an error message
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Invalid input! Please check your input and try again.',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
                   ),
                   const SizedBox(width: 8),
                 ],
