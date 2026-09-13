@@ -38,7 +38,9 @@ void main() {
   // directory. Left unmocked they throw out of initState and fail the test
   // before it can assert anything about transports.
   setUpAll(() {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      'shifter_shift_sound_enabled': false,
+    });
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
@@ -356,6 +358,8 @@ void main() {
         expect(find.text('222'), findsOneWidget);
         expect(find.text('88'), findsOneWidget);
         expect(find.text('LIVE TELEMETRY'), findsOneWidget);
+        // Finish the one-time calibration/settings reads before observing polls.
+        await pumpUntil(tester, () => ccReferences().contains(0x22));
         blePlatform.clearObservations();
         // Cross the old chart-load delay and header firmware-poll interval.
         await tester.pump(const Duration(seconds: 31));

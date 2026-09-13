@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2kconfigapp/screens/shifter_screen.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
@@ -57,6 +58,9 @@ void main() {
   late _PollingDeviceData data;
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({
+      'shifter_shift_sound_enabled': false,
+    });
     data = _PollingDeviceData();
     DeviceDataManager.updateDataForDevice(device, data);
     const codec = StandardMessageCodec();
@@ -127,7 +131,14 @@ void main() {
     expect(data.requests, isEmpty);
     data.connection.markConnected(DeviceTransportKind.dircon);
     await tester.pump();
-    expect(data.requests, [shifterPositionVname, FTMSModeVname]);
+    expect(data.requests, [
+      shifterPositionVname,
+      FTMSModeVname,
+      BLE_hMinVname,
+      BLE_hMaxVname,
+      shiftStepVname,
+      maxBrakeWattsVname,
+    ]);
     data.requests.clear();
     await tester.pump(const Duration(seconds: 2));
     expect(data.requests, details);

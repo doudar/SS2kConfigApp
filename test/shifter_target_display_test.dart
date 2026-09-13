@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2kconfigapp/screens/shifter_screen.dart';
 import 'package:ss2kconfigapp/utils/bleConstants.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/device_transport_state.dart';
+import 'package:ss2kconfigapp/widgets/stepper_travel_gauge.dart';
 
 class _DisplayDeviceData extends DeviceData {
   final updates = StreamController<CharacteristicChangeEvent>.broadcast();
@@ -67,6 +69,9 @@ void main() {
   late _DisplayDeviceData data;
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({
+      'shifter_shift_sound_enabled': false,
+    });
     data = _DisplayDeviceData();
     DeviceDataManager.updateDataForDevice(device, data);
     const codec = StandardMessageCodec();
@@ -97,6 +102,40 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
   }
 
+  testWidgets(
+    'travel gauge uses reported limits instead of showing motor steps',
+    (tester) async {
+      for (final c in data.customCharacteristic) {
+        if (c['vName'] == BLE_hMinVname) c['value'] = '100';
+        if (c['vName'] == BLE_hMaxVname) c['value'] = '200';
+      }
+      await host(tester);
+      expect(
+        tester
+            .widget<StepperTravelGauge>(find.byType(StepperTravelGauge))
+            .progress,
+        closeTo(.23, .001),
+      );
+      expect(find.text('123'), findsNothing);
+      expect(find.text('MOTOR TARGET'), findsNothing);
+      expect(find.text('steps'), findsNothing);
+
+      data.customCharacteristic.firstWhere(
+        (c) => c['vName'] == BLE_hMaxVname,
+      )['value'] = '100000000';
+      data.notifyTargetChanged();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        tester
+            .widget<StepperTravelGauge>(find.byType(StepperTravelGauge))
+            .progress,
+        isNull,
+      );
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets('shows target power only for a positive ERG target', (
     tester,
   ) async {
@@ -107,7 +146,7 @@ void main() {
     expect(find.text('TARGET POWER'), findsOneWidget);
     expect(find.text('250'), findsOneWidget);
     expect(find.text('TARGET INCLINE'), findsNothing);
-    expect(find.text('4.5'), findsNothing);
+    expect(find.text('4.5%'), findsNothing);
     expect(find.text('999'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
@@ -120,7 +159,8 @@ void main() {
     await host(tester);
 
     expect(find.text('TARGET INCLINE'), findsOneWidget);
-    expect(find.text('4.5'), findsOneWidget);
+    expect(find.text('4.5%'), findsOneWidget);
+    expect(find.byType(TargetInclineGauge), findsOneWidget);
     expect(find.text('TARGET POWER'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
@@ -133,7 +173,7 @@ void main() {
     await host(tester);
 
     expect(find.text('TARGET INCLINE'), findsOneWidget);
-    expect(find.text('4.5'), findsOneWidget);
+    expect(find.text('4.5%'), findsOneWidget);
     expect(find.text('TARGET POWER'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
