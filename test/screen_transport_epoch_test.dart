@@ -330,7 +330,7 @@ void main() {
 
   group('ShifterScreen', () {
     testWidgets(
-      'telemetry stays passive, detects stale data and gates shifting',
+      'telemetry stays streamed, details are polled and shifting is gated',
       (tester) async {
         final harness = await connectBle(tester);
         harness.deviceData.customCharacteristic.firstWhere(
@@ -363,11 +363,12 @@ void main() {
           () => Future<void>.delayed(const Duration(milliseconds: 50)),
         );
         await tester.pump();
+        expect(ccReferences(), isNotEmpty);
         expect(
           ccReferences(),
-          isEmpty,
+          everyElement(isIn([0x02, 0x19, 0x28])),
           reason:
-              'The secondary display must not poll settings or fetch a power table.',
+              'Only incline, motor target and target watts should be polled.',
         );
         harness.deviceData.lastFtmsUpdate = DateTime.now().subtract(
           const Duration(seconds: 10),
@@ -382,9 +383,14 @@ void main() {
         );
         await tester.tap(find.text('Shift up'));
         await pumpUntil(tester, () => ccReferences().contains(0x17));
-        expect(ccReferences(), [
-          0x17,
-        ], reason: 'A tap sends only the requested shift.');
+        expect(
+          blePlatform.writeCalls
+              .where((call) => call.characteristicUuid == Guid(ccUUID))
+              .where((call) => call.value.first == 0x02)
+              .map((call) => call.value[1]),
+          [0x17],
+          reason: 'A tap sends only the requested shift.',
+        );
         expect(
           blePlatform.writeCalls.where(
             (call) => call.characteristicUuid == Guid('2ad9'),

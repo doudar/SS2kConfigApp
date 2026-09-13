@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../utils/device_data.dart';
+import '../utils/bleConstants.dart';
 import '../utils/device_transport_state.dart';
 import '../utils/workout/workout_visuals.dart';
 import '../widgets/ss2k_app_bar.dart';
@@ -33,6 +34,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
   StreamSubscription<CharacteristicChangeEvent>?
   _characteristicChangeSubscription;
   Timer? _freshnessTimer;
+  bool _detailPollInFlight = false;
   String _telemetryStatus = '';
 
   bool get _canShift => deviceData.isSimulated || deviceData.isTransportActive;
@@ -64,9 +66,10 @@ class _ShifterScreenState extends State<ShifterScreen> {
     _telemetryStatus = _currentTelemetryStatus;
     deviceData.transportState.addListener(_updateStatus);
     _subscribeToDeviceUpdates();
-    // Local stale-data indicator only. This timer never requests device data.
+    // Only the non-streamed details need polling; FTMS and gear stay streamed.
     _freshnessTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (_telemetryStatus != _currentTelemetryStatus) _updateStatus();
+      unawaited(_refreshDetails());
     });
 
     // Special setup for demo mode.
@@ -76,9 +79,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
 
     // Subscribe before requesting so a fast response cannot be missed.
     unawaited(deviceData.ensureFtmsNotifications(widget.device));
-    unawaited(_refreshAuthoritativeShifterValue());
+    unawaited(_refreshSessionState());
 
-    // Re-confirm the gear with the device once per new connected session, on
+    // Re-confirm gear and FTMS mode once per new connected session, on
     // either transport. Attached after the initial request above so entering
     // the screen does not ask twice; the watcher deliberately does not replay
     // on attach.
@@ -90,7 +93,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
         _shiftGeneration++;
         _pendingShiftWrites = 0;
         _syncShifterValueFromCache();
-        unawaited(_refreshAuthoritativeShifterValue());
+        unawaited(_refreshSessionState());
       },
     )..attach();
   }
@@ -133,11 +136,57 @@ class _ShifterScreenState extends State<ShifterScreen> {
     _applyAuthoritativeShifterValue(shifterValue);
   }
 
-  Future<void> _refreshAuthoritativeShifterValue() async {
+  Future<void> _refreshSessionState() async {
     if (!mounted || !deviceData.isTransportActive) return;
+    final epoch = deviceData.transportState.value.epoch;
     // The write pathway ensures notifications are active before sending, so
     // this request can enter the BLE queue immediately on screen entry.
     await deviceData.requestSetting(widget.device, shifterPositionVname);
+    if (!mounted ||
+        !deviceData.isTransportActive ||
+        deviceData.transportState.value.epoch != epoch) {
+      return;
+    }
+    // Mode changes are notified automatically; read once to seed the display.
+    await deviceData.requestSetting(widget.device, FTMSModeVname);
+  }
+
+  bool get _canPollDetails {
+    if (!mounted ||
+        deviceData.isSimulated ||
+        !deviceData.isTransportActive ||
+        deviceData.customResponsesDegraded.value ||
+        _pendingShiftWrites > 0) {
+      return false;
+    }
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return (lifecycle == null || lifecycle == AppLifecycleState.resumed) &&
+        (ModalRoute.of(context)?.isCurrent ?? true);
+  }
+
+  Future<void> _refreshDetails() async {
+    if (_detailPollInFlight || !_canPollDetails) return;
+    final epoch = deviceData.transportState.value.epoch;
+    _detailPollInFlight = true;
+    try {
+      for (final name in [
+        inclineVname,
+        targetPositionVname,
+        simulatedTargetWattsVname,
+      ]) {
+        // Serialize reads and abandon the batch if the screen or link changes.
+        if (!_canPollDetails ||
+            deviceData.transportState.value.epoch != epoch) {
+          return;
+        }
+        final supported = deviceData.customCharacteristic.any(
+          (c) => c['vName'] == name && c['value'] != noFirmSupport,
+        );
+        if (supported) await deviceData.requestSetting(widget.device, name);
+      }
+    } finally {
+      _detailPollInFlight = false;
+    }
   }
 
   void _subscribeToDeviceUpdates() {
@@ -387,7 +436,12 @@ class _ShifterScreenState extends State<ShifterScreen> {
     final hasTelemetry =
         deviceData.isSimulated || deviceData.lastFtmsUpdate != null;
     final live = _telemetryStatus == 'LIVE TELEMETRY' || deviceData.isSimulated;
-    final target = _cached(simulatedTargetWattsVname);
+    // Match the power table's live target source. The characteristic list can
+    // contain an older duplicate entry for target watts.
+    final target = deviceData.simulatedTargetWatts;
+    final showTargetPower =
+        deviceData.FTMSmode == FTMSOpCodes.SET_TARGET_POWER &&
+        (double.tryParse(target) ?? 0) > 0;
     final incline = double.tryParse(_cached(inclineVname) ?? '');
     final metrics = IntrinsicHeight(
       child: Row(
@@ -441,20 +495,10 @@ class _ShifterScreenState extends State<ShifterScreen> {
             children: [
               Expanded(
                 child: _reading(
-                  'TARGET',
-                  target ?? '—',
-                  'W',
-                  WorkoutVisuals.gold,
-                  compact: true,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _reading(
-                  'INCLINE',
-                  incline?.toStringAsFixed(1) ?? '—',
-                  '%',
-                  WorkoutVisuals.mint,
+                  showTargetPower ? 'TARGET POWER' : 'TARGET INCLINE',
+                  showTargetPower ? target : incline?.toStringAsFixed(1) ?? '—',
+                  showTargetPower ? 'W' : '%',
+                  showTargetPower ? WorkoutVisuals.gold : WorkoutVisuals.mint,
                   compact: true,
                 ),
               ),
@@ -479,8 +523,8 @@ class _ShifterScreenState extends State<ShifterScreen> {
         device: widget.device,
         title: 'Virtual Shifter',
         firmwareOnlyDeviceHeader: true,
-        // Gear confirmation below is the only custom read needed on entry.
-        // Retain connection monitoring, without periodic firmware requests.
+        // The screen owns its limited detail polling. Retain connection
+        // monitoring here without adding periodic firmware requests.
         deviceHeaderCustomRefreshEnabled: false,
       ),
       body: SafeArea(
