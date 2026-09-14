@@ -661,7 +661,10 @@ class _ShifterScreenState extends State<ShifterScreen> {
     final showTargetPower =
         deviceData.FTMSmode == FTMSOpCodes.SET_TARGET_POWER &&
         (double.tryParse(target) ?? 0) > 0;
-    final incline = double.tryParse(_cached(inclineVname) ?? '');
+    // The custom characteristic retains the firmware's hundredths-of-percent
+    // grade after transport decoding. Convert before rendering text or needle.
+    final reportedIncline = double.tryParse(_cached(inclineVname) ?? '');
+    final incline = reportedIncline == null ? null : reportedIncline / 100;
     final metrics = IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,

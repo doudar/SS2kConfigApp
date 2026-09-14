@@ -82,7 +82,7 @@ void main() {
         );
     for (final characteristic in data.customCharacteristic) {
       if (characteristic['vName'] == inclineVname) {
-        characteristic['value'] = '4.5';
+        characteristic['value'] = '450';
       } else if (characteristic['vName'] == targetPositionVname) {
         characteristic['value'] = '123';
       } else if (characteristic['vName'] == simulatedTargetWattsVname) {
@@ -161,6 +161,10 @@ void main() {
     expect(find.text('TARGET INCLINE'), findsOneWidget);
     expect(find.text('4.5%'), findsOneWidget);
     expect(find.byType(TargetInclineGauge), findsOneWidget);
+    expect(
+      tester.widget<TargetInclineGauge>(find.byType(TargetInclineGauge)).incline,
+      4.5,
+    );
     expect(find.text('TARGET POWER'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
@@ -175,6 +179,17 @@ void main() {
     expect(find.text('TARGET INCLINE'), findsOneWidget);
     expect(find.text('4.5%'), findsOneWidget);
     expect(find.text('TARGET POWER'), findsNothing);
+    data.customCharacteristic.firstWhere(
+      (c) => c['vName'] == inclineVname,
+    )['value'] = '-250';
+    data.notifyTargetChanged();
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('-2.5%'), findsOneWidget);
+    expect(
+      tester.widget<TargetInclineGauge>(find.byType(TargetInclineGauge)).incline,
+      -2.5,
+    );
     await tester.pumpWidget(const SizedBox());
   });
 
