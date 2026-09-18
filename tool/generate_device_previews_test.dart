@@ -16,9 +16,7 @@ import 'package:ss2kconfigapp/screens/settings_category_screen.dart';
 import 'package:ss2kconfigapp/widgets/setting_tile.dart';
 import 'package:ss2kconfigapp/screens/shifter_screen.dart';
 import 'package:ss2kconfigapp/screens/main_device_screen.dart';
-import 'package:ss2kconfigapp/utils/workout/arcade/arcade_workout_view.dart';
-import 'package:ss2kconfigapp/utils/workout/arcade/arcade_session.dart';
-import 'package:ss2kconfigapp/utils/workout/arcade/arcade_story.dart';
+import 'package:ss2kconfigapp/screens/workout_screen.dart';
 import 'package:ss2kconfigapp/widgets/device_preview_tile.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_storage.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
@@ -210,7 +208,9 @@ void main() {
     );
     final content = File('assets/Anthonys_Mix.zwo').readAsStringSync();
     SharedPreferences.setMockInitialValues({
+      'shifter_shift_sound_enabled': false,
       'workout_tts_enabled': false,
+      'workout_arcade_mode': false,
       'workout_arcade_music': false,
       'workout_arcade_effects': false,
       'workout_arcade_last_story': 0,
@@ -218,8 +218,9 @@ void main() {
     });
     await WorkoutStorage.saveWorkoutState(
       workoutContent: content,
-      progressPosition: 0.05,
-      workoutProgressTime: 180,
+      // Capture between coaching messages so the classic graph stays visible.
+      progressPosition: 200 / 3600,
+      workoutProgressTime: 200,
       skippedTime: 0,
       isPlaying: false,
     );
@@ -229,18 +230,6 @@ void main() {
     _seedPreviewData(data);
     final controller = WorkoutController(data, device);
     await controller.restoreSavedWorkoutState();
-    final session = ArcadeSession()
-      ..effectsEnabled = false
-      ..stageOpening(ArcadeStory(0));
-    session.update(
-      segments: controller.segments,
-      seconds: 180,
-      playing: true,
-      watts: 188,
-      target: 190,
-      freshSignal: true,
-    );
-    session.restoreStoryPreference(0);
     controller.isPlaying = true; // Fixed frame; never start the workout clock.
     addTearDown(() async {
       controller.isPlaying = false;
@@ -265,16 +254,7 @@ void main() {
       'shifter': () => ShifterScreen(device: device),
       'settings': () => SettingsScreen(device: device),
       'power-table': () => PowerTableScreen(device: device),
-      'workout': () => Scaffold(
-        body: ArcadeWorkoutView(
-          controller: controller,
-          deviceData: data,
-          session: session,
-          hasDeviceHeader: true,
-          onStop: () {},
-          onExit: () {},
-        ),
-      ),
+      'workout': () => WorkoutScreen(device: device),
     };
     for (final entry in screens.entries) {
       if (entry.key == 'workout') {
@@ -286,7 +266,7 @@ void main() {
           speed: 21,
           mode: 2,
         );
-        controller.currentSegmentTimeRemaining = 120;
+        controller.currentSegmentTimeRemaining = 100;
         controller.isPlaying = true;
       }
       await tester.pumpWidget(_captureApp(theme: theme, screen: entry.value()));

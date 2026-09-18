@@ -141,13 +141,25 @@ void main() {
   ) async {
     data.FTMSmode = FTMSOpCodes.SET_TARGET_POWER;
     data.simulatedTargetWatts = '250';
+    data.lastFtmsUpdate = DateTime.now();
+    data.ftmsData.watts = 258;
     await host(tester);
 
-    expect(find.text('TARGET POWER'), findsOneWidget);
-    expect(find.text('250'), findsOneWidget);
-    expect(find.text('TARGET INCLINE'), findsNothing);
+    expect(find.text('TARGET'), findsOneWidget);
+    expect(find.text('250 W target'), findsOneWidget);
+    expect(find.text('+8 W'), findsOneWidget);
+    expect(find.byType(TargetPowerGauge), findsOneWidget);
+    expect(find.text('-20 W'), findsOneWidget);
+    expect(find.text('+20 W'), findsOneWidget);
+    expect(find.text('INCLINE'), findsNothing);
     expect(find.text('4.5%'), findsNothing);
     expect(find.text('999'), findsNothing);
+    data.ftmsData.watts = 240;
+    data.notifyTargetChanged();
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('-10 W'), findsOneWidget);
+    expect(find.text('250 W target'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -158,14 +170,16 @@ void main() {
     data.simulatedTargetWatts = '0';
     await host(tester);
 
-    expect(find.text('TARGET INCLINE'), findsOneWidget);
+    expect(find.text('INCLINE'), findsOneWidget);
     expect(find.text('4.5%'), findsOneWidget);
     expect(find.byType(TargetInclineGauge), findsOneWidget);
     expect(
-      tester.widget<TargetInclineGauge>(find.byType(TargetInclineGauge)).incline,
+      tester
+          .widget<TargetInclineGauge>(find.byType(TargetInclineGauge))
+          .incline,
       4.5,
     );
-    expect(find.text('TARGET POWER'), findsNothing);
+    expect(find.text('TARGET'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -176,9 +190,9 @@ void main() {
     data.simulatedTargetWatts = '250';
     await host(tester);
 
-    expect(find.text('TARGET INCLINE'), findsOneWidget);
+    expect(find.text('INCLINE'), findsOneWidget);
     expect(find.text('4.5%'), findsOneWidget);
-    expect(find.text('TARGET POWER'), findsNothing);
+    expect(find.text('TARGET'), findsNothing);
     data.customCharacteristic.firstWhere(
       (c) => c['vName'] == inclineVname,
     )['value'] = '-250';
@@ -187,7 +201,9 @@ void main() {
     await tester.pump();
     expect(find.text('-2.5%'), findsOneWidget);
     expect(
-      tester.widget<TargetInclineGauge>(find.byType(TargetInclineGauge)).incline,
+      tester
+          .widget<TargetInclineGauge>(find.byType(TargetInclineGauge))
+          .incline,
       -2.5,
     );
     await tester.pumpWidget(const SizedBox());
@@ -199,32 +215,32 @@ void main() {
     data.FTMSmode = FTMSOpCodes.SET_TARGET_POWER;
     data.simulatedTargetWatts = '250';
     await host(tester);
-    expect(find.text('TARGET POWER'), findsOneWidget);
-    expect(find.text('TARGET INCLINE'), findsNothing);
+    expect(find.text('TARGET'), findsOneWidget);
+    expect(find.text('INCLINE'), findsNothing);
 
     data.FTMSmode = 0;
     data.simulatedTargetWatts = '250';
     data.notifyTargetChanged();
     await tester.pump();
     await tester.pump();
-    expect(find.text('TARGET INCLINE'), findsOneWidget);
-    expect(find.text('TARGET POWER'), findsNothing);
+    expect(find.text('INCLINE'), findsOneWidget);
+    expect(find.text('TARGET'), findsNothing);
 
     data.FTMSmode = FTMSOpCodes.SET_TARGET_POWER;
     data.simulatedTargetWatts = '0';
     data.notifyTargetChanged();
     await tester.pump();
     await tester.pump();
-    expect(find.text('TARGET INCLINE'), findsOneWidget);
-    expect(find.text('TARGET POWER'), findsNothing);
+    expect(find.text('INCLINE'), findsOneWidget);
+    expect(find.text('TARGET'), findsNothing);
 
     data.simulatedTargetWatts = '300';
     data.notifyTargetChanged();
     await tester.pump();
     await tester.pump();
-    expect(find.text('TARGET POWER'), findsOneWidget);
-    expect(find.text('300'), findsOneWidget);
-    expect(find.text('TARGET INCLINE'), findsNothing);
+    expect(find.text('TARGET'), findsOneWidget);
+    expect(find.text('300 W target'), findsOneWidget);
+    expect(find.text('INCLINE'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 }

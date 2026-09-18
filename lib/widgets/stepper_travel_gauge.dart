@@ -54,11 +54,43 @@ class TargetInclineGauge extends StatelessWidget {
         : null;
     return _RoundGauge(
       progress: known ? ((value + 30) / 60).clamp(0.0, 1.0) : null,
-      label: 'TARGET INCLINE',
-      semanticLabel: 'Target incline',
+      label: 'INCLINE',
+      semanticLabel: 'Incline',
       semanticValue: formatted == null ? 'Unavailable' : '$formatted percent',
       centerText: formatted == null ? '—' : '$formatted%',
       keyPrefix: 'target_incline_gauge',
+    );
+  }
+}
+
+/// Shows measured power relative to the ERG target, with zero straight up.
+class TargetPowerGauge extends StatelessWidget {
+  const TargetPowerGauge({super.key, required this.targetWatts, this.watts});
+
+  final double targetWatts;
+  final double? watts;
+
+  @override
+  Widget build(BuildContext context) {
+    final delta = watts == null ? null : watts! - targetWatts;
+    final known = delta != null && delta.isFinite;
+    final rounded = known ? delta.round() : null;
+    final formatted = rounded == null
+        ? null
+        : '${rounded > 0 ? '+' : ''}$rounded W';
+    final target = '${targetWatts.toStringAsFixed(0)} W target';
+    return _RoundGauge(
+      progress: known ? ((delta + 20) / 40).clamp(0.0, 1.0) : null,
+      label: 'TARGET',
+      semanticLabel: 'Target power',
+      semanticValue: formatted == null
+          ? 'Power delta unavailable, $target'
+          : '$formatted from target, $target',
+      centerText: formatted ?? '—',
+      subtitle: target,
+      minimumLabel: '-20 W',
+      maximumLabel: '+20 W',
+      keyPrefix: 'target_power_gauge',
     );
   }
 }
@@ -71,6 +103,9 @@ class _RoundGauge extends StatelessWidget {
     required this.semanticValue,
     required this.keyPrefix,
     this.centerText,
+    this.subtitle,
+    this.minimumLabel,
+    this.maximumLabel,
     this.warnNearLimit = false,
   });
 
@@ -80,6 +115,9 @@ class _RoundGauge extends StatelessWidget {
   final String semanticValue;
   final String keyPrefix;
   final String? centerText;
+  final String? subtitle;
+  final String? minimumLabel;
+  final String? maximumLabel;
   final bool warnNearLimit;
 
   static const _dialSize = 100.0;
@@ -134,6 +172,7 @@ class _RoundGauge extends StatelessWidget {
                       Center(
                         child: SizedBox(
                           width: 64,
+                          height: subtitle == null ? null : 26,
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
@@ -148,10 +187,51 @@ class _RoundGauge extends StatelessWidget {
                           ),
                         ),
                       ),
+                    if (subtitle != null)
+                      Positioned(
+                        top: 62,
+                        left: 12,
+                        right: 12,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            subtitle!,
+                            style: const TextStyle(
+                              color: WorkoutVisuals.muted,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
             ),
+            if (minimumLabel != null && maximumLabel != null) ...[
+              const SizedBox(height: 4),
+              SizedBox(
+                width: _dialSize,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    for (final text in [minimumLabel!, maximumLabel!])
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            text,
+                            style: const TextStyle(
+                              color: WorkoutVisuals.muted,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),

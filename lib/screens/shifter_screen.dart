@@ -709,12 +709,9 @@ class _ShifterScreenState extends State<ShifterScreen> {
             children: [
               Expanded(
                 child: showTargetPower
-                    ? _reading(
-                        'TARGET POWER',
-                        target,
-                        'W',
-                        WorkoutVisuals.gold,
-                        compact: true,
+                    ? TargetPowerGauge(
+                        targetWatts: double.parse(target),
+                        watts: hasTelemetry ? ftms.watts.toDouble() : null,
                       )
                     : TargetInclineGauge(incline: incline),
               ),
