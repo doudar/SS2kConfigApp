@@ -10,15 +10,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/constants.dart';
 import '../utils/device_data.dart';
+import '../utils/device_transport_state.dart';
 import '../utils/power_table_management.dart';
+import '../utils/shifter_sound.dart';
 import '../utils/workout/workout_visuals.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/power_table_chart.dart';
 import '../widgets/workout_header_action.dart';
 
 class PowerTableScreen extends StatefulWidget {
-  const PowerTableScreen({super.key, required this.device});
+  const PowerTableScreen({super.key, required this.device, this.shiftSound});
   final BluetoothDevice device;
+
+  /// Optional audio backend; the screen owns and disposes it.
+  final ShifterSound? shiftSound;
 
   @override
   State<PowerTableScreen> createState() => _PowerTableScreenState();
@@ -28,15 +33,64 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
   late final DeviceData deviceData;
   final _chartKey = GlobalKey<PowerTableChartState>();
   bool _swapAxes = false;
+  late final ShifterSound _shiftSound;
+  int? _lastReportedSoundGear;
+  StreamSubscription<CharacteristicChangeEvent>? _gearSubscription;
+  ConnectedEpochWatcher? _watcher;
 
   @override
   void initState() {
     super.initState();
     deviceData = DeviceDataManager.forDevice(widget.device);
+    _shiftSound = widget.shiftSound ?? ShifterSound();
+    unawaited(_initializeShiftSound());
+    _gearSubscription = deviceData.characteristicChanges.listen((event) {
+      if (!mounted ||
+          event.vName != shifterPositionVname ||
+          !(deviceData.isSimulated || deviceData.isTransportActive)) {
+        return;
+      }
+      final gear = int.tryParse(event.value);
+      if (gear == null) return;
+      // Seed silently on entry/reconnect and ignore duplicate reports.
+      if (_lastReportedSoundGear != null && gear != _lastReportedSoundGear) {
+        unawaited(_shiftSound.play());
+      }
+      _lastReportedSoundGear = gear;
+    });
+    _watcher = ConnectedEpochWatcher(
+      transportState: deviceData.transportState,
+      onLeftConnected: (_) => _lastReportedSoundGear = null,
+      onNewConnectedEpoch: (_) {
+        _lastReportedSoundGear = null;
+        unawaited(
+          deviceData.requestSetting(widget.device, shifterPositionVname),
+        );
+      },
+    )..attach();
     if (deviceData.isTransportActive) {
       unawaited(deviceData.ensureFtmsNotifications(widget.device));
       unawaited(deviceData.requestSetting(widget.device, shifterPositionVname));
     }
+  }
+
+  Future<void> _initializeShiftSound() async {
+    await _shiftSound.init();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _toggleShiftSound() async {
+    final update = _shiftSound.setEnabled(!_shiftSound.enabled);
+    setState(() {});
+    await update;
+  }
+
+  @override
+  void dispose() {
+    _gearSubscription?.cancel();
+    _watcher?.dispose();
+    unawaited(_shiftSound.dispose());
+    super.dispose();
   }
 
   String _cached(String name) {
@@ -255,6 +309,7 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
                                 alignment: WrapAlignment.spaceBetween,
                                 spacing: 12,
                                 runSpacing: 5,
@@ -292,6 +347,19 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
                                     style: const TextStyle(
                                       color: WorkoutVisuals.muted,
                                       fontSize: 11,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: _shiftSound.enabled
+                                        ? 'Mute shift sounds'
+                                        : 'Enable shift sounds',
+                                    onPressed: _toggleShiftSound,
+                                    icon: Icon(
+                                      _shiftSound.enabled
+                                          ? Icons.volume_up_outlined
+                                          : Icons.volume_off_outlined,
+                                      color: WorkoutVisuals.muted,
+                                      size: 20,
                                     ),
                                   ),
                                 ],

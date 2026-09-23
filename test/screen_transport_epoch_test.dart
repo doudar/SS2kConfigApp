@@ -6,6 +6,9 @@
 // test/support/fake_ble_platform.dart's lifecycle rules it must stay in its own
 // file. `testWidgets` runs in a fake-async zone, so every step that needs real
 // asynchrony — anything that awaits DeviceData — runs inside `tester.runAsync`.
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -501,6 +504,116 @@ void main() {
 
     bool loggingActive(WidgetTester tester) =>
         find.textContaining('Log streaming is active').evaluate().isNotEmpty;
+
+    Future<void> emitLogs(
+      WidgetTester tester,
+      FakeDirConSession session,
+      Iterable<String> messages,
+    ) async {
+      await tester.runAsync(() async {
+        for (final message in messages) {
+          session.emitNotification(ccUUID, [
+            0x80,
+            logStreamReference,
+            ...utf8.encode(message),
+          ]);
+        }
+        // DeviceData's controller belongs to the real zone from connectDirCon.
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      });
+    }
+
+    testWidgets(
+      'sustained device logs stay at the latest entry with bounded history',
+      (tester) async {
+        final session = await connectDirCon(tester);
+        await tester.pumpWidget(
+          MaterialApp(home: BleLogScreen(device: session.device)),
+        );
+        expect(await pumpUntil(tester, () => loggingActive(tester)), isTrue);
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.tap(find.text('Clear'));
+        await tester.pump();
+
+        // Feed more than the retention limit in continuous bursts. Every batch
+        // must reach the live edge without waiting for the stream to go quiet.
+        for (var batch = 0; batch < 120; batch++) {
+          await emitLogs(tester, session.conn.first, [
+            for (var offset = 0; offset < 100; offset++)
+              'Device log ${batch * 100 + offset}${offset.isEven ? '\nDetails' : ''}',
+          ]);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(find.text('Device log ${batch * 100 + 99}'), findsOneWidget);
+          final list = tester.widget<ListView>(find.byType(ListView));
+          expect(list.controller!.offset, 0);
+          expect(list.controller!.position.isScrollingNotifier.value, isFalse);
+        }
+        expect(
+          tester
+              .widget<ListView>(find.byType(ListView))
+              .childrenDelegate
+              .estimatedChildCount,
+          lessThan(12000),
+        );
+        await unmount(tester);
+      },
+    );
+
+    testWidgets(
+      'save includes pending logs and Clear cancels the pending refresh',
+      (tester) async {
+        final session = await connectDirCon(tester);
+        await tester.pumpWidget(
+          MaterialApp(home: BleLogScreen(device: session.device)),
+        );
+        expect(await pumpUntil(tester, () => loggingActive(tester)), isTrue);
+        await emitLogs(tester, session.conn.first, ['First device log']);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final directory = Directory.systemTemp.createTempSync('ss2k_log_test_');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => directory.path,
+        );
+        addTearDown(() {
+          messenger.setMockMethodCallHandler(
+            const MethodChannel('plugins.flutter.io/path_provider'),
+            (call) async => '.',
+          );
+          directory.deleteSync(recursive: true);
+        });
+
+        await emitLogs(tester, session.conn.first, ['Pending device log']);
+        await tester.pump();
+        expect(find.text('Pending device log'), findsNothing);
+        await tester.tap(find.text('Save'));
+        expect(
+          await pumpUntil(
+            tester,
+            () => find.textContaining('Logs saved to').evaluate().isNotEmpty,
+          ),
+          isTrue,
+        );
+        final saved = directory.listSync().whereType<File>().single;
+        expect(saved.readAsStringSync(), endsWith('Pending device log'));
+
+        await emitLogs(tester, session.conn.first, ['Discard on Clear']);
+        await tester.pump();
+        await tester.tap(find.text('Clear'));
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(find.byType(ListView), findsNothing);
+        expect(find.textContaining('No logs to display.'), findsOneWidget);
+
+        // Leaving while another batch is pending must cancel its timer too.
+        await emitLogs(tester, session.conn.first, ['Pending on exit']);
+        await tester.pump();
+        await unmount(tester);
+      },
+    );
 
     testWidgets('clears logging-enabled state on disconnect', (tester) async {
       final harness = await connectBle(tester);
