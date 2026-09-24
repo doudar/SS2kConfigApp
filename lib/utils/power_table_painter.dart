@@ -231,6 +231,7 @@ class PowerTablePainter extends CustomPainter {
     final path = Path();
     bool isFirstPoint = true;
     Offset? lastValidPoint;
+    int visiblePoints = 0;
 
     double minRes = 0;
     double maxRes = max(
@@ -267,10 +268,16 @@ class PowerTablePainter extends CustomPainter {
             path.lineTo(x, y);
           }
           lastValidPoint = Offset(x, y);
+          visiblePoints++;
         }
       }
     }
     canvas.drawPath(path, paint);
+    // A newly learned cadence row may have only one anchor. A move-only path
+    // is invisible, so show that observation before a second point exists.
+    if (visiblePoints == 1 && lastValidPoint != null) {
+      canvas.drawCircle(lastValidPoint, 3.5, Paint()..color = paint.color);
+    }
   }
 
   @override

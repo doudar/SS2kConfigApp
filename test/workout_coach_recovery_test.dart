@@ -116,7 +116,9 @@ void main() {
         ],
         [CoachWellness(day: today, fitness: 45)],
       ]) {
-        expect(advice(rows, history: busy).rest, isTrue);
+        final suggestion = advice(rows, history: busy);
+        expect(suggestion.rest, isFalse);
+        expect(suggestion.candidate!.choice.name, 'Easy spin');
       }
       expect(
         advice([

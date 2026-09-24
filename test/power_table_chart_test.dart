@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +24,40 @@ class _RecordingData extends DeviceData {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'isolated cadence anchor is visible in both axis orientations',
+    () async {
+      for (final swapped in [false, true]) {
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder);
+        final row = List<double?>.filled(10, null)..[8] = 1500;
+        final painter = PowerTablePainter(
+          powerTableData: [row],
+          cadences: [60],
+          colors: [const Color(0xFFFF0000)],
+          maxResistance: 3000,
+          homingMax: 3000,
+          swapAxes: swapped,
+          refinedStyle: true,
+        );
+        painter.paint(canvas, const Size(400, 300));
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(400, 300);
+        final pixels = (await image.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
+        ))!;
+        final x = swapped ? 210 : 20 + 240 * 380 / MIN_POWER_RANGE;
+        final y = swapped ? 300 - 240 * 300 / MIN_POWER_RANGE : 150;
+        final offset = (y.floor() * 400 + x.floor()) * 4;
+        expect(pixels.getUint8(offset), 255);
+        expect(pixels.getUint8(offset + 1), 0);
+        expect(pixels.getUint8(offset + 2), 0);
+        image.dispose();
+        picture.dispose();
+      }
+    },
+  );
 
   testWidgets('saved axes and toggles notify their parent and persist', (
     tester,

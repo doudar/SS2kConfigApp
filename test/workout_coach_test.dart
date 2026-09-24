@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_coach.dart';
+import 'package:ss2kconfigapp/utils/workout/workout_coach_recovery.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_lobby_choice.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_coach_repository.dart';
 
@@ -53,7 +54,7 @@ void main() {
     );
   });
 
-  test('goals change suggestions using the same prior history', () {
+  test('trained goals allow intervals while returning stays gentle', () {
     final endurance = WorkoutCoach.recommend(
       history: baseline(),
       candidates: choices,
@@ -72,9 +73,142 @@ void main() {
       now: now,
       goal: CoachGoal.returning,
     );
-    expect(endurance.candidate!.choice.name, 'Endurance');
+    expect(endurance.candidate!.session, CoachSession.longIntervals);
     expect(performance.candidate!.choice.name, 'Tempo');
     expect(returning.candidate!.choice.name, 'Easy spin');
+  });
+
+  test('short HIIT and sustained intervals alternate across ready days', () {
+    final short = CoachCandidate.fromChoice(
+      WorkoutLobbyChoice(
+        source: 'TEST',
+        content:
+            '<workout_file><name>Short HIIT</name><workout>'
+            '<SteadyState Duration="300" Power="0.6"/>'
+            '<IntervalsT Repeat="20" OnDuration="30" OffDuration="90" OnPower="1.2" OffPower="0.5"/>'
+            '<SteadyState Duration="300" Power="0.5"/>'
+            '</workout></workout_file>',
+      ),
+    )!;
+    final long = candidate('Sustained intervals', .85, 2400);
+    expect(short.session, CoachSession.shortHiit);
+    expect(long.session, CoachSession.longIntervals);
+    expect(short.tss, inInclusiveRange(38, 57.5));
+    final thisWeek = WorkoutCoach.recommend(
+      history: baseline(),
+      candidates: [short, long],
+      now: now,
+      goal: CoachGoal.performance,
+    );
+    final nextWeek = WorkoutCoach.recommend(
+      history: [
+        for (final r in baseline())
+          CoachRide(
+            id: r.id,
+            start: r.start.add(const Duration(days: 7)),
+            seconds: r.seconds,
+            tss: r.tss,
+          ),
+      ],
+      candidates: [short, long],
+      now: now.add(const Duration(days: 7)),
+      goal: CoachGoal.performance,
+    );
+    expect(
+      {thisWeek.candidate!.session, nextWeek.candidate!.session},
+      {CoachSession.shortHiit, CoachSession.longIntervals},
+    );
+  });
+
+  test(
+    'equally suitable workouts rotate by day and stay stable within a day',
+    () {
+      final alternatives = [
+        candidate('Easy A', .6, 1800),
+        candidate('Easy B', .6, 1800),
+      ];
+      CoachAdvice on(DateTime date) => WorkoutCoach.recommend(
+        history: [],
+        candidates: alternatives,
+        now: date,
+      );
+      final first = on(now);
+      expect(
+        on(now.add(const Duration(hours: 2))).candidate!.choice.name,
+        first.candidate!.choice.name,
+      );
+      expect(
+        on(now.add(const Duration(days: 1))).candidate!.choice.name,
+        isNot(first.candidate!.choice.name),
+      );
+    },
+  );
+
+  test('endurance intervals need a fresh quality day', () {
+    final easy = candidate('Easy', .55, 2400);
+    final steady = candidate('Endurance', .7, 3600);
+    final sustained = candidate('Sustained', .85, 2400);
+    final tuesday = now.add(const Duration(days: 5));
+    final shiftedHistory = [
+      for (final r in baseline())
+        CoachRide(
+          id: r.id,
+          start: r.start.add(const Duration(days: 5)),
+          seconds: r.seconds,
+          tss: r.tss,
+        ),
+    ];
+    final quality = WorkoutCoach.recommend(
+      history: shiftedHistory,
+      candidates: [easy, steady, sustained],
+      now: tuesday,
+      goal: CoachGoal.endurance,
+    );
+    expect(quality.candidate!.session, CoachSession.longIntervals);
+    final afterHard = WorkoutCoach.recommend(
+      history: [
+        ...shiftedHistory,
+        CoachRide(
+          id: 'recent-hard',
+          start: tuesday.subtract(const Duration(hours: 30)),
+          seconds: 2400,
+          tss: 50,
+        ),
+      ],
+      candidates: [easy, steady, sustained],
+      now: tuesday,
+      goal: CoachGoal.endurance,
+    );
+    expect(afterHard.rest, isFalse);
+    expect(afterHard.candidate!.choice.name, 'Easy');
+  });
+
+  test('completed quality sessions limit further intervals this week', () {
+    final today = DateTime(now.year, now.month, now.day);
+    final wellness = [CoachWellness(day: today, fitness: 50, fatigueLoad: 50)];
+    final menu = [
+      candidate('Easy', .55, 2400),
+      candidate('Endurance', .7, 3600),
+      candidate('Sustained', .85, 2400),
+    ];
+    final oneQuality = [...baseline(), ride(3, 70)];
+    final consistent = WorkoutCoach.recommend(
+      history: oneQuality,
+      candidates: menu,
+      now: now,
+      goal: CoachGoal.consistent,
+      wellness: wellness,
+    );
+    expect(consistent.candidate!.session, CoachSession.steady);
+    final twoQuality = [...oneQuality, ride(5, 70)];
+    final performance = WorkoutCoach.recommend(
+      history: twoQuality,
+      candidates: menu,
+      now: now,
+      goal: CoachGoal.performance,
+      wellness: wellness,
+    );
+    expect(performance.candidate!.session, CoachSession.steady);
   });
 
   test('missing or sparse history does not manufacture a fitness baseline', () {
@@ -125,10 +259,19 @@ void main() {
     expect(advice.candidate, isNull);
   });
 
-  test('high weekly load and a hard last day each suggest rest', () {
-    for (final extra in [
-      [ride(2, 85), ride(4, 85)],
-      [
+  test('weekly load suggests easy riding; a hard last day suggests rest', () {
+    final fullWeek = WorkoutCoach.recommend(
+      history: [...baseline(), ride(2, 85), ride(4, 85)],
+      candidates: choices,
+      now: now,
+      goal: CoachGoal.performance,
+    );
+    expect(fullWeek.rest, isFalse);
+    expect(fullWeek.candidate!.intensity, lessThanOrEqualTo(.65));
+    expect(fullWeek.reason, contains('weekly training load'));
+    final hardToday = WorkoutCoach.recommend(
+      history: [
+        ...baseline(),
         CoachRide(
           id: 'hard',
           start: now.subtract(const Duration(hours: 5)),
@@ -136,16 +279,32 @@ void main() {
           tss: 110,
         ),
       ],
-    ]) {
-      final advice = WorkoutCoach.recommend(
-        history: [...baseline(), ...extra],
-        candidates: choices,
-        now: now,
-        goal: CoachGoal.performance,
-      );
-      expect(advice.rest, isTrue);
-      expect(advice.candidate, isNull);
-    }
+      candidates: choices,
+      now: now,
+      goal: CoachGoal.performance,
+    );
+    expect(hardToday.rest, isTrue);
+    expect(hardToday.candidate, isNull);
+  });
+
+  test('a moderate ride today calls for easier riding', () {
+    final advice = WorkoutCoach.recommend(
+      history: [
+        ...baseline(),
+        CoachRide(
+          id: 'moderate',
+          start: now.subtract(const Duration(hours: 5)),
+          seconds: 3600,
+          tss: 60,
+        ),
+      ],
+      candidates: choices,
+      now: now,
+      goal: CoachGoal.performance,
+    );
+    expect(advice.rest, isFalse);
+    expect(advice.candidate!.choice.name, 'Easy spin');
+    expect(advice.reason, contains('solid ride'));
   });
 
   test(
@@ -176,8 +335,9 @@ void main() {
       expect(demanding.rides, 4);
       expect(easy.rest, isFalse);
       expect(easy.candidate, isNotNull);
-      expect(demanding.rest, isTrue);
-      expect(demanding.reason, contains('training load'));
+      expect(demanding.rest, isFalse);
+      expect(demanding.candidate!.intensity, lessThanOrEqualTo(.65));
+      expect(demanding.reason, contains('weekly training load'));
     },
   );
 

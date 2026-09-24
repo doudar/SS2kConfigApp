@@ -277,7 +277,11 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
             ),
             const SizedBox(height: 6),
             Text(
-              '${candidate.choice.source} · ${(candidate.seconds / 60).round()} min · ${candidate.intensity <= .65
+              '${candidate.choice.source} · ${(candidate.seconds / 60).round()} min · ${candidate.session == CoachSession.shortHiit
+                  ? 'Short HIIT'
+                  : candidate.session == CoachSession.longIntervals
+                  ? 'Long intervals'
+                  : candidate.intensity <= .65
                   ? 'Easy effort'
                   : candidate.intensity <= .8
                   ? 'Steady effort'
