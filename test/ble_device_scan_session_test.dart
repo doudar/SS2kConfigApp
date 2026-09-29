@@ -44,7 +44,7 @@ Future<void> _waitUntil(bool Function() predicate) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('scan pauses FTMS and preserves results until disconnect', () async {
+  test('scan pauses FTMS and preserves results until cleared', () async {
     final device = BluetoothDevice.fromId('00:00:00:00:00:34');
     final connector = FakeDirConConnector();
     final deviceData = DeviceData(dirConConnector: connector.call)
@@ -139,5 +139,30 @@ void main() {
     final encoded = foundDevices['value'] as String;
     expect(encoded, contains('COROS Heart Rate Monitor'));
     expect(encoded, contains('SmartBench'));
+
+    deviceData.clearBleScanResults();
+    expect(foundDevices['value'], isNot(contains('COROS Heart Rate Monitor')));
+    expect(foundDevices['value'], isNot(contains('SmartBench')));
+
+    session.emitNotification(
+      ccUUID,
+      _packet(event: BleScanResultEvent.begin, scanId: 3, sequence: 0),
+    );
+    session.emitNotification(
+      ccUUID,
+      _packet(
+        event: BleScanResultEvent.device,
+        scanId: 3,
+        sequence: 0,
+        payload: _deviceBody('0x1818', 'SmartBench'),
+      ),
+    );
+    session.emitNotification(
+      ccUUID,
+      _packet(event: BleScanResultEvent.end, scanId: 3, sequence: 1),
+    );
+    await _waitUntil(() => foundDevices['value'].contains('SmartBench'));
+    expect(foundDevices['value'], isNot(contains('COROS Heart Rate Monitor')));
+    await _waitUntil(() => !deviceData.bleDeviceScanInProgress.value);
   });
 }

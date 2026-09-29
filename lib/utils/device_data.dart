@@ -1261,7 +1261,7 @@ class DeviceData {
     // Re-render the persistent discoveries against the freshly rebuilt
     // characteristic map. Transparent BLE/DIRCON handoffs and automatic
     // reconnects are still the same user-visible SmartSpin2k connection, so
-    // only an explicit disconnect clears these choices.
+    // only an explicit disconnect or clearing scan results clears these choices.
     _applyStreamedFoundDevices(const <BleScanDevice>[]);
     lastFtmsUpdate = null;
     _ftmsRecoveryInProgress = false;
@@ -3540,13 +3540,18 @@ class DeviceData {
     });
   }
 
-  void setWorkoutTargetPower(int watts, {bool force = false}) {
+  void setWorkoutTargetPower(
+    int watts, {
+    bool force = false,
+    bool resetSimulationFirst = false,
+  }) {
     _workoutControlActive = true;
     // Store what the lane actually sent, not the requested value: an imported
     // workout can ask for a target outside sint16 and the lane clamps it.
     ftmsData._targetERG = _workoutControlLane.setTargetPower(
       watts,
       force: force,
+      resetSimulationFirst: resetSimulationFirst,
     );
   }
 
@@ -3556,6 +3561,16 @@ class DeviceData {
     // Zero-grade simulation releases the ERG target, so the displayed target
     // must follow or it reports a hold the trainer is no longer applying.
     ftmsData._targetERG = 0;
+  }
+
+  /// Releases resistance only if this app was running the workout. Loading or
+  /// closing an idle workout must not interrupt another app's trainer control.
+  void endWorkoutControl() {
+    if (!_workoutControlActive) return;
+    _workoutControlLane.clearDesiredControl();
+    // This reset is scoped to the current connection and cannot be replayed
+    // after a reconnect. Clear first so an old target's retry cannot delay it.
+    resetWorkoutSimulation();
   }
 
   bool _isWorkoutControlReady() {
@@ -3956,6 +3971,16 @@ class DeviceData {
   }
 
   final Map<String, Map<String, String>> _foundDevicesForConnection = {};
+
+  /// Clears discovered sensors while retaining the saved sensor selections.
+  void clearBleScanResults() {
+    if (bleDeviceScanInProgress.value) return;
+    // Opening a picker seeds it from this app-wide cache again.
+    NearbyBleDevices.instance.clear();
+    _scanResultDecoder.reset();
+    _foundDevicesForConnection.clear();
+    _applyStreamedFoundDevices(const <BleScanDevice>[]);
+  }
 
   /// Seeds this SmartSpin2k connection with supported sensors the companion
   /// app already heard while scanning for SmartSpin2ks.

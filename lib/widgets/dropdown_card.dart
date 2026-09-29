@@ -319,6 +319,19 @@ class _DropdownCardState extends State<DropdownCard> {
                                   }
                                 },
                         ),
+                      TextButton.icon(
+                        icon: const Icon(
+                          Icons.clear_all,
+                          color: WorkoutVisuals.muted,
+                        ),
+                        label: const Text(
+                          'Clear Scan Results',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        onPressed: isScanning
+                            ? null
+                            : deviceData.clearBleScanResults,
+                      ),
                       TextButton(
                         child: const Text(
                           'BACK',

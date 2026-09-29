@@ -72,49 +72,68 @@ class WorkoutControlLane {
   /// after clamping. Callers that mirror the target into display state must
   /// store the return value, not their own argument, or the metric reports a
   /// hold the trainer never received.
-  int setTargetPower(int watts, {bool force = false}) {
+  int setTargetPower(
+    int watts, {
+    bool force = false,
+    bool resetSimulationFirst = false,
+  }) {
     // Ramp math runs inside the 100 ms workout tick, so an out-of-range target
     // from a malformed workout must not throw into the timer callback.
     watts = watts.clamp(0, 0x7fff);
-    final targetCommand = FTMSControlPoint.targetPowerCommand(watts);
-    final commands = <Uint8List>[targetCommand];
-    if (watts == 0) {
-      // Zero watts also returns the trainer to neutral simulation mode. Keep
-      // both commands in one guarded batch so a newer ERG target can cancel
-      // the mode switch before the second physical write.
-      commands.add(
-        FTMSControlPoint.indoorBikeSimulationCommand(
-          windSpeed: 0,
-          grade: 0,
-          crr: 0,
-          cw: 0,
-        ),
-      );
-    }
+    // Free ride already ends in simulation mode, so it needs no start prefix.
+    resetSimulationFirst = resetSimulationFirst && watts > 0;
+    final commands = _targetPowerCommands(
+      watts,
+      resetSimulationFirst: resetSimulationFirst,
+    );
     _request(
       _WorkoutControlDesired(
         kind: WorkoutControlKind.targetPower,
         watts: watts,
         commands: commands,
+        resetSimulationFirst: resetSimulationFirst,
       ),
       force: force,
     );
     return watts;
   }
 
+  static List<Uint8List> _targetPowerCommands(
+    int watts, {
+    bool resetSimulationFirst = false,
+  }) {
+    final commands = <Uint8List>[];
+    if (resetSimulationFirst) {
+      commands.add(_neutralSimulationCommand());
+    }
+    commands.add(FTMSControlPoint.targetPowerCommand(watts));
+    if (watts == 0) {
+      // Zero watts represents free ride. Target power alone keeps the trainer
+      // in ERG, where firmware may clamp zero to its minimum power. Keep this
+      // mode switch in the guarded batch so a newer ERG target can cancel it.
+      commands.add(_neutralSimulationCommand());
+    }
+    return commands;
+  }
+
+  static Uint8List _neutralSimulationCommand() =>
+      FTMSControlPoint.indoorBikeSimulationCommand(
+        windSpeed: 0,
+        grade: 0,
+        crr: 0,
+        cw: 0,
+      );
+
+  /// Requests neutral simulation parameters for the current session. A reset is
+  /// an action, not a desired state: it can retry on this connection, but it is
+  /// discarded if the control point becomes unavailable.
   void resetSimulation() {
     _request(
       _WorkoutControlDesired(
         kind: WorkoutControlKind.simulationReset,
         watts: null,
-        commands: [
-          FTMSControlPoint.indoorBikeSimulationCommand(
-            windSpeed: 0,
-            grade: 0,
-            crr: 0,
-            cw: 0,
-          ),
-        ],
+        commands: [_neutralSimulationCommand()],
+        resetSimulationFirst: false,
       ),
       force: false,
     );
@@ -127,15 +146,51 @@ class WorkoutControlLane {
   void invalidateDelivery() {
     if (_disposed) return;
     _delivered = null;
+    if (_desired?.kind == WorkoutControlKind.simulationReset) {
+      _desired = null;
+    }
+    if (_pending?.desired.kind == WorkoutControlKind.simulationReset) {
+      _pending = null;
+    }
+    if (_inFlight?.desired.kind == WorkoutControlKind.simulationReset) {
+      _generation++;
+    }
+    if (_inFlight?.desired.resetSimulationFirst == true) {
+      _generation++;
+    }
+    _discardStartResetPrefix();
     onAvailabilityChanged();
+  }
+
+  /// Stops retaining workout control without sending another FTMS command.
+  /// This keeps a stopped workout from reasserting its last target later.
+  void clearDesiredControl() {
+    if (_disposed) return;
+    _generation++;
+    _desired = null;
+    _pending = null;
+    _delivered = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = null;
   }
 
   void onAvailabilityChanged() {
     if (_disposed) return;
     if (!_available) {
+      if (_inFlight?.desired.kind == WorkoutControlKind.simulationReset ||
+          _inFlight?.desired.resetSimulationFirst == true) {
+        _generation++;
+      }
       _retryTimer?.cancel();
       _retryTimer = null;
       _pending = null;
+      if (_desired?.kind == WorkoutControlKind.simulationReset) {
+        _desired = null;
+      } else {
+        _discardStartResetPrefix();
+      }
       _syncKeepAlive();
       return;
     }
@@ -162,10 +217,9 @@ class WorkoutControlLane {
   void _request(_WorkoutControlDesired desired, {required bool force}) {
     if (_disposed) return;
     _requestInner(desired, force: force);
-    // Every early return in `_requestInner` still leaves `_desired` updated, so
-    // the keep-alive is re-evaluated here rather than on the paths that happen
-    // to dispatch. The deduped steady-state tick is exactly the path that
-    // returns early and exactly the one that needs the keep-alive running.
+    // Re-evaluate the keep-alive even when the request is deduped. The
+    // deduped steady-state tick is exactly the path that returns early and
+    // exactly the one that needs the keep-alive running.
     _syncKeepAlive();
   }
 
@@ -191,6 +245,11 @@ class WorkoutControlLane {
     _generation++;
     if (!_available) {
       _pending = null;
+      if (desired.kind == WorkoutControlKind.simulationReset) {
+        _desired = null;
+      } else {
+        _discardStartResetPrefix();
+      }
       return;
     }
 
@@ -266,10 +325,16 @@ class WorkoutControlLane {
     }
 
     if (succeeded) {
+      final deliveredDesired = request.desired.withoutStartReset();
       _delivered = _DeliveredWorkoutControl(
-        desired: request.desired,
+        desired: deliveredDesired,
         epoch: request.epoch,
       );
+      if (_desired?.samePayload(request.desired) ?? false) {
+        _desired = request.desired.kind == WorkoutControlKind.simulationReset
+            ? null
+            : deliveredDesired;
+      }
       // The target was just written, so the silence window starts over. Without
       // this a keep-alive armed before a real target change would fire almost
       // immediately after it and write the same value twice.
@@ -310,11 +375,8 @@ class WorkoutControlLane {
   }
 
   /// True while the desired state is an ERG hold that the firmware can silently
-  /// drop. Zero-watt targets are excluded: their batch ends with a simulation
-  /// command, so the trainer is meant to be out of ERG and re-asserting would
-  /// just re-run the mode switch every interval. Simulation resets are excluded
-  /// for the same reason, which is also what stops the keep-alive on pause and
-  /// stop, since both route through `resetSimulation`.
+  /// drop. Zero-watt batches end in simulation mode, as do explicit resets,
+  /// so neither needs an ERG keep-alive.
   bool get _keepAliveApplies {
     final desired = _desired;
     return desired != null &&
@@ -362,6 +424,21 @@ class WorkoutControlLane {
     _scheduleDesired(force: false);
   }
 
+  void _discardStartResetPrefix() {
+    final desired = _desired;
+    if (desired != null && desired.resetSimulationFirst) {
+      _desired = desired.withoutStartReset();
+    }
+    final pending = _pending;
+    if (pending != null && pending.desired.resetSimulationFirst) {
+      _pending = _WorkoutControlRequest(
+        desired: pending.desired.withoutStartReset(),
+        generation: pending.generation,
+        epoch: pending.epoch,
+      );
+    }
+  }
+
   static Timer _defaultTimerFactory(
     Duration duration,
     void Function() callback,
@@ -373,14 +450,32 @@ class _WorkoutControlDesired {
     required this.kind,
     required this.watts,
     required this.commands,
+    required this.resetSimulationFirst,
   });
 
   final WorkoutControlKind kind;
   final int? watts;
   final List<Uint8List> commands;
+  final bool resetSimulationFirst;
+
+  _WorkoutControlDesired withoutStartReset() {
+    if (!resetSimulationFirst || kind != WorkoutControlKind.targetPower) {
+      return this;
+    }
+    return _WorkoutControlDesired(
+      kind: kind,
+      watts: watts,
+      commands: WorkoutControlLane._targetPowerCommands(watts ?? 0),
+      resetSimulationFirst: false,
+    );
+  }
 
   bool samePayload(_WorkoutControlDesired other) {
-    if (kind != other.kind || watts != other.watts) return false;
+    if (kind != other.kind ||
+        watts != other.watts ||
+        resetSimulationFirst != other.resetSimulationFirst) {
+      return false;
+    }
     if (commands.length != other.commands.length) return false;
     for (var index = 0; index < commands.length; index++) {
       final left = commands[index];
