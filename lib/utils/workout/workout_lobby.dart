@@ -6,7 +6,6 @@ import 'workout_lobby_choice.dart';
 import 'workout_painter.dart';
 import 'workout_parser.dart';
 import 'workout_account_prompt.dart';
-import 'intervals_today_card.dart';
 import 'workout_coach_card.dart';
 import 'workout_training_load.dart';
 import 'workout_zone_breakdown.dart';
@@ -24,7 +23,7 @@ class WorkoutLobby extends StatefulWidget {
     required this.onSelect,
     required this.onBrowse,
     this.onOpenMenu,
-    this.loadChoices = WorkoutLobbyChoice.loadChoices,
+    this.loadChoices,
   });
 
   final String name;
@@ -36,7 +35,7 @@ class WorkoutLobby extends StatefulWidget {
   final ValueChanged<WorkoutLobbyChoice> onSelect;
   final VoidCallback onBrowse;
   final VoidCallback? onOpenMenu;
-  final Future<List<WorkoutLobbyChoice>> Function() loadChoices;
+  final Future<List<WorkoutLobbyChoice>> Function()? loadChoices;
 
   @override
   State<WorkoutLobby> createState() => _WorkoutLobbyState();
@@ -46,7 +45,9 @@ class _WorkoutLobbyState extends State<WorkoutLobby> {
   static const _mint = Color(0xff72e4c1);
   static const _blue = Color(0xff8abaff);
   static const _muted = Color(0xffa4b5cc);
-  late final _choices = widget.loadChoices();
+  late final _choices =
+      widget.loadChoices?.call() ??
+      WorkoutLobbyChoice.loadChoices(excludeName: widget.name);
   final _scroll = ScrollController();
   late double? _selectedTss = WorkoutTrainingLoad.estimate(
     widget.segments,
@@ -355,10 +356,6 @@ class _WorkoutLobbyState extends State<WorkoutLobby> {
                     children: [
                       if (widget.onOpenMenu != null)
                         WorkoutMenuButton(onPressed: widget.onOpenMenu!),
-                      IntervalsTodayCard(
-                        ftp: widget.ftp,
-                        onSelect: widget.onSelect,
-                      ),
                       if (width >= 760)
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,

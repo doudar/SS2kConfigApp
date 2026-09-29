@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/bleConstants.dart';
 import 'package:ss2kconfigapp/utils/calibration_monitor.dart';
@@ -25,6 +27,132 @@ void main() {
     tracker.markRequestSent();
     tracker.onLogMessage('(FTMS_SERVER): Spin Down Requested');
   }
+
+  group('transition FTMS calibration', () {
+    test('replays Bike+ capture without finishing during mapping', () {
+      tracker.start(hMaxBaseline: 24316);
+      tracker.markRequestSent();
+      var sawMapping = false;
+      var sawSaving = false;
+      for (final line in File(
+        'test/fixtures/bike_plus_ftms_homing.txt',
+      ).readAsLinesSync()) {
+        tracker.onLogMessage(line);
+        final status = RegExp(
+          r'Sent SpinDown Status: 0x(\w+)',
+        ).firstMatch(line);
+        if (status != null)
+          tracker.onSpinDownStatus(int.parse(status[1]!, radix: 16));
+        if (tracker.ftmsStage == FtmsCalibrationStage.mapping) {
+          sawMapping = true;
+          expect(tracker.phase.isRunning, isTrue, reason: line);
+          expect(
+            tracker.maxFound,
+            isFalse,
+            reason: 'Mapping must not start the completion grace timer',
+          );
+        }
+        if (tracker.ftmsStage == FtmsCalibrationStage.saving) sawSaving = true;
+      }
+      expect(sawMapping, isTrue);
+      expect(sawSaving, isTrue);
+      expect(tracker.phase, CalibrationPhase.complete);
+      expect(tracker.mapSamples, 3);
+      expect(tracker.foundMax, 24462);
+    });
+
+    test('recovers stages with missing opening and sample logs', () {
+      startRequest();
+      tracker.onLogMessage('Starting homing procedure...');
+      tracker.onLogMessage(
+        'Homing to Min Resistance... Current: 11, Target: 2, pos: 3314',
+      );
+      expect(tracker.usedFtmsPath, isTrue);
+      expect(tracker.ftmsStage, FtmsCalibrationStage.lowBoundary);
+      tracker.onLogMessage(
+        'Homing to Max Resistance... Current: 95, Target: 98, pos: 23000',
+      );
+      expect(tracker.ftmsStage, FtmsCalibrationStage.highBoundary);
+      tracker.onLogMessage(
+        'Homing to Max Resistance... Current: 55, Target: 58, pos: 12919',
+      );
+      expect(tracker.ftmsStage, FtmsCalibrationStage.mapping);
+      expect(tracker.mapSamples, 1);
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.MAX_SEARCH_STARTED);
+      expect(tracker.ftmsStage, FtmsCalibrationStage.mapping);
+      tracker.onLogMessage(
+        'Homing to Max Resistance... Current: 50, Target: 33, pos: 12206',
+      );
+      expect(tracker.mapSamples, 2);
+      tracker.onLogMessage(
+        'FTMS map sample: resistance=31.0 position=7664 travel=31.3%',
+      );
+      tracker.onLogMessage(
+        'FTMS map sample: resistance=31.0 position=7664 travel=31.3%',
+      );
+      expect(tracker.mapSamples, 3);
+      expect(tracker.ftmsStage, FtmsCalibrationStage.saving);
+      expect(tracker.markComplete(), isFalse);
+      tracker.onSpinDownStatus(FTMSSpinDownStatus.SUCCESS);
+      expect(tracker.phase, CalibrationPhase.complete);
+      startRequest();
+      expect(tracker.ftmsStage, isNull);
+      expect(tracker.mapSamples, 0);
+      expect(tracker.ftmsFailure, isNull);
+    });
+
+    test('legacy FTMS sweep keeps its original completion path', () {
+      startRequest();
+      feed([
+        'Starting homing procedure...',
+        'Starting FTMS Homing...',
+        'Homing to Min Resistance... Current: 20, Target: 0',
+        'Found Min Resistance Position: 0',
+        'Homing to Max Resistance... Current: 95, Target: 100',
+        'Found Max Resistance Position: 100',
+      ]);
+      expect(tracker.ftmsStage, isNull);
+      expect(tracker.phase, CalibrationPhase.complete);
+    });
+
+    for (final reason in [
+      'no fresh resistance report',
+      'resistance is simulated',
+      'resistance moved opposite the command',
+      'resistance stopped changing',
+      'motor command failed',
+      'search timeout',
+      'could not confirm resistance boundary',
+      'cancelled by shifter',
+      'resistance outside 0-100',
+    ]) {
+      test('reports FTMS failure: $reason', () {
+        startRequest();
+        feed([
+          'Starting homing procedure...',
+          'Starting FTMS Homing...',
+          'FTMS homing failure: $reason; resistance=50 simulated=0 age=4000 ms position=1234',
+          'FTMS homing failed or aborted. Calibration was not saved.',
+        ]);
+        expect(tracker.phase, CalibrationPhase.failedFtms);
+        expect(tracker.ftmsFailure, isNotEmpty);
+        tracker.onSpinDownStatus(FTMSSpinDownStatus.SUCCESS);
+        expect(tracker.phase, CalibrationPhase.failedFtms);
+      });
+    }
+
+    test(
+      'generic save failure is terminal even when detailed log is missing',
+      () {
+        startRequest();
+        feed([
+          'Starting homing procedure...',
+          'FTMS homing failed or aborted. Calibration was not saved.',
+        ]);
+        expect(tracker.phase, CalibrationPhase.failedFtms);
+      },
+    );
+  });
 
   group('happy path — stepper homing', () {
     test('walks min then max then complete', () {
@@ -1185,9 +1313,7 @@ void main() {
     test('an absence of machine status frames is stated, not omitted', () {
       final text = report(
         transport: 'DIRCON',
-        transcript: entries([
-          (ms: 500, message: 'Homing procedure complete.'),
-        ]),
+        transcript: entries([(ms: 500, message: 'Homing procedure complete.')]),
       );
 
       expect(
@@ -1234,8 +1360,14 @@ void main() {
         describeMachineStatusFrame([0x08, 0x01]),
         '08 01  (not a spin-down status)',
       );
-      expect(describeMachineStatusFrame([0x14]), '14  (not a spin-down status)');
-      expect(describeMachineStatusFrame([0x14, 0x7f]), '14 7f  unknown parameter');
+      expect(
+        describeMachineStatusFrame([0x14]),
+        '14  (not a spin-down status)',
+      );
+      expect(
+        describeMachineStatusFrame([0x14, 0x7f]),
+        '14 7f  unknown parameter',
+      );
     });
 
     test('the travel range is carried, and named as unknown when it is', () {
@@ -1366,7 +1498,15 @@ void main() {
       // Once the command actually reaches the wire, the identical frame is this
       // run's acknowledgement — proving the gate is the dispatch, nothing else.
       tracker.markRequestSent();
-      tracker.onControlPointResponse(const [0x80, 0x13, 0x01, 0x20, 0x03, 0x60, 0x09]);
+      tracker.onControlPointResponse(const [
+        0x80,
+        0x13,
+        0x01,
+        0x20,
+        0x03,
+        0x60,
+        0x09,
+      ]);
       expect(tracker.acknowledged, isTrue);
       expect(tracker.ackSource, CalibrationAckSource.controlPoint);
     });
@@ -1397,16 +1537,19 @@ void main() {
       expect(tracker.phase, CalibrationPhase.waitingForCadence);
     });
 
-    test('a leftover homing-characteristic notification proves nothing yet', () {
-      tracker.start(hMaxBaseline: 27000);
+    test(
+      'a leftover homing-characteristic notification proves nothing yet',
+      () {
+        tracker.start(hMaxBaseline: 27000);
 
-      expect(
-        tracker.onHomingValueChanged(isMax: true, value: 24800),
-        isFalse,
-      );
-      expect(tracker.maxFound, isFalse);
-      expect(tracker.phase, CalibrationPhase.waitingForCadence);
-    });
+        expect(
+          tracker.onHomingValueChanged(isMax: true, value: 24800),
+          isFalse,
+        );
+        expect(tracker.maxFound, isFalse);
+        expect(tracker.phase, CalibrationPhase.waitingForCadence);
+      },
+    );
   });
 
   group('a device wedged on a connection that went away', () {

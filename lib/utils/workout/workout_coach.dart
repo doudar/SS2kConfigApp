@@ -115,10 +115,12 @@ class CoachAdvice {
     required this.title,
     required this.reason,
     required this.weekTss,
+    required this.recommendedTss,
     required this.rides,
     required this.unknownRides,
     this.range,
     this.candidate,
+    this.alternatives = const [],
     this.rest = false,
     this.estimated = false,
     this.manualRange = false,
@@ -127,9 +129,16 @@ class CoachAdvice {
   final String title, reason;
   final String? recoveryNote;
   final double weekTss;
+
+  /// Target load for the next session today, independent of the chosen workout.
+  /// Zero means rest; this does not include training already completed today.
+  final double recommendedTss;
   final int rides, unknownRides;
   final CoachRange? range;
   final CoachCandidate? candidate;
+
+  /// Eligible substitutes within 10% of the original suggestion's TSS.
+  final List<CoachCandidate> alternatives;
   final bool rest, estimated, manualRange;
 }
 
@@ -378,6 +387,17 @@ class WorkoutCoach {
     // A library mismatch is not evidence that the rider needs a rest day.
     final noMatch = !rest && eligible.isEmpty;
     final selected = rest ? null : (pick(matching) ?? pick(eligible));
+    final seen = <String>{if (selected != null) selected.choice.content};
+    final alternatives = selected == null
+        ? <CoachCandidate>[]
+        : eligible
+              .where(
+                (c) =>
+                    c.session == selected.session &&
+                    (c.tss - selected.tss).abs() <= selected.tss * .1 &&
+                    seen.add(c.choice.content),
+              )
+              .toList();
     return CoachAdvice(
       title: rest
           ? 'Take a rest day'
@@ -424,10 +444,12 @@ class WorkoutCoach {
           ? 'Your recent rides leave room for a little more challenge, within the effort you are used to.'
           : 'Your recent rides leave room for a steady session to support your goal.',
       weekTss: total,
+      recommendedTss: rest ? 0 : desired,
       rides: week.length,
       unknownRides: unknown,
       range: target,
       candidate: selected,
+      alternatives: alternatives,
       rest: rest,
       estimated: week.any((r) => r.estimated),
       manualRange: manual,

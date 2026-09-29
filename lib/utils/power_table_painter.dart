@@ -313,6 +313,7 @@ class PowerTableOverlayPainter extends CustomPainter {
     this.drawAxisEffects = true,
     this.drawPosition = true,
     this.refinedStyle = false,
+    this.ergTargetWatts,
   }) : super(repaint: repaint);
 
   final Animation<double> animation;
@@ -329,6 +330,7 @@ class PowerTableOverlayPainter extends CustomPainter {
   final bool drawAxisEffects;
   final bool drawPosition;
   final bool refinedStyle;
+  final double? Function()? ergTargetWatts;
 
   static const double leftPadding = 20.0;
 
@@ -346,6 +348,33 @@ class PowerTableOverlayPainter extends CustomPainter {
         _drawCurrentPosition(canvas, size, watts, resistance, cadence);
       }
     }
+    _drawErgTarget(canvas, size);
+  }
+
+  void _drawErgTarget(Canvas canvas, Size size) {
+    final target = ergTargetWatts?.call();
+    if (target == null || !target.isFinite || target < 0) return;
+
+    final ratio = (target / MIN_POWER_RANGE).clamp(0.0, 1.0);
+    final marker = Path();
+    if (swapAxes) {
+      // Point left toward the vertical watt bar, clear of its tick labels.
+      final y = size.height * (1 - ratio);
+      final barRight = 2 + (refinedStyle ? 4.0 : 20.0);
+      marker
+        ..moveTo(barRight + 2, y)
+        ..lineTo(barRight + 9, y - 5)
+        ..lineTo(barRight + 9, y + 5);
+    } else {
+      // Point down from above the horizontal watt bar.
+      final x = leftPadding + (size.width - leftPadding) * ratio;
+      marker
+        ..moveTo(x, -17)
+        ..lineTo(x - 5, -24)
+        ..lineTo(x + 5, -24);
+    }
+    marker.close();
+    canvas.drawPath(marker, Paint()..color = WorkoutVisuals.gold);
   }
 
   void _drawAxisEffects(
@@ -559,6 +588,7 @@ class PowerTableOverlayPainter extends CustomPainter {
         refinedStyle != oldDelegate.refinedStyle ||
         drawAxisEffects != oldDelegate.drawAxisEffects ||
         drawPosition != oldDelegate.drawPosition ||
+        ergTargetWatts != oldDelegate.ergTargetWatts ||
         !identical(positionHistory, oldDelegate.positionHistory);
   }
 }

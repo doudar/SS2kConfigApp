@@ -38,6 +38,7 @@ dependencies:
   fvp: ^0.37.3
   intl: ^0.20.3
   clock: ^1.1.2
+  bonsoir: ^7.1.5
 
 dev_dependencies:
   flutter_test:

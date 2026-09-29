@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/bleConstants.dart';
 import '../utils/device_data.dart';
 import '../utils/constants.dart';
 import '../utils/power_table_painter.dart';
@@ -133,7 +134,9 @@ class PowerTableChartState extends State<PowerTableChart>
             _updateHomingFromCache();
           } else if (event.vName == powerTableDataVname) {
             _refreshPowerTableCache();
-          } else if (event.vName == targetPositionVname) {
+          } else if (event.vName == targetPositionVname ||
+              event.vName == simulatedTargetWattsVname ||
+              event.vName == FTMSModeVname) {
             _livePositionRepaint.markNeedsPaint();
           }
         });
@@ -420,6 +423,10 @@ class PowerTableChartState extends State<PowerTableChart>
                   tableDivisor: widget.deviceData.tableDivisor,
                   swapAxes: _swapAxes,
                   drawAxisEffects: false,
+                  ergTargetWatts: () =>
+                      widget.deviceData.FTMSmode == FTMSOpCodes.SET_TARGET_POWER
+                      ? double.tryParse(widget.deviceData.simulatedTargetWatts)
+                      : null,
                 ),
               ),
             ),

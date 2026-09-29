@@ -15,12 +15,23 @@ import "../widgets/slider_card.dart";
 import "../widgets/bool_card.dart";
 import "../widgets/plain_text_card.dart";
 import '../widgets/dropdown_card.dart';
+import 'onboarding/wifi_credentials_form.dart';
 
 import '../utils/device_data.dart';
 import '../utils/stream_extensions.dart';
 import 'device_settings_style.dart';
 import 'ss2k_app_bar.dart';
 import '../utils/workout/workout_visuals.dart';
+
+bool _isWifiCredentials(Map c) =>
+    c['vName'] == ssidVname || c['vName'] == passwordVname;
+
+String _settingTitle(Map c) =>
+    _isWifiCredentials(c) ? 'WiFi network' : c['humanReadableName'].toString();
+
+String _settingDescription(Map c) => _isWifiCredentials(c)
+    ? 'Enter the name and password of a 2.4 GHz WiFi network. '
+    : c['textDescription']?.toString() ?? '';
 
 class SettingTile extends StatefulWidget {
   final BluetoothDevice device;
@@ -53,7 +64,9 @@ class SettingEditor extends StatelessWidget {
           child: sliderCard(device: device, c: c),
         );
       case "string":
-        if ((c["vName"] == connectedHRMVname) ||
+        if (_isWifiCredentials(c)) {
+          editor = WifiCredentialsForm(device: device);
+        } else if ((c["vName"] == connectedHRMVname) ||
             (c["vName"] == connectedPWRVname)) {
           editor = SingleChildScrollView(
             child: DropdownCard(device: device, c: c),
@@ -81,7 +94,7 @@ class SettingEditor extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              c['textDescription']?.toString() ?? '',
+              _settingDescription(c),
               style: const TextStyle(
                 color: WorkoutVisuals.muted,
                 fontSize: 14,
@@ -120,7 +133,7 @@ class SettingEditScreen extends StatelessWidget {
     child: Scaffold(
       appBar: SS2KAppBar(
         device: device,
-        title: 'Edit Setting',
+        title: _isWifiCredentials(c) ? 'WiFi network' : 'Edit Setting',
         firmwareOnlyDeviceHeader: true,
         deviceHeaderCustomRefreshEnabled: false,
       ),
@@ -212,7 +225,7 @@ class _SettingTileState extends State<SettingTile> {
             vertical: 10,
           ),
           title: Text(
-            c['humanReadableName'].toString(),
+            _settingTitle(c),
             style: TextStyle(
               color: unsupported ? WorkoutVisuals.muted : Colors.white,
               fontSize: 17,
@@ -246,15 +259,13 @@ class _SettingTileState extends State<SettingTile> {
             ),
           ),
           trailing: IconButton(
-            tooltip: 'About ${c['humanReadableName']}',
+            tooltip: 'About ${_settingTitle(c)}',
             icon: const Icon(Icons.info_outline, color: WorkoutVisuals.muted),
             onPressed: () => showDialog(
               context: context,
               builder: (context) => AlertDialog(
-                title: Text(c['humanReadableName']),
-                content: Text(
-                  c['textDescription'] ?? 'No description available.',
-                ),
+                title: Text(_settingTitle(c)),
+                content: Text(_settingDescription(c)),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),

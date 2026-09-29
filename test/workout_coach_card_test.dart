@@ -378,7 +378,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Take a rest day'), findsOneWidget);
       expect(find.text('Load suggested ride'), findsNothing);
-      expect(find.textContaining('TSS'), findsNothing);
+      expect(find.text('Recommended TSS today: 0 · Rest day'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

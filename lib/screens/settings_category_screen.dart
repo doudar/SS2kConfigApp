@@ -88,6 +88,7 @@ class _SettingsCategoryScreenState extends State<SettingsCategoryScreen> {
         // Filter by isSetting AND the requested SettingType
         if (c["isSetting"] == true &&
             c["settingType"] == widget.settingType &&
+            c["vName"] != passwordVname &&
             value != null &&
             value != "null") {
           settings.add(SettingTile(device: this.widget.device, c: c));

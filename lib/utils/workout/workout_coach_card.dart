@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../services/intervals_service.dart';
+import '../../services/intervals_workout_converter.dart';
 import 'workout_coach.dart';
 import 'workout_coach_repository.dart';
 import 'workout_lobby_choice.dart';
@@ -17,6 +19,8 @@ class WorkoutCoachCard extends StatefulWidget {
     this.load = WorkoutCoachRepository.load,
     this.saveGoal = WorkoutCoachRepository.saveGoal,
     this.reconnect = IntervalsService.authenticate,
+    this.isConnected = IntervalsService.isAuthenticated,
+    this.loadToday = IntervalsService.getTodaysWorkout,
   });
   final double ftp;
   final ValueChanged<WorkoutLobbyChoice> onSelect;
@@ -24,6 +28,8 @@ class WorkoutCoachCard extends StatefulWidget {
   final Future<CoachData> Function(double, {bool refreshRemote}) load;
   final Future<void> Function(CoachGoal) saveGoal;
   final Future<void> Function(BuildContext) reconnect;
+  final Future<bool> Function() isConnected;
+  final Future<Map<String, dynamic>?> Function() loadToday;
   @override
   State<WorkoutCoachCard> createState() => _WorkoutCoachCardState();
 }
@@ -31,9 +37,14 @@ class WorkoutCoachCard extends StatefulWidget {
 class _WorkoutCoachCardState extends State<WorkoutCoachCard>
     with WidgetsBindingObserver {
   CoachData? _data;
+  WorkoutLobbyChoice? _todayChoice;
+  int _todayRevision = 0;
   CoachGoal? _goal;
+  String? _alternativeContent;
   bool _failed = false;
   bool _refreshing = true, _reconnecting = false;
+  bool? _connected;
+  bool _refreshingIntervals = false;
   int _revision = 0;
   Timer? _dayTimer;
   @override
@@ -43,11 +54,16 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
     IntervalsService.connectionChanges.addListener(_accountChanged);
     WorkoutCoachRepository.changes.addListener(_refresh);
     unawaited(_refresh());
+    unawaited(_refreshToday());
     _scheduleDay();
   }
 
   Future<void> _accountChanged() async {
-    setState(() => _data = null);
+    unawaited(_refreshToday());
+    setState(() {
+      _data = null;
+      _alternativeContent = null;
+    });
     try {
       await WorkoutCoachRepository.invalidateRemoteAttempt();
     } catch (_) {}
@@ -61,9 +77,39 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
       DateTime(now.year, now.month, now.day + 1).difference(now),
       () {
         unawaited(_refresh());
+        unawaited(_refreshToday());
         _scheduleDay();
       },
     );
+  }
+
+  Future<void> _refreshToday() async {
+    final revision = ++_todayRevision;
+    // Never leave a previous date/account's plan actionable during a refresh.
+    setState(() => _todayChoice = null);
+    try {
+      final connected = await widget.isConnected();
+      if (!mounted || revision != _todayRevision) return;
+      setState(() => _connected = connected);
+      if (!connected) return;
+      final event = await widget.loadToday().timeout(
+        const Duration(seconds: 15),
+      );
+      if (!mounted || revision != _todayRevision || event == null) return;
+      final content = IntervalsWorkoutConverter.convertEventToZwo(event);
+      if (content == null) return;
+      final choice = WorkoutLobbyChoice(
+        content: content,
+        source: 'TODAY · INTERVALS.ICU',
+      );
+      if (choice.workout.segments.isEmpty) return;
+      setState(() => _todayChoice = choice);
+    } catch (_) {
+      // Keep the local recommendation usable if today's plan is unavailable.
+      if (mounted && revision == _todayRevision && _connected == null) {
+        setState(() => _connected = false);
+      }
+    }
   }
 
   Future<void> _refresh() async {
@@ -90,19 +136,43 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
     }
   }
 
+  Future<void> _reloadIntervals() async {
+    // A manual refresh should bypass the background sync cooldown.
+    await WorkoutCoachRepository.invalidateRemoteAttempt();
+    if (!mounted) return;
+    await Future.wait([_refreshToday(), _refresh()]);
+  }
+
+  Future<void> _refreshIntervals() async {
+    if (_refreshingIntervals || _reconnecting) return;
+    setState(() => _refreshingIntervals = true);
+    try {
+      await _reloadIntervals();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not refresh Intervals.icu. Please try again.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _refreshingIntervals = false);
+    }
+  }
+
   Future<void> _reconnect() async {
-    if (_reconnecting) return;
+    if (_reconnecting || _refreshingIntervals) return;
     setState(() => _reconnecting = true);
     try {
       await widget.reconnect(context);
-      await WorkoutCoachRepository.invalidateRemoteAttempt();
-      if (mounted) await _refresh();
+      if (mounted) await _reloadIntervals();
     } catch (_) {
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Could not reconnect to Intervals.icu. Please try again.',
+              'Could not connect to Intervals.icu. Please try again.',
             ),
           ),
         );
@@ -121,12 +191,16 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_refresh());
+      unawaited(_refreshToday());
       _scheduleDay();
     }
   }
 
   Future<void> _setGoal(CoachGoal goal) async {
-    setState(() => _goal = goal);
+    setState(() {
+      _goal = goal;
+      _alternativeContent = null;
+    });
     try {
       await widget.saveGoal(goal);
     } catch (_) {
@@ -178,7 +252,22 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
             incomplete: data.incomplete,
             wellness: data.wellness,
           );
-    final candidate = advice?.candidate;
+    final suggestions = <CoachCandidate>[
+      if (advice?.candidate != null) advice!.candidate!,
+      ...?advice?.alternatives,
+    ];
+    // Revalidate the displayed option when history, fitness or the pool changes.
+    final candidate =
+        suggestions
+            .where((c) => c.choice.content == _alternativeContent)
+            .firstOrNull ??
+        advice?.candidate;
+    final planned = _todayChoice;
+    final choice = planned ?? (advice?.rest == true ? null : candidate?.choice);
+    final plannedSeconds = planned?.workout.segments.fold<int>(
+      0,
+      (sum, segment) => sum + math.max(0, segment.duration),
+    );
     return Container(
       key: const ValueKey('workout-coach-card'),
       padding: const EdgeInsets.all(20),
@@ -225,7 +314,7 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
           ),
           const SizedBox(height: 16),
           Text(
-            advice?.title ??
+            (planned != null ? 'Today’s planned ride' : advice?.title) ??
                 (_failed
                     ? 'Choose a ride that feels right'
                     : 'Finding your next ride…'),
@@ -237,13 +326,39 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
           ),
           const SizedBox(height: 8),
           Text(
-            advice?.reason ??
+            (planned != null
+                    ? 'Scheduled for today on Intervals.icu.'
+                    : advice?.reason) ??
                 (_failed
                     ? 'Ride suggestions are unavailable right now. Your workout library is ready.'
                     : 'Looking at your recent rides and available workouts.'),
             style: const TextStyle(color: muted, height: 1.4),
           ),
           if (advice != null) ...[
+            const SizedBox(height: 12),
+            Tooltip(
+              message:
+                  'Suggested load for your next session, based on your goal and recent training. Completed rides are already taken into account.',
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: .1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  advice.rest
+                      ? 'Recommended TSS today: 0 · Rest day'
+                      : 'Recommended TSS today: ~${advice.recommendedTss.round()}',
+                  style: const TextStyle(
+                    color: accent,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
             if (data?.wellness != null)
               WorkoutFitnessTrend(history: trendHistory, now: now),
             if (!hasGraph) ...[
@@ -252,7 +367,7 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
                 '${advice.rides} completed ${advice.rides == 1 ? 'ride' : 'rides'} in the last 7 days',
                 style: const TextStyle(color: muted, fontSize: 12),
               ),
-              if (advice.recoveryNote != null) ...[
+              if (planned == null && advice.recoveryNote != null) ...[
                 const SizedBox(height: 8),
                 Text(
                   advice.recoveryNote!,
@@ -261,7 +376,7 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
               ],
             ],
           ],
-          if (advice?.rest == true) ...[
+          if (planned == null && advice?.rest == true) ...[
             const SizedBox(height: 24),
             const Icon(Icons.spa_outlined, size: 48, color: accent),
             const SizedBox(height: 12),
@@ -269,36 +384,65 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
               'Recovery is part of getting stronger. Come back refreshed.',
               style: TextStyle(color: muted, height: 1.5),
             ),
-          ] else if (candidate != null) ...[
+          ] else if (choice != null) ...[
             const SizedBox(height: 16),
-            Text(
-              candidate.choice.name,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    choice.name,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (planned == null)
+                  IconButton(
+                    key: const ValueKey('workout-coach-alternative'),
+                    tooltip: suggestions.length > 1
+                        ? 'Try another workout with similar training load'
+                        : 'No other workouts with similar training load',
+                    icon: const Icon(Icons.swap_horiz_rounded),
+                    color: accent,
+                    onPressed: suggestions.length > 1
+                        ? () => setState(() {
+                            final index = suggestions.indexOf(candidate!);
+                            _alternativeContent =
+                                suggestions[(index + 1) % suggestions.length]
+                                    .choice
+                                    .content;
+                          })
+                        : null,
+                  ),
+              ],
             ),
             const SizedBox(height: 6),
             Text(
-              '${candidate.choice.source} · ${(candidate.seconds / 60).round()} min · ${candidate.session == CoachSession.shortHiit
-                  ? 'Short HIIT'
-                  : candidate.session == CoachSession.longIntervals
-                  ? 'Long intervals'
-                  : candidate.intensity <= .65
-                  ? 'Easy effort'
-                  : candidate.intensity <= .8
-                  ? 'Steady effort'
-                  : 'Challenging effort'} · ${WorkoutTrainingLoad.label(candidate.tss)}',
+              planned != null
+                  ? '${planned.source} · ${plannedSeconds == 0 ? 'Open-ended ride' : '${(plannedSeconds! / 60).round()} min'} · ${WorkoutTrainingLoad.label(planned.estimatedTss)}'
+                  : '${candidate!.choice.source} · ${(candidate.seconds / 60).round()} min · ${candidate.session == CoachSession.shortHiit
+                        ? 'Short HIIT'
+                        : candidate.session == CoachSession.longIntervals
+                        ? 'Long intervals'
+                        : candidate.intensity <= .65
+                        ? 'Easy effort'
+                        : candidate.intensity <= .8
+                        ? 'Steady effort'
+                        : 'Challenging effort'} · ${WorkoutTrainingLoad.label(candidate.tss)}',
               style: const TextStyle(color: accent, fontSize: 12),
             ),
             const SizedBox(height: 16),
             Semantics(
-              label: 'Suggested workout power profile',
+              label: planned != null
+                  ? 'Today’s planned workout power profile'
+                  : 'Suggested workout power profile',
               child: SizedBox(
                 height: 48,
                 width: double.infinity,
                 child: RepaintBoundary(
                   child: CustomPaint(
-                    painter: WorkoutPainter.preview(
-                      candidate.choice.workout.segments,
-                    ),
+                    painter: WorkoutPainter.preview(choice.workout.segments),
                   ),
                 ),
               ),
@@ -310,16 +454,43 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (candidate != null && advice?.rest != true)
+              if (choice != null)
                 FilledButton.icon(
-                  onPressed: () => widget.onSelect(candidate.choice),
+                  onPressed: () => widget.onSelect(choice),
                   icon: const Icon(Icons.playlist_add_check_rounded, size: 18),
-                  label: const Text('Load suggested ride'),
+                  label: Text(
+                    planned != null
+                        ? 'Load today’s ride'
+                        : 'Load suggested ride',
+                  ),
                 ),
               TextButton.icon(
                 onPressed: widget.onBrowse,
                 icon: const Icon(Icons.folder_open, size: 18),
                 label: const Text('Explore workouts'),
+              ),
+              TextButton.icon(
+                onPressed:
+                    _connected == null || _refreshingIntervals || _reconnecting
+                    ? null
+                    : _connected!
+                    ? _refreshIntervals
+                    : _reconnect,
+                icon: Icon(
+                  _connected == true ? Icons.refresh : Icons.link,
+                  size: 18,
+                ),
+                label: Text(
+                  _reconnecting
+                      ? 'Connecting to Intervals.icu…'
+                      : _refreshingIntervals
+                      ? 'Refreshing Intervals.icu…'
+                      : _connected == null
+                      ? 'Checking Intervals.icu…'
+                      : _connected!
+                      ? 'Refresh Intervals.icu'
+                      : 'Connect to Intervals.icu',
+                ),
               ),
             ],
           ),
@@ -376,7 +547,9 @@ class _WorkoutCoachCardState extends State<WorkoutCoachCard>
                     ],
                     const SizedBox(height: 8),
                     TextButton.icon(
-                      onPressed: _reconnecting ? null : _reconnect,
+                      onPressed: _reconnecting || _refreshingIntervals
+                          ? null
+                          : _reconnect,
                       icon: const Icon(Icons.link, size: 18),
                       label: Text(
                         _reconnecting

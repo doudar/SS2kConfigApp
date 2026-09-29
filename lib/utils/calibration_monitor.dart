@@ -43,6 +43,9 @@ enum CalibrationPhase {
   /// force is too low and the search is triggering before the real end stop.
   failedUnstable,
 
+  /// Resistance-based calibration failed; the log may include a specific cause.
+  failedFtms,
+
   /// The shifter moved during homing, which the firmware treats as an abort.
   failedAborted,
 
@@ -122,6 +125,7 @@ extension CalibrationPhaseX on CalibrationPhase {
   bool get isFailure =>
       this == CalibrationPhase.failedTimeout ||
       this == CalibrationPhase.failedUnstable ||
+      this == CalibrationPhase.failedFtms ||
       this == CalibrationPhase.failedAborted ||
       this == CalibrationPhase.failedUnsupported ||
       this == CalibrationPhase.failedToStart ||
@@ -137,6 +141,10 @@ extension CalibrationPhaseX on CalibrationPhase {
 enum CalibrationStartStage { logStreamEnable, notificationsReady, dispatch }
 
 enum HomingGaugeMode { ftmsResistance, endStopStallGuard }
+
+/// Extra stages advertised by transition-based FTMS firmware. Older firmware
+/// continues to use the minimum/maximum checklist without these stages.
+enum FtmsCalibrationStage { lowBoundary, highBoundary, mapping, saving }
 
 /// A normalized snapshot for the live homing gauge. FTMS mode maps reported
 /// resistance directly from 0–100; end-stop mode maps load toward its trip
@@ -210,6 +218,10 @@ class CalibrationPhaseTracker {
   CalibrationAckSource? _ackSource;
   int? _controlPointResult;
   HomingGaugeReading? _gaugeReading;
+  FtmsCalibrationStage? _ftmsStage;
+  int _mapSamples = 0;
+  final Set<String> _mapSampleLines = {};
+  String? _ftmsFailure;
 
   /// The hMax the device already had before this run. Anything equal to it is
   /// an echo of the old value, not a new end stop. See [onHomingValueChanged].
@@ -231,6 +243,9 @@ class CalibrationPhaseTracker {
   bool get maxFound => _maxFound;
   bool get homingStarted => _homingStarted;
   HomingGaugeReading? get gaugeReading => _gaugeReading;
+  FtmsCalibrationStage? get ftmsStage => _ftmsStage;
+  int get mapSamples => _mapSamples;
+  String? get ftmsFailure => _ftmsFailure;
 
   /// The ends of the travel this run found, or null while either is unproven.
   /// Deliberately never filled in from the device's stored settings on their
@@ -266,6 +281,10 @@ class CalibrationPhaseTracker {
     _ackSource = null;
     _controlPointResult = null;
     _gaugeReading = null;
+    _ftmsStage = null;
+    _mapSamples = 0;
+    _mapSampleLines.clear();
+    _ftmsFailure = null;
     _hMaxBaseline = hMaxBaseline;
     _foundMin = null;
     _foundMax = null;
@@ -323,6 +342,15 @@ class CalibrationPhaseTracker {
     if (!_homingStarted) return false;
 
     _captureGaugeReading(message);
+    final ftmsProgressChanged = _captureFtmsProgress(m);
+
+    if (m.contains('ftms homing failure:') ||
+        m.contains('ftms homing failed or aborted') ||
+        m.contains('ftms transition homing requires')) {
+      _usedFtmsPath = true;
+      _ftmsFailure = _describeFtmsFailure(m);
+      return _fail(CalibrationPhase.failedFtms);
+    }
 
     // Failures first — they are the most specific, and several of them share
     // wording with the progress lines.
@@ -376,7 +404,7 @@ class CalibrationPhaseTracker {
     // Stepper.cpp:247 ("Homing backward (min)") and :351.
     if (m.contains('homing backward (min)') ||
         m.contains('homing to min resistance')) {
-      return _advanceTo(CalibrationPhase.searchingMin);
+      return _advanceTo(CalibrationPhase.searchingMin) || ftmsProgressChanged;
     }
 
     // Stepper.cpp:485 and :355.
@@ -389,7 +417,7 @@ class CalibrationPhaseTracker {
       final changed = !_minFound || _phase != CalibrationPhase.searchingMax;
       _minFound = true;
       _phase = CalibrationPhase.searchingMax;
-      return changed;
+      return changed || ftmsProgressChanged;
     }
 
     // Stepper.cpp:247 ("Homing forward (max)") and :362. The firmware never
@@ -400,7 +428,7 @@ class CalibrationPhaseTracker {
       final changed = !_minFound || _phase != CalibrationPhase.searchingMax;
       _minFound = true;
       _phase = CalibrationPhase.searchingMax;
-      return changed;
+      return changed || ftmsProgressChanged;
     }
 
     // Stepper.cpp:366 — the resistance path's last word. It returns to the
@@ -427,14 +455,94 @@ class CalibrationPhaseTracker {
 
     // Stepper.cpp:520. Only reached when both end stops were found; every
     // failure path returns before it.
-    if (m.contains('homing procedure complete')) {
+    if (m.contains('homing procedure complete') ||
+        m.contains('ftms homing complete:')) {
       _minFound = true;
       _maxFound = true;
       _phase = CalibrationPhase.complete;
       return true;
     }
 
-    return false;
+    return ftmsProgressChanged;
+  }
+
+  bool _captureFtmsProgress(String message) {
+    final previous = _ftmsStage;
+    final previousSamples = _mapSamples;
+    final reading = _ftmsGaugeLine.firstMatch(message);
+    // These targets and the request marker are specific to FtmsHoming::Search.
+    // They also let progress recover if the opening log line was dropped.
+    if (message.contains('ftms homing request:') ||
+        message.contains('ftms origin:')) {
+      _ftmsStage ??= FtmsCalibrationStage.lowBoundary;
+    }
+    if (reading != null) {
+      final target = double.parse(reading.group(3)!);
+      final upper = reading.group(1) == 'max';
+      if (!upper && (target == 10 || target == 2)) {
+        _ftmsStage = FtmsCalibrationStage.lowBoundary;
+      } else if (upper && (target == 90 || target == 98)) {
+        _ftmsStage = FtmsCalibrationStage.highBoundary;
+      } else if (upper && const [67, 58, 50, 33].contains(target)) {
+        _ftmsStage = FtmsCalibrationStage.mapping;
+        // The firmware visits 67, then stages at 58 before crossing 50,
+        // then visits 33. Targets prove earlier samples even if logs drop.
+        _mapSamples = math.max(
+          _mapSamples,
+          target == 33 ? 2 : (target == 67 ? 0 : 1),
+        );
+      }
+      _usedFtmsPath = true;
+    }
+    final sample = RegExp(
+      r'ftms map sample: resistance=(\d+(?:\.\d+)?) position=(-?\d+)',
+    ).firstMatch(message);
+    if (sample != null) {
+      _ftmsStage = FtmsCalibrationStage.mapping;
+      if (_mapSampleLines.add(sample.group(0)!)) {
+        // Samples are near 67, 50.5 and 33, in descending order. Do not use
+        // travel=...% as overall completion: that is a motor coordinate.
+        final level = double.parse(sample.group(1)!);
+        _mapSamples = math.max(
+          _mapSamples,
+          level > 58 ? 1 : (level > 42 ? 2 : 3),
+        );
+      }
+      _minFound = true;
+      _phase = CalibrationPhase.searchingMax;
+    }
+    if (_ftmsStage != null) {
+      _usedFtmsPath = true;
+      if (_mapSamples == 3 || message.contains('max position found')) {
+        _ftmsStage = FtmsCalibrationStage.saving;
+      }
+    }
+    return previous != _ftmsStage || previousSamples != _mapSamples;
+  }
+
+  String _describeFtmsFailure(String message) {
+    if (message.contains('no fresh resistance report') ||
+        message.contains('resistance is simulated')) {
+      return 'Live resistance data stopped or is simulated. Check that Grupetto BLE TX is on and Bike+ resistance is reaching SmartSpin2k, then try again.';
+    }
+    if (message.contains('opposite the command')) {
+      return 'Resistance moved in the wrong direction. Check the motor direction and coupling before trying again.';
+    }
+    if (message.contains('resistance stopped changing') ||
+        message.contains('motor command failed')) {
+      return 'Resistance did not respond to motor movement. Check the motor, coupling and live resistance data before trying again.';
+    }
+    if (message.contains('outside 0-100') ||
+        message.contains('1-99 interior')) {
+      return 'The bike must report resistance on a 0–100 scale covering at least 1–99. Check the resistance source before trying again.';
+    }
+    if (message.contains('search timeout')) {
+      return 'A resistance measurement took too long. Check that live resistance follows knob movement, then try again.';
+    }
+    if (message.contains('cancelled by shifter')) {
+      return 'Calibration was cancelled by a shifter or resistance-source change. Leave the shifter and resistance connection unchanged, then try again.';
+    }
+    return 'SmartSpin2k could not confirm and save the resistance calibration. Check the resistance data and motor coupling, then try again.';
   }
 
   /// The homing min/max characteristics notify separately from the log queue,
@@ -978,6 +1086,7 @@ class CalibrationMonitor extends ChangeNotifier {
     required this.deviceData,
     required this.device,
     this.overallTimeout = const Duration(minutes: 8),
+    this.ftmsMappingTimeout = const Duration(minutes: 12),
     this.stallTimeout = const Duration(seconds: 45),
     this.pedalHintDelay = const Duration(seconds: 20),
     this.logSilenceTimeout = const Duration(seconds: 15),
@@ -991,6 +1100,10 @@ class CalibrationMonitor extends ChangeNotifier {
   /// Hard ceiling on a run. The firmware's worst case is seven taps at a
   /// 30-second timeout for each of two end stops.
   final Duration overallTimeout;
+
+  /// Two endpoint searches and three references (including the middle staging
+  /// search) each have their own two-minute firmware budget.
+  final Duration ftmsMappingTimeout;
 
   /// The firmware logs progress about once a second while it is searching, so
   /// prolonged silence after it has started means the run died.
@@ -1048,6 +1161,9 @@ class CalibrationMonitor extends ChangeNotifier {
   /// log is dead must still report `logStreamSilent`.
   final List<CalibrationLogEntry> _machineStatusLog = [];
   DateTime? _runStartedAt;
+  DateTime? _runFinishedAt;
+  Timer? _elapsedTimer;
+  bool _extendedFtmsTimeout = false;
   int _droppedLines = 0;
   int _droppedStatusFrames = 0;
 
@@ -1160,6 +1276,12 @@ class CalibrationMonitor extends ChangeNotifier {
   bool get showPedalHint => _showPedalHint;
   bool get homingStarted => _tracker.homingStarted;
   HomingGaugeReading? get gaugeReading => _tracker.gaugeReading;
+  FtmsCalibrationStage? get ftmsStage => _tracker.ftmsStage;
+  int get mapSamples => _tracker.mapSamples;
+  String? get ftmsFailure => _tracker.ftmsFailure;
+  Duration get elapsed => _runStartedAt == null
+      ? Duration.zero
+      : (_runFinishedAt ?? DateTime.now()).difference(_runStartedAt!);
 
   /// The travel this run found, in stepper steps, or null while either end is
   /// still unproven. See [CalibrationPhaseTracker.foundMin].
@@ -1227,6 +1349,8 @@ class CalibrationMonitor extends ChangeNotifier {
     _machineStatusLog.clear();
     _droppedStatusFrames = 0;
     _runStartedAt = DateTime.now();
+    _runFinishedAt = null;
+    _extendedFtmsTimeout = false;
     _showPedalHint = false;
     _logStreamSilent = false;
     _deviceLogSeen = false;
@@ -1267,6 +1391,7 @@ class CalibrationMonitor extends ChangeNotifier {
       unawaited(_stopLogStreaming());
       _releaseFtmsSession();
       _tracker.markStartFailed();
+      _runFinishedAt = DateTime.now();
       _safeNotify();
     }
   }
@@ -1283,6 +1408,10 @@ class CalibrationMonitor extends ChangeNotifier {
         _safeNotify();
       }
     });
+    _elapsedTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _safeNotify(),
+    );
 
     if (deviceData.isSimulated) {
       _notificationsReadiness = FtmsNotificationsReadiness.ready;
@@ -1408,7 +1537,9 @@ class CalibrationMonitor extends ChangeNotifier {
     _controlPointSubscription?.cancel();
 
     _logSubscription = deviceData.logStream.listen(_handleLogMessage);
-    _characteristicSubscription = deviceData.characteristicChanges.listen((event) {
+    _characteristicSubscription = deviceData.characteristicChanges.listen((
+      event,
+    ) {
       final isMax = event.vName == BLE_hMaxVname;
       if (!isMax && event.vName != BLE_hMinVname) return;
 
@@ -1505,7 +1636,9 @@ class CalibrationMonitor extends ChangeNotifier {
       // report must agree about which failure this was, and the underlying
       // transport state can move between the two reads.
       _transportStalled = deviceData.isDirConFallbackSilent;
-      if (!_tracker.markNoAcknowledgement(transportStalled: _transportStalled)) {
+      if (!_tracker.markNoAcknowledgement(
+        transportStalled: _transportStalled,
+      )) {
         return;
       }
       _note(
@@ -1597,6 +1730,20 @@ class CalibrationMonitor extends ChangeNotifier {
   /// Shared bookkeeping after any signal — log line, `hMax`, or spin-down
   /// status — moved the run along.
   void _afterProgress() {
+    if (!_extendedFtmsTimeout &&
+        _tracker.ftmsStage != null &&
+        !_tracker.phase.isTerminal) {
+      _extendedFtmsTimeout = true;
+      if (ftmsMappingTimeout > overallTimeout) {
+        _overallTimer?.cancel();
+        _overallTimer = Timer(ftmsMappingTimeout - elapsed, () {
+          if (_tracker.markTimedOut()) {
+            _finishRun();
+            _safeNotify();
+          }
+        });
+      }
+    }
     if (_showPedalHint &&
         _tracker.phase != CalibrationPhase.waitingForCadence) {
       _showPedalHint = false;
@@ -1653,6 +1800,7 @@ class CalibrationMonitor extends ChangeNotifier {
   /// read their final limits back, but all outcomes release the log stream and
   /// the FTMS lease — which lets any deferred settings sweep run.
   void _finishRun() {
+    _runFinishedAt ??= DateTime.now();
     _cancelTimers();
     _refreshHomingValues();
     unawaited(_stopLogStreaming());
@@ -1674,7 +1822,8 @@ class CalibrationMonitor extends ChangeNotifier {
   }
 
   Future<void> _stopLogStreaming() async {
-    if (deviceData.isSimulated || !_logStreamingStarted || _logDisableSent) return;
+    if (deviceData.isSimulated || !_logStreamingStarted || _logDisableSent)
+      return;
 
     _logDisableSent = true;
     _logStreamingStarted = false;
@@ -1743,6 +1892,8 @@ class CalibrationMonitor extends ChangeNotifier {
   }
 
   void _cancelTimers() {
+    _elapsedTimer?.cancel();
+    _elapsedTimer = null;
     _overallTimer?.cancel();
     _stallTimer?.cancel();
     _pedalHintTimer?.cancel();

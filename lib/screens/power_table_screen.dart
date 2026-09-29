@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import '../utils/bleConstants.dart';
 import '../utils/constants.dart';
 import '../utils/device_data.dart';
 import '../utils/device_transport_state.dart';
@@ -66,11 +67,13 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
         unawaited(
           deviceData.requestSetting(widget.device, shifterPositionVname),
         );
+        unawaited(deviceData.requestSetting(widget.device, FTMSModeVname));
       },
     )..attach();
     if (deviceData.isTransportActive) {
       unawaited(deviceData.ensureFtmsNotifications(widget.device));
       unawaited(deviceData.requestSetting(widget.device, shifterPositionVname));
+      unawaited(deviceData.requestSetting(widget.device, FTMSModeVname));
     }
   }
 
@@ -328,8 +331,11 @@ class _PowerTableScreenState extends State<PowerTableScreen> {
                                     builder: (context, snapshot) {
                                       final target =
                                           deviceData.simulatedTargetWatts;
-                                      if (target.isEmpty)
+                                      if (deviceData.FTMSmode !=
+                                              FTMSOpCodes.SET_TARGET_POWER ||
+                                          target.isEmpty) {
                                         return const SizedBox.shrink();
+                                      }
                                       return Text(
                                         'Target $target W',
                                         style: const TextStyle(

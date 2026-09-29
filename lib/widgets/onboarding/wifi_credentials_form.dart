@@ -7,7 +7,7 @@ import '../../utils/device_data.dart';
 import '../../utils/constants.dart';
 import '../network_settings_save.dart';
 
-/// Inline SSID + password form for the wizard WiFi step.
+/// Shared SSID + password form for network settings and the wizard WiFi step.
 /// Saves WiFi credentials together and offers a reboot when they change.
 class WifiCredentialsForm extends StatefulWidget {
   final BluetoothDevice device;
@@ -115,6 +115,8 @@ class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
         TextField(
           controller: _ssidController,
           enabled: !_saving,
+          autocorrect: false,
+          enableSuggestions: false,
           decoration: const InputDecoration(
             labelText: 'Network name (SSID)',
             border: OutlineInputBorder(),
@@ -126,11 +128,14 @@ class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
         TextField(
           controller: _passwordController,
           enabled: !_saving,
+          autocorrect: false,
+          enableSuggestions: false,
           obscureText: !_passwordVisible,
           decoration: InputDecoration(
             labelText: 'Password',
             border: const OutlineInputBorder(),
             suffixIcon: IconButton(
+              tooltip: _passwordVisible ? 'Hide password' : 'Show password',
               icon: Icon(
                 _passwordVisible ? Icons.visibility : Icons.visibility_off,
               ),
@@ -143,17 +148,24 @@ class _WifiCredentialsFormState extends State<WifiCredentialsForm> {
           onChanged: (_) => setState(() => _saved = false),
         ),
         const SizedBox(height: 12),
-        Row(
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             FilledButton(
               onPressed: _saving ? null : _save,
               child: const Text('Save to SmartSpin2k'),
             ),
             if (_saved) ...[
-              const SizedBox(width: 12),
-              const Icon(Icons.check_circle, color: Colors.green, size: 20),
-              const SizedBox(width: 4),
-              const Text('Saved', style: TextStyle(color: Colors.green)),
+              const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  SizedBox(width: 4),
+                  Text('Saved', style: TextStyle(color: Colors.green)),
+                ],
+              ),
             ],
           ],
         ),

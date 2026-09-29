@@ -20,7 +20,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'services/strava_service.dart';
 import 'services/intervals_service.dart';
-import 'screens/bluetooth_off_screen.dart';
 import 'screens/scan_screen.dart';
 import 'screens/onboarding/onboarding_wizard.dart';
 import 'package:fvp/fvp.dart' as fvp;
@@ -48,8 +47,7 @@ void main() async {
 }
 
 //
-// This widget shows BluetoothOffScreen or
-// ScanScreen depending on the adapter state
+// This widget shows discovery or onboarding, independent of BLE availability.
 //
 class SmartSpin2kApp extends StatefulWidget {
   const SmartSpin2kApp({Key? key}) : super(key: key);
@@ -416,9 +414,8 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     required bool onboardingCompleted,
     required bool demoMode,
   }) {
-    if (adapterState != BluetoothAdapterState.on && !kIsWeb) {
-      return BluetoothOffScreen(adapterState: adapterState);
-    } else if (onboardingCompleted || demoMode) {
+    // Network discovery and Dircon work even when the BLE adapter is off.
+    if (onboardingCompleted || demoMode) {
       return const ScanScreen();
     } else {
       return ChangeNotifierProvider(
@@ -445,45 +442,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
         theme: themeProvider.darkTheme,
         darkTheme: themeProvider.darkTheme,
         home: screen,
-        navigatorObservers: [BluetoothAdapterStateObserver()],
       ),
     );
-  }
-}
-
-//
-// This observer listens for Bluetooth Off and dismisses the DeviceScreen
-//
-class BluetoothAdapterStateObserver extends NavigatorObserver {
-  StreamSubscription<BluetoothAdapterState>? _adapterStateSubscription;
-
-  @override
-  void didPush(Route route, Route? previousRoute) {
-    super.didPush(route, previousRoute);
-    if (route.settings.name == '/MainDeviceScreen') {
-      // Start listening to Bluetooth state changes when a new route is pushed
-      if (!kIsWeb) {
-        try {
-          _adapterStateSubscription ??= FlutterBluePlus.adapterState.listen((
-            state,
-          ) {
-            if (state != BluetoothAdapterState.on) {
-              // Pop the current route if Bluetooth is off
-              navigator?.pop();
-            }
-          });
-        } catch (e) {
-          debugPrint('Error listening to adapter state in observer: $e');
-        }
-      }
-    }
-  }
-
-  @override
-  void didPop(Route route, Route? previousRoute) {
-    super.didPop(route, previousRoute);
-    // Cancel the subscription when the route is popped
-    _adapterStateSubscription?.cancel();
-    _adapterStateSubscription = null;
   }
 }

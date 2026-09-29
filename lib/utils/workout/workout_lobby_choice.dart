@@ -21,12 +21,15 @@ class WorkoutLobbyChoice {
 
   /// A small, cached shelf, not a second workout library or recommendation
   /// engine. Failure of one local entry must not hide the other choices.
-  static Future<List<WorkoutLobbyChoice>> loadChoices() async {
+  static Future<List<WorkoutLobbyChoice>> loadChoices({
+    String? excludeName,
+  }) async {
     final choices = <WorkoutLobbyChoice>[];
     void add(String content, String source) {
       try {
         final choice = WorkoutLobbyChoice(content: content, source: source);
-        if (choice.workout.segments.isNotEmpty &&
+        if (choice.name != excludeName &&
+            choice.workout.segments.isNotEmpty &&
             !choices.any((other) => other.name == choice.name)) {
           choices.add(choice);
         }
@@ -37,14 +40,12 @@ class WorkoutLobbyChoice {
 
     try {
       final saved = await WorkoutStorage.getSavedWorkouts();
-      saved.sort(
-        (a, b) => ((b['timestamp'] as num?) ?? 0).compareTo(
-          (a['timestamp'] as num?) ?? 0,
-        ),
-      );
-      for (final entry in saved.take(3)) {
+      // Pick from the whole library, skipping unusable or selected workouts.
+      saved.shuffle();
+      for (final entry in saved) {
         final content = entry['content'];
         if (content is String) add(content, 'YOUR LIBRARY');
+        if (choices.isNotEmpty) break;
       }
     } catch (_) {
       // Still offer bundled workouts if the saved library cannot be read.

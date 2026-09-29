@@ -33,6 +33,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Find and connect to SmartSpin2k devices on your local network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_wahoo-fitness-tnp._tcp</string>
+	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>This app requires Bluetooth to communicate with the SmartSpin2k.</string>
 	<key>NSHumanReadableCopyright</key>
