@@ -108,8 +108,12 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
         icon: const Icon(Icons.wifi),
         title: const Text('Connect SmartSpin2k to Wi-Fi'),
         content: const Text(
-          'Your SmartSpin2k must be connected to your home Wi-Fi network to '
-          'use SmartSpin2k Config App and Grupetto at the same time. If you plan to use Grupetto, please connect your SmartSpin2k to Wi-Fi now.',
+          'Using Grupetto on this device? Connect SmartSpin2k to the same '
+          'Wi-Fi network as this device to use both apps together.\n\n'
+          'If SmartSpin2k is not responding here, open SmartSpin2k Config App '
+          'on a different phone or tablet and connect to SmartSpin2k over '
+          'Bluetooth. Use Settings → Network to configure its Wi-Fi, '
+          'then return to this device and reconnect.',
         ),
         actions: [
           TextButton(
@@ -490,10 +494,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: WorkoutVisuals.ink,
-      appBar: SS2KAppBar(
-        device: widget.device,
-        title: "Device",
-      ),
+      appBar: SS2KAppBar(device: widget.device, title: "Device"),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {

@@ -1327,6 +1327,7 @@ class DeviceData {
     // The breaker describes a link that no longer exists; the next one starts
     // with a clean record.
     _consecutiveCustomResponseTimeouts = 0;
+    customResponseReceived.value = false;
     customResponsesDegraded.value = false;
     subscribed = false;
     charReceived.value = false;
@@ -3407,6 +3408,10 @@ class DeviceData {
     false,
   );
 
+  /// Evidence that a BLE request was answered in the current session. GATT
+  /// connection, discovery and write acknowledgements alone do not prove this.
+  final ValueNotifier<bool> customResponseReceived = ValueNotifier<bool>(false);
+
   void _recordCustomResponseTimeout() {
     _consecutiveCustomResponseTimeouts++;
     if (_consecutiveCustomResponseTimeouts < _customResponseFailureThreshold ||
@@ -3433,6 +3438,7 @@ class DeviceData {
   /// characteristic.
   void _recordCustomResponseSuccess() {
     _consecutiveCustomResponseTimeouts = 0;
+    customResponseReceived.value = true;
     if (customResponsesDegraded.value) {
       customResponsesDegraded.value = false;
       print('[transport] link recovered: background polling resumed');
