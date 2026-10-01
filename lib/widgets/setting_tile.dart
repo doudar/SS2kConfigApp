@@ -15,10 +15,12 @@ import "../widgets/slider_card.dart";
 import "../widgets/bool_card.dart";
 import "../widgets/plain_text_card.dart";
 import '../widgets/dropdown_card.dart';
+import 'groupset_card.dart';
 import 'onboarding/wifi_credentials_form.dart';
 
 import '../utils/device_data.dart';
 import '../utils/stream_extensions.dart';
+import '../utils/virtual_gearing.dart';
 import 'device_settings_style.dart';
 import 'ss2k_app_bar.dart';
 import '../utils/workout/workout_visuals.dart';
@@ -80,6 +82,8 @@ class SettingEditor extends StatelessWidget {
         editor = SingleChildScrollView(
           child: boolCard(device: device, c: c),
         );
+      case "gearTeeth":
+        editor = GroupsetCard(device: device, c: c);
       default:
         editor = SingleChildScrollView(
           child: plainTextCard(device: device, c: c),
@@ -177,11 +181,17 @@ class _SettingTileState extends State<SettingTile> {
     if (this.deviceData.charReceived.value) {
       try {
         // Subscribe to characteristic changes stream instead of direct onValueReceived
+        // The groupset label also depends on the preset characteristic.
+        final isGroupset = c["type"] == "gearTeeth";
         _charSubscription = deviceData.characteristicChanges
-            .where((event) => event.vName == c["vName"])
+            .where(
+              (event) =>
+                  event.vName == c["vName"] ||
+                  (isGroupset && event.vName == gearPresetVname),
+            )
             .debounce(const Duration(milliseconds: 100))
             .listen((event) {
-              if (_value != c["value"]) {
+              if (_value != valueFormatter()) {
                 _value = valueFormatter();
                 if (mounted) {
                   setState(() {});
@@ -195,6 +205,13 @@ class _SettingTileState extends State<SettingTile> {
   }
 
   String valueFormatter() {
+    if (c["type"] == "gearTeeth") {
+      final preset = deviceData.customCharacteristic.firstWhere(
+        (item) => item["vName"] == gearPresetVname,
+        orElse: () => const <String, dynamic>{},
+      );
+      return groupsetLabel(c["value"], preset["value"]?.toString());
+    }
     String _ret = c["value"] ?? "";
     if (_ret == "true" || _ret == "false") {
       _ret = (_ret == "true") ? "On" : "Off";

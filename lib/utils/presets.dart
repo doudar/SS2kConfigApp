@@ -12,6 +12,7 @@ import './device_data.dart';
 import './snackbar.dart';
 import './extra.dart';
 import './constants.dart';
+import './virtual_gearing.dart';
 
 import './preset_sharing.dart';
 import '../widgets/settings_backup_name_dialog.dart';
@@ -574,10 +575,21 @@ class PresetManager {
         var currentItem = matchingItems.isNotEmpty ? matchingItems.first : null;
 
         if (currentItem != null && currentItem['isSetting'] == true) {
+          var value = savedItem['value'];
+          if (currentItem['type'] == 'gearTeeth') {
+            final savedPreset = savedSettings.firstWhere(
+              (item) => item is Map && item['vName'] == gearPresetVname,
+              orElse: () => const {},
+            );
+            value = groupsetLabel(
+              value?.toString(),
+              savedPreset['value']?.toString(),
+            );
+          }
           displaySettings.add({
             'humanReadableName': currentItem['humanReadableName'],
             'vName': savedItem['vName'],
-            'value': savedItem['value'],
+            'value': value,
           });
         }
       }
