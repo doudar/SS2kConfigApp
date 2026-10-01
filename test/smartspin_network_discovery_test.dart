@@ -3,14 +3,17 @@ import 'dart:async';
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_blue_plus_platform_interface/flutter_blue_plus_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
+import 'package:ss2kconfigapp/utils/device_transport_state.dart';
 import 'package:ss2kconfigapp/utils/dircon_discovery.dart';
 import 'package:ss2kconfigapp/utils/smartspin_scan_result.dart';
 import 'package:ss2kconfigapp/widgets/scan_result_tile.dart';
 
 import 'support/fake_dircon_session.dart';
+import 'support/fake_ble_platform.dart';
 
 const endpoint = DirConEndpoint(
   id: 'aabbccddeeff',
@@ -60,6 +63,13 @@ BonsoirService service({
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  final platform = FakeBlePlatform();
+  FlutterBluePlusPlatform.instance = platform;
+
+  setUp(() async {
+    await FlutterBluePlus.isSupported;
+    platform.reset();
+  });
 
   test(
     'recognizes renamed SS2k by UUID and uses resolved address and port',
@@ -235,6 +245,95 @@ void main() {
       expect(connector.hosts, [endpoint.host]);
     },
   );
+
+  for (final throughMerge in [true, false]) {
+    test(
+      'late BLE handle enables fallback without replacing state ($throughMerge)',
+      () async {
+        final connector = FakeDirConConnector();
+        final data = DeviceData(
+          dirConConnector: connector.call,
+          dirConEndpointLookup: ({id, host, name}) async => null,
+        );
+        const initial = SmartSpinScanResult(network: endpoint);
+        final bluetooth = ble(id: 'late-ble-$throughMerge', ip: endpoint.host);
+        data.applyScanResult(initial);
+        DeviceDataManager.updateDataForDevice(initial.device, data);
+        addTearDown(() async {
+          data.stopConnectionMonitor();
+          data.dispose();
+          DeviceDataManager.clearDataForDevice(initial.device);
+          platform.markDisconnected(bluetooth.device.remoteId);
+          await Future<void>.delayed(Duration.zero);
+        });
+        await data.connectPreferred(initial.device, waitForSetup: true);
+        // Keep the background settings sweep out of this transport assertion.
+        data.beginInteractiveFtmsSession(initial.device);
+        final recovered = Completer<void>();
+        data.startConnectionMonitor(
+          initial.device,
+          onReconnected: () async {
+            if (!recovered.isCompleted) recovered.complete();
+          },
+        );
+        data.ftmsData.watts = 217;
+        final state = data.transportState.value;
+        final services = data.services;
+        final merged = SmartSpinScanResult.merge(
+          [bluetooth],
+          [endpoint],
+        ).single;
+        if (throughMerge) {
+          // Merely discovering the advertisement must update the active session.
+          final reused = DeviceDataManager.reuseConnectedIdentity(merged);
+          expect(reused.device, initial.device);
+          expect(DeviceDataManager.forDevice(reused.device), same(data));
+        } else {
+          // The tile's apply path must also work while DIRCON remains connected.
+          data.applyScanResult(
+            SmartSpinScanResult(
+              ble: bluetooth,
+              network: endpoint,
+              connectedIdentity: initial.device,
+            ),
+          );
+        }
+        expect(data.resolveTransportDevice(initial.device), bluetooth.device);
+        expect(data.transportState.value, same(state));
+        expect(data.services, same(services));
+        expect(data.ftmsData.watts, 217);
+        expect(connector.first.isClosed, isFalse);
+        expect(platform.connectCalls, isEmpty);
+        connector.first.dropConnection();
+        await recovered.future.timeout(const Duration(seconds: 5));
+        expect(platform.connectCalls.map((c) => c.remoteId), [
+          bluetooth.device.remoteId,
+        ]);
+        expect(
+          data.transportState.value.transport,
+          DeviceTransportKind.bluetooth,
+        );
+        expect(data.isTransportActive, isTrue);
+        expect(
+          data.ftmsControlPointCharacteristic!.remoteId,
+          bluetooth.device.remoteId,
+        );
+        // The original open screen still addresses the same session after fallback.
+        expect(
+          DeviceDataManager.reuseConnectedIdentity(merged).device,
+          initial.device,
+        );
+        await data.setupConnection(initial.device, sweepSettings: false);
+        expect(data.resolveTransportDevice(initial.device), bluetooth.device);
+        // Promotion must not add a second owner to the monitor's reference count.
+        data.stopConnectionMonitor();
+        platform.clearObservations();
+        platform.markDisconnected(bluetooth.device.remoteId);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(platform.connectCalls, isEmpty);
+      },
+    );
+  }
 
   testWidgets(
     'network-only scan tile displays blue router and enables connect',

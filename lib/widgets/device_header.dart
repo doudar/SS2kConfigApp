@@ -182,12 +182,13 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   /// `isConnected` check and the reply. Every caller here treats a failed read
   /// as "no signal", never as a reason to abandon what it was doing.
   Future<void> _readRssiInto() async {
-    if (!this.widget.device.isConnected) {
+    final device = deviceData.resolveTransportDevice(widget.device);
+    if (!device.isConnected) {
       this.deviceData.rssi.value = 0;
       return;
     }
     try {
-      this.deviceData.rssi.value = await this.widget.device.readRssi();
+      this.deviceData.rssi.value = await device.readRssi();
     } catch (e) {
       this.deviceData.rssi.value = 0;
     }

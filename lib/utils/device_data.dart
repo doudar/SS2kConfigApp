@@ -172,17 +172,21 @@ class DeviceDataManager {
   static SmartSpinScanResult reuseConnectedIdentity(
     SmartSpinScanResult result,
   ) {
-    for (final data in _dataMap.values) {
+    for (final entry in _dataMap.entries) {
+      final data = entry.value;
       if (!data.isTransportActive || data._connectedDevice == null) continue;
       final endpoint = data.discoveredEndpoint;
       final sameDevice = endpoint != null && result.network != null
           ? endpoint.id == result.network!.id
           : result.host != null && data.advertisedIpAddress == result.host;
       if (sameDevice) {
+        // Adopt newly discovered transports immediately, without waiting for
+        // the tile to be opened again or replacing the active session.
+        data.applyScanResult(result);
         return SmartSpinScanResult(
           ble: result.ble,
           network: result.network,
-          connectedIdentity: data._connectedDevice,
+          connectedIdentity: BluetoothDevice.fromId(entry.key),
         );
       }
     }
@@ -314,11 +318,27 @@ class DeviceData {
   bool _hasBleIdentity = true;
 
   void applyScanResult(SmartSpinScanResult result) {
+    if (_isDisposed) return;
+    final bluetooth = result.ble?.device;
+    if (bluetooth != null) {
+      _connectedDevice = bluetooth;
+      _hasBleIdentity = true;
+      if (_connectionMonitorUsers > 0) _ensureConnectionMonitor(bluetooth);
+    }
     if (isTransportActive) return;
     advertisedIpAddress = result.host;
     discoveredEndpoint = result.network;
-    _hasBleIdentity = !result.device.remoteId.str.startsWith('mdns:');
+    _hasBleIdentity =
+        bluetooth != null ||
+        !resolveTransportDevice(result.device).remoteId.str.startsWith('mdns:');
   }
+
+  /// Existing screens retain their original session handle after mDNS discovery.
+  /// Resolve that synthetic identity to the real BLE handle for transport work.
+  BluetoothDevice resolveTransportDevice(BluetoothDevice device) =>
+      device.remoteId.str.startsWith('mdns:') && _hasBleIdentity
+      ? _connectedDevice ?? device
+      : device;
 
   Future<bool> _refreshMdnsEndpoint(BluetoothDevice device) async {
     final endpoint = await _dirConEndpointLookup(
@@ -444,6 +464,11 @@ class DeviceData {
       _onReconnectedCallbacks.add(onReconnected);
     }
 
+    _ensureConnectionMonitor(device);
+  }
+
+  void _ensureConnectionMonitor(BluetoothDevice device) {
+    device = resolveTransportDevice(device);
     // Demo devices are intentionally transport-free. Their production widgets
     // still mount DeviceHeader, but a disconnected host Bluetooth stream must
     // not turn that into a real reconnect loop.
@@ -522,6 +547,7 @@ class DeviceData {
           'SmartSpin2k is unavailable over Dircon. Scan again to retry.',
         );
       }
+      device = resolveTransportDevice(device);
       _markTransportConnecting(DeviceTransportKind.bluetooth);
       final connected = await retryBleConnection(
         connect: device.connectAndUpdateStream,
@@ -553,6 +579,7 @@ class DeviceData {
   }
 
   Future<void> disconnectPreferred(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     isUserDisconnect = true;
     _markTransportDisconnected(explicit: true);
     final notifySubscription = _notifySubscription;
@@ -812,6 +839,7 @@ class DeviceData {
 
     _dirConReconnectInProgress = true;
     try {
+      device = resolveTransportDevice(device);
       print(
         '[DIRCON][FALLBACK] start reason=disconnect host=$disconnectedAddress',
       );
@@ -846,6 +874,7 @@ class DeviceData {
   }
 
   Future<void> _connectBleAfterDirConLoss(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     _markTransportConnecting(DeviceTransportKind.bluetooth);
     final stopwatch = Stopwatch()..start();
     final reusedSession = device.isConnected;
@@ -1007,6 +1036,7 @@ class DeviceData {
   Future<void> _refreshAdvertisedEndpointForReconnect(
     BluetoothDevice device,
   ) async {
+    device = resolveTransportDevice(device);
     try {
       if (await _refreshMdnsEndpoint(device)) return;
     } catch (error) {
@@ -1101,7 +1131,7 @@ class DeviceData {
     bool settle = true,
   }) {
     if (_isDisposed) return;
-    _connectedDevice = device;
+    _connectedDevice = resolveTransportDevice(device);
     final wasAlreadyConnected =
         _transportStateController.value.transport == transport &&
         _transportStateController.value.phase == DeviceTransportPhase.connected;
@@ -1168,6 +1198,7 @@ class DeviceData {
     Future<void> Function()? onReconnected,
   }) async {
     if (isUserDisconnect || _isDisposed) return false;
+    device = resolveTransportDevice(device);
 
     if (_reconnecting) {
       _reconnectRequested = true;
@@ -1235,6 +1266,7 @@ class DeviceData {
             await _refreshMdnsEndpoint(device);
             throw StateError('Waiting for SmartSpin2k Dircon endpoint');
           }
+          device = resolveTransportDevice(device);
           if (!device.isConnected) {
             print(
               '[AutoReconnect] Attempt $attempt/$maxAttempts connecting...',
@@ -1612,6 +1644,7 @@ class DeviceData {
     bool markTransportConnected = true,
     bool sweepSettings = true,
   }) {
+    device = resolveTransportDevice(device);
     if (isSimulated) return Future.value();
 
     if (isDirConConnected) {
@@ -1722,6 +1755,7 @@ class DeviceData {
   Future<BluetoothCharacteristic?> _getMyCharacteristic(
     BluetoothDevice device,
   ) async {
+    device = resolveTransportDevice(device);
     if (this.isSimulated) return null;
     if (!device.isConnected) {
       charReceived.value = false;
@@ -1743,6 +1777,7 @@ class DeviceData {
     BluetoothDevice device, {
     bool forceRefresh = false,
   }) async {
+    device = resolveTransportDevice(device);
     if (this.isSimulated) return;
 
     // If a discovery is already in flight, just await it and return.
@@ -1892,6 +1927,7 @@ class DeviceData {
     BluetoothDevice device, {
     bool sweepSettings = true,
   }) async {
+    device = resolveTransportDevice(device);
     if (this.isSimulated) return;
     if (_inUpdateLoop) {
       return;
@@ -1933,6 +1969,7 @@ class DeviceData {
   }
 
   Future<void> ensureCustomCharacteristicStream(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     if (this.isSimulated) return;
     if (isDirConConnected) {
       subscribed = true;
@@ -1982,6 +2019,7 @@ class DeviceData {
   /// the other must still deliver the one it has, and a failure on either must
   /// not decide anything about the other.
   Future<void> ensureFtmsNotifications(BluetoothDevice device) {
+    device = resolveTransportDevice(device);
     final pass = _ftmsSetupQueue.then((_) => _ensureFtmsNotifications(device));
     // The queue must outlive a failing pass, or one error wedges every later
     // caller. The error still reaches whoever awaited this call.
@@ -2689,6 +2727,7 @@ class DeviceData {
   /// Checks the health of the FTMS data stream and attempts to recover if stalled.
   /// Skips if a recovery is already in progress.
   Future<void> checkFtmsHealth(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     // Screens and operations can intentionally pause FTMS notifications. A
     // CCCD toggle here would bypass that block and compete for the transport.
     if (isFtmsNotificationsBlocked) return;
@@ -2797,6 +2836,7 @@ class DeviceData {
   /// Going through [ensureFtmsNotifications] keeps the wire-level kick and adds
   /// the listener republish, symmetrically for both characteristics.
   Future<void> _recycleFtmsNotifications(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     for (final (characteristic, label) in _bleFtmsNotificationCharacteristics) {
       if (characteristic == null) continue;
       await _disableBleNotifications(characteristic, label);
@@ -2899,6 +2939,7 @@ class DeviceData {
   }
 
   Future<void> _runBleDeviceScan(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     _connectedDevice = device;
     _beginBleDeviceScan(device);
     final completion = _bleDeviceScanCompletion!;
@@ -2932,6 +2973,7 @@ class DeviceData {
   }
 
   void _beginBleDeviceScan(BluetoothDevice device) {
+    device = resolveTransportDevice(device);
     _connectedDevice = device;
     if (!bleDeviceScanInProgress.value) {
       bleDeviceScanInProgress.value = true;

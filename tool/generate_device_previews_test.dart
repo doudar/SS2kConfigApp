@@ -47,17 +47,24 @@ final class _ScreenshotWakelockPlatform extends WakelockPlusPlatformInterface {
   Future<bool> get enabled async => _enabled;
 }
 
-// Flutter's own fonts make captures portable across build hosts.
-Future<void> _loadCaptureFonts() async {
+File _findCaptureFont(String name) {
   var folder = File(Platform.resolvedExecutable).parent;
-  while (!File(
-        '${folder.path}/material_fonts/roboto-regular.ttf',
-      ).existsSync() &&
-      folder.parent.path != folder.path) {
+  while (true) {
+    // Flutter SDK artifacts can use either casing on case-sensitive hosts.
+    for (final filename in [name, name.toLowerCase()]) {
+      final file = File('${folder.path}/material_fonts/$filename');
+      if (file.existsSync()) return file;
+    }
+    if (folder.parent.path == folder.path) break;
     folder = folder.parent;
   }
+  throw StateError('Could not locate $name in the Flutter SDK.');
+}
+
+// Flutter's own fonts make captures portable across build hosts.
+Future<void> _loadCaptureFonts() async {
   final regular = ByteData.sublistView(
-    File('${folder.path}/material_fonts/roboto-regular.ttf').readAsBytesSync(),
+    _findCaptureFont('Roboto-Regular.ttf').readAsBytesSync(),
   );
   for (final family in ['Ahem', 'Roboto', 'PreviewSans']) {
     await (FontLoader(family)..addFont(Future.value(regular))).load();
@@ -65,9 +72,7 @@ Future<void> _loadCaptureFonts() async {
   await (FontLoader('MaterialIcons')..addFont(
         Future.value(
           ByteData.sublistView(
-            File(
-              '${folder.path}/material_fonts/materialicons-regular.otf',
-            ).readAsBytesSync(),
+            _findCaptureFont('MaterialIcons-Regular.otf').readAsBytesSync(),
           ),
         ),
       ))
