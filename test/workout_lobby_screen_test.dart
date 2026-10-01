@@ -8,6 +8,8 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_blue_plus_platform_interface/flutter_blue_plus_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ss2kconfigapp/widgets/ss2k_app_bar.dart';
+import 'package:ss2kconfigapp/utils/workout/arcade/arcade_preferences.dart';
 import 'package:ss2kconfigapp/screens/workout_screen.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
@@ -64,7 +66,11 @@ void main() {
       addTearDown(() => debugWorkoutPainterFontFamily = null);
       FlutterBluePlusPlatform.instance = _BlePlatform();
       WakelockPlusPlatformInterface.instance = _WakelockPlatform();
-      SharedPreferences.setMockInitialValues({'workout_tts_enabled': false});
+      SharedPreferences.setMockInitialValues({
+        'workout_tts_enabled': false,
+        // A saved Arcade preference must not bypass the hidden unlock.
+        'workout_arcade_mode': true,
+      });
       final messenger = tester.binding.defaultBinaryMessenger;
       const audioChannel = MethodChannel('com.ryanheise.just_audio.methods');
       messenger.setMockMethodCallHandler(audioChannel, (call) async {
@@ -129,10 +135,35 @@ void main() {
       expect(find.byType(WorkoutLobby), findsOneWidget);
       expect(controller.isPlaying, isFalse);
       expect(find.text('Ride menu'), findsOneWidget);
-      await tester.tap(find.text('Arcade mode'));
+      expect(find.text('Arcade mode'), findsNothing);
+      expect(find.text('Classic mode'), findsNothing);
+      expect(
+        tester
+            .widget<ArcadeWorkoutFrame>(find.byType(ArcadeWorkoutFrame))
+            .arcade,
+        isNull,
+      );
+      final title = find.descendant(
+        of: find.byType(SS2KAppBar),
+        matching: find.text(
+          tester.widget<SS2KAppBar>(find.byType(SS2KAppBar)).title,
+        ),
+      );
+      // Old clicks expire; four quick clicks still leave Arcade hidden.
+      await tester.tap(title);
+      await tester.pump(const Duration(seconds: 3));
+      for (var i = 0; i < 4; i++) {
+        await tester.tap(title);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Arcade mode'), findsNothing);
+      expect(find.text('Classic mode'), findsNothing);
+      await tester.tap(title);
       await tester.pump(const Duration(milliseconds: 600));
       expect(find.text('Ride menu'), findsOneWidget);
       expect(find.text('Classic mode'), findsOneWidget);
+      expect((await ArcadePreferences.load()).unlocked, isTrue);
+      expect(controller.isPlaying, isFalse);
       expect(find.byTooltip('Return to Classic'), findsNothing);
       await tester.tap(find.text('Classic mode'));
       await tester.pump(const Duration(milliseconds: 600));
@@ -252,8 +283,8 @@ void main() {
         isFalse,
       );
       expect(find.byTooltip('Return to Classic'), findsNothing);
-      expect(find.text('Classic mode'), findsOneWidget);
       expect(find.text('Ride menu'), findsOneWidget);
+      expect(find.text('Classic mode'), findsOneWidget);
       await tester.tap(find.text('Classic mode'));
       await tester.pump(const Duration(milliseconds: 600));
       await tester.runAsync(() async {
@@ -346,6 +377,14 @@ void main() {
       expect(controller.workoutProgressSeconds, greaterThanOrEqualTo(progress));
       expect(find.byType(WorkoutLobby), findsNothing);
       await tester.runAsync(() => controller.stopWorkout());
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pumpWidget(MaterialApp(home: WorkoutScreen(device: device)));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Arcade mode'), findsOneWidget);
+      expect(find.text('Classic mode'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 20));
       expect(tester.takeException(), isNull);

@@ -10,11 +10,13 @@ void main() {
   test('first launch preserves Classic and existing audio defaults', () async {
     final preferences = await ArcadePreferences.load();
     expect(preferences.arcadeMode, isFalse);
+    expect(preferences.unlocked, isFalse);
     expect(preferences.musicEnabled, isFalse);
     expect(preferences.effectsEnabled, isTrue);
   });
 
   test('mode and both audio choices survive a storage reload', () async {
+    await ArcadePreferences.saveUnlocked(true);
     await ArcadePreferences.saveMode(true);
     await ArcadePreferences.saveMusic(true);
     await ArcadePreferences.saveEffects(false);
@@ -22,6 +24,7 @@ void main() {
     await storage.reload();
     final saved = await ArcadePreferences.load();
     expect(saved.arcadeMode, isTrue);
+    expect(saved.unlocked, isTrue);
     expect(saved.musicEnabled, isTrue);
     expect(saved.effectsEnabled, isFalse);
 
@@ -31,6 +34,7 @@ void main() {
     await storage.reload();
     final changed = await ArcadePreferences.load();
     expect(changed.arcadeMode, isFalse);
+    expect(changed.unlocked, isTrue);
     expect(changed.musicEnabled, isFalse);
     expect(changed.effectsEnabled, isTrue);
   });

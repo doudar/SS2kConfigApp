@@ -48,6 +48,9 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     with TickerProviderStateMixin {
   String? _workoutName;
   bool _arcadeMode = false;
+  bool _arcadeUnlocked = false;
+  int _arcadeUnlockTaps = 0;
+  Timer? _arcadeUnlockTimer;
   bool _arcadeFullscreen = false;
   bool _arcadePreferencesLoaded = false;
   bool _completionPending = false;
@@ -218,6 +221,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
   Future<void> _loadArcadePreferences() async {
     final preferences = await ArcadePreferences.load();
     if (!mounted || _isDisposing) return;
+    _arcadeUnlocked = preferences.unlocked;
     _arcadeSession.musicEnabled = preferences.musicEnabled;
     _arcadeSession.effectsEnabled = preferences.effectsEnabled;
     _arcadeSession.rider = preferences.rider;
@@ -351,7 +355,24 @@ class _WorkoutScreenState extends State<WorkoutScreen>
 
   // Calibration dialog logic migrated to WorkoutMenu; method removed here to avoid duplication.
 
+  void _unlockArcadeTap() {
+    if (_arcadeUnlocked) return;
+    _arcadeUnlockTimer?.cancel();
+    _arcadeUnlockTaps++;
+    if (_arcadeUnlockTaps < 5) {
+      _arcadeUnlockTimer = Timer(const Duration(seconds: 2), () {
+        _arcadeUnlockTaps = 0;
+      });
+      return;
+    }
+    _arcadeUnlockTaps = 0;
+    _arcadeUnlocked = true;
+    unawaited(ArcadePreferences.saveUnlocked(true));
+    _setArcadeMode(true);
+  }
+
   void _setArcadeMode(bool enabled, {bool persist = true}) {
+    enabled = _arcadeUnlocked && enabled;
     if (_arcadeMode == enabled) return;
     setState(() {
       _arcadeMode = enabled;
@@ -406,6 +427,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
 
   @override
   void dispose() {
+    _arcadeUnlockTimer?.cancel();
     _isDisposing = true;
     _workoutController.removeListener(_workoutControllerListener);
 
@@ -572,18 +594,20 @@ class _WorkoutScreenState extends State<WorkoutScreen>
       ),
       header: SS2KAppBar(
         device: widget.device,
-        title: _workoutName ?? '',
+        title: _workoutName?.isNotEmpty == true ? _workoutName! : 'Workout',
+        onTitleTap: _unlockArcadeTap,
         firmwareOnlyDeviceHeader: true,
         mobileActionRow: true,
         actions: [
-          WorkoutHeaderAction(
-            label: _arcadeMode ? 'Classic mode' : 'Arcade mode',
-            icon: _arcadeMode ? Icons.show_chart : Icons.sports_esports,
-            tooltip: _arcadeMode
-                ? 'Classic workout mode'
-                : 'Arcade workout mode',
-            onPressed: () => _setArcadeMode(!_arcadeMode),
-          ),
+          if (_arcadeUnlocked)
+            WorkoutHeaderAction(
+              label: _arcadeMode ? 'Classic mode' : 'Arcade mode',
+              icon: _arcadeMode ? Icons.show_chart : Icons.sports_esports,
+              tooltip: _arcadeMode
+                  ? 'Classic workout mode'
+                  : 'Arcade workout mode',
+              onPressed: () => _setArcadeMode(!_arcadeMode),
+            ),
           if (!_arcadeMode &&
               MediaQuery.of(context).orientation == Orientation.landscape)
             MenuAnchor(

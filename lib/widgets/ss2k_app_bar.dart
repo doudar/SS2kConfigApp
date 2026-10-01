@@ -7,6 +7,7 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   final BluetoothDevice device;
   final String title;
+  final VoidCallback? onTitleTap;
   final List<Widget>? actions;
   final bool showDeviceHeader;
   final bool firmwareOnlyDeviceHeader;
@@ -20,6 +21,7 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
     Key? key,
     required this.device,
     required this.title,
+    this.onTitleTap,
     this.actions,
     this.showDeviceHeader = true,
     this.firmwareOnlyDeviceHeader = false,
@@ -147,89 +149,13 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
           ],
         ),
       ),
-      title: isNarrow
-          ? Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _displayTitle,
-                  maxLines: _isLongTitle ? 2 : 1,
-                  softWrap: _isLongTitle,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style:
-                      (_isLongTitle
-                              ? theme.textTheme.titleSmall
-                              : theme.textTheme.titleLarge)
-                          ?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            shadows: const [
-                              Shadow(
-                                color: Colors.black87,
-                                blurRadius: 6,
-                                offset: Offset(0, 1),
-                              ),
-                            ],
-                          ),
-                ),
-                if (showDeviceHeader) const SizedBox(height: 2),
-                if (showDeviceHeader)
-                  DeviceHeader(
-                    device: device,
-                    connectOnly: true,
-                    firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
-                    customRefreshEnabled: deviceHeaderCustomRefreshEnabled,
-                  ),
-              ],
-            )
-          : mobileActionRow
-          ? Row(
-              children: [
-                if (showDeviceHeader) ...[
-                  DeviceHeader(
-                    device: device,
-                    connectOnly: true,
-                    firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
-                    customRefreshEnabled: deviceHeaderCustomRefreshEnabled,
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                Expanded(
-                  child: Text(
-                    _displayTitle,
-                    maxLines: _isLongTitle ? 2 : 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            )
-          : Stack(
-              children: <Widget>[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: showDeviceHeader
-                      ? Padding(
-                          padding: const EdgeInsets.only(left: 4),
-                          child: DeviceHeader(
-                            device: device,
-                            connectOnly: true,
-                            firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
-                            customRefreshEnabled:
-                                deviceHeaderCustomRefreshEnabled,
-                          ),
-                        )
-                      : null,
-                ),
-                Align(
-                  alignment: Alignment.center,
-                  child: Text(
+      title: _withTitleTap(
+        isNarrow
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
                     _displayTitle,
                     maxLines: _isLongTitle ? 2 : 1,
                     softWrap: _isLongTitle,
@@ -251,9 +177,87 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
                               ],
                             ),
                   ),
-                ),
-              ],
-            ),
+                  if (showDeviceHeader) const SizedBox(height: 2),
+                  if (showDeviceHeader)
+                    DeviceHeader(
+                      device: device,
+                      connectOnly: true,
+                      firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
+                      customRefreshEnabled: deviceHeaderCustomRefreshEnabled,
+                    ),
+                ],
+              )
+            : mobileActionRow
+            ? Row(
+                children: [
+                  if (showDeviceHeader) ...[
+                    DeviceHeader(
+                      device: device,
+                      connectOnly: true,
+                      firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
+                      customRefreshEnabled: deviceHeaderCustomRefreshEnabled,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: Text(
+                      _displayTitle,
+                      maxLines: _isLongTitle ? 2 : 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Stack(
+                children: <Widget>[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: showDeviceHeader
+                        ? Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: DeviceHeader(
+                              device: device,
+                              connectOnly: true,
+                              firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
+                              customRefreshEnabled:
+                                  deviceHeaderCustomRefreshEnabled,
+                            ),
+                          )
+                        : null,
+                  ),
+                  Align(
+                    alignment: Alignment.center,
+                    child: Text(
+                      _displayTitle,
+                      maxLines: _isLongTitle ? 2 : 1,
+                      softWrap: _isLongTitle,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style:
+                          (_isLongTitle
+                                  ? theme.textTheme.titleSmall
+                                  : theme.textTheme.titleLarge)
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                shadows: const [
+                                  Shadow(
+                                    color: Colors.black87,
+                                    blurRadius: 6,
+                                    offset: Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
       centerTitle: true,
       actions: mobileActionRow && isNarrow ? null : actions,
       bottom: mobileActionRow && isNarrow
@@ -280,4 +284,12 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
         ) +
         (mobileActionRow && _isLikelyNarrowScreen ? 48 : 0),
   );
+
+  Widget _withTitleTap(Widget child) => onTitleTap == null
+      ? child
+      : GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTitleTap,
+          child: child,
+        );
 }

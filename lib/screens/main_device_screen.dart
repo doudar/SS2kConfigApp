@@ -284,8 +284,8 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     DevicePreviewTile(
       preview: 'assets/device_previews/workout.png',
       title: 'Workout',
-      subtitle: 'Classic training or Arcade',
-      icon: Icons.sports_esports_outlined,
+      subtitle: 'Structured training and free rides',
+      icon: Icons.directions_bike_rounded,
       accent: WorkoutVisuals.mint,
       onTap: () => _openScreen(WorkoutScreen(device: widget.device)),
     ),
