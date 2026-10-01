@@ -25,6 +25,7 @@ import 'dircon_discovery.dart';
 import 'smartspin_scan_result.dart';
 import 'settings_snapshot_protocol.dart';
 import 'smartspin_advertisement.dart';
+import 'virtual_gearing.dart';
 import 'nearby_ble_devices.dart';
 import 'workout_control_lane.dart';
 
@@ -1572,6 +1573,17 @@ class DeviceData {
   Future<void>? _settingsRequestInFlight;
 
   Map<int, Map>? _cachedCharacteristicMap;
+
+  /// Tooth pairs collected from indexed 0x34 reads until all have arrived.
+  List<int?>? _gearTeethReadBuffer;
+  Completer<void>? _gearTeethReadCompleter;
+
+  Map<String, dynamic>? _characteristicByVname(String vName) {
+    for (final c in customCharacteristic) {
+      if (c["vName"] == vName) return c;
+    }
+    return null;
+  }
 
   void _ensureCachedMap() {
     if (_cachedCharacteristicMap == null) {
@@ -3155,6 +3167,8 @@ class DeviceData {
     for (final c in customCharacteristic) {
       if (!configAppCompatibleFirmware && c["vName"] == saveVname) continue;
       if (c["vName"] == BLE_logStreamVname) continue;
+      // Read as part of the gearTeeth profile below.
+      if (c["vName"] == gearPresetVname) continue;
 
       if (customResponsesDegraded.value) {
         print('[transport] settings sweep abandoned: link degraded');
@@ -3169,6 +3183,10 @@ class DeviceData {
       }
 
       try {
+        if (c["type"] == "gearTeeth") {
+          await _requestGearProfile(device);
+          continue;
+        }
         await writeCustomCharacteristic(device, [
           0x01,
           int.parse(c["reference"]),
@@ -3204,6 +3222,10 @@ class DeviceData {
       }
 
       try {
+        if (c["type"] == "gearTeeth") {
+          await _requestGearProfile(device);
+          continue;
+        }
         await writeCustomCharacteristic(device, [
           0x01,
           int.parse(c["reference"]),
@@ -3250,6 +3272,10 @@ class DeviceData {
     }
 
     try {
+      if (setting["type"] == "gearTeeth") {
+        await _requestGearProfile(device);
+        return;
+      }
       final value = <int>[0x01, int.parse(setting["reference"])];
       if (extraByte != null) {
         value.add(extraByte);
@@ -3258,6 +3284,129 @@ class DeviceData {
     } catch (e) {
       Snackbar.show(ABC.c, "Failed to request setting $e", success: false);
     }
+  }
+
+  /// Reads the whole groupset: the preset on 0x35, then, when tooth pairs are
+  /// in use, the 0x34 count followed by one indexed read per pair. 0x34 is
+  /// unreadable while a built-in table is active, so the preset goes first.
+  Future<void> _requestGearProfile(BluetoothDevice device) async {
+    final presetEntry = _characteristicByVname(gearPresetVname);
+    final teethEntry = _characteristicByVname(gearTeethVname);
+    if (presetEntry == null || teethEntry == null) return;
+
+    await writeCustomCharacteristic(device, [
+      0x01,
+      int.parse(presetEntry["reference"]),
+    ]);
+    final presetValue = presetEntry["value"];
+    if (presetValue == noFirmSupport) {
+      teethEntry["value"] = noFirmSupport;
+      _emitCharacteristicChange(teethEntry);
+      return;
+    }
+    if ((parseGearPreset(presetValue) ?? 0) != 0) return;
+
+    final teethReference = int.parse(teethEntry["reference"]);
+    _gearTeethReadBuffer = null;
+    final completer = Completer<void>();
+    _gearTeethReadCompleter = completer;
+    try {
+      await writeCustomCharacteristic(device, [0x01, teethReference]);
+      final count = _gearTeethReadBuffer?.length ?? 0;
+      for (var index = 0; index < count; index++) {
+        if (_gearTeethReadBuffer == null) break;
+        await writeCustomCharacteristic(device, [0x01, teethReference, index]);
+      }
+      // Responses are matched by reference only, so a late change
+      // notification can release a read before its own reply arrives. Give
+      // the last pairs a moment to land.
+      if (_gearTeethReadBuffer != null) {
+        await completer.future.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {},
+        );
+      }
+    } finally {
+      if (identical(_gearTeethReadCompleter, completer)) {
+        _gearTeethReadCompleter = null;
+      }
+    }
+  }
+
+  /// Applies [preset] locally and writes it to the device. Built-in tables go
+  /// out on 0x35 and tooth profiles, including Unlimited, on 0x34. The
+  /// firmware clears one when the other is written, so both local values are
+  /// updated together.
+  Future<void> selectGroupset(
+    BluetoothDevice device,
+    GroupsetPreset preset,
+  ) async {
+    final presetEntry = _characteristicByVname(gearPresetVname);
+    final teethEntry = _characteristicByVname(gearTeethVname);
+    if (presetEntry == null || teethEntry == null) return;
+
+    presetEntry["value"] = preset.presetId.toString();
+    teethEntry["value"] = jsonEncode(preset.teeth);
+    _emitCharacteristicChange(presetEntry);
+    _emitCharacteristicChange(teethEntry);
+    await writeToSS2k(device, teethEntry);
+  }
+
+  void _decodeGearTeeth(Map c, List<int> value) {
+    if (value.length < 3) return;
+    final count = value[2];
+
+    // Count only: a metadata read, the echo of a write, or a change
+    // notification. Pairs follow only when the app asks for them by index.
+    // The firmware follows every profile change with a 0x35 and a 0x34 count
+    // notification, which can arrive in the middle of the next read. A count
+    // that matches the read in progress must not discard the pairs collected
+    // so far.
+    if (value.length < 6) {
+      if (count == 0) {
+        _gearTeethReadBuffer = null;
+        c["value"] = "[]";
+        _emitCharacteristicChange(c);
+        _completeGearTeethRead();
+      } else if (_gearTeethReadBuffer?.length != count) {
+        _gearTeethReadBuffer = List<int?>.filled(count, null);
+      }
+      return;
+    }
+
+    final buffer = _gearTeethReadBuffer;
+    final index = value[3];
+    if (buffer == null || buffer.length != count || index >= count) return;
+    buffer[index] = value[4] | (value[5] << 8);
+    if (buffer.contains(null)) return;
+
+    _gearTeethReadBuffer = null;
+    c["value"] = jsonEncode(buffer);
+    _emitCharacteristicChange(c);
+    _completeGearTeethRead();
+  }
+
+  void _completeGearTeethRead() {
+    final completer = _gearTeethReadCompleter;
+    if (completer != null && !completer.isCompleted) completer.complete();
+  }
+
+  /// 0x34 also answers 0xff while a built-in table is active, or for an
+  /// out-of-range index, so it means "unsupported" only when 0x35 is too.
+  void _decodeGearTeethError(Map c) {
+    _gearTeethReadBuffer = null;
+    _completeGearTeethRead();
+    final presetId = parseGearPreset(
+      _characteristicByVname(gearPresetVname)?["value"],
+    );
+    if (presetId == null) {
+      c["value"] = noFirmSupport;
+    } else if (presetId != 0) {
+      c["value"] = "[]";
+    } else {
+      return;
+    }
+    _emitCharacteristicChange(c);
   }
 
   int getPrecision(Map c) {
@@ -3368,6 +3517,24 @@ class DeviceData {
           ..buffer.asByteData().setInt32(0, t, Endian.little);
         print('bytes: ${bytes}');
         value = [0x02, int.parse(c["reference"]), ...bytes];
+        break;
+      case "gearTeeth":
+        // One setting on two characteristics: a built-in table is selected
+        // on 0x35, anything else is sent as tooth pairs on 0x34.
+        final presetEntry = _characteristicByVname(gearPresetVname);
+        final presetId = parseGearPreset(presetEntry?["value"]) ?? 0;
+        if (presetEntry != null && presetId != 0) {
+          value = [
+            0x02,
+            int.parse(presetEntry["reference"]),
+            presetId & 0xff,
+            (presetId >> 8) & 0xff,
+          ];
+          break;
+        }
+        final teeth = parseGearTeeth(s);
+        if (teeth == null) return;
+        value = encodeGearTeethWrite(int.parse(c["reference"]), teeth);
         break;
       case "powerTableData":
         // Define the INT_MIN value for uint16_t in little endian format
@@ -3957,6 +4124,14 @@ class DeviceData {
                     this.simulatedFTMSmode = c["value"];
                     FTMSmode = int.parse(this.simulatedFTMSmode);
                   }
+                  // A built-in table replaces any tooth pairs on the device.
+                  if (c["vName"] == gearPresetVname && c["value"] != "0") {
+                    final teethEntry = _characteristicByVname(gearTeethVname);
+                    if (teethEntry != null && teethEntry["value"] != "[]") {
+                      teethEntry["value"] = "[]";
+                      _emitCharacteristicChange(teethEntry);
+                    }
+                  }
                 }
                 // Emit characteristic change event
                 _emitCharacteristicChange(c);
@@ -4051,6 +4226,9 @@ class DeviceData {
               // Emit characteristic change event
               _emitCharacteristicChange(c);
               break;
+            case "gearTeeth":
+              _decodeGearTeeth(c, value);
+              break;
             default:
               {
                 String type = c["type"];
@@ -4071,7 +4249,9 @@ class DeviceData {
       } else if (value[0] == 0xff) {
         if (value.length > 1) {
           var c = _cachedCharacteristicMap?[value[1]];
-          if (c != null) {
+          if (c != null && c["vName"] == gearTeethVname) {
+            _decodeGearTeethError(c);
+          } else if (c != null) {
             c["value"] = noFirmSupport;
             // Emit characteristic change event
             _emitCharacteristicChange(c);
