@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   audioplayers_windows
+  bonsoir_windows
   flutter_blue_plus_winrt
   flutter_tts
   fvp

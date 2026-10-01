@@ -21,6 +21,8 @@ import 'bleOTA.dart';
 import 'connection_setup_coordinator.dart';
 import 'device_transport_state.dart';
 import 'dircon_client.dart';
+import 'dircon_discovery.dart';
+import 'smartspin_scan_result.dart';
 import 'settings_snapshot_protocol.dart';
 import 'smartspin_advertisement.dart';
 import 'nearby_ble_devices.dart';
@@ -167,6 +169,30 @@ class _DirConRecoveryAdvertisementSession {
 class DeviceDataManager {
   static final Map<String, DeviceData> _dataMap = {};
 
+  static SmartSpinScanResult reuseConnectedIdentity(
+    SmartSpinScanResult result,
+  ) {
+    for (final entry in _dataMap.entries) {
+      final data = entry.value;
+      if (!data.isTransportActive || data._connectedDevice == null) continue;
+      final endpoint = data.discoveredEndpoint;
+      final sameDevice = endpoint != null && result.network != null
+          ? endpoint.id == result.network!.id
+          : result.host != null && data.advertisedIpAddress == result.host;
+      if (sameDevice) {
+        // Adopt newly discovered transports immediately, without waiting for
+        // the tile to be opened again or replacing the active session.
+        data.applyScanResult(result);
+        return SmartSpinScanResult(
+          ble: result.ble,
+          network: result.network,
+          connectedIdentity: BluetoothDevice.fromId(entry.key),
+        );
+      }
+    }
+    return result;
+  }
+
   static DeviceData forDevice(BluetoothDevice device) {
     if (!_dataMap.containsKey(device.remoteId.str)) {
       _dataMap[device.remoteId.str] = DeviceData();
@@ -264,9 +290,15 @@ class _FtmsCapabilities {
   bool reprobed = false;
 }
 
+typedef DirConEndpointLookup =
+    Future<DirConEndpoint?> Function({String? id, String? host, String? name});
+
 class DeviceData {
-  DeviceData({DirConConnector? dirConConnector})
-    : _dirConConnector = dirConConnector ?? _connectDirConClient {
+  DeviceData({
+    DirConConnector? dirConConnector,
+    DirConEndpointLookup? dirConEndpointLookup,
+  }) : _dirConConnector = dirConConnector,
+       _dirConEndpointLookup = dirConEndpointLookup ?? DirConDiscovery.find {
     _workoutControlLane = WorkoutControlLane(
       transportState: () => _transportStateController.value,
       isReady: _isWorkoutControlReady,
@@ -279,10 +311,48 @@ class DeviceData {
     _applyStreamedFoundDevices(const <BleScanDevice>[]);
   }
 
-  static Future<DirConSession> _connectDirConClient(String host) =>
-      DirConClient.connect(host);
+  final DirConConnector? _dirConConnector;
+  final DirConEndpointLookup _dirConEndpointLookup;
+  DirConEndpoint? discoveredEndpoint;
+  int get advertisedDirConPort => discoveredEndpoint?.port ?? DirConClient.port;
+  bool _hasBleIdentity = true;
 
-  final DirConConnector _dirConConnector;
+  void applyScanResult(SmartSpinScanResult result) {
+    if (_isDisposed) return;
+    final bluetooth = result.ble?.device;
+    if (bluetooth != null) {
+      _connectedDevice = bluetooth;
+      _hasBleIdentity = true;
+      if (_connectionMonitorUsers > 0) _ensureConnectionMonitor(bluetooth);
+    }
+    if (isTransportActive) return;
+    advertisedIpAddress = result.host;
+    discoveredEndpoint = result.network;
+    _hasBleIdentity =
+        bluetooth != null ||
+        !resolveTransportDevice(result.device).remoteId.str.startsWith('mdns:');
+  }
+
+  /// Existing screens retain their original session handle after mDNS discovery.
+  /// Resolve that synthetic identity to the real BLE handle for transport work.
+  BluetoothDevice resolveTransportDevice(BluetoothDevice device) =>
+      device.remoteId.str.startsWith('mdns:') && _hasBleIdentity
+      ? _connectedDevice ?? device
+      : device;
+
+  Future<bool> _refreshMdnsEndpoint(BluetoothDevice device) async {
+    final endpoint = await _dirConEndpointLookup(
+      id: discoveredEndpoint?.id,
+      host: advertisedIpAddress,
+      name:
+          discoveredEndpoint?.name ??
+          (device.advName.isNotEmpty ? device.advName : device.platformName),
+    );
+    if (endpoint == null) return false;
+    discoveredEndpoint = endpoint;
+    advertisedIpAddress = endpoint.host;
+    return true;
+  }
 
   String? advertisedIpAddress;
   DirConSession? _dirConSession;
@@ -394,10 +464,15 @@ class DeviceData {
       _onReconnectedCallbacks.add(onReconnected);
     }
 
+    _ensureConnectionMonitor(device);
+  }
+
+  void _ensureConnectionMonitor(BluetoothDevice device) {
+    device = resolveTransportDevice(device);
     // Demo devices are intentionally transport-free. Their production widgets
     // still mount DeviceHeader, but a disconnected host Bluetooth stream must
     // not turn that into a real reconnect loop.
-    if (isSimulated) return;
+    if (isSimulated || !_hasBleIdentity) return;
 
     // Guard against duplicate subscriptions
     if (_reconnectSubscription != null) return;
@@ -412,7 +487,7 @@ class DeviceData {
           // A DIRCON session deliberately leaves the Android BLE GATT
           // connection disconnected. Do not let that idle BLE state overwrite
           // the active network transport or start a competing reconnect loop.
-          if (isDirConConnected) return;
+          if (isDirConConnected || _dirConReconnectInProgress) return;
 
           if (state == BluetoothConnectionState.connected) {
             _markTransportConnected(DeviceTransportKind.bluetooth, device);
@@ -467,6 +542,12 @@ class DeviceData {
         }
       }
 
+      if (!_hasBleIdentity) {
+        throw StateError(
+          'SmartSpin2k is unavailable over Dircon. Scan again to retry.',
+        );
+      }
+      device = resolveTransportDevice(device);
       _markTransportConnecting(DeviceTransportKind.bluetooth);
       final connected = await retryBleConnection(
         connect: device.connectAndUpdateStream,
@@ -498,6 +579,7 @@ class DeviceData {
   }
 
   Future<void> disconnectPreferred(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     isUserDisconnect = true;
     _markTransportDisconnected(explicit: true);
     final notifySubscription = _notifySubscription;
@@ -526,9 +608,17 @@ class DeviceData {
     required bool waitForSetup,
   }) async {
     await _closeDirCon();
-    final session = await _dirConConnector(ipAddress);
+    final session =
+        await (_dirConConnector?.call(ipAddress) ??
+            DirConClient.connect(
+              ipAddress,
+              connectionPort: advertisedDirConPort,
+            ));
     try {
       await session.initialize(serviceUuid: csUUID, characteristicUuid: ccUUID);
+      if (isUserDisconnect || _isDisposed) {
+        throw StateError('Dircon connection cancelled');
+      }
     } catch (_) {
       await session.close();
       rethrow;
@@ -740,7 +830,8 @@ class DeviceData {
     // catches the DIRCON failure and runs the retrying BLE path itself. Racing
     // a second BLE connect from here would duplicate it, exactly as the
     // _initialConnectionInProgress guard in startConnectionMonitor prevents.
-    if (isUserDisconnect ||
+    if (_isDisposed ||
+        isUserDisconnect ||
         _dirConReconnectInProgress ||
         _initialConnectionInProgress) {
       return;
@@ -748,10 +839,33 @@ class DeviceData {
 
     _dirConReconnectInProgress = true;
     try {
+      device = resolveTransportDevice(device);
       print(
         '[DIRCON][FALLBACK] start reason=disconnect host=$disconnectedAddress',
       );
-      await _connectBleAfterDirConLoss(device);
+      if (_hasBleIdentity) {
+        if (!_workoutControlActive) {
+          try {
+            if (await _refreshMdnsEndpoint(device)) {
+              await _connectDirCon(
+                device,
+                advertisedIpAddress!,
+                waitForSetup: true,
+              );
+              await _runReconnectedCallbacks();
+              return;
+            }
+          } catch (error) {
+            print('[DIRCON] Network recovery unavailable: $error');
+            await _closeDirCon();
+          }
+        }
+        if (isUserDisconnect || _isDisposed) return;
+        // Preserve prompt BLE failover and its FTMS setup when WiFi is down.
+        await _connectBleAfterDirConLoss(device);
+      } else {
+        await reconnectAndSetup(device);
+      }
     } catch (error) {
       print('[DIRCON][FALLBACK] failed: $error');
     } finally {
@@ -760,6 +874,7 @@ class DeviceData {
   }
 
   Future<void> _connectBleAfterDirConLoss(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     _markTransportConnecting(DeviceTransportKind.bluetooth);
     final stopwatch = Stopwatch()..start();
     final reusedSession = device.isConnected;
@@ -921,6 +1036,13 @@ class DeviceData {
   Future<void> _refreshAdvertisedEndpointForReconnect(
     BluetoothDevice device,
   ) async {
+    device = resolveTransportDevice(device);
+    try {
+      if (await _refreshMdnsEndpoint(device)) return;
+    } catch (error) {
+      print('[AutoReconnect] mDNS unavailable: $error');
+    }
+    if (!_hasBleIdentity) return;
     final previousAddress = advertisedIpAddress;
     final session = _DirConRecoveryAdvertisementSession(device);
     try {
@@ -1009,7 +1131,7 @@ class DeviceData {
     bool settle = true,
   }) {
     if (_isDisposed) return;
-    _connectedDevice = device;
+    _connectedDevice = resolveTransportDevice(device);
     final wasAlreadyConnected =
         _transportStateController.value.transport == transport &&
         _transportStateController.value.phase == DeviceTransportPhase.connected;
@@ -1075,7 +1197,8 @@ class DeviceData {
     Duration settleDelay = const Duration(milliseconds: 750),
     Future<void> Function()? onReconnected,
   }) async {
-    if (isUserDisconnect) return false;
+    if (isUserDisconnect || _isDisposed) return false;
+    device = resolveTransportDevice(device);
 
     if (_reconnecting) {
       _reconnectRequested = true;
@@ -1112,7 +1235,7 @@ class DeviceData {
       }
 
       for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-        if (isUserDisconnect) break;
+        if (isUserDisconnect || _isDisposed) break;
 
         _resetConnectionState();
 
@@ -1139,6 +1262,11 @@ class DeviceData {
             }
           }
 
+          if (!_hasBleIdentity) {
+            await _refreshMdnsEndpoint(device);
+            throw StateError('Waiting for SmartSpin2k Dircon endpoint');
+          }
+          device = resolveTransportDevice(device);
           if (!device.isConnected) {
             print(
               '[AutoReconnect] Attempt $attempt/$maxAttempts connecting...',
@@ -1231,6 +1359,7 @@ class DeviceData {
     // The breaker describes a link that no longer exists; the next one starts
     // with a clean record.
     _consecutiveCustomResponseTimeouts = 0;
+    customResponseReceived.value = false;
     customResponsesDegraded.value = false;
     subscribed = false;
     charReceived.value = false;
@@ -1261,7 +1390,7 @@ class DeviceData {
     // Re-render the persistent discoveries against the freshly rebuilt
     // characteristic map. Transparent BLE/DIRCON handoffs and automatic
     // reconnects are still the same user-visible SmartSpin2k connection, so
-    // only an explicit disconnect clears these choices.
+    // only an explicit disconnect or clearing scan results clears these choices.
     _applyStreamedFoundDevices(const <BleScanDevice>[]);
     lastFtmsUpdate = null;
     _ftmsRecoveryInProgress = false;
@@ -1498,7 +1627,9 @@ class DeviceData {
         configuredName != noFirmSupport) {
       return configuredName;
     }
-    return advertisedName.trim();
+    return advertisedName.trim().isNotEmpty
+        ? advertisedName.trim()
+        : discoveredEndpoint?.name ?? '';
   }
 
   /// [sweepSettings] false brings the transport up — discovery, characteristics,
@@ -1513,6 +1644,7 @@ class DeviceData {
     bool markTransportConnected = true,
     bool sweepSettings = true,
   }) {
+    device = resolveTransportDevice(device);
     if (isSimulated) return Future.value();
 
     if (isDirConConnected) {
@@ -1623,6 +1755,7 @@ class DeviceData {
   Future<BluetoothCharacteristic?> _getMyCharacteristic(
     BluetoothDevice device,
   ) async {
+    device = resolveTransportDevice(device);
     if (this.isSimulated) return null;
     if (!device.isConnected) {
       charReceived.value = false;
@@ -1644,6 +1777,7 @@ class DeviceData {
     BluetoothDevice device, {
     bool forceRefresh = false,
   }) async {
+    device = resolveTransportDevice(device);
     if (this.isSimulated) return;
 
     // If a discovery is already in flight, just await it and return.
@@ -1793,6 +1927,7 @@ class DeviceData {
     BluetoothDevice device, {
     bool sweepSettings = true,
   }) async {
+    device = resolveTransportDevice(device);
     if (this.isSimulated) return;
     if (_inUpdateLoop) {
       return;
@@ -1834,6 +1969,7 @@ class DeviceData {
   }
 
   Future<void> ensureCustomCharacteristicStream(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     if (this.isSimulated) return;
     if (isDirConConnected) {
       subscribed = true;
@@ -1883,6 +2019,7 @@ class DeviceData {
   /// the other must still deliver the one it has, and a failure on either must
   /// not decide anything about the other.
   Future<void> ensureFtmsNotifications(BluetoothDevice device) {
+    device = resolveTransportDevice(device);
     final pass = _ftmsSetupQueue.then((_) => _ensureFtmsNotifications(device));
     // The queue must outlive a failing pass, or one error wedges every later
     // caller. The error still reaches whoever awaited this call.
@@ -2590,6 +2727,7 @@ class DeviceData {
   /// Checks the health of the FTMS data stream and attempts to recover if stalled.
   /// Skips if a recovery is already in progress.
   Future<void> checkFtmsHealth(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     // Screens and operations can intentionally pause FTMS notifications. A
     // CCCD toggle here would bypass that block and compete for the transport.
     if (isFtmsNotificationsBlocked) return;
@@ -2698,6 +2836,7 @@ class DeviceData {
   /// Going through [ensureFtmsNotifications] keeps the wire-level kick and adds
   /// the listener republish, symmetrically for both characteristics.
   Future<void> _recycleFtmsNotifications(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     for (final (characteristic, label) in _bleFtmsNotificationCharacteristics) {
       if (characteristic == null) continue;
       await _disableBleNotifications(characteristic, label);
@@ -2739,6 +2878,15 @@ class DeviceData {
     } catch (e) {
       Snackbar.show(ABC.c, "Failed to write to SmartSpin2k $e", success: false);
     }
+  }
+
+  /// Sends a command while allowing callers to handle failures themselves.
+  Future<void> writeCommandStrict(BluetoothDevice device, String name) async {
+    if (isSimulated) return;
+    if (!configAppCompatibleFirmware && name == saveVname) {
+      throw StateError('Saving settings requires compatible firmware');
+    }
+    await _writeCommandStrict(device, name);
   }
 
   Future<void> _writeCommandStrict(BluetoothDevice device, String name) async {
@@ -2791,6 +2939,7 @@ class DeviceData {
   }
 
   Future<void> _runBleDeviceScan(BluetoothDevice device) async {
+    device = resolveTransportDevice(device);
     _connectedDevice = device;
     _beginBleDeviceScan(device);
     final completion = _bleDeviceScanCompletion!;
@@ -2824,6 +2973,7 @@ class DeviceData {
   }
 
   void _beginBleDeviceScan(BluetoothDevice device) {
+    device = resolveTransportDevice(device);
     _connectedDevice = device;
     if (!bleDeviceScanInProgress.value) {
       bleDeviceScanInProgress.value = true;
@@ -3300,6 +3450,10 @@ class DeviceData {
     false,
   );
 
+  /// Evidence that a BLE request was answered in the current session. GATT
+  /// connection, discovery and write acknowledgements alone do not prove this.
+  final ValueNotifier<bool> customResponseReceived = ValueNotifier<bool>(false);
+
   void _recordCustomResponseTimeout() {
     _consecutiveCustomResponseTimeouts++;
     if (_consecutiveCustomResponseTimeouts < _customResponseFailureThreshold ||
@@ -3326,6 +3480,7 @@ class DeviceData {
   /// characteristic.
   void _recordCustomResponseSuccess() {
     _consecutiveCustomResponseTimeouts = 0;
+    customResponseReceived.value = true;
     if (customResponsesDegraded.value) {
       customResponsesDegraded.value = false;
       print('[transport] link recovered: background polling resumed');
@@ -3531,13 +3686,18 @@ class DeviceData {
     });
   }
 
-  void setWorkoutTargetPower(int watts, {bool force = false}) {
+  void setWorkoutTargetPower(
+    int watts, {
+    bool force = false,
+    bool resetSimulationFirst = false,
+  }) {
     _workoutControlActive = true;
     // Store what the lane actually sent, not the requested value: an imported
     // workout can ask for a target outside sint16 and the lane clamps it.
     ftmsData._targetERG = _workoutControlLane.setTargetPower(
       watts,
       force: force,
+      resetSimulationFirst: resetSimulationFirst,
     );
   }
 
@@ -3547,6 +3707,16 @@ class DeviceData {
     // Zero-grade simulation releases the ERG target, so the displayed target
     // must follow or it reports a hold the trainer is no longer applying.
     ftmsData._targetERG = 0;
+  }
+
+  /// Releases resistance only if this app was running the workout. Loading or
+  /// closing an idle workout must not interrupt another app's trainer control.
+  void endWorkoutControl() {
+    if (!_workoutControlActive) return;
+    _workoutControlLane.clearDesiredControl();
+    // This reset is scoped to the current connection and cannot be replayed
+    // after a reconnect. Clear first so an old target's retry cannot delay it.
+    resetWorkoutSimulation();
   }
 
   bool _isWorkoutControlReady() {
@@ -3947,6 +4117,16 @@ class DeviceData {
   }
 
   final Map<String, Map<String, String>> _foundDevicesForConnection = {};
+
+  /// Clears discovered sensors while retaining the saved sensor selections.
+  void clearBleScanResults() {
+    if (bleDeviceScanInProgress.value) return;
+    // Opening a picker seeds it from this app-wide cache again.
+    NearbyBleDevices.instance.clear();
+    _scanResultDecoder.reset();
+    _foundDevicesForConnection.clear();
+    _applyStreamedFoundDevices(const <BleScanDevice>[]);
+  }
 
   /// Seeds this SmartSpin2k connection with supported sensors the companion
   /// app already heard while scanning for SmartSpin2ks.

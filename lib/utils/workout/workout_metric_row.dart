@@ -2,16 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:math';
 import 'package:reorderables/reorderables.dart' show ReorderableWrap;
-import 'workout_constants.dart';
+import 'workout_visuals.dart';
 import 'workout_metric_preferences.dart';
 
 class WorkoutMetricRow extends StatefulWidget {
   final List<WorkoutMetric> metrics;
 
-  const WorkoutMetricRow({
-    Key? key,
-    required this.metrics,
-  }) : super(key: key);
+  const WorkoutMetricRow({Key? key, required this.metrics}) : super(key: key);
 
   @override
   State<WorkoutMetricRow> createState() => _WorkoutMetricRowState();
@@ -55,55 +52,60 @@ class _WorkoutMetricRowState extends State<WorkoutMetricRow> {
     });
   }
 
-  List<WorkoutMetric> _orderMetrics(List<WorkoutMetric> metrics, List<String> order) {
+  List<WorkoutMetric> _orderMetrics(
+    List<WorkoutMetric> metrics,
+    List<String> order,
+  ) {
     final metricMap = {for (var m in metrics) m.label: m};
     final orderedList = <WorkoutMetric>[];
-    
+
     for (var label in order) {
       if (metricMap.containsKey(label)) {
         orderedList.add(metricMap[label]!);
         metricMap.remove(label);
       }
     }
-    
+
     orderedList.addAll(metricMap.values);
     return orderedList;
   }
 
   @override
   Widget build(BuildContext context) {
+    if (orderedMetrics.isEmpty) return const SizedBox.shrink();
     return LayoutBuilder(
       builder: (context, constraints) {
-        final screenSize = MediaQuery.of(context).size;
-        final isPortrait = screenSize.width < screenSize.height;
-
-        return SizedBox(
-          width: constraints.maxWidth,
-          height: isPortrait
-              ? (WorkoutSizes.metricBoxHeight * 2) + (3 * WorkoutPadding.small)
-              : WorkoutSizes.metricBoxHeight + (2 * WorkoutPadding.small),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: isPortrait ? constraints.maxWidth : null,
-              child: ReorderableWrap(
-                direction: Axis.horizontal,
-                spacing: WorkoutPadding.metricHorizontal,
-                runSpacing: WorkoutPadding.small,
-                onReorder: _handleReorder,
-                children: orderedMetrics.asMap().entries.map((entry) {
-                  return ReorderableDragStartListener(
-                    key: ValueKey(entry.value.label),
-                    index: entry.key,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: WorkoutPadding.metricHorizontal,
-                      ),
-                      child: MetricBox(metric: entry.value),
-                    ),
-                  );
-                }).toList(),
-              ),
+        final short = MediaQuery.sizeOf(context).height < 500;
+        final scale = MediaQuery.textScalerOf(context).scale(12) / 12;
+        final minimumWidth = (short ? 86.0 : 104.0) * min(1.1, scale);
+        final count = orderedMetrics.length;
+        final capacity = max(1, (constraints.maxWidth / minimumWidth).floor());
+        final rows = short ? 1 : (count / capacity).ceil();
+        final columns = (count / rows).ceil();
+        final width = short
+            ? max(constraints.maxWidth, columns * minimumWidth)
+            : constraints.maxWidth;
+        const gap = 4.0;
+        final tileWidth = (width - (columns - 1) * gap) / columns;
+        final tileHeight = (short ? 54.0 : 68.0) * min(1.6, scale);
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: width,
+            child: ReorderableWrap(
+              spacing: gap,
+              runSpacing: gap,
+              alignment: WrapAlignment.center,
+              onReorder: _handleReorder,
+              children: [
+                for (final metric in orderedMetrics)
+                  MetricBox(
+                    key: ValueKey(metric.label),
+                    metric: metric,
+                    width: tileWidth,
+                    height: tileHeight,
+                  ),
+              ],
             ),
           ),
         );
@@ -113,13 +115,11 @@ class _WorkoutMetricRowState extends State<WorkoutMetricRow> {
 
   void _handleReorder(int oldIndex, int newIndex) async {
     setState(() {
-      if (oldIndex < newIndex) {
-        newIndex -= 1;
-      }
+      // ReorderableWrap supplies the final slot, unlike ReorderableListView.
       final item = orderedMetrics.removeAt(oldIndex);
       orderedMetrics.insert(newIndex, item);
     });
-    
+
     final newOrder = orderedMetrics.map((m) => m.label).toList();
     await WorkoutMetricPreferences.saveMetricOrder(newOrder);
   }
@@ -127,88 +127,84 @@ class _WorkoutMetricRowState extends State<WorkoutMetricRow> {
 
 class MetricBox extends StatelessWidget {
   final WorkoutMetric metric;
+  final double width;
+  final double height;
+  final Color? valueColor;
 
   const MetricBox({
-    Key? key,
+    super.key,
     required this.metric,
-  }) : super(key: key);
+    this.width = 120,
+    this.height = 68,
+    this.valueColor,
+  });
 
-  double _calculateFontSize(String text, double boxWidth) {
-    double fontSize = WorkoutFontSizes.metricValueBase;
-    double estimatedWidth = text.length * (fontSize * 0.6);
-    
-    if (estimatedWidth > boxWidth - WorkoutPadding.metricBoxContent) {
-      fontSize = min(
-        WorkoutFontSizes.metricValueBase,
-        max(
-          WorkoutFontSizes.metricValueMin,
-          (boxWidth - WorkoutPadding.metricBoxContent) / (text.length * 0.6)
-        )
-      );
-    }
-    
-    return fontSize;
-  }
-
-  double _calculateBoxWidth(String value) {
-    double width = value.length * WorkoutSizes.metricCharacterWidth;
-    if (metric.unit != null) {
-      width += (metric.unit!.length * WorkoutSizes.metricCharacterWidth) + WorkoutSpacing.metricValueUnit;
-    }
-    return width.clamp(WorkoutSizes.metricBoxMinWidth, WorkoutSizes.metricBoxMaxWidth);
-  }
+  Color get _accent => switch (metric.label) {
+    'Power' => WorkoutVisuals.power,
+    'Target' => WorkoutVisuals.gold,
+    'Cadence' => WorkoutVisuals.cadence,
+    'Heart Rate' => WorkoutVisuals.heartRate,
+    _ => Colors.white,
+  };
 
   @override
   Widget build(BuildContext context) {
-    final boxWidth = _calculateBoxWidth(metric.value);
-    final valueFontSize = _calculateFontSize(metric.value, boxWidth);
-
-    return Container(
-      width: boxWidth,
-      height: WorkoutSizes.metricBoxHeight,
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(WorkoutSizes.metricBoxBorderRadius),
-        boxShadow: [WorkoutShadows.metricBox],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            metric.label,
-            style: TextStyle(
-              fontSize: WorkoutFontSizes.metricLabel,
-              fontWeight: WorkoutFontWeights.metricLabel,
-              color: Theme.of(context).textTheme.bodySmall?.color,
-            ),
-          ),
-          SizedBox(height: WorkoutSpacing.metricLabelValue),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                metric.value,
-                style: TextStyle(
-                  fontSize: valueFontSize,
-                  fontWeight: WorkoutFontWeights.metricValue,
-                  color: Theme.of(context).textTheme.bodyLarge?.color,
+    return Semantics(
+      label: '${metric.label}: ${metric.value} ${metric.unit ?? ''}',
+      excludeSemantics: true,
+      child: Container(
+        width: width,
+        height: height,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: WorkoutVisuals.panel,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white.withValues(alpha: .07)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                metric.label.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 9,
+                  letterSpacing: 1,
+                  color: WorkoutVisuals.muted,
                 ),
               ),
-              if (metric.unit != null) ...[
-                SizedBox(width: WorkoutSpacing.metricValueUnit),
-                Text(
-                  metric.unit!,
-                  style: TextStyle(
-                    fontSize: WorkoutFontSizes.metricUnit,
-                    color: Theme.of(context).textTheme.bodySmall?.color,
+            ),
+            const SizedBox(height: 3),
+            Expanded(
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    metric.value,
+                    key: ValueKey('metric-value-${metric.label}'),
+                    style: TextStyle(
+                      fontSize: 26,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: valueColor ?? _accent,
+                    ),
                   ),
                 ),
-              ],
-            ],
-          ),
-        ],
+              ),
+            ),
+            // Units get their own fixed row so they never shift the number.
+            Text(
+              metric.unit ?? '',
+              style: const TextStyle(
+                fontSize: 9,
+                height: 1.2,
+                color: WorkoutVisuals.muted,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -219,18 +215,10 @@ class WorkoutMetric {
   final String value;
   final String? unit;
 
-  const WorkoutMetric({
-    required this.label,
-    required this.value,
-    this.unit,
-  });
+  const WorkoutMetric({required this.label, required this.value, this.unit});
 
   factory WorkoutMetric.power({required int watts}) {
-    return WorkoutMetric(
-      label: 'Power',
-      value: watts.toString(),
-      unit: 'W',
-    );
+    return WorkoutMetric(label: 'Power', value: watts.toString(), unit: 'W');
   }
 
   factory WorkoutMetric.heartRate({required int bpm}) {
@@ -242,39 +230,39 @@ class WorkoutMetric {
   }
 
   factory WorkoutMetric.cadence({required int rpm}) {
-    return WorkoutMetric(
-      label: 'Cadence',
-      value: rpm.toString(),
-      unit: 'RPM',
-    );
+    return WorkoutMetric(label: 'Cadence', value: rpm.toString(), unit: 'RPM');
   }
 
   factory WorkoutMetric.elapsedTime({required int seconds}) {
     final hours = seconds ~/ 3600;
     final minutes = (seconds % 3600) ~/ 60;
     final remainingSeconds = seconds % 60;
-    
+
     return WorkoutMetric(
       label: 'Elapsed Time',
-      value: '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}',
+      value:
+          '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}',
     );
   }
 
-  factory WorkoutMetric.remainingTime({required int totalSeconds, required int elapsedSeconds, required double workoutProgressSeconds, bool isUnlimited = false}) {
+  factory WorkoutMetric.remainingTime({
+    required int totalSeconds,
+    required int elapsedSeconds,
+    required double workoutProgressSeconds,
+    bool isUnlimited = false,
+  }) {
     if (isUnlimited) {
-      return const WorkoutMetric(
-        label: 'Remaining Time',
-        value: '--:--:--',
-      );
+      return const WorkoutMetric(label: 'Remaining Time', value: '--:--:--');
     }
     final remainingSeconds = totalSeconds - workoutProgressSeconds.round();
     final hours = remainingSeconds ~/ 3600;
     final minutes = (remainingSeconds % 3600) ~/ 60;
     final seconds = remainingSeconds % 60;
-    
+
     return WorkoutMetric(
       label: 'Remaining Time',
-      value: '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
+      value:
+          '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
     );
   }
 

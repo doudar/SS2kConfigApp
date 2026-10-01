@@ -7,21 +7,27 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   final BluetoothDevice device;
   final String title;
+  final VoidCallback? onTitleTap;
   final List<Widget>? actions;
   final bool showDeviceHeader;
   final bool firmwareOnlyDeviceHeader;
   final bool deviceHeaderCustomRefreshEnabled;
   final bool backNavigationEnabled;
 
+  /// Give named workout actions their own row on phones, preserving title space.
+  final bool mobileActionRow;
+
   const SS2KAppBar({
     Key? key,
     required this.device,
     required this.title,
+    this.onTitleTap,
     this.actions,
     this.showDeviceHeader = true,
     this.firmwareOnlyDeviceHeader = false,
     this.deviceHeaderCustomRefreshEnabled = true,
     this.backNavigationEnabled = true,
+    this.mobileActionRow = false,
   }) : super(key: key);
 
   double _computeAdaptiveHeight({
@@ -143,63 +149,13 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
           ],
         ),
       ),
-      title: isNarrow
-          ? Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _displayTitle,
-                  maxLines: _isLongTitle ? 2 : 1,
-                  softWrap: _isLongTitle,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style:
-                      (_isLongTitle
-                              ? theme.textTheme.titleSmall
-                              : theme.textTheme.titleLarge)
-                          ?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            shadows: const [
-                              Shadow(
-                                color: Colors.black87,
-                                blurRadius: 6,
-                                offset: Offset(0, 1),
-                              ),
-                            ],
-                          ),
-                ),
-                if (showDeviceHeader) const SizedBox(height: 2),
-                if (showDeviceHeader)
-                  DeviceHeader(
-                    device: device,
-                    connectOnly: true,
-                    firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
-                    customRefreshEnabled: deviceHeaderCustomRefreshEnabled,
-                  ),
-              ],
-            )
-          : Stack(
-              children: <Widget>[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: showDeviceHeader
-                      ? Padding(
-                          padding: const EdgeInsets.only(left: 4),
-                          child: DeviceHeader(
-                            device: device,
-                            connectOnly: true,
-                            firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
-                            customRefreshEnabled:
-                                deviceHeaderCustomRefreshEnabled,
-                          ),
-                        )
-                      : null,
-                ),
-                Align(
-                  alignment: Alignment.center,
-                  child: Text(
+      title: _withTitleTap(
+        isNarrow
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
                     _displayTitle,
                     maxLines: _isLongTitle ? 2 : 1,
                     softWrap: _isLongTitle,
@@ -221,20 +177,119 @@ class SS2KAppBar extends StatelessWidget implements PreferredSizeWidget {
                               ],
                             ),
                   ),
-                ),
-              ],
-            ),
+                  if (showDeviceHeader) const SizedBox(height: 2),
+                  if (showDeviceHeader)
+                    DeviceHeader(
+                      device: device,
+                      connectOnly: true,
+                      firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
+                      customRefreshEnabled: deviceHeaderCustomRefreshEnabled,
+                    ),
+                ],
+              )
+            : mobileActionRow
+            ? Row(
+                children: [
+                  if (showDeviceHeader) ...[
+                    DeviceHeader(
+                      device: device,
+                      connectOnly: true,
+                      firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
+                      customRefreshEnabled: deviceHeaderCustomRefreshEnabled,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: Text(
+                      _displayTitle,
+                      maxLines: _isLongTitle ? 2 : 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Stack(
+                children: <Widget>[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: showDeviceHeader
+                        ? Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: DeviceHeader(
+                              device: device,
+                              connectOnly: true,
+                              firmwareOnlyRefresh: firmwareOnlyDeviceHeader,
+                              customRefreshEnabled:
+                                  deviceHeaderCustomRefreshEnabled,
+                            ),
+                          )
+                        : null,
+                  ),
+                  Align(
+                    alignment: Alignment.center,
+                    child: Text(
+                      _displayTitle,
+                      maxLines: _isLongTitle ? 2 : 1,
+                      softWrap: _isLongTitle,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style:
+                          (_isLongTitle
+                                  ? theme.textTheme.titleSmall
+                                  : theme.textTheme.titleLarge)
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                shadows: const [
+                                  Shadow(
+                                    color: Colors.black87,
+                                    blurRadius: 6,
+                                    offset: Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
       centerTitle: true,
-      actions: actions,
+      actions: mobileActionRow && isNarrow ? null : actions,
+      bottom: mobileActionRow && isNarrow
+          ? PreferredSize(
+              preferredSize: const Size.fromHeight(48),
+              child: SizedBox(
+                height: 48,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: actions ?? const [],
+                ),
+              ),
+            )
+          : null,
     );
   }
 
   @override
   Size get preferredSize => Size.fromHeight(
     _computeAdaptiveHeight(
-      isNarrow: _isLikelyNarrowScreen,
-      textScaleFactor:
-          WidgetsBinding.instance.platformDispatcher.textScaleFactor,
-    ),
+          isNarrow: _isLikelyNarrowScreen,
+          textScaleFactor:
+              WidgetsBinding.instance.platformDispatcher.textScaleFactor,
+        ) +
+        (mobileActionRow && _isLikelyNarrowScreen ? 48 : 0),
   );
+
+  Widget _withTitleTap(Widget child) => onTitleTap == null
+      ? child
+      : GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTitleTap,
+          child: child,
+        );
 }

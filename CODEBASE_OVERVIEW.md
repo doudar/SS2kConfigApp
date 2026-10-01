@@ -47,7 +47,6 @@ The codebase is organized into screens, widgets, and utilities, with clear separ
   - `flutter_blue_plus`
   - `screens/bluetooth_off_screen.dart`
   - `screens/scan_screen.dart`
-  - `assets/appainter_theme.json`
 
 ## 📱 Screens (`lib/screens/`)
 

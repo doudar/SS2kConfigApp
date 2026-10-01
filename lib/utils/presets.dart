@@ -14,62 +14,84 @@ import './extra.dart';
 import './constants.dart';
 
 import './preset_sharing.dart';
+import '../widgets/settings_backup_name_dialog.dart';
 
 class PresetManager {
-  static Future<void> savePreset(BuildContext context, DeviceData deviceData, String presetName) async {
+  static Future<bool> savePreset(
+    BuildContext context,
+    DeviceData deviceData,
+    String presetName, {
+    List<Map<String, dynamic>>? settings,
+    bool showSuccess = true,
+  }) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       List<String> presetsList = prefs.getStringList('backups_list') ?? [];
-      
+
       String presetKey = 'backup_$presetName';
-      
+
       // Filter out non-encodable objects like SettingType enum and only save vName/value
       List<Map<String, dynamic>> saveableData = [];
-      for (var item in deviceData.customCharacteristic) {
+      for (var item in settings ?? deviceData.customCharacteristic) {
         if (item.containsKey('vName') && item.containsKey('value')) {
-          saveableData.add({
-            'vName': item['vName'],
-            'value': item['value'],
-          });
+          saveableData.add({'vName': item['vName'], 'value': item['value']});
         }
       }
-      
-      await prefs.setString(presetKey, jsonEncode(saveableData));
-      
+
+      if (!await prefs.setString(presetKey, jsonEncode(saveableData))) {
+        throw StateError('The app could not store this copy.');
+      }
+
       if (!presetsList.contains(presetName)) {
         presetsList.add(presetName);
-        await prefs.setStringList('backups_list', presetsList);
+        if (!await prefs.setStringList('backups_list', presetsList)) {
+          throw StateError('The app could not update the saved copies list.');
+        }
       }
-      
-      if (context.mounted) {
-        Snackbar.show(ABC.c, "Preset '$presetName' saved successfully", success: true);
+
+      if (showSuccess && context.mounted) {
+        Snackbar.show(
+          ABC.c,
+          '“$presetName” saved in this app. SmartSpin2k settings are unchanged.',
+          success: true,
+        );
       }
+      return true;
     } catch (e) {
       if (context.mounted) {
-        Snackbar.show(ABC.c, prettyException("Save Preset Failed ", e), success: false);
+        Snackbar.show(
+          ABC.c,
+          prettyException('Could not save the settings copy. ', e),
+          success: false,
+        );
       }
+      return false;
     }
   }
 
-  static Future<void> loadPreset(BuildContext context, DeviceData deviceData, BluetoothDevice device) async {
+  static Future<void> loadPreset(
+    BuildContext context,
+    DeviceData deviceData,
+    BluetoothDevice device,
+  ) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       List<String> presetsList = prefs.getStringList('backups_list') ?? [];
 
       if (presetsList.isEmpty) {
         if (context.mounted) {
-          Snackbar.show(ABC.c, "No presets found", success: false);
+          await _showNoSavedCopies(context);
         }
         return;
       }
 
       if (!context.mounted) return;
-      
+
       String? selectedPreset = await showDialog<String>(
         context: context,
         builder: (BuildContext context) {
           return AlertDialog(
-            title: Text('Select Preset'),
+            title: Text('Load saved settings'),
             content: Container(
               width: double.maxFinite,
               constraints: BoxConstraints(maxHeight: 500),
@@ -80,18 +102,31 @@ class PresetManager {
                 itemBuilder: (context, index) {
                   final presetName = presetsList[index];
                   return ListTile(
+                    leading: const Icon(Icons.restore),
                     title: Text(presetName),
+                    subtitle: const Text('Choose this copy to load'),
                     trailing: IconButton(
                       icon: Icon(Icons.visibility_outlined),
-                      tooltip: 'View Details',
+                      tooltip: 'View saved settings',
                       onPressed: () async {
-                        String? presetData = prefs.getString('backup_$presetName');
+                        String? presetData = prefs.getString(
+                          'backup_$presetName',
+                        );
                         if (presetData != null) {
                           try {
                             List<dynamic> settings = jsonDecode(presetData);
-                            await _showPresetDetails(context, presetName, settings, deviceData);
+                            await _showPresetDetails(
+                              context,
+                              presetName,
+                              settings,
+                              deviceData,
+                            );
                           } catch (e) {
-                            debugPrint("Error viewing preset: $e");
+                            Snackbar.show(
+                              ABC.c,
+                              'Could not read this saved copy.',
+                              success: false,
+                            );
                           }
                         }
                       },
@@ -117,15 +152,18 @@ class PresetManager {
         context: context,
         builder: (BuildContext context) {
           return AlertDialog(
-            title: Text('Confirm Load'),
-            content: Text('This will overwrite your current settings.'),
+            title: Text('Load “$selectedPreset”?'),
+            content: Text(
+              'This will replace the settings on your SmartSpin2k with this saved copy, including any saved Wi-Fi details.\n\nSave a copy of your current settings first if you want to keep them.',
+            ),
+            scrollable: true,
             actions: <Widget>[
               TextButton(
                 child: Text('Cancel'),
                 onPressed: () => Navigator.of(context).pop(false),
               ),
-              TextButton(
-                child: Text('Okay'),
+              FilledButton(
+                child: Text('Load onto SmartSpin2k'),
                 onPressed: () => Navigator.of(context).pop(true),
               ),
             ],
@@ -138,24 +176,30 @@ class PresetManager {
       String? presetData = prefs.getString('backup_$selectedPreset');
       if (presetData == null) {
         if (context.mounted) {
-          Snackbar.show(ABC.c, "Preset not found", success: false);
+          Snackbar.show(
+            ABC.c,
+            'This saved copy could not be found. Save a new copy or import a settings file.',
+            success: false,
+          );
         }
         return;
       }
 
       // Parse the preset data
       List<dynamic> loadedSettings = jsonDecode(presetData);
-      
+
       // Update existing settings with loaded values only
       // This preserves structural data like SettingType Enums which are not in the JSON
       for (var loadedItem in loadedSettings) {
-        if (loadedItem is Map && loadedItem.containsKey("vName") && loadedItem.containsKey("value")) {
+        if (loadedItem is Map &&
+            loadedItem.containsKey("vName") &&
+            loadedItem.containsKey("value")) {
           // Find matching item in current configuration
           try {
-             var matchingItems = deviceData.customCharacteristic.where(
-              (item) => item["vName"] == loadedItem["vName"]
+            var matchingItems = deviceData.customCharacteristic.where(
+              (item) => item["vName"] == loadedItem["vName"],
             );
-            
+
             if (matchingItems.isNotEmpty) {
               var currentItem = matchingItems.first;
               // Only update the value
@@ -168,13 +212,21 @@ class PresetManager {
       }
 
       await deviceData.saveAllSettings(device);
-      
+
       if (context.mounted) {
-        Snackbar.show(ABC.c, "Preset loaded and saved to device", success: true);
+        Snackbar.show(
+          ABC.c,
+          '“$selectedPreset” loaded onto SmartSpin2k.',
+          success: true,
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        Snackbar.show(ABC.c, prettyException("Load preset failed", e), success: false);
+        Snackbar.show(
+          ABC.c,
+          prettyException('Could not load settings onto SmartSpin2k. ', e),
+          success: false,
+        );
       }
     }
   }
@@ -188,7 +240,7 @@ class PresetManager {
 
         if (presetsList.isEmpty) {
           if (context.mounted) {
-            Snackbar.show(ABC.c, "No presets found", success: false);
+            await _showNoSavedCopies(context);
           }
           return;
         }
@@ -197,7 +249,7 @@ class PresetManager {
           context: context,
           builder: (BuildContext context) {
             return AlertDialog(
-              title: Text('Select Preset to Delete'),
+              title: Text('Delete a saved copy'),
               content: Container(
                 width: double.maxFinite,
                 child: ListView.builder(
@@ -205,8 +257,10 @@ class PresetManager {
                   itemCount: presetsList.length,
                   itemBuilder: (context, index) {
                     return ListTile(
+                      leading: const Icon(Icons.delete_outline),
                       title: Text(presetsList[index]),
-                      onTap: () => Navigator.of(context).pop(presetsList[index]),
+                      onTap: () =>
+                          Navigator.of(context).pop(presetsList[index]),
                     );
                   },
                 ),
@@ -227,15 +281,22 @@ class PresetManager {
           context: context,
           builder: (BuildContext context) {
             return AlertDialog(
-              title: Text('Confirm Delete'),
-              content: Text('Are you sure you want to delete this preset?'),
+              title: Text('Delete “$selectedPreset”?'),
+              content: Text(
+                'This removes the saved copy from this app. Your SmartSpin2k settings and exported files will stay as they are.',
+              ),
+              scrollable: true,
               actions: <Widget>[
                 TextButton(
-                  child: Text('No'),
+                  child: Text('Cancel'),
                   onPressed: () => Navigator.of(context).pop(false),
                 ),
-                TextButton(
-                  child: Text('Yes'),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                    foregroundColor: Theme.of(context).colorScheme.onError,
+                  ),
+                  child: Text('Delete copy'),
                   onPressed: () => Navigator.of(context).pop(true),
                 ),
               ],
@@ -252,225 +313,200 @@ class PresetManager {
         await prefs.setStringList('backups_list', presetsList);
 
         if (context.mounted) {
-          Snackbar.show(ABC.c, "Preset '$selectedPreset' deleted successfully", success: true);
+          Snackbar.show(
+            ABC.c,
+            '“$selectedPreset” deleted from this app.',
+            success: true,
+          );
         }
       }
     } catch (e) {
       if (context.mounted) {
-        Snackbar.show(ABC.c, prettyException("Delete preset failed", e), success: false);
+        Snackbar.show(
+          ABC.c,
+          prettyException('Could not delete the saved copy. ', e),
+          success: false,
+        );
       }
     }
   }
 
-  static Future<void> showPresetsMenu(BuildContext context, DeviceData deviceData, BluetoothDevice device) async {
+  static Future<void> showPresetsMenu(
+    BuildContext context,
+    DeviceData deviceData,
+    BluetoothDevice device,
+  ) async {
     if (!context.mounted) return;
 
-    String? action = await showDialog<String>(
+    final action = await showDialog<String>(
       context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: 400),
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
-                  child: Text(
-                    'Settings Manager',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 12, 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Save & restore settings',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
                 ),
-
-                _buildSectionHeader(context, "Local Storage"),
-                _buildMenuOption(
-                  context,
-                  icon: Icons.save,
-                  title: 'Save to Phone',
-                  subtitle: 'Save current settings to "App Files"',
-                  value: 'save',
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 16),
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 8,
+                      ),
+                      child: Text(
+                        'Keep a copy of your SmartSpin2k setup, restore one, or move settings between devices.',
+                      ),
+                    ),
+                    _buildSectionHeader(context, 'Saved in this app'),
+                    _buildMenuOption(
+                      context,
+                      icon: Icons.bookmark_add_outlined,
+                      title: 'Save a copy',
+                      subtitle:
+                          'Keep your current settings in this app for later.',
+                      value: 'save',
+                    ),
+                    _buildMenuOption(
+                      context,
+                      icon: Icons.restore,
+                      title: 'Load saved settings',
+                      subtitle: 'Put a saved copy onto your SmartSpin2k.',
+                      value: 'load',
+                    ),
+                    _buildMenuOption(
+                      context,
+                      icon: Icons.delete_outline,
+                      title: 'Delete a saved copy',
+                      subtitle: 'Remove a copy from this app.',
+                      value: 'delete',
+                    ),
+                    const Divider(indent: 24, endIndent: 24),
+                    _buildSectionHeader(context, 'Settings files'),
+                    _buildMenuOption(
+                      context,
+                      icon: Icons.file_open_outlined,
+                      title: 'Import from a file',
+                      subtitle:
+                          'Add a .ss2k or .json settings file to your saved copies. Choose whether to load it next.',
+                      value: 'import',
+                    ),
+                    _buildMenuOption(
+                      context,
+                      icon: Icons.ios_share,
+                      title: 'Export to a file',
+                      subtitle:
+                          'Create a file of your current settings to save elsewhere or share.',
+                      value: 'export',
+                    ),
+                    const Divider(indent: 24, endIndent: 24),
+                    _buildSectionHeader(context, 'Start over'),
+                    _buildMenuOption(
+                      context,
+                      icon: Icons.restart_alt,
+                      title: 'Factory reset SmartSpin2k',
+                      subtitle:
+                          'Replace the device settings with factory defaults.',
+                      value: 'reset',
+                      destructive: true,
+                    ),
+                  ],
                 ),
-                _buildMenuOption(
-                  context,
-                  icon: Icons.folder_open,
-                  title: 'Load from Phone',
-                  subtitle: 'Apply settings to SmartSpin2k from "App Files"',
-                  value: 'load',
-                ),
-                _buildMenuOption(
-                  context,
-                  icon: Icons.delete_outline,
-                  title: 'Manage Files',
-                  subtitle: 'Delete presets from "App Files"',
-                  value: 'delete',
-                ),
-
-                _buildSectionHeader(context, "Sharing"),
-                _buildMenuOption(
-                  context,
-                  icon: Icons.file_download_outlined,
-                  title: 'Import File',
-                  subtitle: 'Open a .ss2k file from your phone',
-                  value: 'import',
-                ),
-                _buildMenuOption(
-                  context,
-                  icon: Icons.share_outlined,
-                  title: 'Export File',
-                  subtitle: 'Share current settings as a .ss2k file',
-                  value: 'export',
-                ),
-
-                _buildSectionHeader(context, "Device"),
-                 _buildMenuOption(
-                  context,
-                  icon: Icons.restart_alt,
-                  title: 'Reset to Defaults',
-                  subtitle: 'Reset device to factory settings',
-                  value: 'reset',
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
 
     if (action == null || !context.mounted) return;
 
     switch (action) {
       case 'reset':
-         bool? confirmed = await showDialog<bool>(
+        final confirmed = await showDialog<bool>(
           context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Reset to Defaults'),
-              content: Text('Are you sure you want to reset the device to factory defaults? This cannot be undone.'),
-              actions: <Widget>[
-                TextButton(
-                  child: Text('Cancel'),
-                  onPressed: () => Navigator.of(context).pop(false),
+          builder: (context) => AlertDialog(
+            title: const Text('Factory reset SmartSpin2k?'),
+            scrollable: true,
+            content: const Text(
+              'This replaces the settings on your SmartSpin2k with factory defaults. Your saved copies in this app will stay available.\n\nSave a copy of your current settings first if you want to restore them later.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                  foregroundColor: Theme.of(context).colorScheme.onError,
                 ),
-                FilledButton(
-                  child: Text('Reset'),
-                  style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                  onPressed: () => Navigator.of(context).pop(true),
-                ),
-              ],
-            );
-          },
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Reset SmartSpin2k'),
+              ),
+            ],
+          ),
         );
-        
         if (confirmed == true && context.mounted) {
           try {
             await deviceData.resetToDefaults(device);
-            // Reconnect logic from resetToDefaults might clear logs/state, wait for a bit
-             await Future.delayed(Duration(seconds: 1));
-             // Trigger a refresh/connect cycle properly
-             await device.connectAndUpdateStream();
-             // Reset UI state implicitly through connection change orexplicit snackbar
-            Snackbar.show(ABC.c, "SmartSpin2k has been reset to defaults", success: true);
+            await Future.delayed(const Duration(seconds: 1));
+            await device.connectAndUpdateStream();
+            if (context.mounted) {
+              Snackbar.show(
+                ABC.c,
+                'SmartSpin2k reset to factory settings.',
+                success: true,
+              );
+            }
           } catch (e) {
-             if (context.mounted) {
-               Snackbar.show(ABC.c, prettyException("Reset Failed ", e), success: false);
-             }
+            if (context.mounted) {
+              Snackbar.show(
+                ABC.c,
+                prettyException('Could not reset SmartSpin2k. ', e),
+                success: false,
+              );
+            }
           }
         }
         break;
       case 'save':
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        List<String> existingPresets = prefs.getStringList('backups_list') ?? [];
+        final prefs = await SharedPreferences.getInstance();
+        final existingPresets = prefs.getStringList('backups_list') ?? [];
         existingPresets.sort();
-
-        final nameController = TextEditingController();
+        if (!context.mounted) return;
         final presetName = await showDialog<String>(
           context: context,
-          builder: (BuildContext context) {
-            return StatefulBuilder(
-              builder: (context, setState) {
-                return AlertDialog(
-                  title: Text('Save to My Files'),
-                  content: Container(
-                    width: double.maxFinite,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        TextField(
-                          controller: nameController,
-                          decoration: InputDecoration(
-                            hintText: 'Enter preset name',
-                            labelText: 'Preset Name',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.settings),
-                          ),
-                          onChanged: (text) => setState(() {}),
-                        ),
-                        SizedBox(height: 16),
-                        Text(
-                          'Existing Presets (${existingPresets.length})',
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                        ),
-                        SizedBox(height: 8),
-                        Flexible(
-                          child: Container(
-                            constraints: BoxConstraints(maxHeight: 200),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Theme.of(context).dividerColor),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: existingPresets.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      'No saved presets',
-                                      style: TextStyle(color: Colors.grey),
-                                    ),
-                                  )
-                                : ListView.separated(
-                                    shrinkWrap: true,
-                                    itemCount: existingPresets.length,
-                                    separatorBuilder: (context, index) => Divider(height: 1),
-                                    itemBuilder: (context, index) {
-                                      final name = existingPresets[index];
-                                      final isSelected = name == nameController.text;
-                                      return ListTile(
-                                        title: Text(name),
-                                        dense: true,
-                                        selected: isSelected,
-                                        selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.2),
-                                        onTap: () {
-                                          nameController.text = name;
-                                          setState(() {});
-                                        },
-                                      );
-                                    },
-                                  ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  actions: <Widget>[
-                    TextButton(
-                      child: Text('Cancel'),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                    FilledButton(
-                      child: Text(existingPresets.contains(nameController.text) ? 'Overwrite' : 'Save'),
-                      onPressed: nameController.text.trim().isEmpty
-                          ? null
-                          : () => Navigator.of(context).pop(nameController.text.trim()),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
+          builder: (_) => SettingsBackupNameDialog(
+            title: 'Save a copy',
+            description:
+                'Save your current SmartSpin2k settings, including Wi-Fi details, in this app. Use “Load saved settings” to restore them later.',
+            actionLabel: 'Save copy',
+            existingNames: existingPresets,
+          ),
         );
-        if (presetName != null && presetName.isNotEmpty && context.mounted) {
+        if (presetName != null && context.mounted) {
           await savePreset(context, deviceData, presetName);
         }
         break;
@@ -481,35 +517,18 @@ class PresetManager {
         await deletePreset(context);
         break;
       case 'export':
-        final nameController = TextEditingController();
         final fileName = await showDialog<String>(
           context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Export File'),
-              content: TextField(
-                controller: nameController,
-                decoration: InputDecoration(
-                  hintText: 'Enter file name',
-                  labelText: 'File Name',
-                  border: OutlineInputBorder(),
-                  suffixText: '.ss2k'
-                ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  child: Text('Cancel'),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                FilledButton(
-                  child: Text('Export'),
-                  onPressed: () => Navigator.of(context).pop(nameController.text),
-                ),
-              ],
-            );
-          },
+          builder: (_) => const SettingsBackupNameDialog(
+            title: 'Export to a file',
+            description:
+                'Create a .ss2k file from the settings currently on your SmartSpin2k. Next, choose where to save or share it.\n\nYour Wi-Fi name and password are left out.',
+            actionLabel: 'Choose where to save or share',
+            initialName: 'My bike setup',
+            isExport: true,
+          ),
         );
-        if (fileName != null && fileName.isNotEmpty && context.mounted) {
+        if (fileName != null && context.mounted) {
           await PresetSharing.exportPreset(context, deviceData, fileName);
         }
         break;
@@ -519,55 +538,93 @@ class PresetManager {
     }
   }
 
-  static Future<void> _showPresetDetails(BuildContext context, String name, List<dynamic> savedSettings, DeviceData deviceData) async {
+  static Future<void> _showNoSavedCopies(BuildContext context) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('No saved copies yet'),
+        scrollable: true,
+        content: const Text(
+          'Choose “Save a copy” to keep your current SmartSpin2k settings, or “Import from a file” to add settings saved elsewhere.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Back'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Future<void> _showPresetDetails(
+    BuildContext context,
+    String name,
+    List<dynamic> savedSettings,
+    DeviceData deviceData,
+  ) async {
     List<Map<String, dynamic>> displaySettings = [];
-    
+
     for (var savedItem in savedSettings) {
       if (savedItem is Map && savedItem.containsKey('vName')) {
         // Find matching current config to get readable name
         var matchingItems = deviceData.customCharacteristic.where(
-            (c) => c['vName'] == savedItem['vName']);
+          (c) => c['vName'] == savedItem['vName'],
+        );
         var currentItem = matchingItems.isNotEmpty ? matchingItems.first : null;
 
         if (currentItem != null && currentItem['isSetting'] == true) {
           displaySettings.add({
             'humanReadableName': currentItem['humanReadableName'],
             'vName': savedItem['vName'],
-            'value': savedItem['value']
+            'value': savedItem['value'],
           });
         }
       }
     }
-    
+
     // Sort logic to match main UI or keep raw? Let's just sort alphabetically by name for easy reading
-    displaySettings.sort((a, b) => (a['humanReadableName'] ?? '').compareTo(b['humanReadableName'] ?? ''));
+    displaySettings.sort(
+      (a, b) => (a['humanReadableName'] ?? '').compareTo(
+        b['humanReadableName'] ?? '',
+      ),
+    );
 
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Preset: $name'),
+        title: Text('Saved settings: $name'),
         content: Container(
-           width: double.maxFinite,
-           constraints: BoxConstraints(maxHeight: 400),
-           child: displaySettings.isEmpty ? 
-             Center(child: Text("No displayable settings found.")) :
-             ListView.separated(
-             shrinkWrap: true,
-             itemCount: displaySettings.length,
-             separatorBuilder: (context, index) => Divider(height: 1),
-             itemBuilder: (context, index) {
-               final item = displaySettings[index];
-               final displayValue = (item['vName'] == passwordVname) 
-                   ? "**********" 
-                   : item['value'];
-               return ListTile(
-                 title: Text(item['humanReadableName'] ?? item['vName'] ?? 'Unknown', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                 subtitle: Text(displayValue.toString(), style: TextStyle(fontSize: 13)),
-                 dense: true,
-                 contentPadding: EdgeInsets.symmetric(horizontal: 4),
-               );
-             },
-           ),
+          width: double.maxFinite,
+          constraints: BoxConstraints(maxHeight: 400),
+          child: displaySettings.isEmpty
+              ? Center(child: Text('This copy has no settings to preview.'))
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: displaySettings.length,
+                  separatorBuilder: (context, index) => Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final item = displaySettings[index];
+                    final displayValue = (item['vName'] == passwordVname)
+                        ? "**********"
+                        : item['value'];
+                    return ListTile(
+                      title: Text(
+                        item['humanReadableName'] ?? item['vName'] ?? 'Unknown',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      subtitle: Text(
+                        displayValue.toString(),
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      dense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 4),
+                    );
+                  },
+                ),
         ),
         actions: [
           TextButton(
@@ -583,12 +640,11 @@ class PresetManager {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
       child: Text(
-        title.toUpperCase(),
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.0,
-            ),
+        title,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -599,11 +655,38 @@ class PresetManager {
     required String title,
     required String subtitle,
     required String value,
+    bool destructive = false,
   }) {
+    final colors = Theme.of(context).colorScheme;
     return ListTile(
-      leading: Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
-      title: Text(title),
-      subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      leading: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: destructive
+              ? colors.errorContainer
+              : colors.secondaryContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(
+          icon,
+          color: destructive
+              ? colors.onErrorContainer
+              : colors.onSecondaryContainer,
+        ),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: destructive ? colors.error : null,
+        ),
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(subtitle),
+      ),
+      trailing: const Icon(Icons.chevron_right, size: 20),
       onTap: () {
         Navigator.of(context).pop(value);
       },

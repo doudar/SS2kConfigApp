@@ -6,6 +6,9 @@
 // test/support/fake_ble_platform.dart's lifecycle rules it must stay in its own
 // file. `testWidgets` runs in a fake-async zone, so every step that needs real
 // asynchrony — anything that awaits DeviceData — runs inside `tester.runAsync`.
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -38,7 +41,9 @@ void main() {
   // directory. Left unmocked they throw out of initState and fail the test
   // before it can assert anything about transports.
   setUpAll(() {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      'shifter_shift_sound_enabled': false,
+    });
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
@@ -178,10 +183,12 @@ void main() {
     // The signal indicator is the only Icon inside DeviceHeader's 26x26 badge;
     // the expand_more chevron is the other Icon in the collapsed header.
     final icons = tester
-        .widgetList<Icon>(find.descendant(
-          of: find.byType(DeviceHeader),
-          matching: find.byType(Icon),
-        ))
+        .widgetList<Icon>(
+          find.descendant(
+            of: find.byType(DeviceHeader),
+            matching: find.byType(Icon),
+          ),
+        )
         .where((i) => i.icon != Icons.expand_more)
         .toList();
     expect(icons, hasLength(1), reason: 'expected exactly one signal icon');
@@ -190,8 +197,11 @@ void main() {
 
   /// Every custom-characteristic write, as its setting reference byte.
   List<int> ccReferences() => blePlatform.writeCalls
-      .where((c) => c.characteristicUuid.str.toLowerCase() ==
-          Guid(ccUUID).str.toLowerCase())
+      .where(
+        (c) =>
+            c.characteristicUuid.str.toLowerCase() ==
+            Guid(ccUUID).str.toLowerCase(),
+      )
       .where((c) => c.value.length > 1)
       .map((c) => c.value[1])
       .toList();
@@ -229,8 +239,7 @@ void main() {
         () =>
             s.data.transportState.value.transport ==
                 DeviceTransportKind.bluetooth &&
-            s.data.transportState.value.phase ==
-                DeviceTransportPhase.connected,
+            s.data.transportState.value.phase == DeviceTransportPhase.connected,
       );
       expect(failedOver, isTrue, reason: 'the failover never completed');
 
@@ -319,13 +328,96 @@ void main() {
       await pumpHeader(tester, harness.device);
       // Tear down while the post-attach initialization is still in flight.
       await unmount(tester);
-      await pumpUntil(tester, () => false,
-          timeout: const Duration(seconds: 2));
+      await pumpUntil(tester, () => false, timeout: const Duration(seconds: 2));
       expect(tester.takeException(), isNull);
     });
   });
 
   group('ShifterScreen', () {
+    testWidgets(
+      'telemetry stays streamed, details are polled and shifting is gated',
+      (tester) async {
+        final harness = await connectBle(tester);
+        harness.deviceData.customCharacteristic.firstWhere(
+          (c) => c['vName'] == shifterPositionVname,
+        )['value'] = '12';
+        await tester.pumpWidget(
+          MaterialApp(home: ShifterScreen(device: harness.device)),
+        );
+        await pumpUntil(tester, () => blePlatform.enabledNow('2ad2'));
+        await pumpUntil(tester, () => ccReferences().contains(0x17));
+        // A normal notification supplies speed, cadence, power and heart rate.
+        void notifyTelemetry() => blePlatform.emitNotification(
+          harness.device.remoteId,
+          '2ad2',
+          [0x44, 0x02, 0x34, 0x08, 0xb0, 0x00, 0xde, 0x00, 142],
+        );
+        notifyTelemetry();
+        await pumpUntil(
+          tester,
+          () => harness.deviceData.lastFtmsUpdate != null,
+        );
+        await tester.pump();
+        expect(find.text('222'), findsOneWidget);
+        expect(find.text('88'), findsOneWidget);
+        expect(find.text('LIVE TELEMETRY'), findsOneWidget);
+        // Finish the one-time calibration/settings reads before observing polls.
+        await pumpUntil(tester, () => ccReferences().contains(0x22));
+        blePlatform.clearObservations();
+        // Cross the old chart-load delay and header firmware-poll interval.
+        await tester.pump(const Duration(seconds: 31));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+        expect(ccReferences(), isNotEmpty);
+        expect(
+          ccReferences(),
+          everyElement(isIn([0x02, 0x19, 0x28])),
+          reason:
+              'Only incline, motor target and target watts should be polled.',
+        );
+        harness.deviceData.lastFtmsUpdate = DateTime.now().subtract(
+          const Duration(seconds: 10),
+        );
+        await tester.pump(const Duration(seconds: 2));
+        expect(find.text('TELEMETRY PAUSED'), findsOneWidget);
+        expect(find.text('Last values'), findsOneWidget);
+        notifyTelemetry();
+        await pumpUntil(
+          tester,
+          () => find.text('LIVE TELEMETRY').evaluate().isNotEmpty,
+        );
+        await tester.tap(find.text('Shift up'));
+        await pumpUntil(tester, () => ccReferences().contains(0x17));
+        expect(
+          blePlatform.writeCalls
+              .where((call) => call.characteristicUuid == Guid(ccUUID))
+              .where((call) => call.value.first == 0x02)
+              .map((call) => call.value[1]),
+          [0x17],
+          reason: 'A tap sends only the requested shift.',
+        );
+        expect(
+          blePlatform.writeCalls.where(
+            (call) => call.characteristicUuid == Guid('2ad9'),
+          ),
+          isEmpty,
+          reason: 'The shifter must not take FTMS control from the riding app.',
+        );
+        blePlatform.markDisconnected(harness.device.remoteId);
+        await pumpUntil(tester, () => !harness.deviceData.isTransportActive);
+        await tester.pump();
+        expect(find.text('Reconnect to shift'), findsOneWidget);
+        for (final button in tester.widgetList<FilledButton>(
+          find.byType(FilledButton),
+        )) {
+          expect(button.onPressed, isNull);
+        }
+        await unmount(tester);
+      },
+    );
+
     /// `0x17` — the gear-position setting reference the screen re-requests.
     const shifterReference = 0x17;
 
@@ -336,8 +428,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(home: ShifterScreen(device: harness.device)),
       );
-      await pumpUntil(tester, () => false,
-          timeout: const Duration(seconds: 1));
+      await pumpUntil(tester, () => false, timeout: const Duration(seconds: 1));
 
       blePlatform.markDisconnected(harness.device.remoteId);
       await pumpUntil(tester, () => !harness.deviceData.isTransportActive);
@@ -355,7 +446,8 @@ void main() {
       expect(
         ccReferences().where((r) => r == shifterReference),
         hasLength(1),
-        reason: 'a new connected epoch must re-confirm the gear with the device exactly once',
+        reason:
+            'a new connected epoch must re-confirm the gear with the device exactly once',
       );
       await unmount(tester);
     });
@@ -371,8 +463,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(home: ShifterScreen(device: s.device)),
       );
-      await pumpUntil(tester, () => false,
-          timeout: const Duration(seconds: 1));
+      await pumpUntil(tester, () => false, timeout: const Duration(seconds: 1));
 
       blePlatform.clearObservations();
       s.conn.first.dropConnection();
@@ -381,8 +472,7 @@ void main() {
         () =>
             s.data.transportState.value.transport ==
                 DeviceTransportKind.bluetooth &&
-            s.data.transportState.value.phase ==
-                DeviceTransportPhase.connected,
+            s.data.transportState.value.phase == DeviceTransportPhase.connected,
       );
       expect(failedOver, isTrue, reason: 'the failover never completed');
       await pumpUntil(
@@ -415,13 +505,122 @@ void main() {
     bool loggingActive(WidgetTester tester) =>
         find.textContaining('Log streaming is active').evaluate().isNotEmpty;
 
+    Future<void> emitLogs(
+      WidgetTester tester,
+      FakeDirConSession session,
+      Iterable<String> messages,
+    ) async {
+      await tester.runAsync(() async {
+        for (final message in messages) {
+          session.emitNotification(ccUUID, [
+            0x80,
+            logStreamReference,
+            ...utf8.encode(message),
+          ]);
+        }
+        // DeviceData's controller belongs to the real zone from connectDirCon.
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      });
+    }
+
+    testWidgets(
+      'sustained device logs stay at the latest entry with bounded history',
+      (tester) async {
+        final session = await connectDirCon(tester);
+        await tester.pumpWidget(
+          MaterialApp(home: BleLogScreen(device: session.device)),
+        );
+        expect(await pumpUntil(tester, () => loggingActive(tester)), isTrue);
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.tap(find.text('Clear'));
+        await tester.pump();
+
+        // Feed more than the retention limit in continuous bursts. Every batch
+        // must reach the live edge without waiting for the stream to go quiet.
+        for (var batch = 0; batch < 120; batch++) {
+          await emitLogs(tester, session.conn.first, [
+            for (var offset = 0; offset < 100; offset++)
+              'Device log ${batch * 100 + offset}${offset.isEven ? '\nDetails' : ''}',
+          ]);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(find.text('Device log ${batch * 100 + 99}'), findsOneWidget);
+          final list = tester.widget<ListView>(find.byType(ListView));
+          expect(list.controller!.offset, 0);
+          expect(list.controller!.position.isScrollingNotifier.value, isFalse);
+        }
+        expect(
+          tester
+              .widget<ListView>(find.byType(ListView))
+              .childrenDelegate
+              .estimatedChildCount,
+          lessThan(12000),
+        );
+        await unmount(tester);
+      },
+    );
+
+    testWidgets(
+      'save includes pending logs and Clear cancels the pending refresh',
+      (tester) async {
+        final session = await connectDirCon(tester);
+        await tester.pumpWidget(
+          MaterialApp(home: BleLogScreen(device: session.device)),
+        );
+        expect(await pumpUntil(tester, () => loggingActive(tester)), isTrue);
+        await emitLogs(tester, session.conn.first, ['First device log']);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final directory = Directory.systemTemp.createTempSync('ss2k_log_test_');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => directory.path,
+        );
+        addTearDown(() {
+          messenger.setMockMethodCallHandler(
+            const MethodChannel('plugins.flutter.io/path_provider'),
+            (call) async => '.',
+          );
+          directory.deleteSync(recursive: true);
+        });
+
+        await emitLogs(tester, session.conn.first, ['Pending device log']);
+        await tester.pump();
+        expect(find.text('Pending device log'), findsNothing);
+        await tester.tap(find.text('Save'));
+        expect(
+          await pumpUntil(
+            tester,
+            () => find.textContaining('Logs saved to').evaluate().isNotEmpty,
+          ),
+          isTrue,
+        );
+        final saved = directory.listSync().whereType<File>().single;
+        expect(saved.readAsStringSync(), endsWith('Pending device log'));
+
+        await emitLogs(tester, session.conn.first, ['Discard on Clear']);
+        await tester.pump();
+        await tester.tap(find.text('Clear'));
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(find.byType(ListView), findsNothing);
+        expect(find.textContaining('No logs to display.'), findsOneWidget);
+
+        // Leaving while another batch is pending must cancel its timer too.
+        await emitLogs(tester, session.conn.first, ['Pending on exit']);
+        await tester.pump();
+        await unmount(tester);
+      },
+    );
+
     testWidgets('clears logging-enabled state on disconnect', (tester) async {
       final harness = await connectBle(tester);
       await tester.pumpWidget(
         MaterialApp(home: BleLogScreen(device: harness.device)),
       );
-      await pumpUntil(tester, () => false,
-          timeout: const Duration(seconds: 1));
+      await pumpUntil(tester, () => false, timeout: const Duration(seconds: 1));
 
       blePlatform.markDisconnected(harness.device.remoteId);
       await pumpUntil(tester, () => !harness.deviceData.isTransportActive);
@@ -438,8 +637,11 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(home: BleLogScreen(device: harness.device)),
       );
-      await pumpUntil(tester, () => loggingActive(tester),
-          timeout: const Duration(seconds: 4));
+      await pumpUntil(
+        tester,
+        () => loggingActive(tester),
+        timeout: const Duration(seconds: 4),
+      );
 
       blePlatform.markDisconnected(harness.device.remoteId);
       await pumpUntil(tester, () => !harness.deviceData.isTransportActive);
@@ -448,13 +650,17 @@ void main() {
       blePlatform.clearObservations();
       blePlatform.markConnected(harness.device.remoteId);
       await pumpUntil(tester, () => harness.deviceData.isTransportActive);
-      await pumpUntil(tester, () => loggingActive(tester),
-          timeout: const Duration(seconds: 4));
+      await pumpUntil(
+        tester,
+        () => loggingActive(tester),
+        timeout: const Duration(seconds: 4),
+      );
 
       expect(
         ccReferences().where((r) => r == logStreamReference),
         isNotEmpty,
-        reason: 'a new connected epoch must re-enable log streaming with the device',
+        reason:
+            'a new connected epoch must re-enable log streaming with the device',
       );
       await unmount(tester);
     });
@@ -466,8 +672,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(home: BleLogScreen(device: s.device)),
       );
-      await pumpUntil(tester, () => false,
-          timeout: const Duration(seconds: 1));
+      await pumpUntil(tester, () => false, timeout: const Duration(seconds: 1));
 
       blePlatform.clearObservations();
       s.conn.first.dropConnection();
@@ -476,12 +681,14 @@ void main() {
         () =>
             s.data.transportState.value.transport ==
                 DeviceTransportKind.bluetooth &&
-            s.data.transportState.value.phase ==
-                DeviceTransportPhase.connected,
+            s.data.transportState.value.phase == DeviceTransportPhase.connected,
       );
       expect(failedOver, isTrue, reason: 'the failover never completed');
-      await pumpUntil(tester, () => loggingActive(tester),
-          timeout: const Duration(seconds: 4));
+      await pumpUntil(
+        tester,
+        () => loggingActive(tester),
+        timeout: const Duration(seconds: 4),
+      );
 
       expect(
         ccReferences().where((r) => r == logStreamReference),
@@ -519,8 +726,11 @@ void main() {
 
         // Give the epoch-N+1 arrival's own enable attempt a chance to run
         // and observe "in progress" — it must queue, not park a second write.
-        await pumpUntil(tester, () => false,
-            timeout: const Duration(milliseconds: 200));
+        await pumpUntil(
+          tester,
+          () => false,
+          timeout: const Duration(milliseconds: 200),
+        );
         expect(
           blePlatform.writeGateWaiters(ccUUID),
           1,
@@ -532,8 +742,11 @@ void main() {
 
         // Epoch N's write lands stale and is discarded; only the queued retry
         // for the current epoch can bring logging up.
-        await pumpUntil(tester, () => loggingActive(tester),
-            timeout: const Duration(seconds: 4));
+        await pumpUntil(
+          tester,
+          () => loggingActive(tester),
+          timeout: const Duration(seconds: 4),
+        );
 
         await unmount(tester);
       },
@@ -541,53 +754,58 @@ void main() {
   });
 
   group('deleted no-op listeners', () {
-    testWidgets('a charReceived notification still rebuilds the settings tiles',
-        (tester) async {
-      // Step 6 deleted SettingsCategoryScreen's connection-state listener,
-      // whose whole body was an unconditional setState. The tile list has to
-      // keep rebuilding from the signals that remain — charReceived and
-      // characteristicChanges — or that deletion cost real behaviour.
-      final harness = await connectBle(tester);
-      final data = harness.deviceData;
-      for (final c in data.customCharacteristic) {
-        if (c['isSetting'] == true && c['settingType'] == SettingType.basic) {
-          c['value'] = '1';
+    testWidgets(
+      'a charReceived notification still rebuilds the settings tiles',
+      (tester) async {
+        // Step 6 deleted SettingsCategoryScreen's connection-state listener,
+        // whose whole body was an unconditional setState. The tile list has to
+        // keep rebuilding from the signals that remain — charReceived and
+        // characteristicChanges — or that deletion cost real behaviour.
+        final harness = await connectBle(tester);
+        final data = harness.deviceData;
+        for (final c in data.customCharacteristic) {
+          if (c['isSetting'] == true && c['settingType'] == SettingType.basic) {
+            c['value'] = '1';
+          }
         }
-      }
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: SettingsCategoryScreen(
-            device: harness.device,
-            title: 'Basic',
-            settingType: SettingType.basic,
+        await tester.pumpWidget(
+          MaterialApp(
+            home: SettingsCategoryScreen(
+              device: harness.device,
+              title: 'Basic',
+              settingType: SettingType.basic,
+            ),
           ),
-        ),
-      );
-      // Let the screen's own setup traffic finish first; the fake answers
-      // custom-characteristic reads on a microtask, which flips charReceived
-      // back to true under any pump.
-      await pumpUntil(tester, () => false,
-          timeout: const Duration(seconds: 1));
+        );
+        // Let the screen's own setup traffic finish first; the fake answers
+        // custom-characteristic reads on a microtask, which flips charReceived
+        // back to true under any pump.
+        await pumpUntil(
+          tester,
+          () => false,
+          timeout: const Duration(seconds: 1),
+        );
 
-      data.charReceived.value = false;
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(
-        find.byType(SettingTile),
-        findsNothing,
-        reason: 'the tile list is gated on charReceived',
-      );
+        data.charReceived.value = false;
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(
+          find.byType(SettingTile),
+          findsNothing,
+          reason: 'the tile list is gated on charReceived',
+        );
 
-      data.charReceived.value = true;
-      await tester.pump(const Duration(milliseconds: 1));
+        data.charReceived.value = true;
+        await tester.pump(const Duration(milliseconds: 1));
 
-      expect(
-        find.byType(SettingTile),
-        findsWidgets,
-        reason: 'charReceived must still drive the tile list rebuild',
-      );
-      await unmount(tester);
-    });
+        expect(
+          find.byType(SettingTile),
+          findsWidgets,
+          reason: 'charReceived must still drive the tile list rebuild',
+        );
+        await unmount(tester);
+      },
+    );
   });
 }
 

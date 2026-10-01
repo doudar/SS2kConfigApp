@@ -1,56 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-// Removed json_theme dependency due to Flutter 3.38 theming API changes.
-// Implement minimal JSON -> ThemeData decoding inline to avoid
-// incompatibilities between AppBarTheme/AppBarThemeData, etc.
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class ThemeProvider extends ChangeNotifier {
-  static const String _themePreferenceKey = 'theme_mode';
-  ThemeMode _themeMode = ThemeMode.system;
-  ThemeData? _lightTheme;
-  ThemeData? _darkTheme;
+  // Keep the first frame dark while the bundled theme loads.
+  ThemeData _darkTheme = ThemeData.dark();
 
-  ThemeMode get themeMode => _themeMode;
-  ThemeData? get lightTheme => _lightTheme;
-  ThemeData? get darkTheme => _darkTheme;
+  ThemeData get darkTheme => _darkTheme;
 
   ThemeProvider() {
-    _loadThemePreference();
-    _loadThemes();
+    _loadTheme();
   }
 
-  Future<void> _loadThemes() async {
-    // Load light theme
-    final lightThemeStr = await rootBundle.loadString('assets/appainter_theme.json');
-    final lightThemeJson = jsonDecode(lightThemeStr);
-    _lightTheme = _decodeTheme(lightThemeJson);
-
-    // Load dark theme
+  Future<void> _loadTheme() async {
     final darkThemeStr = await rootBundle.loadString('assets/appainter_theme_dark.json');
     final darkThemeJson = jsonDecode(darkThemeStr);
     _darkTheme = _decodeTheme(darkThemeJson);
 
-    notifyListeners();
-  }
-
-  Future<void> _loadThemePreference() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedTheme = prefs.getString(_themePreferenceKey);
-    if (savedTheme != null) {
-      _themeMode = ThemeMode.values.firstWhere(
-        (e) => e.toString() == savedTheme,
-        orElse: () => ThemeMode.system,
-      );
-      notifyListeners();
-    }
-  }
-
-  Future<void> setThemeMode(ThemeMode mode) async {
-    _themeMode = mode;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_themePreferenceKey, mode.toString());
     notifyListeners();
   }
 }
@@ -58,8 +24,7 @@ class ThemeProvider extends ChangeNotifier {
 // --- Minimal Theme JSON Decoder (supports subset used by exported Appainter JSON) ---
 
 ThemeData _decodeTheme(Map<String, dynamic> json) {
-  final brightnessStr = (json['brightness'] ?? 'light').toString().toLowerCase();
-  final brightness = brightnessStr == 'dark' ? Brightness.dark : Brightness.light;
+  const brightness = Brightness.dark;
   final cs = Map<String, dynamic>.from(json['colorScheme'] ?? {});
 
   Color parseColor(dynamic v) {

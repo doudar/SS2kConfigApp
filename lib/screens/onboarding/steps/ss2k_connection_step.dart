@@ -10,7 +10,8 @@ import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
 import '../../../utils/snackbar.dart';
 import '../../../utils/demo.dart';
-import '../../../utils/smartspin_advertisement.dart';
+import '../../../utils/dircon_discovery.dart';
+import '../../../utils/smartspin_scan_result.dart';
 import '../../../utils/nearby_ble_devices.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../widgets/scan_result_tile.dart';
@@ -24,15 +25,25 @@ class Ss2kConnectionStep extends StatefulWidget {
 
 class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
   List<ScanResult> _scanResults = [];
-  bool _isScanning = false;
+  bool _bleScanning = false;
+  final _networkDiscovery = DirConDiscovery();
+  bool get _isScanning => _bleScanning || _networkDiscovery.isScanning;
+  void _networkChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _stopScan() async {
+    await _networkDiscovery.stop();
+    if (FlutterBluePlus.isScanningNow) await FlutterBluePlus.stopScan();
+  }
+
   StreamSubscription<List<ScanResult>>? _scanResultsSubscription;
   StreamSubscription<bool>? _isScanningSubscription;
-
-  final Guid _csGuid = Guid(csUUID);
 
   @override
   void initState() {
     super.initState();
+    _networkDiscovery.addListener(_networkChanged);
     // In demo mode there is no real device to scan for: inject the simulated
     // SmartSpin2k and skip the BLE subscriptions (a real scan would emit empty
     // results and wipe the demo tile).
@@ -51,19 +62,22 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
       },
     );
     _isScanningSubscription = FlutterBluePlus.isScanning.listen((state) {
-      if (mounted) setState(() => _isScanning = state);
+      if (mounted) setState(() => _bleScanning = state);
     });
     _startScan();
   }
 
   @override
   void dispose() {
+    _networkDiscovery.removeListener(_networkChanged);
+    _networkDiscovery.dispose();
     _scanResultsSubscription?.cancel();
     _isScanningSubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _startScan() async {
+    unawaited(_networkDiscovery.start());
     try {
       if (kIsWeb) {
         await FlutterBluePlus.startScan(
@@ -88,7 +102,7 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
   }
 
   Future<void> _onConnectPressed(
-    ScanResult result,
+    SmartSpinScanResult result,
     WizardSession session,
   ) async {
     final device = result.device;
@@ -98,24 +112,23 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
     if (demoModeBypass.value) {
       DeviceDataManager.forDevice(device).setupDemoData();
     } else {
-      if (FlutterBluePlus.isScanningNow) await FlutterBluePlus.stopScan();
+      await _stopScan();
       final deviceData = DeviceDataManager.forDevice(device);
-      deviceData.advertisedIpAddress = SmartSpinAdvertisement.ipAddress(
-        result.advertisementData.manufacturerData,
-      );
+      deviceData.applyScanResult(result);
       if (deviceData.isUserDisconnect) {
         deviceData.isUserDisconnect = false;
       }
 
-      unawaited(
-        deviceData.connectPreferred(device).catchError((Object e) {
-          Snackbar.show(
-            ABC.c,
-            prettyException("Connect Error:", e),
-            success: false,
-          );
-        }),
-      );
+      if (!deviceData.isTransportActive)
+        unawaited(
+          deviceData.connectPreferred(device).catchError((Object e) {
+            Snackbar.show(
+              ABC.c,
+              prettyException("Connect Error:", e),
+              success: false,
+            );
+          }),
+        );
     }
 
     session.connectedDevice = device;
@@ -130,16 +143,11 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
     }
   }
 
-  List<ScanResult> get _filteredResults {
-    if (kIsWeb) return _scanResults;
-    return _scanResults.where((r) {
-      final adv = r.advertisementData;
-      return adv.serviceUuids.any(
-        (uuid) =>
-            uuid == _csGuid || uuid.str.toLowerCase() == csUUID.toLowerCase(),
-      );
-    }).toList();
-  }
+  List<SmartSpinScanResult> get _filteredResults => SmartSpinScanResult.merge(
+    _scanResults,
+    _networkDiscovery.endpoints,
+    includeAllBle: kIsWeb,
+  ).map(DeviceDataManager.reuseConnectedIdentity).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -155,6 +163,7 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
               children: [
                 ..._filteredResults.map(
                   (r) => ScanResultTile(
+                    key: ValueKey(r.device.remoteId.str),
                     result: r,
                     onTap: () => _onConnectPressed(r, session),
                   ),
@@ -173,9 +182,7 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 child: ElevatedButton.icon(
-                  onPressed: _isScanning
-                      ? () => FlutterBluePlus.stopScan()
-                      : _startScan,
+                  onPressed: _isScanning ? _stopScan : _startScan,
                   icon: Icon(_isScanning ? Icons.stop : Icons.search),
                   label: Text(_isScanning ? 'Stop Scan' : 'Scan Again'),
                 ),

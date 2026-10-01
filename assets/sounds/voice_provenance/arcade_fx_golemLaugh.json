@@ -1,0 +1,18 @@
+{
+  "source": "Procedural retro vocal effect; no speech model or recording",
+  "engine": "procedural-retro-v1",
+  "voices": [
+    {
+      "text": "Ha ha ha ha ha!",
+      "voice": "chip_boss",
+      "pitch_hz": 108.0,
+      "gain": 1.0,
+      "delay": 0,
+      "engine": "procedural-retro-v1",
+      "seed": 538511688
+    }
+  ],
+  "milliseconds": 2100,
+  "sample_rate": 22050,
+  "wav_sha256": "b9be0c15d4db4de2385c7033605069f57c62adc75ca4906f808c3945d63f3590"
+}

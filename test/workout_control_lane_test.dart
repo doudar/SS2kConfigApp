@@ -51,7 +51,7 @@ void main() {
       ]);
     });
 
-    test('zero-watt batch and simulation reset disarm the keep-alive', () async {
+    test('free ride and release reset disarm the keep-alive', () async {
       final timers = <_ManualTimer>[];
       final harness = _Harness();
       final lane = harness.createLane(
@@ -67,8 +67,7 @@ void main() {
       await _flush(4);
       expect(_armed(timers, _keepAlive), hasLength(1));
 
-      // FreeRide: the batch ends in a simulation command, so ERG is meant to be
-      // off and re-asserting would just re-run the mode switch every interval.
+      // Free ride ends in simulation mode, with no ERG hold to maintain.
       lane.setTargetPower(0);
       await _flush(4);
       expect(_armed(timers, _keepAlive), isEmpty);
@@ -77,7 +76,7 @@ void main() {
       await _flush(4);
       expect(_armed(timers, _keepAlive), hasLength(1));
 
-      // Pause and stop both route through resetSimulation.
+      // Pause and stop both release resistance through resetSimulation.
       lane.resetSimulation();
       await _flush(4);
       expect(_armed(timers, _keepAlive), isEmpty);
@@ -146,7 +145,11 @@ void main() {
         );
       lane.onAvailabilityChanged();
       await _flush(4);
-      expect(harness.writes, hasLength(2), reason: 'epoch bump redelivers once');
+      expect(
+        harness.writes,
+        hasLength(2),
+        reason: 'epoch bump redelivers once',
+      );
 
       _fireKeepAlive(timers);
       await _flush(4);
@@ -486,7 +489,7 @@ void main() {
     ]);
   });
 
-  test('negative targets clamp to the zero-target batch', () async {
+  test('negative targets clamp to the free-ride batch', () async {
     final harness = _Harness();
     final lane = harness.createLane();
 
@@ -498,6 +501,102 @@ void main() {
       [0x11, 0, 0, 0, 0, 0, 0],
     ]);
   });
+
+  test('free ride starts and reconnects in simulation mode', () async {
+    final harness = _Harness();
+    final lane = harness.createLane();
+    addTearDown(lane.dispose);
+
+    lane.setTargetPower(0, force: true, resetSimulationFirst: true);
+    await _flush(4);
+    lane.setTargetPower(0);
+    await _flush(4);
+    expect(harness.writes, [
+      [0x05, 0, 0],
+      [0x11, 0, 0, 0, 0, 0, 0],
+    ]);
+
+    harness.ready = false;
+    lane.onAvailabilityChanged();
+    harness.ready = true;
+    harness.state = const DeviceTransportState(
+      transport: DeviceTransportKind.dircon,
+      phase: DeviceTransportPhase.connected,
+      epoch: 2,
+    );
+    lane.onAvailabilityChanged();
+    await _flush(4);
+    expect(harness.writes, [
+      [0x05, 0, 0],
+      [0x11, 0, 0, 0, 0, 0, 0],
+      [0x05, 0, 0],
+      [0x11, 0, 0, 0, 0, 0, 0],
+    ]);
+  });
+
+  for (final queued in [false, true]) {
+    test(
+      '${queued ? 'queued' : 'delivered'} release is not replayed on reconnect',
+      () async {
+        final gate = Completer<void>();
+        final harness = _Harness(
+          beforeWrite: queued ? () => gate.future : null,
+        );
+        final lane = harness.createLane();
+        addTearDown(lane.dispose);
+
+        lane.resetSimulation();
+        if (!queued) await _flush(4);
+        harness.ready = false;
+        lane.onAvailabilityChanged();
+        lane.invalidateDelivery();
+        harness.ready = true;
+        harness.state = const DeviceTransportState(
+          transport: DeviceTransportKind.dircon,
+          phase: DeviceTransportPhase.connected,
+          epoch: 2,
+        );
+        lane.onAvailabilityChanged();
+        gate.complete();
+        await _flush(6);
+        expect(harness.writes, queued ? isEmpty : hasLength(1));
+      },
+    );
+
+    test(
+      '${queued ? 'queued' : 'delivered'} start reconnects without reset prefix',
+      () async {
+        final gate = Completer<void>();
+        final harness = _Harness(
+          beforeWrite: queued ? () => gate.future : null,
+        );
+        final lane = harness.createLane();
+        addTearDown(lane.dispose);
+
+        lane.setTargetPower(250, resetSimulationFirst: true);
+        if (!queued) await _flush(4);
+        harness.ready = false;
+        lane.onAvailabilityChanged();
+        lane.invalidateDelivery();
+        harness.ready = true;
+        harness.state = const DeviceTransportState(
+          transport: DeviceTransportKind.dircon,
+          phase: DeviceTransportPhase.connected,
+          epoch: 2,
+        );
+        lane.onAvailabilityChanged();
+        gate.complete();
+        await _flush(6);
+        expect(harness.writes, [
+          if (!queued) ...[
+            [0x11, 0, 0, 0, 0, 0, 0],
+            [0x05, 0xfa, 0],
+          ],
+          [0x05, 0xfa, 0],
+        ]);
+      },
+    );
+  }
 
   test('epoch bump while connected redelivers the same target once', () async {
     final harness = _Harness();

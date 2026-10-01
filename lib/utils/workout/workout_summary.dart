@@ -1,146 +1,223 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'workout_constants.dart';
 import 'workout_controller.dart';
+import 'workout_metric_row.dart';
+import 'workout_visuals.dart';
 
 class WorkoutSummary extends StatelessWidget {
   final WorkoutController workoutController;
   final Animation<double> fadeAnimation;
 
   const WorkoutSummary({
-    Key? key,
+    super.key,
     required this.workoutController,
     required this.fadeAnimation,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    if (workoutController.segments.isEmpty) return const SizedBox.shrink();
-
-    int totalTime = workoutController.totalDuration.round();
-    double normalizedWork = 0;
-
-    for (var segment in workoutController.segments) {
-      if (segment.isRamp) {
-        normalizedWork += segment.duration * ((segment.powerLow + segment.powerHigh) / 2) * workoutController.ftpValue;
-      } else {
-        normalizedWork += segment.duration * segment.powerLow * workoutController.ftpValue;
-      }
-    }
-
-    final intensityFactor = (normalizedWork / totalTime) / workoutController.ftpValue;
-    final tss = (totalTime * intensityFactor * intensityFactor) / 36;
-    final bool isPausedInProgress = !workoutController.isPlaying && workoutController.progressPosition > 0;
-    final avgPower = workoutController.averagePower;
-    final avgCadence = workoutController.averageCadence;
-    final avgHeartRate = workoutController.averageHeartRate;
-
-    return FadeTransition(
-      opacity: fadeAnimation,
-      child: Card(
-        margin: EdgeInsets.all(WorkoutPadding.small),
-        child: Padding(
-          padding: EdgeInsets.all(WorkoutPadding.standard),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Workout Summary',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              SizedBox(height: WorkoutSpacing.xsmall),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _SummaryItem(
-                    label: 'Duration',
-                    value: workoutController.formatDuration(totalTime),
-                    icon: Icons.timer,
-                  ),
-                  _SummaryItem(
-                    label: 'TSS',
-                    value: tss.toStringAsFixed(1),
-                    icon: Icons.fitness_center,
-                  ),
-                  _SummaryItem(
-                    label: 'IF',
-                    value: intensityFactor.toStringAsFixed(2),
-                    icon: Icons.show_chart,
-                  ),
-                ],
-              ),
-              if (isPausedInProgress) ...[
-                SizedBox(height: WorkoutSpacing.small),
-                Text(
-                  'In-Progress Snapshot',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                SizedBox(height: WorkoutSpacing.xsmall),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _SummaryItem(
-                      label: 'Elapsed',
-                      value: workoutController.formatDuration(workoutController.elapsedSeconds),
-                      icon: Icons.timer_outlined,
-                    ),
-                    _SummaryItem(
-                      label: 'Complete',
-                      value: '${(workoutController.progressPosition * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                      icon: Icons.timelapse,
-                    ),
-                    _SummaryItem(
-                      label: 'Avg Power',
-                      value: avgPower != null ? '${avgPower.round()}W' : '--',
-                      icon: Icons.bolt,
-                    ),
-                    _SummaryItem(
-                      label: 'Avg Cadence',
-                      value: avgCadence != null ? '${avgCadence.round()}rpm' : '--',
-                      icon: Icons.speed,
-                    ),
-                    if (avgHeartRate != null)
-                      _SummaryItem(
-                        label: 'Avg HR',
-                        value: '${avgHeartRate.round()}bpm',
-                        icon: Icons.favorite,
-                      ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SummaryItem extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-
-  const _SummaryItem({
-    required this.label,
-    required this.value,
-    required this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, size: 24),
-        SizedBox(height: WorkoutSpacing.xxsmall),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.titleMedium,
+    final ride = workoutController;
+    if (ride.segments.isEmpty) return const SizedBox.shrink();
+    final totalTime = ride.totalDuration.round();
+    double normalizedWork = 0;
+    for (final segment in ride.segments) {
+      normalizedWork +=
+          segment.duration *
+          ride.ftpValue *
+          (segment.isRamp
+              ? (segment.powerLow + segment.powerHigh) / 2
+              : segment.powerLow);
+    }
+    final planned =
+        !ride.isUnlimitedFreeRide && totalTime > 0 && ride.ftpValue > 0;
+    final intensityFactor = planned
+        ? normalizedWork / totalTime / ride.ftpValue
+        : null;
+    final tss = intensityFactor == null
+        ? null
+        : totalTime * intensityFactor * intensityFactor / 36;
+    final inProgress = ride.workoutProgressSeconds > 0;
+    final progress = ride.progressPosition.isFinite
+        ? ride.progressPosition.clamp(0.0, 1.0)
+        : 0.0;
+    final complete = inProgress && !ride.isUnlimitedFreeRide && progress >= 1;
+    final status = complete
+        ? 'COMPLETE'
+        : inProgress
+        ? 'PAUSED'
+        : 'READY';
+    final items = <(WorkoutMetric, Color)>[
+      (
+        WorkoutMetric(
+          label: 'Plan duration',
+          value: ride.isUnlimitedFreeRide
+              ? 'OPEN'
+              : ride.formatDuration(totalTime),
         ),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodySmall,
+        Colors.white,
+      ),
+      (
+        WorkoutMetric(
+          label: 'Planned TSS',
+          value: tss != null && tss.isFinite ? tss.toStringAsFixed(1) : '—',
         ),
+        WorkoutVisuals.gold,
+      ),
+      (
+        WorkoutMetric(
+          label: 'Planned IF',
+          value: intensityFactor != null && intensityFactor.isFinite
+              ? intensityFactor.toStringAsFixed(2)
+              : '—',
+        ),
+        WorkoutVisuals.gold,
+      ),
+      if (inProgress) ...[
+        (
+          WorkoutMetric(
+            label: 'Avg Power',
+            value: ride.averagePower?.round().toString() ?? '—',
+            unit: 'W',
+          ),
+          WorkoutVisuals.power,
+        ),
+        (
+          WorkoutMetric(
+            label: 'Avg Cadence',
+            value: ride.averageCadence?.round().toString() ?? '—',
+            unit: 'RPM',
+          ),
+          WorkoutVisuals.cadence,
+        ),
+        if (ride.averageHeartRate != null)
+          (
+            WorkoutMetric(
+              label: 'Avg HR',
+              value: ride.averageHeartRate!.round().toString(),
+              unit: 'BPM',
+            ),
+            WorkoutVisuals.heartRate,
+          ),
       ],
+    ];
+    final short = MediaQuery.sizeOf(context).height < 650;
+    final textScale = MediaQuery.textScalerOf(context).scale(12) / 12;
+    return FadeTransition(
+      opacity: fadeAnimation,
+      child: Container(
+        key: const ValueKey('workout-summary-panel'),
+        margin: const EdgeInsets.all(8),
+        padding: EdgeInsets.all(short ? 10 : 12),
+        decoration: BoxDecoration(
+          color: WorkoutVisuals.ink,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: WorkoutVisuals.mint.withValues(alpha: .22)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(width: 3, height: 18, color: WorkoutVisuals.mint),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'WORKOUT SUMMARY',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                      color: WorkoutVisuals.mint,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: WorkoutVisuals.mint.withValues(alpha: .08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    status,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: .7,
+                      color: WorkoutVisuals.mint,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (inProgress) ...[
+              const SizedBox(height: 7),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${ride.formatDuration(ride.elapsedSeconds)} ridden',
+                    style: const TextStyle(
+                      color: WorkoutVisuals.muted,
+                      fontSize: 11,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  Text(
+                    ride.isUnlimitedFreeRide
+                        ? 'FREE RIDE'
+                        : '${(progress * 100).round()}% complete',
+                    style: const TextStyle(
+                      color: WorkoutVisuals.muted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+              if (!ride.isUnlimitedFreeRide) ...[
+                const SizedBox(height: 6),
+                LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 3,
+                  color: WorkoutVisuals.mint,
+                  backgroundColor: Colors.white10,
+                  borderRadius: BorderRadius.circular(3),
+                  semanticsLabel: 'Workout completion',
+                  semanticsValue: '${(progress * 100).round()}%',
+                ),
+              ],
+            ],
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = math.min(
+                  items.length,
+                  math.max(1, (constraints.maxWidth / 92).floor()),
+                );
+                final width =
+                    (constraints.maxWidth - (columns - 1) * 4) / columns;
+                return Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final (metric, color) in items)
+                      MetricBox(
+                        metric: metric,
+                        width: width,
+                        height: (short ? 56 : 68) * math.min(1.5, textScale),
+                        valueColor: color,
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

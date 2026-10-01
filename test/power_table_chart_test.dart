@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,9 +6,119 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/power_table_painter.dart';
 import 'package:ss2kconfigapp/widgets/power_table_chart.dart';
+import 'package:ss2kconfigapp/utils/constants.dart';
+
+class _RecordingData extends DeviceData {
+  final rows = <int>[];
+  @override
+  bool get isTransportActive => true;
+  @override
+  Future<void> requestSetting(
+    BluetoothDevice device,
+    String name, {
+    int? extraByte,
+  }) async {
+    if (name == powerTableDataVname) rows.add(extraByte!);
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'isolated cadence anchor is visible in both axis orientations',
+    () async {
+      for (final swapped in [false, true]) {
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder);
+        final row = List<double?>.filled(10, null)..[8] = 1500;
+        final painter = PowerTablePainter(
+          powerTableData: [row],
+          cadences: [60],
+          colors: [const Color(0xFFFF0000)],
+          maxResistance: 3000,
+          homingMax: 3000,
+          swapAxes: swapped,
+          refinedStyle: true,
+        );
+        painter.paint(canvas, const Size(400, 300));
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(400, 300);
+        final pixels = (await image.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
+        ))!;
+        final x = swapped ? 210 : 20 + 240 * 380 / MIN_POWER_RANGE;
+        final y = swapped ? 300 - 240 * 300 / MIN_POWER_RANGE : 150;
+        final offset = (y.floor() * 400 + x.floor()) * 4;
+        expect(pixels.getUint8(offset), 255);
+        expect(pixels.getUint8(offset + 1), 0);
+        expect(pixels.getUint8(offset + 2), 0);
+        image.dispose();
+        picture.dispose();
+      }
+    },
+  );
+
+  testWidgets('saved axes and toggles notify their parent and persist', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'power_table_swap_axes': true});
+    final data = DeviceData()..isSimulated = true;
+    final key = GlobalKey<PowerTableChartState>();
+    final changes = <bool>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PowerTableChart(
+          key: key,
+          device: BluetoothDevice.fromId('axes-test'),
+          deviceData: data,
+          pollTargetPosition: false,
+          onAxisOrientationChanged: changes.add,
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(key.currentState!.swapAxes, isTrue);
+    expect(changes, [true]);
+    await key.currentState!.toggleAxisOrientation();
+    await tester.pump();
+    expect(key.currentState!.swapAxes, isFalse);
+    expect(changes, [true, false]);
+    expect(
+      (await SharedPreferences.getInstance()).getBool('power_table_swap_axes'),
+      isFalse,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    data.dispose();
+  });
+
+  testWidgets('concurrent table refreshes share one paced read pass', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final data = _RecordingData();
+    final key = GlobalKey<PowerTableChartState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PowerTableChart(
+          key: key,
+          device: BluetoothDevice.fromId('read-test'),
+          deviceData: data,
+          pollTargetPosition: false,
+          initialDataLoadDelay: const Duration(days: 1),
+        ),
+      ),
+    );
+    final first = key.currentState!.requestAllCadenceLines();
+    await key.currentState!.requestAllCadenceLines();
+    for (var i = 0; i < 11; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+    await first;
+    expect(data.rows, List.generate(10, (i) => i));
+    await tester.pumpWidget(const SizedBox.shrink());
+    data.dispose();
+  });
 
   testWidgets('animation ticks keep the static power-table layer cached', (
     tester,

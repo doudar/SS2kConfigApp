@@ -6,7 +6,6 @@ import 'package:ss2kconfigapp/screens/scan_screen.dart';
 import 'package:ss2kconfigapp/screens/onboarding/onboarding_wizard.dart';
 import 'package:ss2kconfigapp/utils/onboarding/onboarding_state.dart';
 import 'package:ss2kconfigapp/utils/onboarding/wizard_session.dart';
-import 'package:ss2kconfigapp/utils/theme_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Routing harness: mirrors _SmartSpin2kAppState.buildHomeScreen() so that
@@ -35,10 +34,7 @@ class _RoutingHarness extends StatelessWidget {
   }
 }
 
-Widget _wrap(Widget child) => ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
-      child: MaterialApp(home: child),
-    );
+Widget _wrap(Widget child) => MaterialApp(theme: ThemeData.dark(), home: child);
 
 // ---------------------------------------------------------------------------
 // Reactive harness: mirrors the _SmartSpin2kAppState listener wiring so the

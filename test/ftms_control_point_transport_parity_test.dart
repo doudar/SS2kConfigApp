@@ -878,6 +878,7 @@ void main() {
       }
 
       expect(deviceData.customResponsesDegraded.value, isTrue);
+      expect(deviceData.customResponseReceived.value, isFalse);
 
       // The exempt heartbeat is what proves recovery: a single answered
       // request clears the breaker, so the degraded state cannot lock itself in.
@@ -886,6 +887,13 @@ void main() {
       await _settle();
 
       expect(deviceData.customResponsesDegraded.value, isFalse);
+      expect(deviceData.customResponseReceived.value, isTrue);
+
+      deviceData.isUserDisconnect = true;
+      blePlatform.markDisconnected(harness.device.remoteId);
+      await _settle();
+      await deviceData.disconnectPreferred(harness.device);
+      expect(deviceData.customResponseReceived.value, isFalse);
 
       harness.dispose();
     });

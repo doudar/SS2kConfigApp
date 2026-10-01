@@ -129,7 +129,6 @@ class WorkoutController extends ChangeNotifier {
         if (isPlaying) _updateTargetPower(force: true);
       },
     )..attach();
-    _resetSimulationParameters();
     _initializeController();
   }
 
@@ -243,7 +242,7 @@ class WorkoutController extends ChangeNotifier {
     if (autoPlay) {
       isPlaying = true;
       await _prepareInProgressFile();
-      _updateTargetPower(force: true);
+      _updateTargetPower(force: true, resetSimulationFirst: true);
       startProgress();
     }
 
@@ -281,6 +280,7 @@ class WorkoutController extends ChangeNotifier {
 
   // Helper method to reset simulation parameters
   void _resetSimulationParameters() => deviceData.resetWorkoutSimulation();
+  void _releaseWorkoutControl() => deviceData.endWorkoutControl();
 
   Future<void> _prepareInProgressFile() async {
     if (progressPosition == 0 && _inProgressFilePath != null) {
@@ -473,7 +473,7 @@ class WorkoutController extends ChangeNotifier {
       }
       await _prepareInProgressFile();
       isPlaying = true;
-      _updateTargetPower(force: true);
+      _updateTargetPower(force: true, resetSimulationFirst: true);
       startProgress();
     }
     _saveWorkoutState(force: true);
@@ -485,7 +485,7 @@ class WorkoutController extends ChangeNotifier {
   Future<void> stopWorkout() async {
     isPlaying = false;
     progressTimer?.cancel();
-    _resetSimulationParameters();
+    _releaseWorkoutControl();
     await _flushInProgressTrackPoints(force: true);
     _saveWorkoutState(force: true);
     if (!_isDisposed) {
@@ -503,13 +503,19 @@ class WorkoutController extends ChangeNotifier {
           _workoutProgressTime < segmentStartTime + segments[i].duration) {
         // If this is the last segment, stop the workout
         if (i == segments.length - 1) {
+          // Completing the route by skipping must not count its remaining
+          // duration as ridden time, including Arcade enemy difficulty.
+          _skippedTime += (totalDuration - _workoutProgressTime).clamp(
+            0,
+            double.infinity,
+          );
           progressPosition = 1.0;
           _workoutProgressTime = totalDuration;
           isPlaying = false;
           progressTimer?.cancel();
-          // Play workout end sound and reset simulation parameters
+          _releaseWorkoutControl();
+          // Play workout end sound.
           workoutSoundGenerator.workoutEndSound();
-          _resetSimulationParameters();
           _saveWorkoutState();
           if (!_isDisposed) {
             notifyListeners();
@@ -646,9 +652,7 @@ class WorkoutController extends ChangeNotifier {
       }
 
       _currentWorkoutContent = xmlContent;
-
-      // Reset simulation parameters when loading new workout
-      _resetSimulationParameters();
+      _releaseWorkoutControl();
 
       _saveWorkoutState();
       if (!_isDisposed) {
@@ -665,7 +669,10 @@ class WorkoutController extends ChangeNotifier {
     }
   }
 
-  void _updateTargetPower({bool force = false}) {
+  void _updateTargetPower({
+    bool force = false,
+    bool resetSimulationFirst = false,
+  }) {
     if (segments.isEmpty) return;
 
     double currentTime = progressPosition * totalDuration;
@@ -700,6 +707,7 @@ class WorkoutController extends ChangeNotifier {
           deviceData.setWorkoutTargetPower(
             (targetPower * ftpValue).round(),
             force: force,
+            resetSimulationFirst: resetSimulationFirst,
           );
           _lastTargetUpdate = now;
         }
@@ -817,10 +825,10 @@ class WorkoutController extends ChangeNotifier {
         //progressPosition = 0; we will reset the progress position in the workout_screen.dart so that the save file dialog triggers correctly.
         isPlaying = false;
         timer.cancel();
-        // Play workout end sound and reset simulation parameters
+        _releaseWorkoutControl();
+        // Play workout end sound.
         if (!_isDisposed) {
           workoutSoundGenerator.workoutEndSound();
-          _resetSimulationParameters();
         }
         _scheduleInProgressFlush(force: true);
         _saveWorkoutState(force: true);

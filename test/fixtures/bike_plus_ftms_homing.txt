@@ -1,0 +1,317 @@
+[451286][E](FTMS_SERVER): 13 01 -> Spin Down Requested. Responding: 80 13 01
+[453158][E](Main): Starting homing procedure...
+[453158][E](FTMS_SERVER): Sent SpinDown Status: 0x01
+[453160][E](Main): Starting FTMS Homing...
+[453160][E](Main): FTMS homing request: both=1 resistance=43 range=1-100 savedMax=24316
+[453165][E](Main): Homing to Min Resistance... Current: 43, Target: 10, pos: 10133
+[454171][E](Main): Homing to Min Resistance... Current: 43, Target: 10, pos: 10133
+[454285][E](Main): Homing to Min Resistance... Current: 43, Target: 10, pos: 10133
+[455288][E](Main): Homing to Min Resistance... Current: 43, Target: 10, pos: 8982
+[456289][E](Main): Homing to Min Resistance... Current: 43, Target: 10, pos: 7482
+[457294][E](Main): Homing to Min Resistance... Current: 34, Target: 10, pos: 5974
+[458300][E](Main): Homing to Min Resistance... Current: 30, Target: 10, pos: 4466
+[459301][E](Main): Homing to Min Resistance... Current: 21, Target: 10, pos: 3771
+[460306][E](Main): Homing to Min Resistance... Current: 17, Target: 10, pos: 3510
+[461309][E](Main): Homing to Min Resistance... Current: 14, Target: 10, pos: 3341
+[462313][E](Main): Homing to Min Resistance... Current: 13, Target: 10, pos: 3248
+[463316][E](Main): Homing to Min Resistance... Current: 11, Target: 10, pos: 3232
+[464319][E](Main): Homing to Min Resistance... Current: 10, Target: 10, pos: 3232
+[465324][E](Main): Homing to Min Resistance... Current: 10, Target: 10, pos: 3354
+[466326][E](Main): Homing to Min Resistance... Current: 12, Target: 10, pos: 3474
+[467330][E](Main): Homing to Min Resistance... Current: 13, Target: 10, pos: 3474
+[468331][E](Main): Homing to Min Resistance... Current: 13, Target: 10, pos: 3457
+[469332][E](Main): Homing to Min Resistance... Current: 12, Target: 10, pos: 3389
+[470337][E](Main): Homing to Min Resistance... Current: 11, Target: 10, pos: 3389
+[471341][E](Main): Homing to Min Resistance... Current: 11, Target: 10, pos: 3355
+[472342][E](Main): Homing to Min Resistance... Current: 11, Target: 10, pos: 3239
+[473344][E](Main): Homing to Min Resistance... Current: 10, Target: 10, pos: 3239
+[474349][E](Main): Homing to Min Resistance... Current: 10, Target: 10, pos: 3246
+[475353][E](Main): Homing to Min Resistance... Current: 11, Target: 10, pos: 3325
+[476354][E](Main): Homing to Min Resistance... Current: 11, Target: 10, pos: 3314
+[477363][E](Main): Homing to Min Resistance... Current: 11, Target: 10, pos: 3314
+[478367][E](Main): Homing to Min Resistance... Current: 11, Target: 10, pos: 3314
+[478388][E](Main): Homing to Min Resistance... Current: 11, Target: 2, pos: 3314
+[479391][E](Main): Homing to Min Resistance... Current: 11, Target: 2, pos: 3025
+[480392][E](Main): Homing to Min Resistance... Current: 10, Target: 2, pos: 2752
+[481394][E](Main): Homing to Min Resistance... Current: 9, Target: 2, pos: 2502
+[482398][E](Main): Homing to Min Resistance... Current: 6, Target: 2, pos: 2338
+[483402][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 2320
+[484406][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 2320
+[485412][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 2170
+[486416][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 2170
+[487419][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 2170
+[488423][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 1870
+[489426][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 1870
+[490429][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 1870
+[491433][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 1311
+[492434][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 1270
+[493437][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 1270
+[494439][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 1240
+[495443][E](Main): Homing to Min Resistance... Current: 4, Target: 2, pos: 670
+[496448][E](Main): Homing to Min Resistance... Current: 1, Target: 2, pos: 670
+[497453][E](Main): Homing to Min Resistance... Current: 1, Target: 2, pos: 675
+[498454][E](Main): Homing to Min Resistance... Current: 1, Target: 2, pos: 1411
+[499463][E](Main): Homing to Min Resistance... Current: 3, Target: 2, pos: 970
+[500466][E](Main): Homing to Min Resistance... Current: 3, Target: 2, pos: 970
+[501472][E](Main): Homing to Min Resistance... Current: 3, Target: 2, pos: 970
+[502476][E](Main): Homing to Min Resistance... Current: 2, Target: 2, pos: 970
+[502549][E](Main): Min position found: 0 (FTMS origin: 394)
+[502549][E](Main): Homing to Max Resistance... Current: 3, Target: 90, pos: 970
+[502549][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[503554][E](Main): Homing to Max Resistance... Current: 3, Target: 90, pos: 970
+[503554][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[504558][E](Main): Homing to Max Resistance... Current: 2, Target: 90, pos: 970
+[504558][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[504602][E](Main): Homing to Max Resistance... Current: 3, Target: 90, pos: 970
+[505604][E](Main): Homing to Max Resistance... Current: 3, Target: 90, pos: 2121
+[505605][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[506607][E](Main): Homing to Max Resistance... Current: 2, Target: 90, pos: 3625
+[506607][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[507609][E](Main): Homing to Max Resistance... Current: 5, Target: 90, pos: 3999
+[507610][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[508610][E](Main): Homing to Max Resistance... Current: 14, Target: 90, pos: 3999
+[508611][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[509616][E](Main): Homing to Max Resistance... Current: 16, Target: 90, pos: 3999
+[509617][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[510623][E](Main): Homing to Max Resistance... Current: 16, Target: 90, pos: 4950
+[510623][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[511624][E](Main): Homing to Max Resistance... Current: 19, Target: 90, pos: 6450
+[511624][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[512628][E](Main): Homing to Max Resistance... Current: 24, Target: 90, pos: 7958
+[512629][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[513630][E](Main): Homing to Max Resistance... Current: 32, Target: 90, pos: 9460
+[513630][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[514636][E](Main): Homing to Max Resistance... Current: 37, Target: 90, pos: 10968
+[514636][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[515641][E](Main): Homing to Max Resistance... Current: 44, Target: 90, pos: 12476
+[515641][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[516646][E](Main): Homing to Max Resistance... Current: 49, Target: 90, pos: 13984
+[516646][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[517649][E](Main): Homing to Max Resistance... Current: 57, Target: 90, pos: 15488
+[517649][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[518652][E](Main): Homing to Max Resistance... Current: 62, Target: 90, pos: 16992
+[518652][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[519656][E](Main): Homing to Max Resistance... Current: 68, Target: 90, pos: 18498
+[519656][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[520659][E](Main): Homing to Max Resistance... Current: 73, Target: 90, pos: 19990
+[520659][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[521660][E](Main): Homing to Max Resistance... Current: 80, Target: 90, pos: 20531
+[521660][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[522665][E](Main): Homing to Max Resistance... Current: 82, Target: 90, pos: 20848
+[522665][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[523666][E](Main): Homing to Max Resistance... Current: 84, Target: 90, pos: 21120
+[523666][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[524667][E](Main): Homing to Max Resistance... Current: 85, Target: 90, pos: 21342
+[524667][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[525669][E](Main): Homing to Max Resistance... Current: 85, Target: 90, pos: 21534
+[525670][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[526672][E](Main): Homing to Max Resistance... Current: 87, Target: 90, pos: 21621
+[526672][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[527675][E](Main): Homing to Max Resistance... Current: 88, Target: 90, pos: 21626
+[527676][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[528679][E](Main): Homing to Max Resistance... Current: 88, Target: 90, pos: 21626
+[528679][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[529684][E](Main): Homing to Max Resistance... Current: 88, Target: 90, pos: 21776
+[529684][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[530685][E](Main): Homing to Max Resistance... Current: 88, Target: 90, pos: 21776
+[530686][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[531690][E](Main): Homing to Max Resistance... Current: 89, Target: 90, pos: 21776
+[531691][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[532695][E](Main): Homing to Max Resistance... Current: 88, Target: 90, pos: 21974
+[532696][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[533699][E](Main): Homing to Max Resistance... Current: 89, Target: 90, pos: 22076
+[533699][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[534704][E](Main): Homing to Max Resistance... Current: 90, Target: 90, pos: 22076
+[534705][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[535710][E](Main): Homing to Max Resistance... Current: 90, Target: 90, pos: 21928
+[535710][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[536712][E](Main): Homing to Max Resistance... Current: 89, Target: 90, pos: 21918
+[536712][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[537716][E](Main): Homing to Max Resistance... Current: 89, Target: 90, pos: 21926
+[537717][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[538721][E](Main): Homing to Max Resistance... Current: 89, Target: 90, pos: 21926
+[538721][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[539722][E](Main): Homing to Max Resistance... Current: 89, Target: 90, pos: 21857
+[539722][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[540725][E](Main): Homing to Max Resistance... Current: 89, Target: 90, pos: 21985
+[540725][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[541726][E](Main): Homing to Max Resistance... Current: 89, Target: 90, pos: 22001
+[541726][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[542729][E](Main): Homing to Max Resistance... Current: 90, Target: 90, pos: 22001
+[542729][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[543623][E](Main): Homing to Max Resistance... Current: 90, Target: 98, pos: 22001
+[544629][E](Main): Homing to Max Resistance... Current: 90, Target: 98, pos: 22266
+[544629][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[545633][E](Main): Homing to Max Resistance... Current: 90, Target: 98, pos: 22537
+[545634][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[546638][E](Main): Homing to Max Resistance... Current: 90, Target: 98, pos: 22809
+[546638][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[547642][E](Main): Homing to Max Resistance... Current: 90, Target: 98, pos: 23082
+[547643][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[548648][E](Main): Homing to Max Resistance... Current: 90, Target: 98, pos: 23355
+[548648][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[549652][E](Main): Homing to Max Resistance... Current: 91, Target: 98, pos: 23606
+[549653][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[550654][E](Main): Homing to Max Resistance... Current: 92, Target: 98, pos: 23833
+[550654][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[551659][E](Main): Homing to Max Resistance... Current: 94, Target: 98, pos: 24003
+[551659][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[552665][E](Main): Homing to Max Resistance... Current: 95, Target: 98, pos: 24100
+[552665][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[553670][E](Main): Homing to Max Resistance... Current: 97, Target: 98, pos: 24119
+[553670][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[554675][E](Main): Homing to Max Resistance... Current: 96, Target: 98, pos: 24119
+[554675][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[555676][E](Main): Homing to Max Resistance... Current: 97, Target: 98, pos: 24207
+[555676][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[556677][E](Main): Homing to Max Resistance... Current: 97, Target: 98, pos: 24269
+[556677][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[557681][E](Main): Homing to Max Resistance... Current: 97, Target: 98, pos: 24269
+[557681][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[558687][E](Main): Homing to Max Resistance... Current: 97, Target: 98, pos: 24318
+[558687][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[559692][E](Main): Homing to Max Resistance... Current: 97, Target: 98, pos: 24569
+[559693][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[560696][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24569
+[560696][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[561699][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24551
+[561699][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[562704][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24305
+[562704][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[563705][E](Main): Homing to Max Resistance... Current: 98, Target: 98, pos: 24419
+[563705][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[564708][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24419
+[564708][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[565711][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24419
+[565712][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[566714][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24314
+[566714][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[567715][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24344
+[567716][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[568720][E](Main): Homing to Max Resistance... Current: 98, Target: 98, pos: 24344
+[568720][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[569721][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24344
+[569722][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[570728][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24292
+[570728][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[571733][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24306
+[571733][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[572737][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24306
+[572737][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[573738][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24278
+[573738][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[574742][E](Main): Homing to Max Resistance... Current: 98, Target: 98, pos: 24287
+[574742][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[575746][E](Main): Homing to Max Resistance... Current: 99, Target: 98, pos: 24287
+[575746][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[576474][E](Main): Homing to Max Resistance... Current: 98, Target: 67, pos: 24287
+[577478][E](Main): Homing to Max Resistance... Current: 98, Target: 67, pos: 24287
+[577479][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[578480][E](Main): Homing to Max Resistance... Current: 98, Target: 67, pos: 24287
+[578481][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[579485][E](Main): Homing to Max Resistance... Current: 98, Target: 67, pos: 22873
+[579485][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[580486][E](Main): Homing to Max Resistance... Current: 97, Target: 67, pos: 20368
+[580487][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[581492][E](Main): Homing to Max Resistance... Current: 90, Target: 67, pos: 18378
+[581492][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[582495][E](Main): Homing to Max Resistance... Current: 80, Target: 67, pos: 18287
+[582495][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[583496][E](Main): Homing to Max Resistance... Current: 77, Target: 67, pos: 18287
+[583496][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[584499][E](Main): Homing to Max Resistance... Current: 77, Target: 67, pos: 18287
+[584499][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[585502][E](Main): Homing to Max Resistance... Current: 77, Target: 67, pos: 17178
+[585502][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[586505][E](Main): Homing to Max Resistance... Current: 76, Target: 67, pos: 15847
+[586505][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[587506][E](Main): Homing to Max Resistance... Current: 68, Target: 67, pos: 15847
+[587506][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[588508][E](Main): Homing to Max Resistance... Current: 66, Target: 67, pos: 15847
+[588509][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[588757][E](Main): FTMS map sample: resistance=66.0 position=15453 travel=63.2%
+[588757][E](Main): Homing to Max Resistance... Current: 66, Target: 58, pos: 15847
+[589762][E](Main): Homing to Max Resistance... Current: 66, Target: 58, pos: 14418
+[589762][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[590767][E](Main): Homing to Max Resistance... Current: 66, Target: 58, pos: 13895
+[590767][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[591771][E](Main): Homing to Max Resistance... Current: 60, Target: 58, pos: 13895
+[591771][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[592772][E](Main): Homing to Max Resistance... Current: 57, Target: 58, pos: 13895
+[592773][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[593776][E](Main): Homing to Max Resistance... Current: 57, Target: 58, pos: 13895
+[593777][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[594778][E](Main): Homing to Max Resistance... Current: 56, Target: 58, pos: 13895
+[594778][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[594909][E](Main): Homing to Max Resistance... Current: 56, Target: 50, pos: 13895
+[595916][E](Main): Homing to Max Resistance... Current: 56, Target: 50, pos: 12939
+[595916][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[596921][E](Main): Homing to Max Resistance... Current: 57, Target: 50, pos: 12919
+[596922][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[597923][E](Main): Homing to Max Resistance... Current: 55, Target: 50, pos: 12919
+[597923][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[598925][E](Main): Homing to Max Resistance... Current: 55, Target: 50, pos: 12919
+[598925][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[599928][E](Main): Homing to Max Resistance... Current: 55, Target: 50, pos: 12191
+[599928][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[600934][E](Main): Homing to Max Resistance... Current: 52, Target: 50, pos: 12187
+[600934][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[601936][E](Main): Homing to Max Resistance... Current: 50, Target: 50, pos: 12187
+[601937][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[602938][E](Main): Homing to Max Resistance... Current: 50, Target: 50, pos: 12384
+[602938][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[603944][E](Main): Homing to Max Resistance... Current: 51, Target: 50, pos: 12675
+[603944][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[604945][E](Main): Homing to Max Resistance... Current: 53, Target: 50, pos: 12675
+[604946][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[605949][E](Main): Homing to Max Resistance... Current: 53, Target: 50, pos: 12533
+[605949][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[606954][E](Main): Homing to Max Resistance... Current: 53, Target: 50, pos: 12431
+[606954][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[607958][E](Main): Homing to Max Resistance... Current: 52, Target: 50, pos: 12431
+[607959][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[608964][E](Main): Homing to Max Resistance... Current: 52, Target: 50, pos: 12338
+[608964][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[609969][E](Main): Homing to Max Resistance... Current: 52, Target: 50, pos: 12281
+[609969][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[610974][E](Main): Homing to Max Resistance... Current: 51, Target: 50, pos: 12281
+[610974][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[611978][E](Main): Homing to Max Resistance... Current: 51, Target: 50, pos: 12229
+[611978][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[612979][E](Main): Homing to Max Resistance... Current: 51, Target: 50, pos: 12131
+[612979][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[613981][E](Main): Homing to Max Resistance... Current: 50, Target: 50, pos: 12131
+[613981][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[614985][E](Main): Homing to Max Resistance... Current: 50, Target: 50, pos: 12151
+[614986][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[615987][E](Main): Homing to Max Resistance... Current: 50, Target: 50, pos: 13367
+[615987][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[616989][E](Main): Homing to Max Resistance... Current: 54, Target: 50, pos: 12788
+[616989][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[617995][E](Main): Homing to Max Resistance... Current: 55, Target: 50, pos: 12206
+[617995][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[619000][E](Main): Homing to Max Resistance... Current: 51, Target: 50, pos: 12206
+[619000][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[620001][E](Main): Homing to Max Resistance... Current: 51, Target: 50, pos: 12206
+[620001][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[620031][E](Main): FTMS map sample: resistance=50.5 position=11775 travel=48.1%
+[620032][E](Main): Homing to Max Resistance... Current: 51, Target: 33, pos: 12206
+[621033][E](Main): Homing to Max Resistance... Current: 51, Target: 33, pos: 12206
+[621033][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[622036][E](Main): Homing to Max Resistance... Current: 50, Target: 33, pos: 12206
+[622037][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[623038][E](Main): Homing to Max Resistance... Current: 50, Target: 33, pos: 10797
+[623038][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[624041][E](Main): Homing to Max Resistance... Current: 50, Target: 33, pos: 8449
+[624042][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[625047][E](Main): Homing to Max Resistance... Current: 34, Target: 33, pos: 8058
+[625047][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[626050][E](Main): Homing to Max Resistance... Current: 34, Target: 33, pos: 8058
+[626051][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[627055][E](Main): Homing to Max Resistance... Current: 31, Target: 33, pos: 8058
+[627056][E](FTMS_SERVER): Sent SpinDown Status: 0x04
+[627725][E](Main): FTMS map sample: resistance=31.0 position=7664 travel=31.3%
+[628037][E](Main): Max Position found: 24462
+[628038][E](Main): FTMS homing complete: estimated zero=394, range=24462 steps
+[628038][E](Main): Homing procedure complete.
+[628038][E](FTMS_SERVER): Sent SpinDown Status: 0x02

@@ -479,7 +479,7 @@ final dynamic customCharacteristicFramework = [
   {
     "vName": autoUpdateVname,
     "reference": "0x11",
-    "isSetting": true,
+    "isSetting": false,
     "settingType": SettingType.network,
     "type": "bool",
     "humanReadableName": "Auto Updates",

@@ -18,7 +18,9 @@ import '../utils/constants.dart';
 import '../utils/onboarding/wizard_step_machine.dart';
 import '../widgets/setting_tile.dart';
 import '../widgets/homing_proximity_gauge.dart';
+import '../widgets/ftms_calibration_progress.dart';
 import '../widgets/ss2k_app_bar.dart';
+import '../widgets/workout_scroll_hint.dart';
 
 const String _troubleshootingUrl = 'https://docs.smartspin2k.com/documentation/troubleshooting';
 
@@ -45,7 +47,11 @@ class CalibrationScreen extends StatefulWidget {
   final BluetoothDevice device;
   final bool showDeviceHeader;
 
-  const CalibrationScreen({Key? key, required this.device, this.showDeviceHeader = true}) : super(key: key);
+  /// Workout settings supply their own shared dialog chrome.
+  final bool embedded;
+
+  const CalibrationScreen({Key? key, required this.device, this.showDeviceHeader = true, this.embedded = false})
+    : super(key: key);
 
   @override
   State<CalibrationScreen> createState() => _CalibrationScreenState();
@@ -190,18 +196,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     final setting = _homingForceSetting;
     if (setting.isEmpty || _loadedHomingForceValue(setting) == null) return;
 
-    await Navigator.of(context).push<void>(
-      fadeRoute(
-        Scaffold(
-          appBar: AppBar(title: const Text('Edit Setting')),
-          body: Center(
-            child: SingleChildScrollView(
-              child: SettingEditor(device: widget.device, c: setting),
-            ),
-          ),
-        ),
-      ),
-    );
+    await Navigator.of(context).push<void>(fadeRoute(SettingEditScreen(device: widget.device, c: setting)));
     if (mounted) setState(() {});
   }
 
@@ -301,6 +296,19 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     // green success callout.
     final progress = _pageIndex == 1 && _showVerdict ? 1.0 : (_pageIndex + 1) / _pageCount;
 
+    final content = Column(
+      children: [
+        LinearProgressIndicator(value: progress),
+        Expanded(
+          child: PageView(
+            controller: _pageController,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [_buildBeforeYouStartPage(), _buildRunningPage(), _buildTroubleshootPage()],
+          ),
+        ),
+      ],
+    );
+    if (widget.embedded) return content;
     return Scaffold(
       appBar: SS2KAppBar(
         device: widget.device,
@@ -308,18 +316,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         showDeviceHeader: widget.showDeviceHeader,
         deviceHeaderCustomRefreshEnabled: false,
       ),
-      body: Column(
-        children: [
-          LinearProgressIndicator(value: progress),
-          Expanded(
-            child: PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [_buildBeforeYouStartPage(), _buildRunningPage(), _buildTroubleshootPage()],
-            ),
-          ),
-        ],
-      ),
+      body: content,
     );
   }
 
@@ -410,6 +407,12 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                 'with BLE TX on. If you\'re using only a power meter, skip calibration. Homing '
                 'Force does not apply to Bike+.',
           ),
+          const SizedBox(height: 12),
+          const Text(
+            'Allow several minutes. Newer firmware checks the low and high boundaries, '
+            'then measures three points across the resistance range. The screen will '
+            'show these extra steps when the firmware reports them.',
+          ),
         ],
       ],
     );
@@ -446,7 +449,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     // step — so lead with "Close" and keep "Try Again" underneath, for after
     // the restart, rather than making an immediate retry the primary action.
     final fallbackAppearsStalled = phase == CalibrationPhase.failedTransportStalled;
-    final retryOnly = !succeeded && !fallbackAppearsStalled && _preHomingFailures.contains(phase);
+    final retryOnly =
+        !succeeded &&
+        !fallbackAppearsStalled &&
+        (_preHomingFailures.contains(phase) || phase == CalibrationPhase.failedFtms);
 
     return _CalibrationPage(
       primaryLabel: !_showVerdict
@@ -517,18 +523,26 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         // moment the phase turns terminal — the last checkmark should be the
         // only thing moving at that instant.
         if (!_showVerdict) ...[
-          _Callout(
-            icon: Icons.visibility,
-            color: Theme.of(context).colorScheme.primary,
-            title: _isBikePlus ? 'Watch the resistance' : 'Watch the knob',
-            body: _isBikePlus
-                ? 'SmartSpin2k will use the resistance reported by your Bike+ to learn its low '
-                      'and high limits. The knob may keep turning; it will not hit a physical stop. '
-                      'Press either shifter button if you need to cancel.'
-                : 'SmartSpin2k will turn the knob to low resistance, then high resistance. Brief '
-                      'contact with each stop is normal. Press either shifter button if the motor '
-                      'keeps pushing or you need to cancel.\nIf motor load maxes before the knob reaches a stop, increase homing force.',
-          ),
+          if (_monitor.ftmsStage != null)
+            FtmsCalibrationProgress(
+              stage: _monitor.ftmsStage!,
+              samples: _monitor.mapSamples,
+              elapsed: _monitor.elapsed,
+              reading: gauge,
+            )
+          else
+            _Callout(
+              icon: Icons.visibility,
+              color: Theme.of(context).colorScheme.primary,
+              title: expectsFtms ? 'Watch the resistance' : 'Watch the knob',
+              body: expectsFtms
+                  ? 'SmartSpin2k will use the resistance reported by your Bike+ to learn its low '
+                        'and high limits. The knob may keep turning; it will not hit a physical stop. '
+                        'Press either shifter button if you need to cancel.'
+                  : 'SmartSpin2k will turn the knob to low resistance, then high resistance. Brief '
+                        'contact with each stop is normal. Press either shifter button if the motor '
+                        'keeps pushing or you need to cancel.\nIf motor load maxes before the knob reaches a stop, increase homing force.',
+            ),
           const SizedBox(height: 16),
         ],
         if (showGauge) ...[
@@ -573,6 +587,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           minFound: _monitor.minFound,
           maxFound: _monitor.maxFound,
           cadenceDetected: _cadenceDetected,
+          ftmsStage: _monitor.ftmsStage,
         ),
         // The verdict is the checklist's last step, so it grows in below the
         // rows rather than replacing them or moving the user elsewhere.
@@ -657,6 +672,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   String _failureBody(CalibrationPhase phase) {
     switch (phase) {
+      case CalibrationPhase.failedFtms:
+        return _monitor.ftmsFailure ??
+            'The resistance calibration could not be saved. Check the live resistance data, then try again.';
       case CalibrationPhase.failedToStart:
         return '${_monitor.startFailure ?? 'The calibration command could not be sent.'} '
             'Check that the SmartSpin2k is still connected, then try again.';
@@ -826,9 +844,11 @@ class _CalibrationPage extends StatelessWidget {
     return Column(
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+          child: WorkoutScrollHint(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+            ),
           ),
         ),
         if (primaryLabel != null || secondaryLabel != null)
@@ -868,18 +888,22 @@ class _PhaseChecklist extends StatelessWidget {
   final bool minFound;
   final bool maxFound;
   final bool cadenceDetected;
+  final FtmsCalibrationStage? ftmsStage;
 
   const _PhaseChecklist({
     required this.phase,
     required this.minFound,
     required this.maxFound,
     required this.cadenceDetected,
+    this.ftmsStage,
   });
 
   @override
   Widget build(BuildContext context) {
     final failed = phase.isFailure;
     final complete = phase == CalibrationPhase.complete;
+    final mapping = ftmsStage == FtmsCalibrationStage.mapping || ftmsStage == FtmsCalibrationStage.saving;
+    final highFound = maxFound || mapping;
 
     // A failure has no phase of its own, so the first unfinished step is the
     // one that broke. Everything before it stands, everything after stays idle.
@@ -908,14 +932,23 @@ class _PhaseChecklist extends StatelessWidget {
         ),
         _ChecklistRow(
           label: 'Finding high resistance',
-          state: stateFor(done: maxFound, isCurrent: cadenceConfirmed && minFound && !maxFound),
+          state: stateFor(done: highFound, isCurrent: cadenceConfirmed && minFound && !highFound),
         ),
+        if (ftmsStage != null)
+          _ChecklistRow(
+            label: 'Building resistance map',
+            state: stateFor(
+              done: complete || ftmsStage == FtmsCalibrationStage.saving,
+              isCurrent: mapping && ftmsStage != FtmsCalibrationStage.saving,
+            ),
+          ),
         // Only while the closing signal is genuinely outstanding — the
         // completion grace window, which can run to ten seconds. There is no
         // "done" state for it: the verdict takes its place. A row that only
         // ever flipped to a checkmark and vanished is what made the old
         // "Calibration complete" step worth removing.
-        if (maxFound && !phase.isTerminal) const _ChecklistRow(label: 'Saving calibration', state: _RowState.active),
+        if ((maxFound || ftmsStage == FtmsCalibrationStage.saving) && !phase.isTerminal)
+          const _ChecklistRow(label: 'Saving calibration', state: _RowState.active),
       ],
     );
   }

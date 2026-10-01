@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'workout_dialog.dart';
 import '../utils/workout/fit_file_reader.dart';
 import '../utils/workout/workout_controller.dart';
 import '../utils/workout/workout_storage.dart';
@@ -24,15 +25,15 @@ class CompletedActivities extends StatefulWidget {
   }) {
     showDialog(
       context: context,
-      builder: (BuildContext context) => Dialog(
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.8,
-          height: MediaQuery.of(context).size.height * 0.8,
-          padding: const EdgeInsets.all(16.0),
-          child: CompletedActivities(
-            workoutController: workoutController,
-            onWorkoutLoaded: onWorkoutLoaded,
-          ),
+      builder: (BuildContext context) => WorkoutDialog(
+        title: const Text('Past rides'),
+        icon: Icons.history_rounded,
+        subtitle: 'Review, share and manage your rides.',
+        showClose: true,
+        listBody: true,
+        content: CompletedActivities(
+          workoutController: workoutController,
+          onWorkoutLoaded: onWorkoutLoaded,
         ),
       ),
     );
@@ -159,7 +160,7 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
     final String? exportChoice = await showDialog<String>(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
+        return WorkoutDialog(
           title: Text(activity.name),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -255,7 +256,7 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
   ) async {
     final choice = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => WorkoutDialog(
         title: Text(activity.name),
         content: const Text('Resume this in-progress workout?'),
         actions: [
@@ -392,11 +393,6 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(
-          'Completed Activities',
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 16),
         Expanded(
           child: _isLoadingInitial
               ? const Center(child: CircularProgressIndicator())
@@ -414,7 +410,8 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
 
                     return Column(
                       children: [
-                        Row(
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Checkbox(
                               value: allSelected,
@@ -434,14 +431,14 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
                                     },
                             ),
                             const Text('Select All'),
-                            const Spacer(),
+
                             TextButton.icon(
                               onPressed: selectedCount == 0
                                   ? null
                                   : () async {
                                       final confirmed = await showDialog<bool>(
                                         context: context,
-                                        builder: (context) => AlertDialog(
+                                        builder: (context) => WorkoutDialog(
                                           title: const Text('Delete Workouts'),
                                           content: Text(
                                             'Delete $selectedCount selected workouts?',
@@ -498,8 +495,8 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
                               final isSelected = _selectedActivityPaths
                                   .contains(activity.filePath);
 
-                              return ListTile(
-                                leading: Checkbox(
+                              return WorkoutOptionTile(
+                                trailing: Checkbox(
                                   value: isSelected,
                                   onChanged: (value) {
                                     setState(() {
@@ -515,19 +512,12 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
                                     });
                                   },
                                 ),
-                                title: Row(
-                                  children: [
-                                    _buildThumbnail(activity),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        activity.isInProgress
-                                            ? '${activity.name} (In Progress)'
-                                            : activity.name,
-                                      ),
-                                    ),
-                                  ],
+                                title: Text(
+                                  activity.isInProgress
+                                      ? '${activity.name} (In Progress)'
+                                      : activity.name,
                                 ),
+                                leading: _buildThumbnail(activity),
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [

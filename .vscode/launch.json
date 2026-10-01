@@ -7,18 +7,28 @@
         {
             "name": "ss2kconfigapp",
             "request": "launch",
-            "type": "dart"
+            "type": "dart",
+            "debuggerType": "flutter",
+            "program": "lib/main.dart",
+            "cwd": "${workspaceFolder}",
+            "flutterMode": "debug"
         },
         {
             "name": "ss2kconfigapp (profile mode)",
             "request": "launch",
             "type": "dart",
+            "debuggerType": "flutter",
+            "program": "lib/main.dart",
+            "cwd": "${workspaceFolder}",
             "flutterMode": "profile"
         },
         {
             "name": "ss2kconfigapp (release mode)",
             "request": "launch",
             "type": "dart",
+            "debuggerType": "flutter",
+            "program": "lib/main.dart",
+            "cwd": "${workspaceFolder}",
             "flutterMode": "release"
         }
     ]

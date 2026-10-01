@@ -1,0 +1,36 @@
+{
+  "source": "Procedural retro vocal effect; no speech model or recording",
+  "engine": "procedural-retro-v1",
+  "voices": [
+    {
+      "text": "Woo-hoo! Yeah!",
+      "voice": "chip_soprano",
+      "pitch_hz": 330.0,
+      "gain": 1.0,
+      "delay": 0,
+      "engine": "procedural-retro-v1",
+      "seed": 42180168
+    },
+    {
+      "text": "Woo-hoo! Yeah!",
+      "voice": "chip_alto",
+      "pitch_hz": 258.0,
+      "gain": 0.5,
+      "delay": 0.035,
+      "engine": "procedural-retro-v1",
+      "seed": 42180168
+    },
+    {
+      "text": "Woo-hoo! Yeah!",
+      "voice": "chip_tenor",
+      "pitch_hz": 204.0,
+      "gain": 0.38,
+      "delay": 0.07,
+      "engine": "procedural-retro-v1",
+      "seed": 42180168
+    }
+  ],
+  "milliseconds": 1800,
+  "sample_rate": 22050,
+  "wav_sha256": "5f506f94d5a685a3eabe1b3ba595ef9983be1a4a4e4f4a6677bd9fd8ead78942"
+}

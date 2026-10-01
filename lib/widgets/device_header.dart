@@ -37,8 +37,8 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   late DeviceData deviceData;
   bool _isRefreshing = false;
   bool _retryRefreshAfterInProgress = false;
-  String _fwVersion = "";
-  VoidCallback? _firmwareVersionListener;
+  bool _connectionActionInProgress = false;
+  late final Listenable _statusChanges;
   StreamSubscription<CharacteristicChangeEvent>? _deviceNameSubscription;
 
   @override
@@ -46,25 +46,17 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     super.initState();
     deviceData = DeviceDataManager.forDevice(this.widget.device);
 
-    // Listen for firmware version changes to automatically update the UI
-    _firmwareVersionListener = () {
-      if (mounted) {
-        setState(() {
-          _fwVersion = deviceData.firmwareVersion.value;
-        });
-      }
-    };
-    deviceData.firmwareVersion.addListener(_firmwareVersionListener!);
+    _statusChanges = Listenable.merge([
+      deviceData.transportState,
+      deviceData.firmwareVersion,
+      deviceData.customResponseReceived,
+      deviceData.customResponsesDegraded,
+    ]);
     _deviceNameSubscription = deviceData.characteristicChanges
         .where((event) => event.vName == deviceNameVname)
         .listen((_) {
           if (mounted) setState(() {});
         });
-
-    // Initialize firmware version
-    _fwVersion = deviceData.firmwareVersion.value.isEmpty
-        ? "Connecting Please Wait..."
-        : deviceData.firmwareVersion.value;
 
     // Start the centralized auto-reconnect monitor. It owns BLE-specific
     // recovery only — the connected-epoch watcher below is this widget's sole
@@ -148,7 +140,9 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       _isRefreshing = true;
 
       // Wait a bit for the device to stabilize after connection
+      final generation = _watcher.generation;
       await Future.delayed(Duration(seconds: 1));
+      if (!mounted || !_watcher.isCurrentGeneration(generation)) return;
 
       if (widget.firmwareOnlyRefresh) {
         await deviceData.ensureCustomCharacteristicStream(widget.device);
@@ -179,9 +173,6 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     deviceData.stopConnectionMonitor();
     rssiTimer.cancel();
     setupTimer.cancel();
-    if (_firmwareVersionListener != null) {
-      deviceData.firmwareVersion.removeListener(_firmwareVersionListener!);
-    }
     super.dispose();
   }
 
@@ -191,12 +182,13 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   /// `isConnected` check and the reply. Every caller here treats a failed read
   /// as "no signal", never as a reason to abandon what it was doing.
   Future<void> _readRssiInto() async {
-    if (!this.widget.device.isConnected) {
+    final device = deviceData.resolveTransportDevice(widget.device);
+    if (!device.isConnected) {
       this.deviceData.rssi.value = 0;
       return;
     }
     try {
-      this.deviceData.rssi.value = await this.widget.device.readRssi();
+      this.deviceData.rssi.value = await device.readRssi();
     } catch (e) {
       this.deviceData.rssi.value = 0;
     }
@@ -227,7 +219,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Future<void> _updateRssi() async {
     await _readRssiInto();
     if (widget.customRefreshEnabled && deviceData.isTransportActive) {
-      deviceData.requestSetting(this.widget.device, fwVname);
+      await deviceData.requestSetting(this.widget.device, fwVname);
     }
     // No need for manual setState here anymore - the listener handles
     // firmware version updates on either transport.
@@ -238,12 +230,13 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   }
 
   Future onConnectPressed() async {
+    if (_connectionActionInProgress) return;
+    setState(() => _connectionActionInProgress = true);
     // Reset user disconnect flag when connecting
     this.deviceData.isUserDisconnect = false;
 
     try {
       await this.deviceData.connectPreferred(this.widget.device);
-      Snackbar.show(ABC.c, "Connect: Success", success: true);
     } catch (e) {
       if (e is FlutterBluePlusException &&
           e.code == FbpErrorCode.connectionCanceled.index) {
@@ -255,6 +248,28 @@ class _DeviceHeaderState extends State<DeviceHeader> {
           success: false,
         );
       }
+    } finally {
+      if (mounted) setState(() => _connectionActionInProgress = false);
+    }
+  }
+
+  Future<void> onReconnectPressed() async {
+    if (_connectionActionInProgress) return;
+    setState(() => _connectionActionInProgress = true);
+    try {
+      // Connecting an already-connected GATT client is a no-op. Explicitly
+      // close it and reset subscriptions before asking for a new session.
+      await deviceData.disconnectPreferred(widget.device);
+      if (!mounted) return;
+      await deviceData.connectPreferred(widget.device);
+    } catch (e) {
+      Snackbar.show(
+        ABC.c,
+        prettyException('Reconnect Error: ', e),
+        success: false,
+      );
+    } finally {
+      if (mounted) setState(() => _connectionActionInProgress = false);
     }
   }
 
@@ -274,7 +289,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
   Future onDiscoverServicesPressed() async {
     try {
       await _refreshDeviceInfo(forceRefresh: true);
-      Snackbar.show(ABC.c, "Discover Services: Success", success: true);
+      Snackbar.show(ABC.c, "Settings refresh requested", success: true);
     } catch (e) {
       Snackbar.show(
         ABC.c,
@@ -332,8 +347,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       // network session has no signal.
       iconData = Icons.router;
       iconColor = Colors.lightBlueAccent;
-    } else if (connected &&
-        state.transport == DeviceTransportKind.bluetooth) {
+    } else if (connected && state.transport == DeviceTransportKind.bluetooth) {
       if (rssi >= -60) {
         iconData = Icons.signal_cellular_4_bar_sharp;
         iconColor = Colors.green;
@@ -358,8 +372,58 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     return Icon(iconData, color: iconColor);
   }
 
+  String get _connectionStatus {
+    if (_connectionActionInProgress) return 'Connecting…';
+    if (deviceData.isSimulated) return deviceData.firmwareVersion.value;
+    final state = deviceData.transportState.value;
+    switch (state.phase) {
+      case DeviceTransportPhase.disconnected:
+        return 'Disconnected';
+      case DeviceTransportPhase.connecting:
+        return 'Connecting…';
+      case DeviceTransportPhase.reconnecting:
+        return 'Reconnecting…';
+      case DeviceTransportPhase.connected:
+        final transport = state.transport == DeviceTransportKind.dircon
+            ? 'Network'
+            : 'Bluetooth';
+        if (deviceData.customResponsesDegraded.value) {
+          return '$transport Connected, no data received';
+        }
+        if (state.transport == DeviceTransportKind.bluetooth &&
+            !deviceData.customResponseReceived.value) {
+          return '$transport connected · waiting for device';
+        }
+        final version = deviceData.firmwareVersion.value;
+        return version.isEmpty ? '$transport connected' : version;
+    }
+  }
+
+  bool get _connectionBusy =>
+      _connectionActionInProgress ||
+      deviceData.transportState.value.phase ==
+          DeviceTransportPhase.connecting ||
+      deviceData.transportState.value.phase ==
+          DeviceTransportPhase.reconnecting;
+
+  bool get _canReboot =>
+      isConnected &&
+      !_connectionBusy &&
+      !deviceData.customResponsesDegraded.value &&
+      (deviceData.isSimulated ||
+          deviceData.transportState.value.transport ==
+              DeviceTransportKind.dircon ||
+          deviceData.customResponseReceived.value);
+
   @override
   Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _statusChanges,
+      builder: (context, _) => _buildHeader(context),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final advertisedName = widget.device.platformName.isNotEmpty
@@ -420,23 +484,36 @@ class _DeviceHeaderState extends State<DeviceHeader> {
               ),
             ),
             SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  displayName,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                Text(
-                  '${_fwVersion}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.80),
+                  Tooltip(
+                    message: _connectionStatus,
+                    child: Text(
+                      _connectionStatus,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color:
+                            isConnected &&
+                                deviceData.customResponsesDegraded.value
+                            ? colorScheme.error
+                            : colorScheme.onSurface.withValues(alpha: 0.80),
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             const SizedBox(width: 6),
             Container(
@@ -458,19 +535,37 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       onSelected: (callback) => callback(),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<VoidCallback>>[
         PopupMenuItem<VoidCallback>(
-          value: onConnectPressed,
+          enabled: !_connectionBusy,
+          value: isConnected ? onReconnectPressed : onConnectPressed,
           child: ListTile(
             leading: Icon(Icons.electrical_services),
-            title: Text('Connect'),
+            title: Text(isConnected ? 'Reconnect' : 'Connect'),
           ),
         ),
+        if (isConnected && deviceData.customResponsesDegraded.value)
+          PopupMenuItem<VoidCallback>(
+            enabled: false,
+            child: Text(
+              'The connection is open, but SmartSpin2k is not answering. '
+              'Reconnect to try a fresh connection.\n\n'
+              'Using Grupetto on this device?\n'
+              'Open SmartSpin2k Config App on a different phone or tablet '
+              'and connect to SmartSpin2k over Bluetooth. In Settings → Network, '
+              'connect SmartSpin2k to the same Wi-Fi network as this device. '
+              'Then return here and reconnect.',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
         PopupMenuItem<VoidCallback>(
+          enabled: isConnected && !_connectionBusy,
           value: onDiscoverServicesPressed,
           child: ListTile(leading: Icon(Icons.refresh), title: Text('Refresh')),
         ),
         PopupMenuItem<VoidCallback>(
+          enabled: _canReboot,
           value: onRebootPressed,
           child: ListTile(
+            enabled: _canReboot,
             leading: Icon(Icons.restart_alt),
             title: Text('Reboot SS2k'),
           ),

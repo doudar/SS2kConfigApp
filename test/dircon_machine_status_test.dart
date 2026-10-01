@@ -517,6 +517,37 @@ void main() {
     deviceData.dispose();
   });
 
+  test('FTMS mapping extends the run budget and freezes elapsed time at failure', () async {
+    final connector = FakeDirConConnector();
+    final deviceData = await _connect(connector, device);
+    final session = connector.first;
+    final monitor = CalibrationMonitor(
+      deviceData: deviceData,
+      device: device,
+      overallTimeout: const Duration(milliseconds: 200),
+      ftmsMappingTimeout: const Duration(seconds: 1),
+    );
+    addTearDown(monitor.dispose);
+    addTearDown(deviceData.dispose);
+    await monitor.start();
+    for (final line in [
+      '(FTMS_SERVER): Spin Down Requested',
+      '(Main): Starting homing procedure...',
+      '(Main): FTMS homing request: both=1 resistance=43 range=1-100 savedMax=24316',
+    ]) {
+      session.emitNotification(ccUUID, [0x80, 0x30, ...line.codeUnits]);
+    }
+    await _settle();
+    expect(monitor.ftmsStage, FtmsCalibrationStage.lowBoundary);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(monitor.phase.isRunning, isTrue);
+    await _until(() => monitor.phase.isTerminal, 'the extended budget still has a ceiling');
+    expect(monitor.phase, CalibrationPhase.failedTimeout);
+    final elapsed = monitor.elapsed;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(monitor.elapsed, elapsed);
+  });
+
   group('calibration readiness is bounded', () {
     // A leaked block count must not make calibration unstartable. The run goes
     // ahead on the log and hMax paths, and the report says the stream was not

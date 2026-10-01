@@ -6,6 +6,7 @@ import 'package:ss2kconfigapp/screens/calibration_screen.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:ss2kconfigapp/widgets/homing_proximity_gauge.dart';
+import 'package:ss2kconfigapp/widgets/workout_dialog.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +34,38 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('calibration fits the shared workout dialog on a narrow phone', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 568);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: WorkoutDialog(
+            title: const Text('Calibrate Trainer'),
+            listBody: true,
+            showClose: true,
+            content: CalibrationScreen(device: device, embedded: true),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Calibrate Trainer'), findsOneWidget);
+    await tester.ensureVisible(find.text('No'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('No'));
+    await tester.pumpAndSettle();
+    expect(
+      (await SharedPreferences.getInstance()).getString('calibration_setup'),
+      'physicalStops',
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('legacy users must answer the Bike+ question before starting', (
     tester,

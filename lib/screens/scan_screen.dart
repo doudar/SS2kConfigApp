@@ -18,11 +18,11 @@ import 'main_device_screen.dart';
 import '../utils/snackbar.dart';
 import '../utils/device_data.dart';
 import '../widgets/scan_result_tile.dart';
-import '../widgets/theme_cycle_button.dart';
 import '../utils/demo.dart';
 import 'onboarding/onboarding_wizard.dart';
 import '../utils/onboarding/wizard_session.dart';
-import '../utils/smartspin_advertisement.dart';
+import '../utils/dircon_discovery.dart';
+import '../utils/smartspin_scan_result.dart';
 import '../utils/nearby_ble_devices.dart';
 import 'package:provider/provider.dart';
 
@@ -35,7 +35,19 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> {
   List<ScanResult> _scanResults = [];
-  bool _isScanning = false;
+  bool _bleScanning = false;
+  final _networkDiscovery = DirConDiscovery();
+  bool get _isScanning => _bleScanning || _networkDiscovery.isScanning;
+  List<SmartSpinScanResult> get _results => SmartSpinScanResult.merge(
+    _scanResults,
+    _networkDiscovery.endpoints,
+    includeAllBle: kIsWeb,
+  ).map(DeviceDataManager.reuseConnectedIdentity).toList();
+
+  void _networkChanged() {
+    if (mounted) setState(() {});
+  }
+
   StreamSubscription<List<ScanResult>>? _scanResultsSubscription;
   StreamSubscription<bool>? _isScanningSubscription;
   int _tapCount = 0; // Tap counter
@@ -44,6 +56,7 @@ class _ScanScreenState extends State<ScanScreen> {
   @override
   void initState() {
     super.initState();
+    _networkDiscovery.addListener(_networkChanged);
 
     _scanResultsSubscription = FlutterBluePlus.scanResults.listen(
       (results) {
@@ -60,7 +73,7 @@ class _ScanScreenState extends State<ScanScreen> {
     );
 
     _isScanningSubscription = FlutterBluePlus.isScanning.listen((state) {
-      _isScanning = state;
+      _bleScanning = state;
       if (mounted) {
         setState(() {});
       }
@@ -69,6 +82,8 @@ class _ScanScreenState extends State<ScanScreen> {
 
   @override
   void dispose() {
+    _networkDiscovery.removeListener(_networkChanged);
+    _networkDiscovery.dispose();
     _scanResultsSubscription?.cancel();
     _isScanningSubscription?.cancel();
     super.dispose();
@@ -77,6 +92,7 @@ class _ScanScreenState extends State<ScanScreen> {
   Future onScanPressed() async {
     //don't allow scan in demo mode - it ruins the setup
     if (_showDemoButton) return;
+    unawaited(_networkDiscovery.start());
     try {
       if (kIsWeb) {
         // Web platform uses different scanning approach
@@ -107,7 +123,8 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Future onStopPressed() async {
     try {
-      FlutterBluePlus.stopScan();
+      await _networkDiscovery.stop();
+      await FlutterBluePlus.stopScan();
     } catch (e) {
       Snackbar.show(
         ABC.b,
@@ -117,12 +134,11 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  Future<void> onConnectPressed(ScanResult result) async {
+  Future<void> onConnectPressed(SmartSpinScanResult result) async {
     final device = result.device;
     final deviceData = DeviceDataManager.forDevice(device);
-    deviceData.advertisedIpAddress = SmartSpinAdvertisement.ipAddress(
-      result.advertisementData.manufacturerData,
-    );
+    deviceData.applyScanResult(result);
+    await _networkDiscovery.stop();
     try {
       // Reset the user disconnect flag if triggered
       if (deviceData.isUserDisconnect) {
@@ -134,15 +150,16 @@ class _ScanScreenState extends State<ScanScreen> {
     if (FlutterBluePlus.isScanningNow) {
       await FlutterBluePlus.stopScan();
     }
-    unawaited(
-      deviceData.connectPreferred(device).catchError((Object e) {
-        Snackbar.show(
-          ABC.c,
-          prettyException("Connect Error:", e),
-          success: false,
-        );
-      }),
-    );
+    if (!deviceData.isTransportActive)
+      unawaited(
+        deviceData.connectPreferred(device).catchError((Object e) {
+          Snackbar.show(
+            ABC.c,
+            prettyException("Connect Error:", e),
+            success: false,
+          );
+        }),
+      );
     if (!mounted) return;
     MaterialPageRoute route = MaterialPageRoute(
       builder: (context) => MainDeviceScreen(device: device),
@@ -164,26 +181,8 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
-  Future onRefresh() {
-    if (_isScanning == false) {
-      if (kIsWeb) {
-        FlutterBluePlus.startScan(
-          withServices: [Guid(csUUID)],
-          timeout: const Duration(seconds: 15),
-        );
-      } else {
-        int divisor = io.Platform.isAndroid ? 8 : 1;
-        FlutterBluePlus.startScan(
-          timeout: const Duration(seconds: 15),
-          continuousUpdates: true,
-          continuousDivisor: divisor,
-        );
-      }
-    }
-    if (mounted) {
-      setState(() {});
-    }
-    return Future.delayed(Duration(milliseconds: 500));
+  Future<void> onRefresh() async {
+    if (!_isScanning) await onScanPressed();
   }
 
   void _openGuidedSetup() {
@@ -199,7 +198,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Widget buildScanButton(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final bool scanning = FlutterBluePlus.isScanningNow;
+    final bool scanning = _isScanning;
     final Color foregroundColor = scanning ? colorScheme.onError : Colors.white;
 
     return DecoratedBox(
@@ -448,22 +447,14 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   List<Widget> _buildScanResultTiles(BuildContext context) {
-    final csGuid = Guid(csUUID);
-    bool _isSmartSpin2kDevice(ScanResult result) {
-      final adv = result.advertisementData;
-      final hasService = adv.serviceUuids.any(
-        (uuid) =>
-            uuid == csGuid || uuid.str.toLowerCase() == csUUID.toLowerCase(),
-      );
-      return hasService;
-    }
-
-    final List<ScanResult> results = kIsWeb
-        ? _scanResults
-        : _scanResults.where(_isSmartSpin2kDevice).toList();
-
-    return results
-        .map((r) => ScanResultTile(result: r, onTap: () => onConnectPressed(r)))
+    return _results
+        .map(
+          (r) => ScanResultTile(
+            key: ValueKey(r.device.remoteId.str),
+            result: r,
+            onTap: () => onConnectPressed(r),
+          ),
+        )
         .toList();
   }
 
@@ -543,7 +534,6 @@ class _ScanScreenState extends State<ScanScreen> {
               ),
             ],
           ),
-          actions: [const ThemeCycleButton()],
         ),
         body: Stack(
           children: [
@@ -552,13 +542,12 @@ class _ScanScreenState extends State<ScanScreen> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final guidedSetupTopGap =
-                      constraints.maxHeight *
-                      (_scanResults.isEmpty ? 0.10 : 0.18);
+                      constraints.maxHeight * (_results.isEmpty ? 0.10 : 0.18);
 
                   return ListView(
                     children: <Widget>[
                       ..._buildScanResultTiles(context),
-                      if (_scanResults
+                      if (_results
                           .isEmpty) // This line checks if there are no scan results
                         _buildEmptyStatePanel(context),
                       LayoutBuilder(
@@ -585,7 +574,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 },
               ),
             ),
-            if (_scanResults.isEmpty)
+            if (_results.isEmpty)
               Positioned(
                 left: 0,
                 bottom: 0,

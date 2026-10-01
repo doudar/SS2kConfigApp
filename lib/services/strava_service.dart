@@ -4,11 +4,14 @@ import 'dart:io' show Platform, HttpServer, InternetAddress, ContentType, HttpRe
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import '../widgets/workout_dialog.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/env.dart';
 
 class StravaService {
+  /// Signals completed login/logout, including asynchronous mobile callbacks.
+  static final connectionChanges = ValueNotifier<int>(0);
   static const String _baseUrl = 'https://www.strava.com/api/v3';
   static const String _authUrl = 'https://www.strava.com/oauth/authorize';
   static const String _mobileAuthUrl = 'https://www.strava.com/oauth/mobile/authorize';
@@ -36,6 +39,7 @@ class StravaService {
     await prefs.setString(_accessTokenKey, accessToken);
     await prefs.setString(_refreshTokenKey, refreshToken);
     await prefs.setString(_expiresAtKey, expiresAt);
+    connectionChanges.value++;
   }
 
   // Clear stored tokens
@@ -44,6 +48,7 @@ class StravaService {
     await prefs.remove(_accessTokenKey);
     await prefs.remove(_refreshTokenKey);
     await prefs.remove(_expiresAtKey);
+    connectionChanges.value++;
   }
 
   // Check if user is authenticated (refresh if needed)
@@ -97,7 +102,8 @@ class StravaService {
     // Show instructions dialog
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => WorkoutDialog(
+        icon: Icons.link_rounded,
         title: const Text('Connecting to Strava'),
         content: const Text(
           'You will be redirected to Strava to authorize SmartSpin2k.\n\n'

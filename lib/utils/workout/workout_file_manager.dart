@@ -1,37 +1,14 @@
 import 'dart:convert';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:file_picker/file_picker.dart';
 import 'workout_storage.dart';
 import 'workout_controller.dart';
 import 'workout_parser.dart';
 
 class WorkoutFileManager {
-  static Future<String?> captureWorkoutThumbnail(
-    GlobalKey workoutGraphKey,
-  ) async {
-    try {
-      final boundary =
-          workoutGraphKey.currentContext?.findRenderObject()
-              as RenderRepaintBoundary?;
-      if (boundary == null) return null;
-
-      final image = await boundary.toImage(pixelRatio: 1.0);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) return null;
-
-      return base64Encode(byteData.buffer.asUint8List());
-    } catch (e) {
-      print('Error capturing thumbnail: $e');
-      return null;
-    }
-  }
-
   static Future<void> pickAndLoadWorkout({
     required BuildContext context,
     required WorkoutController workoutController,
-    required GlobalKey workoutGraphKey,
     Future<bool> Function()? onBeforeLoad,
     required Function(String) onWorkoutLoaded,
   }) async {
@@ -80,11 +57,11 @@ class WorkoutFileManager {
         workoutController.loadWorkout(content, isResume: false);
         onWorkoutLoaded(content);
 
-        // Wait for the graph to be rendered
-        await Future.delayed(const Duration(milliseconds: 100));
-
-        // Capture thumbnail
-        final thumbnail = await captureWorkoutThumbnail(workoutGraphKey);
+        // Render the same compact profile as every other library entry.
+        final thumbnail = await WorkoutStorage.getOrGenerateWorkoutThumbnail(
+          workoutName: workoutData.name!,
+          workoutContent: content,
+        );
         if (thumbnail == null) {
           throw Exception('Failed to generate workout thumbnail');
         }

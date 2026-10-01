@@ -49,7 +49,7 @@ class Story:
 STORIES = (
     Story(
         "workout",
-        ROOT / "assets/Workout_Screen.png",
+        ROOT / "store_assets/source/legacy_device_tiles/Workout_Screen.png",
         "STRUCTURED WORKOUTS",
         "Own every interval.",
         "Live targets and training metrics keep every effort on track.",
@@ -58,7 +58,7 @@ STORIES = (
     ),
     Story(
         "settings",
-        ROOT / "assets/settingsScreen.png",
+        ROOT / "store_assets/source/legacy_device_tiles/settingsScreen.png",
         "SIMPLE SETUP",
         "Tune every detail.",
         "Settings, sensors, networking, and firmware controls in one place.",
@@ -67,7 +67,7 @@ STORIES = (
     ),
     Story(
         "shifting",
-        ROOT / "assets/shiftscreen.png",
+        ROOT / "store_assets/source/legacy_device_tiles/shiftscreen.png",
         "VIRTUAL SHIFTING",
         "Shift your way.",
         "Responsive on-screen gearing puts control within easy reach.",
@@ -76,7 +76,7 @@ STORIES = (
     ),
     Story(
         "power-curve",
-        ROOT / "assets/resistanceChart.png",
+        ROOT / "store_assets/source/legacy_device_tiles/resistanceChart.png",
         "RESISTANCE INSIGHT",
         "See the power curve.",
         "Understand resistance across cadence, gearing, and output.",
@@ -359,7 +359,7 @@ def feature_graphic() -> Image.Image:
 
     android_workout = OUT / "source" / "flutter" / "android_phone" / "workout.png"
     ui = fit_ui(
-        android_workout if android_workout.exists() else ROOT / "assets/Workout_Screen.png",
+        android_workout if android_workout.exists() else ROOT / "store_assets/source/legacy_device_tiles/Workout_Screen.png",
         (340, 380),
     )
     # Keep the UI near the center so Play's dynamic crops retain the focal point.

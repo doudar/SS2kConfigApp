@@ -11,6 +11,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../utils/device_data.dart';
+import '../utils/device_log_buffer.dart';
 import '../utils/device_transport_state.dart';
 import '../utils/constants.dart';
 import '../widgets/ss2k_app_bar.dart';
@@ -24,9 +25,14 @@ class BleLogScreen extends StatefulWidget {
 }
 
 class _BleLogScreenState extends State<BleLogScreen> {
+  static const _logRefreshInterval = Duration(milliseconds: 100);
+
   late DeviceData deviceData;
   late Map logCharacteristic;
-  final List<String> _logMessages = [];
+  final DeviceLogBuffer _receivedLogs = DeviceLogBuffer();
+  List<String> _logMessages = const [];
+  Timer? _logRefreshTimer;
+  int _demoMessageCount = 0;
   final ScrollController _scrollController = ScrollController();
   StreamSubscription<String>? _logSubscription;
   ConnectedEpochWatcher? _watcher;
@@ -147,31 +153,32 @@ class _BleLogScreenState extends State<BleLogScreen> {
         timer.cancel();
         return;
       }
-      setState(() {
-        _logMessages.add(
-          '[${DateTime.now().toIso8601String()}] Demo log message ${_logMessages.length + 1}',
-        );
-        _scrollToBottom();
-      });
+      _appendLog(
+        '[${DateTime.now().toIso8601String()}] Demo log message ${++_demoMessageCount}',
+      );
     });
   }
 
   void _setupSubscriptions() {
     // Subscribe directly to the log stream to catch every message
-    _logSubscription = deviceData.logStream.listen((message) {
+    _logSubscription = deviceData.logStream.listen(_appendLog);
+  }
+
+  void _appendLog(String message) {
+    if (!mounted || message.isEmpty) return;
+
+    // Bound incoming storage even when the UI cannot render a frame yet.
+    _receivedLogs.add(message == '1' ? 'Initializing Logging.' : message);
+
+    // One refresh per batch, never a debounce: a continuous stream must not
+    // postpone rendering, or create one timer/scroll animation per message.
+    _logRefreshTimer ??= Timer(_logRefreshInterval, () {
+      _logRefreshTimer = null;
       if (!mounted) return;
-
-      String newMessage = message;
-      if (newMessage == "1") {
-        newMessage = "Initializing Logging.";
-      }
-
-      if (newMessage.isNotEmpty) {
-        setState(() {
-          _logMessages.add(newMessage);
-          _scrollToBottom();
-        });
-      }
+      setState(() {
+        _logMessages = _receivedLogs.messages.toList(growable: false);
+      });
+      _scrollToBottom();
     });
   }
 
@@ -182,6 +189,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
     unawaited(_disableLogStreaming());
 
     _demoTimer?.cancel();
+    _logRefreshTimer?.cancel();
     _logSubscription?.cancel();
     _watcher?.dispose();
     deviceData.stopConnectionMonitor(onReconnected: _onReconnectedCallback);
@@ -190,29 +198,28 @@ class _BleLogScreenState extends State<BleLogScreen> {
   }
 
   void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      Future.delayed(Duration(milliseconds: 100), () {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      // The reversed list anchors the newest entry at zero, avoiding an
+      // estimated maxScrollExtent that changes as variable-height rows lay out.
+      _scrollController.jumpTo(0);
+    });
   }
 
   void _clearLogs() {
+    _logRefreshTimer?.cancel();
+    _logRefreshTimer = null;
+    _receivedLogs.clear();
     setState(() {
-      _logMessages.clear();
+      _logMessages = const [];
     });
   }
 
   Future<void> _saveLogs() async {
-    if (_logMessages.isEmpty) {
+    if (_receivedLogs.isEmpty) {
       return;
     }
+    final logText = _receivedLogs.messages.join('\n');
 
     try {
       // Get the directory for saving files
@@ -222,7 +229,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
 
       // Create the file and write logs
       final file = File(filePath);
-      await file.writeAsString(_logMessages.join('\n'));
+      await file.writeAsString(logText);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -245,9 +252,10 @@ class _BleLogScreenState extends State<BleLogScreen> {
   }
 
   Future<void> _sendLogs() async {
-    if (_logMessages.isEmpty) {
+    if (_receivedLogs.isEmpty) {
       return;
     }
+    final logText = _receivedLogs.messages.join('\n');
 
     try {
       // Create a temporary file with logs
@@ -256,7 +264,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
       final filePath = '${directory.path}/ble_logs_$timestamp.txt';
 
       final file = File(filePath);
-      await file.writeAsString(_logMessages.join('\n'));
+      await file.writeAsString(logText);
 
       // Share the file
       await SharePlus.instance.share(
@@ -345,6 +353,7 @@ class _BleLogScreenState extends State<BleLogScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
                   if (!deviceData.isTransportActive && !deviceData.isSimulated)
                     Padding(
                       padding: EdgeInsets.only(top: 8),
@@ -374,13 +383,14 @@ class _BleLogScreenState extends State<BleLogScreen> {
                     )
                   : ListView.builder(
                       controller: _scrollController,
+                      reverse: true,
                       padding: EdgeInsets.all(8),
                       itemCount: _logMessages.length,
                       itemBuilder: (context, index) {
                         return Padding(
                           padding: EdgeInsets.symmetric(vertical: 2),
                           child: SelectableText(
-                            _logMessages[index],
+                            _logMessages[_logMessages.length - 1 - index],
                             style: TextStyle(
                               fontFamily: 'monospace',
                               fontSize: 12,

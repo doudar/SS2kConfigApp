@@ -1,0 +1,18 @@
+{
+  "source": "Procedural retro vocal effect; no speech model or recording",
+  "engine": "procedural-retro-v1",
+  "voices": [
+    {
+      "text": "Whew!",
+      "voice": "chip_hero",
+      "pitch_hz": 190.0,
+      "gain": 1.0,
+      "delay": 0,
+      "engine": "procedural-retro-v1",
+      "seed": 2429404689
+    }
+  ],
+  "milliseconds": 1250,
+  "sample_rate": 22050,
+  "wav_sha256": "2f0c1598cbd415eb7fbc6cf86082a65fa1ac18c1179ff5909b9d3733144479fe"
+}
