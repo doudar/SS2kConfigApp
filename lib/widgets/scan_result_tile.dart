@@ -149,7 +149,9 @@ class _ScanResultTileState extends State<ScanResultTile> {
               ? widget.result.name
               : widget.result.device.remoteId.str,
         ),
-        if (widget.result.host != null)
+        // A BLE-advertised IP alone (e.g. 192.168.4.1 in hotspot mode) isn't
+        // reachable; only claim Dircon once mDNS has found the endpoint.
+        if (widget.result.network != null)
           const Icon(
             Icons.router,
             color: Colors.lightBlueAccent,
@@ -403,11 +405,11 @@ class _ScanResultTileState extends State<ScanResultTile> {
                     children: <Widget>[
                       if (widget.result.name.isNotEmpty)
                         _buildAdvRow(context, 'Name', widget.result.name),
-                      if (widget.result.host != null)
+                      if (widget.result.network != null)
                         _buildAdvRow(
                           context,
                           'Dircon',
-                          '${widget.result.host}:${widget.result.network?.port ?? 8081}',
+                          '${widget.result.network!.host}:${widget.result.network!.port}',
                         ),
                       if (widget.result.ble != null)
                         _buildAdvRow(
