@@ -66,11 +66,7 @@ void main() {
       addTearDown(() => debugWorkoutPainterFontFamily = null);
       FlutterBluePlusPlatform.instance = _BlePlatform();
       WakelockPlusPlatformInterface.instance = _WakelockPlatform();
-      SharedPreferences.setMockInitialValues({
-        'workout_tts_enabled': false,
-        // A saved Arcade preference must not bypass the hidden unlock.
-        'workout_arcade_mode': true,
-      });
+      SharedPreferences.setMockInitialValues({'workout_tts_enabled': false});
       final messenger = tester.binding.defaultBinaryMessenger;
       const audioChannel = MethodChannel('com.ryanheise.just_audio.methods');
       messenger.setMockMethodCallHandler(audioChannel, (call) async {
@@ -135,7 +131,8 @@ void main() {
       expect(find.byType(WorkoutLobby), findsOneWidget);
       expect(controller.isPlaying, isFalse);
       expect(find.text('Ride menu'), findsOneWidget);
-      expect(find.text('Arcade mode'), findsNothing);
+      expect(find.text('Arcade mode'), findsOneWidget);
+      expect(find.text('BETA'), findsOneWidget);
       expect(find.text('Classic mode'), findsNothing);
       expect(
         tester
@@ -149,20 +146,19 @@ void main() {
           tester.widget<SS2KAppBar>(find.byType(SS2KAppBar)).title,
         ),
       );
-      // Old clicks expire; four quick clicks still leave Arcade hidden.
-      await tester.tap(title);
-      await tester.pump(const Duration(seconds: 3));
-      for (var i = 0; i < 4; i++) {
+      // Tapping the workout name no longer changes the mode.
+      for (var i = 0; i < 5; i++) {
         await tester.tap(title);
         await tester.pump(const Duration(milliseconds: 100));
       }
-      expect(find.text('Arcade mode'), findsNothing);
+      expect(find.text('Arcade mode'), findsOneWidget);
       expect(find.text('Classic mode'), findsNothing);
-      await tester.tap(title);
+      await tester.tap(find.text('Arcade mode'));
       await tester.pump(const Duration(milliseconds: 600));
       expect(find.text('Ride menu'), findsOneWidget);
       expect(find.text('Classic mode'), findsOneWidget);
-      expect((await ArcadePreferences.load()).unlocked, isTrue);
+      expect((await ArcadePreferences.load()).arcadeMode, isTrue);
+      expect(find.text('BETA'), findsNothing);
       expect(controller.isPlaying, isFalse);
       expect(find.byTooltip('Return to Classic'), findsNothing);
       await tester.tap(find.text('Classic mode'));

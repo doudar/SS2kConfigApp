@@ -6,7 +6,6 @@ import 'arcade_rider_appearance.dart';
 /// User choices survive workout resets, screen navigation and app restarts.
 class ArcadePreferences {
   const ArcadePreferences({
-    this.unlocked = false,
     this.arcadeMode = false,
     this.musicEnabled = false,
     this.effectsEnabled = true,
@@ -15,14 +14,12 @@ class ArcadePreferences {
   });
 
   final bool arcadeMode;
-  final bool unlocked;
   final bool musicEnabled;
   final bool effectsEnabled;
   final ArcadeRiderAppearance rider;
   final int? lastStoryVariant;
 
   static const _modeKey = 'workout_arcade_mode';
-  static const _unlockedKey = 'workout_arcade_unlocked';
   static const _musicKey = 'workout_arcade_music';
   static const _effectsKey = 'workout_arcade_effects';
   static const _riderKey = 'workout_arcade_rider';
@@ -35,7 +32,6 @@ class ArcadePreferences {
     try {
       final prefs = await SharedPreferences.getInstance();
       return ArcadePreferences(
-        unlocked: prefs.getBool(_unlockedKey) ?? false,
         arcadeMode: prefs.getBool(_modeKey) ?? false,
         musicEnabled: prefs.getBool(_musicKey) ?? false,
         effectsEnabled: prefs.getBool(_effectsKey) ?? true,
@@ -49,8 +45,6 @@ class ArcadePreferences {
   }
 
   static Future<void> saveMode(bool enabled) => _save(_modeKey, enabled);
-  static Future<void> saveUnlocked(bool enabled) =>
-      _save(_unlockedKey, enabled);
   static Future<void> saveMusic(bool enabled) => _save(_musicKey, enabled);
   static Future<void> saveEffects(bool enabled) => _save(_effectsKey, enabled);
   static int? _loadStory(SharedPreferences prefs) {

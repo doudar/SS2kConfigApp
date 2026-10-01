@@ -8,6 +8,7 @@ class WorkoutHeaderAction extends StatelessWidget {
     required this.icon,
     required this.onPressed,
     this.tooltip,
+    this.badge,
     this.stacked = false,
   });
 
@@ -15,6 +16,7 @@ class WorkoutHeaderAction extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onPressed;
   final String? tooltip;
+  final String? badge;
   final bool stacked;
 
   @override
@@ -33,31 +35,48 @@ class WorkoutHeaderAction extends StatelessWidget {
               children: [
                 Icon(icon, size: 16),
                 const SizedBox(height: 3),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+                FittedBox(fit: BoxFit.scaleDown, child: _label(10)),
               ],
             ),
           )
         : TextButton.icon(
             onPressed: onPressed,
             icon: Icon(icon, size: 16),
-            label: Text(
-              label,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
+            label: _label(12),
             style: TextButton.styleFrom(
               foregroundColor: Colors.white,
               minimumSize: const Size(48, 44),
               padding: const EdgeInsets.symmetric(horizontal: 10),
             ),
           ),
+  );
+
+  Widget _label(double fontSize) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        label,
+        style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w600),
+      ),
+      if (badge != null) ...[
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xffffd477),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            badge!,
+            style: const TextStyle(
+              color: Color(0xff080f21),
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: .5,
+            ),
+          ),
+        ),
+      ],
+    ],
   );
 }
