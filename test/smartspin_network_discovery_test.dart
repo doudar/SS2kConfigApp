@@ -357,4 +357,24 @@ void main() {
       DeviceDataManager.clearDataForDevice(result.device);
     },
   );
+
+  testWidgets(
+    'BLE-only scan tile with advertised hotspot IP shows RSSI, not Dircon',
+    (tester) async {
+      final result = SmartSpinScanResult(ble: ble(ip: '192.168.4.1'));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ScanResultTile(result: result)),
+        ),
+      );
+      expect(find.byIcon(Icons.router), findsNothing);
+      await tester.tap(find.text('My Bike'));
+      await tester.pumpAndSettle();
+      expect(find.text('Dircon'), findsNothing);
+      expect(find.text('RSSI'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      DeviceDataManager.forDevice(result.device).dispose();
+      DeviceDataManager.clearDataForDevice(result.device);
+    },
+  );
 }
