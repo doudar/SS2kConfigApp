@@ -5,6 +5,7 @@ import 'constants.dart';
 List<Guid> get webBluetoothServices => [
   Guid(csUUID),
   Guid(ftmsServiceUUID),
-  // Service discovery also uses OTA to recognize compatible firmware.
+  // Used to recognize compatible firmware, even though browser uploads are
+  // disabled: the updater requires the native app's filesystem access.
   Guid('4fafc201-1fb5-459e-8fcc-c5c9c331914b'),
 ];

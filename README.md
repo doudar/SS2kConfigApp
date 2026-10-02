@@ -287,6 +287,10 @@ The picker grants access to the configuration, fitness-machine, and firmware
 services. Returning to the device list requires clicking the picker button
 again; browsers do not permit automatic Bluetooth scans.
 
+Firmware updates require the native SmartSpin2k app. The web app uses the
+firmware service only to recognize compatible devices; its maintenance menu
+disables firmware uploads.
+
 For local development, run `flutter run -d web-server --web-hostname 127.0.0.1
 --web-port 8765` and open `http://127.0.0.1:8765` in a supported browser.
 Do not use an HTTP LAN address: Web Bluetooth requires a secure context.
