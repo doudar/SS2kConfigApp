@@ -364,6 +364,16 @@ class DeviceData {
   StreamSubscription<void>? _dirConDisconnectedSubscription;
   bool _dirConSetupComplete = false;
   bool _dirConReconnectInProgress = false;
+  Timer? _dirConRecoveryTimer;
+  int _dirConRecoveryGeneration = 0;
+  int? _dirConRecoveryEpoch;
+
+  // One short promotion window when BLE works; slower recovery when offline.
+  static const _dirConRecoveryDelays = [
+    Duration(seconds: 3),
+    Duration(seconds: 8),
+    Duration(seconds: 15),
+  ];
 
   /// The transport epoch the DIRCON->BLE fallback brought up, or null if this
   /// session never fell back. See [isDirConFallbackSilent].
@@ -528,6 +538,7 @@ class DeviceData {
     BluetoothDevice device, {
     bool waitForSetup = false,
   }) async {
+    _cancelDirConRecovery();
     isUserDisconnect = false;
     _initialConnectionInProgress = true;
     try {
@@ -580,6 +591,7 @@ class DeviceData {
   }
 
   Future<void> disconnectPreferred(BluetoothDevice device) async {
+    _cancelDirConRecovery();
     device = resolveTransportDevice(device);
     isUserDisconnect = true;
     _markTransportDisconnected(explicit: true);
@@ -609,22 +621,36 @@ class DeviceData {
     required bool waitForSetup,
   }) async {
     await _closeDirCon();
+    final session = await _openDirConSession(ipAddress, advertisedDirConPort);
+    await _useDirConSession(device, session, waitForSetup: waitForSetup);
+  }
+
+  /// Prepare a candidate without changing the live BLE transport or its streams.
+  Future<DirConSession> _openDirConSession(String ipAddress, int port) async {
     final session =
         await (_dirConConnector?.call(ipAddress) ??
-            DirConClient.connect(
-              ipAddress,
-              connectionPort: advertisedDirConPort,
-            ));
+            DirConClient.connect(ipAddress, connectionPort: port));
     try {
       await session.initialize(serviceUuid: csUUID, characteristicUuid: ccUUID);
-      if (isUserDisconnect || _isDisposed) {
+      if (isUserDisconnect || _isDisposed || !session.isConnected) {
         throw StateError('Dircon connection cancelled');
       }
     } catch (_) {
       await session.close();
       rethrow;
     }
+    return session;
+  }
 
+  Future<void> _useDirConSession(
+    BluetoothDevice device,
+    DirConSession session, {
+    required bool waitForSetup,
+  }) async {
+    if (isUserDisconnect || _isDisposed || !session.isConnected) {
+      await session.close();
+      throw StateError('Dircon connection cancelled');
+    }
     _dirConSession = session;
     _dirConSetupComplete = false;
     configAppCompatibleFirmware = true;
@@ -699,7 +725,7 @@ class DeviceData {
     _machineStatusNotificationsLive = machineStatusSubscription != null;
     _controlPointNotificationsLive = controlPointSubscription != null;
 
-    print('[DIRCON] Connected to $ipAddress');
+    print('[DIRCON] Connected to ${session.host}');
     if (waitForSetup) {
       await setupConnection(device);
     } else {
@@ -844,34 +870,135 @@ class DeviceData {
       print(
         '[DIRCON][FALLBACK] start reason=disconnect host=$disconnectedAddress',
       );
-      if (_hasBleIdentity) {
-        if (!_workoutControlActive) {
-          try {
-            if (await _refreshMdnsEndpoint(device)) {
-              await _connectDirCon(
-                device,
-                advertisedIpAddress!,
-                waitForSetup: true,
-              );
-              await _runReconnectedCallbacks();
-              return;
-            }
-          } catch (error) {
-            print('[DIRCON] Network recovery unavailable: $error');
-            await _closeDirCon();
+      if (!_hasBleIdentity || !_workoutControlActive) {
+        try {
+          if (await _refreshMdnsEndpoint(device)) {
+            await _connectDirCon(
+              device,
+              advertisedIpAddress!,
+              waitForSetup: true,
+            );
+            await _runReconnectedCallbacks();
+            return;
           }
+        } catch (error) {
+          print('[DIRCON] Network recovery unavailable: $error');
+          await _closeDirCon();
         }
+      }
+      if (_hasBleIdentity) {
         if (isUserDisconnect || _isDisposed) return;
         // Preserve prompt BLE failover and its FTMS setup when WiFi is down.
         await _connectBleAfterDirConLoss(device);
-      } else {
-        await reconnectAndSetup(device);
       }
     } catch (error) {
       print('[DIRCON][FALLBACK] failed: $error');
     } finally {
       _dirConReconnectInProgress = false;
+      _scheduleDirConRecovery(device);
     }
+  }
+
+  void _cancelDirConRecovery() {
+    _dirConRecoveryGeneration++;
+    _dirConRecoveryEpoch = null;
+    _dirConRecoveryTimer?.cancel();
+    _dirConRecoveryTimer = null;
+  }
+
+  /// BLE commonly comes back before Wi-Fi after a reboot. Give the previous
+  /// DIRCON endpoint a few chances to return, without disconnecting BLE, doing
+  /// BLE scans, or disturbing a workout/calibration. Each attempt must finish
+  /// before the next delay starts. With no live BLE fallback, continue at a
+  /// quiet 30-second interval so a slow reboot cannot strand a network-only host.
+  void _scheduleDirConRecovery(BluetoothDevice device) {
+    if (_isDisposed ||
+        isUserDisconnect ||
+        isDirConConnected ||
+        _reconnecting ||
+        _initialConnectionInProgress ||
+        _dirConReconnectInProgress)
+      return;
+    final state = _transportStateController.value;
+    if (_dirConRecoveryEpoch == state.epoch) {
+      return;
+    }
+    _cancelDirConRecovery();
+    _dirConRecoveryEpoch = state.epoch;
+    final generation = _dirConRecoveryGeneration;
+    bool isCurrent() =>
+        !_isDisposed &&
+        !isUserDisconnect &&
+        generation == _dirConRecoveryGeneration &&
+        _transportStateController.value.epoch == state.epoch &&
+        !isDirConConnected &&
+        (!isTransportActive ||
+            (!_workoutControlActive &&
+                !hasInteractiveFtmsSession &&
+                !bleDeviceScanInProgress.value)) &&
+        !_reconnecting &&
+        !_initialConnectionInProgress &&
+        !_dirConReconnectInProgress;
+
+    void schedule(int attempt) {
+      if (!isCurrent()) return;
+      if (attempt >= _dirConRecoveryDelays.length && isTransportActive) return;
+      final delay = attempt < _dirConRecoveryDelays.length
+          ? _dirConRecoveryDelays[attempt]
+          : const Duration(seconds: 30);
+      _dirConRecoveryTimer = Timer(delay, () async {
+        _dirConRecoveryTimer = null;
+        DirConSession? candidate;
+        try {
+          if (!isCurrent()) return;
+          final endpoint = await _dirConEndpointLookup(
+            id: discoveredEndpoint?.id,
+            host: advertisedIpAddress,
+            name:
+                discoveredEndpoint?.name ??
+                (device.advName.isNotEmpty
+                    ? device.advName
+                    : device.platformName),
+          );
+          if (!isCurrent()) return;
+          if (endpoint != null) {
+            candidate = await _openDirConSession(endpoint.host, endpoint.port);
+            final prepared = candidate;
+            // Finish any current BLE write before changing its response stream.
+            await _queueBleOperation(
+              () async {
+                if (!isCurrent() || !prepared.isConnected) return;
+                advertisedIpAddress = endpoint.host;
+                discoveredEndpoint = endpoint;
+                _resetConnectionState();
+                await _useDirConSession(device, prepared, waitForSetup: false);
+              },
+              priority: TransportOpPriority.interactive,
+              label: 'DIRCON recovery',
+            );
+            if (identical(_dirConSession, prepared)) {
+              await _runReconnectedCallbacks();
+              return;
+            }
+          }
+        } catch (error) {
+          print('[DIRCON] Recovery check ${attempt + 1} unavailable: $error');
+        } finally {
+          // A cancelled or failed probe owns only its candidate, never whatever
+          // session an explicit reconnect may have installed in the meantime.
+          if (candidate != null && !identical(_dirConSession, candidate)) {
+            try {
+              await candidate.close();
+            } catch (error) {
+              print('[DIRCON] Recovery candidate close failed: $error');
+            }
+          }
+          schedule(attempt + 1);
+        }
+      });
+    }
+
+    schedule(0);
   }
 
   Future<void> _connectBleAfterDirConLoss(BluetoothDevice device) async {
@@ -995,6 +1122,7 @@ class DeviceData {
   /// [endInteractiveFtmsSession]. Holding more than one token per caller is a
   /// bug, but the `Set` makes it survivable.
   Object beginInteractiveFtmsSession(BluetoothDevice device) {
+    if (isTransportActive) _cancelDirConRecovery();
     final token = Object();
     _interactiveFtmsSessions.add(token);
     _endFtmsPostConnectionBlock(device);
@@ -1207,6 +1335,9 @@ class DeviceData {
     }
 
     _reconnecting = true;
+    _cancelDirConRecovery();
+    final recoveringDirCon =
+        _transportStateController.value.transport == DeviceTransportKind.dircon;
     _markTransportReconnecting(_transportStateController.value.transport);
     _reconnectRequested = false;
     _reconnectCompleter = Completer<bool>();
@@ -1309,6 +1440,7 @@ class DeviceData {
       _reconnecting = false;
       _reconnectCompleter?.complete(success);
       _reconnectCompleter = null;
+      if (recoveringDirCon) _scheduleDirConRecovery(device);
     }
 
     if (!success && _reconnectRequested && !isUserDisconnect) {
@@ -1413,6 +1545,7 @@ class DeviceData {
 
     if (_connectionMonitorUsers > 0) return;
 
+    _cancelDirConRecovery();
     _reconnectSubscription?.cancel();
     _reconnectSubscription = null;
     _onReconnectedCallbacks.clear();
@@ -1451,6 +1584,7 @@ class DeviceData {
         'The active transport does not provide a characteristic-based firmware update.',
       );
     }
+    _cancelDirConRecovery();
     await package.updateFirmware(
       device,
       firmwareType,
@@ -3858,6 +3992,7 @@ class DeviceData {
     bool force = false,
     bool resetSimulationFirst = false,
   }) {
+    if (isTransportActive) _cancelDirConRecovery();
     _workoutControlActive = true;
     // Store what the lane actually sent, not the requested value: an imported
     // workout can ask for a target outside sint16 and the lane clamps it.
@@ -4502,6 +4637,7 @@ class DeviceData {
   /// Dispose of resources
   void dispose() {
     _isDisposed = true;
+    _cancelDirConRecovery();
     _bleDeviceScanTimer?.cancel();
     _bleDeviceScanTimer = null;
     final scanCompletion = _bleDeviceScanCompletion;

@@ -1,0 +1,7 @@
+// Public test builds do not require an Apple account or signing credentials.
+DEVELOPMENT_TEAM =
+CODE_SIGNING_ALLOWED = NO
+CODE_SIGNING_REQUIRED = NO
+
+// Generated locally or from the CI secret to enable signing with a team.
+#include? "AppleSigning.local.xcconfig"

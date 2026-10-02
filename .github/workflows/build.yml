@@ -143,6 +143,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Configure Apple signing team
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: /bin/sh tool/configure_apple_signing.sh
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -191,7 +196,7 @@ jobs:
 
       - name: Build macOS App
         env:
-          # GitHub artifacts are unsigned; Xcode Cloud retains the project's signing settings.
+          # GitHub artifacts are unsigned; Xcode Cloud uses the generated signing config.
           FLUTTER_XCODE_CODE_SIGNING_ALLOWED: 'NO'
           FLUTTER_XCODE_CODE_SIGNING_REQUIRED: 'NO'
         run: flutter build macos --release
@@ -202,9 +207,10 @@ jobs:
           zip -r artifacts/ss2kconfigapp-${{ needs.prepare.outputs.version }}.zip build/ios/iphoneos build/macos/Build/Products/Release
 
       # Clean up sensitive files
-      - name: Clean up env.local.dart
+      - name: Clean up local build configuration
         if: always()
         run: |
+          rm -f AppleSigning.local.xcconfig
           if [ -f lib/config/env.local.dart ]; then
             rm lib/config/env.local.dart
             echo "Cleaned up env.local.dart"

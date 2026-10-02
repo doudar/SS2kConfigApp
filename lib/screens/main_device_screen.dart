@@ -507,7 +507,6 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
 
             final textScale = MediaQuery.textScalerOf(context).scale(15) / 15;
             final compact = constraints.maxHeight < 620 * textScale;
-            final showGreeting = constraints.maxHeight >= 400 * textScale;
             final columns =
                 compact &&
                     MediaQuery.sizeOf(context).width >
@@ -534,38 +533,6 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
               ),
               child: Column(
                 children: <Widget>[
-                  if (showGreeting)
-                    Align(
-                      child: SizedBox(
-                        width: gridWidth,
-                        child: const Padding(
-                          padding: EdgeInsets.only(bottom: 20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'YOUR RIDE STARTS HERE',
-                                style: TextStyle(
-                                  color: WorkoutVisuals.mint,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1.8,
-                                ),
-                              ),
-                              SizedBox(height: 6),
-                              Text(
-                                'Ready to ride',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
                   if (_availableFirmwareUpdate != null)
                     Align(
                       alignment: Alignment.topCenter,

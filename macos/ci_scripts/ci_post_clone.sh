@@ -8,6 +8,9 @@ FLUTTER_VERSION="${FLUTTER_VERSION:-3.44.8}"
 # Xcode Cloud sets this to the root of the cloned repository.
 cd "$CI_PRIMARY_REPOSITORY_PATH"
 
+# Materialize the Xcode Cloud secret before Xcode evaluates build settings.
+/bin/sh tool/configure_apple_signing.sh
+
 # Create the local environment configuration from Xcode Cloud variables.
 mkdir -p lib/config
 cat > lib/config/env.local.dart <<EOF
@@ -33,8 +36,18 @@ flutter config --enable-swift-package-manager
 flutter precache --macos
 flutter pub get
 
-# Prepare plugins that still use CocoaPods. Xcode Cloud performs the archive.
-cd macos
-pod install
+# Prepare the Xcode configuration, remaining CocoaPods plugins, and Flutter's
+# input/output file lists before Xcode plans the archive. pub get alone does not
+# create those lists, and a scheme pre-action runs too late to supply them.
+# Xcode Cloud still performs the actual build and archive.
+flutter build macos --release --config-only
+
+# Report preparation failures here instead of during Flutter Assemble.
+for file_list in FlutterInputs.xcfilelist FlutterOutputs.xcfilelist; do
+    if [ ! -f "macos/Flutter/ephemeral/$file_list" ]; then
+        echo "Flutter macOS configuration did not generate $file_list." >&2
+        exit 1
+    fi
+done
 
 exit 0

@@ -6,7 +6,10 @@ set -e
 FLUTTER_VERSION="${FLUTTER_VERSION:-3.44.8}"
 
 # The default execution directory of this script is the ci_scripts directory.
-cd $CI_PRIMARY_REPOSITORY_PATH # change working directory to the root of your cloned repo.
+cd "$CI_PRIMARY_REPOSITORY_PATH" # change working directory to the root of your cloned repo.
+
+# Materialize the Xcode Cloud secret before Xcode evaluates build settings.
+/bin/sh tool/configure_apple_signing.sh
 
 # Export environment variables
 export STRAVA_CLIENT_ID=$STRAVA_CLIENT_ID

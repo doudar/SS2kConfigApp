@@ -292,6 +292,59 @@ To build the app from source:
    flutter run
    ```
 
+### Apple signing (iOS and macOS)
+
+The Apple Developer **Team ID** is supplied through `APPLE_TEAM_ID`, rather than
+stored in the Xcode projects. This is the 10-character membership Team ID, not an
+App Group identifier. Debug, Profile, and Release use the same local config.
+Without a local signing config or a CI secret, iOS and macOS default to unsigned
+test builds. No Apple account or signing credentials are required for this mode.
+
+- **GitHub Actions:** add an Actions repository secret named `APPLE_TEAM_ID`
+  under Settings > Secrets and variables > Actions. The Apple build job generates
+  its signing config from that secret. GitHub release artifacts remain unsigned;
+  the secret is optional for these unsigned builds.
+- **Xcode Cloud:** add `APPLE_TEAM_ID` as a secret environment variable for both
+  the iOS and macOS workflows (or as a shared variable for both). Enable **Keep
+  value redacted**. GitHub secrets are not automatically available to Xcode Cloud.
+  Both post-clone scripts generate the config before Xcode starts the build.
+  If the variable is missing or empty, they select unsigned test builds instead
+  of failing. Use build/test actions without distribution in this mode;
+  TestFlight and App Store distribution still require signing.
+- **Local Xcode/Flutter builds:** from the repository root on your Mac, run:
+
+  ```sh
+  printf 'Apple Developer Team ID: '
+  read -r APPLE_TEAM_ID
+  export APPLE_TEAM_ID
+  /bin/sh tool/configure_apple_signing.sh
+  unset APPLE_TEAM_ID
+  ```
+
+  Then open `ios/Runner.xcworkspace` or `macos/Runner.xcworkspace` and build as
+  usual with your Apple account configured in Xcode. The generated
+  `AppleSigning.local.xcconfig` is gitignored and persists for future builds,
+  including launches of Xcode from Finder. Rerun the command to change teams.
+  Avoid setting Team directly in the project's Signing & Capabilities pane,
+  which can write the ID back into the tracked project file.
+
+To switch a configured checkout back to unsigned test builds, run
+`APPLE_TEAM_ID= /bin/sh tool/configure_apple_signing.sh`. This clears any previously
+saved team overrides. A fresh checkout already defaults to unsigned builds.
+Malformed nonempty Team IDs still produce an error to catch configuration typos.
+Unsigned iOS builds cannot be installed on physical devices without signing.
+Signed device builds and distribution require a team, signing credentials, and
+appropriate provisioning profiles. The Team ID remains part of signed app
+metadata and existing Git history; this change removes it from tracked build
+configuration, not from previously published artifacts or commits.
+
+Before opening the macOS workspace on a fresh checkout (or after `flutter clean`),
+run `flutter pub get` and `flutter build macos --release --config-only` on your Mac.
+This prepares the generated Xcode configuration, CocoaPods dependencies, and
+`FlutterInputs.xcfilelist` / `FlutterOutputs.xcfilelist` needed by Flutter Assemble.
+The macOS Xcode Cloud post-clone script runs this preparation automatically before
+the archive; the generated files remain gitignored.
+
 ## Contributing
 
 This project is part of the SmartSpin2K ecosystem. Contributions are welcome! Please read our contributing guidelines and submit pull requests for any enhancements.

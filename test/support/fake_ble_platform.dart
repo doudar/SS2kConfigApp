@@ -127,6 +127,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   /// connect on the DIRCON->BLE fallback is only observable here — the
   /// `markConnected` shortcut the other tests use bypasses `connect` entirely.
   final List<BmConnectRequest> connectCalls = [];
+  Object? connectFailure;
 
   /// Parks a `writeCharacteristic` for [uuid] until [releaseWriteGate]. Unlike
   /// the notify gate this holds an operation *in flight*, which is what keeps
@@ -233,6 +234,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   }
 
   void reset() {
+    connectFailure = null;
     writes.clear();
     writeCalls.clear();
     notifyCalls.clear();
@@ -489,6 +491,8 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   @override
   Future<bool> connect(BmConnectRequest request) async {
     connectCalls.add(request);
+    final failure = connectFailure;
+    if (failure != null) throw failure;
     scheduleMicrotask(() => markConnected(request.remoteId));
     return true;
   }

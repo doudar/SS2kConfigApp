@@ -84,6 +84,7 @@ pubspec.lock
 /windows/flutter/ephemeral/
 
 # Local configuration files
+/AppleSigning.local.xcconfig
 /android/key.properties
 .env
 .env.local
