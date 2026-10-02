@@ -8,6 +8,7 @@
 import 'dart:async';
 import 'dart:io' as io;
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:archive/archive_io.dart' as archive;
 import 'package:path_provider/path_provider.dart';
@@ -24,17 +25,43 @@ import '../utils/firmware_architecture.dart';
 import '../utils/firmware_release_service.dart';
 import '../widgets/ss2k_app_bar.dart';
 
-class FirmwareUpdateScreen extends StatefulWidget {
+class FirmwareUpdateScreen extends StatelessWidget {
   final BluetoothDevice device;
 
   const FirmwareUpdateScreen({Key? key, required this.device})
     : super(key: key);
 
+  static const webUnavailableMessage =
+      'Use the native SmartSpin2k app to update firmware.';
+
   @override
-  State<FirmwareUpdateScreen> createState() => _FirmwareUpdateState();
+  Widget build(BuildContext context) {
+    // The updater requires filesystem paths for both BLE and Wi-Fi uploads.
+    // Keep its initialization (including FTMS blocking) off the browser path.
+    if (kIsWeb) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Firmware Update')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(webUnavailableMessage, textAlign: TextAlign.center),
+          ),
+        ),
+      );
+    }
+    return _NativeFirmwareUpdateScreen(device: device);
+  }
 }
 
-class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
+class _NativeFirmwareUpdateScreen extends StatefulWidget {
+  const _NativeFirmwareUpdateScreen({required this.device});
+  final BluetoothDevice device;
+
+  @override
+  State<_NativeFirmwareUpdateScreen> createState() => _FirmwareUpdateState();
+}
+
+class _FirmwareUpdateState extends State<_NativeFirmwareUpdateScreen> {
   late DeviceData deviceData;
   VoidCallback? _firmwareVersionListener;
   Future<void>? _initializationFuture;

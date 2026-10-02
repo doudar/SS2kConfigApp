@@ -24,6 +24,7 @@ import '../utils/onboarding/wizard_session.dart';
 import '../utils/dircon_discovery.dart';
 import '../utils/smartspin_scan_result.dart';
 import '../utils/nearby_ble_devices.dart';
+import '../utils/web_bluetooth_services.dart';
 import 'package:provider/provider.dart';
 
 class ScanScreen extends StatefulWidget {
@@ -98,6 +99,7 @@ class _ScanScreenState extends State<ScanScreen> {
         // Web platform uses different scanning approach
         await FlutterBluePlus.startScan(
           withServices: [Guid(csUUID)],
+          webOptionalServices: webBluetoothServices,
           timeout: const Duration(seconds: 15),
         );
       } else {
@@ -112,7 +114,7 @@ class _ScanScreenState extends State<ScanScreen> {
       }
     } catch (e) {
       String errorMessage = kIsWeb
-          ? "Web Bluetooth Error: Make sure your browser supports Web Bluetooth and you're using HTTPS"
+          ? "Bluetooth selection failed. Use Chrome or Edge on HTTPS or localhost, then select your SmartSpin2k. $e"
           : prettyException("Start Scan Error:", e);
       Snackbar.show(ABC.b, errorMessage, success: false);
     }
@@ -174,7 +176,7 @@ class _ScanScreenState extends State<ScanScreen> {
           _scanResults = [];
         });
         // Automatically start a fresh scan so new devices are discovered
-        if (!_showDemoButton) {
+        if (!_showDemoButton && !kIsWeb) {
           onScanPressed();
         }
       }
@@ -249,7 +251,7 @@ class _ScanScreenState extends State<ScanScreen> {
         child: scanning
             ? const Icon(Icons.stop_rounded)
             : const Text(
-                "SCAN",
+                kIsWeb ? 'CHOOSE BLUETOOTH DEVICE' : 'SCAN',
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
@@ -546,6 +548,16 @@ class _ScanScreenState extends State<ScanScreen> {
 
                   return ListView(
                     children: <Widget>[
+                      if (kIsWeb)
+                        const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text(
+                            'Use Chrome or Edge on a computer, or Chrome on Android. '
+                            'Open this app over HTTPS or localhost, then choose your '
+                            'SmartSpin2k in the Bluetooth picker. '
+                            'Wi-Fi / Dircon connections are not available in the browser.',
+                          ),
+                        ),
                       ..._buildScanResultTiles(context),
                       if (_results
                           .isEmpty) // This line checks if there are no scan results

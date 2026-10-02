@@ -6,6 +6,7 @@
  */
 
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'package:ss2kconfigapp/screens/power_table_screen.dart';
 import 'package:ss2kconfigapp/widgets/ss2k_app_bar.dart';
@@ -180,6 +181,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       'dismissed_firmware_release_${widget.device.remoteId.str}';
 
   Future<void> _checkForFirmwareUpdate() async {
+    if (kIsWeb) return;
     final installedVersion = deviceData.firmwareVersion.value.trim();
     if (installedVersion.isEmpty ||
         _checkingFirmwareUpdate ||
@@ -299,12 +301,23 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
       dismissPanel: dismissPanel,
     ),
     const Divider(height: 1),
-    _buildMaintenanceActionTile(
-      leading: const Icon(Icons.system_update_alt, color: WorkoutVisuals.mint),
-      title: 'Update Firmware',
-      destination: FirmwareUpdateScreen(device: widget.device),
-      dismissPanel: dismissPanel,
-    ),
+    if (kIsWeb)
+      const ListTile(
+        enabled: false,
+        leading: Icon(Icons.system_update_alt),
+        title: Text('Update Firmware'),
+        subtitle: Text(FirmwareUpdateScreen.webUnavailableMessage),
+      )
+    else
+      _buildMaintenanceActionTile(
+        leading: const Icon(
+          Icons.system_update_alt,
+          color: WorkoutVisuals.mint,
+        ),
+        title: 'Update Firmware',
+        destination: FirmwareUpdateScreen(device: widget.device),
+        dismissPanel: dismissPanel,
+      ),
     const Divider(height: 1),
     _buildMaintenanceActionTile(
       leading: Icon(

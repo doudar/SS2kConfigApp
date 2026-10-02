@@ -277,6 +277,32 @@ Run coach checks with `flutter test test/workout_coach_test.dart
 test/workout_coach_recovery_test.dart test/workout_coach_repository_test.dart
 test/workout_coach_card_test.dart`.
 
+### Connecting from a web browser
+
+Use Chrome or Edge on Windows/macOS, or Chrome on Android, and open the app
+over HTTPS (or `localhost` / `127.0.0.1` for development). Firefox and Safari
+do not provide Web Bluetooth. Click **Choose Bluetooth Device**, select your
+SmartSpin2k in the browser picker, then click **Connect** in the app.
+The picker grants access to the configuration, fitness-machine, and firmware
+services. Returning to the device list requires clicking the picker button
+again; browsers do not permit automatic Bluetooth scans.
+
+Firmware updates require the native SmartSpin2k app. The web app uses the
+firmware service only to recognize compatible devices; its maintenance menu
+disables firmware uploads.
+
+For local development, run `flutter run -d web-server --web-hostname 127.0.0.1
+--web-port 8765` and open `http://127.0.0.1:8765` in a supported browser.
+Do not use an HTTP LAN address: Web Bluetooth requires a secure context.
+
+Dircon is currently native-app-only. Browser Dircon would require WebSocket
+support in SmartSpin2k firmware; the current TCP/mDNS transport cannot run
+directly in a regular web page.
+
+Verify browser BLE setup with `flutter test --platform chrome
+test/web_ble_setup_test.dart`. This uses a fake peripheral to check browser
+service setup, notifications, and settings requests without moving hardware.
+
 ### Building from source
 
 To build the app from source:

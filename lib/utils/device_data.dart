@@ -1856,7 +1856,7 @@ class DeviceData {
     bool connectionIsCurrent() =>
         _setupCoordinator.isCurrent(generation) && device.isConnected;
 
-    if (Platform.isAndroid && device.mtuNow <= 23) {
+    if (!kIsWeb && Platform.isAndroid && device.mtuNow <= 23) {
       _mtuRequestedForConnection = false;
     }
 
@@ -2078,7 +2078,7 @@ class DeviceData {
     if (_inUpdateLoop) {
       return;
     }
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       if (!_mtuRequestedForConnection && device.mtuNow <= 23) {
         _mtuRequestedForConnection = true;
         try {
@@ -3796,8 +3796,9 @@ class DeviceData {
   // back-pressure signal, with a small guard interval on Android/Peloton so
   // SS2kConfigApp does not monopolize the shared BLE stack while Grupetto is
   // also advertising/serving as a peripheral.
-  Duration get _bleWriteGuardInterval =>
-      Platform.isAndroid ? const Duration(milliseconds: 35) : Duration.zero;
+  Duration get _bleWriteGuardInterval => !kIsWeb && Platform.isAndroid
+      ? const Duration(milliseconds: 35)
+      : Duration.zero;
 
   /// Serializes one transport operation, ahead of lower-priority queued work.
   ///
