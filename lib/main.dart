@@ -68,7 +68,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   final GlobalKey<ScaffoldMessengerState> _scaffoldKey =
       GlobalKey<ScaffoldMessengerState>();
 
-  late StreamSubscription<BluetoothAdapterState> _adapterStateStateSubscription;
+  StreamSubscription<BluetoothAdapterState>? _adapterStateStateSubscription;
   // Start false on native so a clean install shows the wizard, not a ScanScreen flash.
   // kIsWeb stays true because the wizard is never shown on web.
   bool _onboardingCompleted = kIsWeb;
@@ -399,7 +399,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 
   @override
   void dispose() {
-    _adapterStateStateSubscription.cancel();
+    _adapterStateStateSubscription?.cancel();
     _linkSubscription?.cancel();
     OnboardingState.completedNotifier.removeListener(
       _onCompletedNotifierChanged,
