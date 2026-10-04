@@ -227,7 +227,7 @@ final dynamic customCharacteristicFramework = [
     "min": 10,
     "max": 6000,
     "textDescription":
-        "This setting controls how much each click of the shifter turns the dial. The ideal setting is different for each bike and person. Try aiming for a +/- 30 watt change when you click the shifter. Higher values will turn the knob further. With a Simulated Groupset selected (Advanced settings), this is the movement for a typical gear change; bigger ratio jumps move further.",
+        "This setting controls how much each click of the shifter turns the dial. The ideal setting is different for each bike and person. Try aiming for a +/- 30 watt change when you click the shifter. Higher values will turn the knob further. With a Simulated Groupset selected, this is the movement for a typical gear change; bigger ratio jumps move further.",
     "defaultData": "1500",
   },
   {
@@ -242,6 +242,39 @@ final dynamic customCharacteristicFramework = [
     "textDescription":
         "This setting controls which shifter button is up and which is down. Toggle this if you need to invert the direction of the shifters.",
     "defaultData": "true",
+  },
+  // The groupset is one setting split across two characteristics: 0x35 picks a
+  // built-in ratio table and 0x34 carries tooth pairs. The preset entry comes
+  // first so a read sweep knows it before 0x34 answers 0xff while a built-in
+  // table is active. Writes go through the gearTeeth entry only.
+  {
+    "vName": gearPresetVname,
+    "reference": "0x35",
+    "isSetting": false,
+    "settingType": SettingType.basic,
+    "type": "int",
+    "humanReadableName": "Groupset Preset",
+    "min": 0,
+    "max": 1,
+    "textDescription":
+        "Built-in groupset ratio table. 0 uses the tooth pairs, or Unlimited when there are none.",
+    "defaultData": "0",
+  },
+  {
+    "vName": gearTeethVname,
+    "reference": "0x34",
+    "isSetting": true,
+    "settingType": SettingType.basic,
+    "type": "gearTeeth",
+    "humanReadableName": "Simulated Groupset",
+    "min": 0,
+    "max": 26,
+    "textDescription":
+        "Choose the gears your virtual shifter simulates in simulation (incline) mode. "
+        "Unlimited moves the knob by Shift Step on every click, with no top or bottom gear. "
+        "A groupset gives you a fixed set of gears, and each shift moves in proportion to the "
+        "real ratio change between them. ERG mode is unaffected.",
+    "defaultData": "[]",
   },
   {
     "vName": saveVname,
@@ -771,38 +804,5 @@ final dynamic customCharacteristicFramework = [
     "textDescription":
         "Read last BLE log message or enable/disable BLE log streaming",
     "defaultData": "",
-  },
-  // The groupset is one setting split across two characteristics: 0x35 picks a
-  // built-in ratio table and 0x34 carries tooth pairs. The preset entry comes
-  // first so a read sweep knows it before 0x34 answers 0xff while a built-in
-  // table is active. Writes go through the gearTeeth entry only.
-  {
-    "vName": gearPresetVname,
-    "reference": "0x35",
-    "isSetting": false,
-    "settingType": SettingType.advanced,
-    "type": "int",
-    "humanReadableName": "Groupset Preset",
-    "min": 0,
-    "max": 1,
-    "textDescription":
-        "Built-in groupset ratio table. 0 uses the tooth pairs, or Unlimited when there are none.",
-    "defaultData": "0",
-  },
-  {
-    "vName": gearTeethVname,
-    "reference": "0x34",
-    "isSetting": true,
-    "settingType": SettingType.advanced,
-    "type": "gearTeeth",
-    "humanReadableName": "Simulated Groupset",
-    "min": 0,
-    "max": 26,
-    "textDescription":
-        "Choose the gears your virtual shifter simulates in simulation (incline) mode. "
-        "Unlimited moves the knob by Shift Step on every click, with no top or bottom gear. "
-        "A groupset gives you a fixed set of gears, and each shift moves in proportion to the "
-        "real ratio change between them. ERG mode is unaffected.",
-    "defaultData": "[]",
   },
 ];

@@ -15,9 +15,12 @@ import '../utils/device_transport_state.dart';
 import '../utils/workout/workout_visuals.dart';
 import '../utils/shifter_sound.dart';
 import '../utils/shifter_feedback.dart';
+import '../widgets/setting_tile.dart';
 import '../widgets/ss2k_app_bar.dart';
 import '../widgets/shifter_gear_indicator.dart';
 import '../widgets/stepper_travel_gauge.dart';
+import '../widgets/workout_dialog.dart';
+import '../widgets/workout_header_action.dart';
 
 class ShifterScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -230,11 +233,13 @@ class _ShifterScreenState extends State<ShifterScreen> {
   Future<void> _refreshTravelSettings() async {
     final epoch = deviceData.transportState.value.epoch;
     // These change only with settings/calibration, not every telemetry tick.
+    // The groupset is read for the shifting setup tiles.
     for (final name in [
       BLE_hMinVname,
       BLE_hMaxVname,
       shiftStepVname,
       maxBrakeWattsVname,
+      gearTeethVname,
     ]) {
       if (!mounted ||
           deviceData.isSimulated ||
@@ -479,6 +484,72 @@ class _ShifterScreenState extends State<ShifterScreen> {
     }
     return null;
   }
+
+  /// The setting entry for [name], or null when the firmware lacks it.
+  Map<String, dynamic>? _setupSetting(String name) {
+    for (final c in deviceData.customCharacteristic) {
+      if (c['vName'] != name) continue;
+      final value = c['value']?.toString();
+      return value != null && _isValidShifterValue(value) ? c : null;
+    }
+    return null;
+  }
+
+  void _onSetupEditorClosed() {
+    if (!mounted) return;
+    setState(() {});
+    if (deviceData.isSimulated || !deviceData.isTransportActive) return;
+    // A groupset change can clamp the gear, and the firmware drops the
+    // notification while it builds a settings snapshot. Confirm on return.
+    unawaited(deviceData.requestSetting(widget.device, shifterPositionVname));
+  }
+
+  List<Widget> _setupTiles() => [
+    for (final name in [gearTeethVname, shiftStepVname])
+      if (_setupSetting(name) case final c?)
+        SettingTile(
+          key: ValueKey(name),
+          device: widget.device,
+          c: c,
+          onEditorClosed: _onSetupEditorClosed,
+        ),
+  ];
+
+  /// Shifting setup lives in a modal, matching the workout Ride menu, so the
+  /// shifter itself stays uncluttered. Tiles refresh from the notify stream.
+  Future<void> _showSettings() => showDialog<void>(
+    context: context,
+    builder: (dialogContext) => WorkoutDialog(
+      title: const Text('Shifter settings'),
+      eyebrow: 'VIRTUAL SHIFTER',
+      icon: Icons.tune_rounded,
+      subtitle: 'Choose how your virtual gears feel.',
+      showClose: true,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ..._setupTiles(),
+          const Text(
+            'Changes apply immediately. Switching groupsets keeps your gear '
+            'number where it can, but the resistance changes.',
+            style: TextStyle(
+              color: WorkoutVisuals.muted,
+              fontSize: 12,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        FilledButton.icon(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          icon: const Icon(Icons.arrow_back_rounded),
+          label: const Text('Back to shifting'),
+        ),
+      ],
+    ),
+  );
 
   Widget _reading(
     String label,
@@ -730,6 +801,7 @@ class _ShifterScreenState extends State<ShifterScreen> {
         ),
       ],
     );
+    final hasSetup = _setupTiles().isNotEmpty;
     return Scaffold(
       backgroundColor: WorkoutVisuals.ink,
       appBar: SS2KAppBar(
@@ -739,6 +811,16 @@ class _ShifterScreenState extends State<ShifterScreen> {
         // The screen owns its limited detail polling. Retain connection
         // monitoring here without adding periodic firmware requests.
         deviceHeaderCustomRefreshEnabled: false,
+        actions: [
+          if (hasSetup)
+            WorkoutHeaderAction(
+              label: 'Settings',
+              icon: Icons.tune_rounded,
+              tooltip: 'Shifter settings',
+              stacked: MediaQuery.sizeOf(context).width < 600,
+              onPressed: _showSettings,
+            ),
+        ],
       ),
       body: SafeArea(
         top: false,
