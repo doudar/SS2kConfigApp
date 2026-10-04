@@ -38,8 +38,15 @@ String _settingDescription(Map c) => _isWifiCredentials(c)
 class SettingTile extends StatefulWidget {
   final BluetoothDevice device;
   final Map c;
-  const SettingTile({Key? key, required this.device, required this.c})
-    : super(key: key);
+
+  /// Called after the editor opened from this tile is closed.
+  final VoidCallback? onEditorClosed;
+  const SettingTile({
+    Key? key,
+    required this.device,
+    required this.c,
+    this.onEditorClosed,
+  }) : super(key: key);
 
   @override
   State<SettingTile> createState() => _SettingTileState();
@@ -294,10 +301,13 @@ class _SettingTileState extends State<SettingTile> {
           ),
           onTap: unsupported
               ? null
-              : () => Navigator.push(
-                  context,
-                  fadeRoute(SettingEditScreen(device: widget.device, c: c)),
-                ),
+              : () async {
+                  await Navigator.push(
+                    context,
+                    fadeRoute(SettingEditScreen(device: widget.device, c: c)),
+                  );
+                  widget.onEditorClosed?.call();
+                },
         ),
       ),
     );

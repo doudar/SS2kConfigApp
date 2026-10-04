@@ -138,6 +138,7 @@ void main() {
       BLE_hMaxVname,
       shiftStepVname,
       maxBrakeWattsVname,
+      gearTeethVname,
     ]);
     data.requests.clear();
     await tester.pump(const Duration(seconds: 2));
