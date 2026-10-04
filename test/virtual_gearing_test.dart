@@ -160,7 +160,7 @@ void main() {
       expect(setting(gearPresetVname)['value'], '1');
       expect(setting(gearTeethVname)['value'], '[]');
 
-      await data.requestSettingsForType(device, SettingType.advanced);
+      await data.requestSettingsForType(device, SettingType.basic);
       expect(setting(gearTeethVname)['value'], '[]');
     });
 
