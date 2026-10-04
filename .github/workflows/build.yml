@@ -5,6 +5,16 @@ on:
     branches:
       - develop
   workflow_dispatch:
+    inputs:
+      play_track:
+        description: 'Google Play track to upload the AAB to'
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+        default: internal
 
 env:
   FLUTTER_VERSION: '3.44.0'
@@ -123,19 +133,73 @@ jobs:
       - name: Render bundled device previews
         run: flutter test tool/generate_device_previews_test.dart
 
+      # Google Play rejects any versionCode it has already seen, so derive a
+      # monotonically increasing one from the run number instead of relying on
+      # the manually bumped pubspec build number. The offset keeps it above the
+      # versionCodes already published from pubspec (<= 78).
+      - name: Compute Android versionCode
+        run: echo "ANDROID_BUILD_NUMBER=$((1000 + ${{ github.run_number }}))" >> $GITHUB_ENV
+
       - name: Build Android APK
-        run: flutter build apk
+        run: flutter build apk --build-number=$ANDROID_BUILD_NUMBER
+
+      - name: Build Android App Bundle
+        run: flutter build appbundle --build-number=$ANDROID_BUILD_NUMBER
 
       - name: Create artifacts
         run: |
-          mkdir -p artifacts
+          mkdir -p artifacts play
           mv build/app/outputs/flutter-apk/app-release.apk artifacts/ss2kconfigapp-${{ needs.prepare.outputs.version }}.apk
+          cp build/app/outputs/bundle/release/app-release.aab play/app-release.aab
+          cp build/app/outputs/mapping/release/mapping.txt play/mapping.txt
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-artifacts
           path: artifacts/
+
+      - name: Upload Play bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-play-bundle
+          path: play/
+
+  deploy-play:
+    needs: [prepare, build-android]
+    runs-on: ubuntu-latest
+    env:
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+      SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+    steps:
+      - name: Check Play credentials
+        id: check
+        run: |
+          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ] || [ -z "$SIGNING_KEY" ]; then
+            echo "PLAY_SERVICE_ACCOUNT_JSON or SIGNING_KEY not set; skipping Google Play upload."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download Play bundle
+        if: steps.check.outputs.enabled == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: android-play-bundle
+          path: play
+
+      - name: Upload to Google Play
+        if: steps.check.outputs.enabled == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.smartspin2k.app
+          releaseFiles: play/app-release.aab
+          mappingFile: play/mapping.txt
+          releaseName: ${{ needs.prepare.outputs.version }}
+          track: ${{ github.event.inputs.play_track || 'internal' }}
+          status: completed
 
   build-macos:
     needs: prepare
