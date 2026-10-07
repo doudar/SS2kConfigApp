@@ -1835,42 +1835,18 @@ class CalibrationMonitor extends ChangeNotifier {
   }
 
   /// Walks the demo device through a plausible run using the firmware's own
-  /// wording, so the flow can be exercised without hardware.
+  /// wording, so the flow can be exercised without hardware. A demo saved to
+  /// Grupetto follows the resistance-guided (Bike+) search instead of the
+  /// end-stop one, as the firmware does when real resistance is reported.
   void _runDemoScript() {
-    const script = <({int ms, String message})>[
-      (ms: 500, message: '(FTMS_SERVER): Spin Down Requested'),
-      (ms: 1500, message: 'Starting homing procedure...'),
-      (
-        ms: 2500,
-        message:
-            'Homing backward (min). Stable Threshold: 120, Sensitivity: 55',
-      ),
-      (
-        ms: 4000,
-        message: 'Homing... Current SG: 118, Baseline: 120, Target: < 65',
-      ),
-      (
-        ms: 5500,
-        message:
-            'Min end stop stable with 2 consecutive taps within 150 steps.',
-      ),
-      (ms: 6000, message: 'Min position found and set to 0.'),
-      (
-        ms: 7500,
-        message: 'Homing forward (max). Stable Threshold: 122, Sensitivity: 55',
-      ),
-      (
-        ms: 8500,
-        message: 'Homing... Current SG: 92, Baseline: 122, Target: < 67',
-      ),
-      (
-        ms: 9500,
-        message:
-            'Max end stop stable with 2 consecutive taps within 150 steps.',
-      ),
-      (ms: 10000, message: 'Max Position found: 24800'),
-      (ms: 11500, message: 'Homing procedure complete.'),
-    ];
+    final savedPowerMeter = deviceData.customCharacteristic.firstWhere(
+      (c) => c["vName"] == connectedPWRVname,
+      orElse: () => <String, dynamic>{},
+    )["value"];
+    final script =
+        savedPowerMeter?.toString().toLowerCase().contains('grupetto') == true
+        ? _demoFtmsScript
+        : _demoEndStopScript;
 
     // Real firmware acknowledges the command before cadence opens the gate.
     _demoTimers.add(
@@ -1890,6 +1866,99 @@ class CalibrationMonitor extends ChangeNotifier {
       );
     }
   }
+
+  static const _demoFtmsScript = <({int ms, String message})>[
+    (ms: 500, message: '(FTMS_SERVER): Spin Down Requested'),
+    (ms: 1500, message: 'Starting homing procedure...'),
+    (ms: 1600, message: 'Starting FTMS Homing...'),
+    (
+      ms: 1700,
+      message:
+          'FTMS homing request: both=1 resistance=34 range=0-100 savedMax=-2147483648',
+    ),
+    (
+      ms: 2500,
+      message:
+          'Homing to Min Resistance... Current: 21, Target: 10, pos: -4200',
+    ),
+    (
+      ms: 4000,
+      message: 'Homing to Min Resistance... Current: 4, Target: 2, pos: -9100',
+    ),
+    (ms: 5000, message: 'Min position found: 0 (FTMS origin: -10450)'),
+    (
+      ms: 6000,
+      message: 'Homing to Max Resistance... Current: 72, Target: 90, pos: 9800',
+    ),
+    (
+      ms: 7500,
+      message:
+          'Homing to Max Resistance... Current: 96, Target: 98, pos: 14600',
+    ),
+    (
+      ms: 8500,
+      message:
+          'Homing to Max Resistance... Current: 69, Target: 67, pos: 11200',
+    ),
+    (
+      ms: 9000,
+      message: 'FTMS map sample: resistance=66.5 position=21500 travel=67.0%',
+    ),
+    (
+      ms: 9500,
+      message: 'Homing to Max Resistance... Current: 52, Target: 50, pos: 5800',
+    ),
+    (
+      ms: 10000,
+      message: 'FTMS map sample: resistance=50.5 position=16300 travel=50.8%',
+    ),
+    (
+      ms: 11000,
+      message: 'Homing to Max Resistance... Current: 34, Target: 33, pos: 600',
+    ),
+    (
+      ms: 11500,
+      message: 'FTMS map sample: resistance=33.0 position=10600 travel=33.0%',
+    ),
+    (ms: 11700, message: 'Max Position found: 32100'),
+    (
+      ms: 11900,
+      message: 'FTMS homing complete: estimated zero=-10450, range=32100 steps',
+    ),
+    (ms: 12000, message: 'Homing procedure complete.'),
+  ];
+
+  static const _demoEndStopScript = <({int ms, String message})>[
+    (ms: 500, message: '(FTMS_SERVER): Spin Down Requested'),
+    (ms: 1500, message: 'Starting homing procedure...'),
+    (
+      ms: 2500,
+      message: 'Homing backward (min). Stable Threshold: 120, Sensitivity: 55',
+    ),
+    (
+      ms: 4000,
+      message: 'Homing... Current SG: 118, Baseline: 120, Target: < 65',
+    ),
+    (
+      ms: 5500,
+      message: 'Min end stop stable with 2 consecutive taps within 150 steps.',
+    ),
+    (ms: 6000, message: 'Min position found and set to 0.'),
+    (
+      ms: 7500,
+      message: 'Homing forward (max). Stable Threshold: 122, Sensitivity: 55',
+    ),
+    (
+      ms: 8500,
+      message: 'Homing... Current SG: 92, Baseline: 122, Target: < 67',
+    ),
+    (
+      ms: 9500,
+      message: 'Max end stop stable with 2 consecutive taps within 150 steps.',
+    ),
+    (ms: 10000, message: 'Max Position found: 24800'),
+    (ms: 11500, message: 'Homing procedure complete.'),
+  ];
 
   void _cancelTimers() {
     _elapsedTimer?.cancel();

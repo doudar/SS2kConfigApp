@@ -6,7 +6,7 @@
  */
 // This is a mock demo utility to simulate SmartSpin2k device connections
 
-import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:flutter/foundation.dart' show ValueNotifier, visibleForTesting;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/constants.dart';
 
@@ -22,6 +22,14 @@ class DemoDevice {
   }
 
   DemoDevice._internal();
+
+  /// Test-only override for the advertised name of the simulated SmartSpin2k.
+  /// Documentation screenshot captures set this to 'SmartSpin2k' so the scan
+  /// tile matches a real device. The remoteId must stay 'SmartSpin2k Demo':
+  /// main_device_screen.dart keys its demo setup on that exact string.
+  @visibleForTesting
+  static String? debugAdvertisedName;
+
   // Mock manufacturer ID and data
   static const int mockManufacturerId = 123; 
   final List<int> mockManufacturerData = [0x00, 0x01, 0x02];
@@ -45,7 +53,7 @@ class DemoDevice {
       device: mockDevice,
       timeStamp: DateTime.now(),
       advertisementData: AdvertisementData(
-        advName: mockAdData['localName'],
+        advName: debugAdvertisedName ?? mockAdData['localName'],
         appearance: 1,
         connectable: true,
         serviceUuids: [Guid(csUUID)],
