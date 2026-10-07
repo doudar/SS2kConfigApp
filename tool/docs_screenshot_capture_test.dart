@@ -8,6 +8,7 @@
 //
 // Without DOCS_IMAGES_DIR the images land in build/docs_screenshots.
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -19,6 +20,8 @@ import 'package:flutter_blue_plus_platform_interface/flutter_blue_plus_platform_
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ss2kconfigapp/screens/calibration_screen.dart';
+import 'package:ss2kconfigapp/screens/firmware_update_screen.dart';
 import 'package:ss2kconfigapp/screens/main_device_screen.dart';
 import 'package:ss2kconfigapp/screens/onboarding/onboarding_wizard.dart';
 import 'package:ss2kconfigapp/screens/scan_screen.dart';
@@ -30,9 +33,11 @@ import 'package:ss2kconfigapp/utils/ble_sensor_services.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:ss2kconfigapp/utils/demo.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
+import 'package:ss2kconfigapp/utils/firmware_release_service.dart';
 import 'package:ss2kconfigapp/utils/nearby_ble_devices.dart';
 import 'package:ss2kconfigapp/utils/onboarding/onboarding_state.dart';
 import 'package:ss2kconfigapp/utils/onboarding/wizard_session.dart';
+import 'package:ss2kconfigapp/utils/presets.dart';
 import 'package:ss2kconfigapp/utils/theme_provider.dart';
 import 'package:ss2kconfigapp/widgets/setting_tile.dart';
 import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
@@ -106,7 +111,25 @@ Future<void> _loadCaptureFonts() async {
         ),
       ))
       .load();
+
+  // Roboto has no arrows (the calibration result reads "0 → 24,800"). A phone
+  // falls back to a system font; borrow the host's when it has one.
+  for (final path in _symbolFontCandidates) {
+    final file = File(path);
+    if (!file.existsSync()) continue;
+    await (FontLoader(_symbolFontFamily)
+          ..addFont(Future.value(ByteData.sublistView(file.readAsBytesSync()))))
+        .load();
+    break;
+  }
 }
+
+const _symbolFontFamily = 'DocsSymbols';
+const _symbolFontCandidates = [
+  'C:/Windows/Fonts/seguisym.ttf',
+  '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+  '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+];
 
 Future<ThemeData> _loadDarkTheme(WidgetTester tester) async {
   final provider = ThemeProvider();
@@ -123,8 +146,14 @@ Future<ThemeData> _loadDarkTheme(WidgetTester tester) async {
   final theme = provider.darkTheme;
   provider.dispose();
   return theme.copyWith(
-    textTheme: theme.textTheme.apply(fontFamily: _fontFamily),
-    primaryTextTheme: theme.primaryTextTheme.apply(fontFamily: _fontFamily),
+    textTheme: theme.textTheme.apply(
+      fontFamily: _fontFamily,
+      fontFamilyFallback: const [_symbolFontFamily],
+    ),
+    primaryTextTheme: theme.primaryTextTheme.apply(
+      fontFamily: _fontFamily,
+      fontFamilyFallback: const [_symbolFontFamily],
+    ),
   );
 }
 
@@ -212,10 +241,7 @@ Future<void> _precacheAssets(WidgetTester tester, ThemeData theme) async {
       const AssetImage('assets/ss2kv3.png'),
       // DevicePreviewTile uses Image.asset(cacheWidth: 480).
       for (final slug in ['shifter', 'settings', 'power-table', 'workout'])
-        ResizeImage(
-          AssetImage('assets/device_previews/$slug.png'),
-          width: 480,
-        ),
+        ResizeImage(AssetImage('assets/device_previews/$slug.png'), width: 480),
     ];
     for (final provider in providers) {
       await precacheImage(provider, context);
@@ -296,6 +322,16 @@ Future<void> _writeCapture(WidgetTester tester, String slug) async {
   print('Captured $outputPath');
 }
 
+/// Advances fake time in frame-sized steps, so timers and animations both run.
+Future<void> _pumpFor(WidgetTester tester, Duration duration) async {
+  const tick = Duration(milliseconds: 100);
+  for (var elapsed = Duration.zero; elapsed < duration; elapsed += tick) {
+    await tester.pump(tick);
+  }
+  final exception = tester.takeException();
+  if (exception != null) throw exception;
+}
+
 void _expectTexts(List<String> texts) {
   for (final text in texts) {
     expect(find.text(text), findsOneWidget, reason: text);
@@ -313,6 +349,7 @@ void main() {
     demoModeBypass.value = false;
     DemoDevice.debugAdvertisedName = null;
     OnboardingState.completedNotifier.value = true;
+    FirmwareReleaseService.debugReleasesOverride = null;
   });
 
   testWidgets('capture documentation screenshots', (tester) async {
@@ -454,6 +491,22 @@ void main() {
     await _pumpScreen(tester, theme, SettingsScreen(device: device));
     _expectTexts(['Settings', 'Basic', 'Bluetooth', 'Network', 'Advanced']);
     await _writeCapture(tester, 'settings');
+
+    // --- settings-save-restore (same mounted SettingsScreen) -----------------
+    await tester.tap(find.text('Save & restore settings'));
+    await _pumpStableFrame(tester);
+    _expectTexts(['Save a copy', 'Start over', 'Factory reset SmartSpin2k']);
+    await _writeCapture(tester, 'settings-save-restore');
+
+    // --- factory-reset-confirm -----------------------------------------------
+    await tester.tap(find.text('Factory reset SmartSpin2k'));
+    await _pumpStableFrame(tester);
+    _expectTexts([
+      'Factory reset SmartSpin2k?',
+      'Cancel',
+      'Reset SmartSpin2k',
+    ]);
+    await _writeCapture(tester, 'factory-reset-confirm');
     await _unmount(tester);
 
     // --- settings-bluetooth --------------------------------------------------
@@ -568,6 +621,30 @@ void main() {
       'Simulated Groupset',
     ]);
     await _writeCapture(tester, 'settings-basic');
+
+    // --- setting-info: the (i) help dialog on a Basic tile -------------------
+    await tester.tap(find.byTooltip('About ERG Sensitivity'));
+    await _pumpStableFrame(tester);
+    _expectTexts(['Close']);
+    await _writeCapture(tester, 'setting-info');
+    await _unmount(tester);
+
+    // --- settings-advanced (top and bottom of the list) ----------------------
+    applySharedSeed();
+    await _pumpScreen(
+      tester,
+      theme,
+      SettingsCategoryScreen(
+        device: device,
+        title: 'Advanced',
+        settingType: SettingType.advanced,
+      ),
+    );
+    // Scrolled to the end: the top tile is cut off, the other eight show.
+    await tester.drag(find.byType(Scrollable).last, const Offset(0, -2000));
+    await _pumpStableFrame(tester);
+    _expectTexts(['Advanced', 'Stepper Power', 'Power Table for Power']);
+    await _writeCapture(tester, 'settings-advanced');
     await _unmount(tester);
 
     // --- swap-shifter-direction ----------------------------------------------
@@ -625,5 +702,171 @@ void main() {
     expect(find.text('5'), findsWidgets);
     await _writeCapture(tester, 'virtual-shifter-live');
     await _unmount(tester);
+
+    // --- calibration ---------------------------------------------------------
+    // The demo device runs the monitor's scripted homing run. Timings below
+    // are measured from the Start tap and follow that script: the end-stop
+    // run finds min by 6 s and max by 10 s; the Grupetto run finishes its low
+    // boundary by 5 s and its three map samples by 11.5 s. They complete at
+    // 11.5 s and 12 s and show the verdict 0.6 s later.
+    final prefs = await SharedPreferences.getInstance();
+
+    Future<void> openCalibration(String setup, {String? pwr}) async {
+      await prefs.setString('calibration_setup', setup);
+      applySharedSeed();
+      c(homingSensitivityVname)['value'] = '50';
+      if (pwr != null) c(connectedPWRVname)['value'] = pwr;
+      data.ftmsData.cadence = 0;
+      await _pumpScreen(tester, theme, CalibrationScreen(device: device));
+    }
+
+    Future<void> startPedaling() async {
+      data.ftmsData.cadence = 82;
+      data.debugEmitFtmsDataUpdate();
+    }
+
+    // Knob with physical stops.
+    await openCalibration('physicalStops');
+    _expectTexts([
+      'Calibrate Trainer',
+      'Calibrate once after installation',
+      'Start Calibration',
+    ]);
+    expect(find.text('Homing Force 50', findRichText: true), findsOneWidget);
+    await _writeCapture(tester, 'calibrate-start');
+
+    await tester.tap(find.text('Start Calibration'));
+    await _pumpFor(tester, const Duration(milliseconds: 1200));
+    _expectTexts(['Watch the knob', 'CADENCE', 'Waiting for you to pedal']);
+    await _writeCapture(tester, 'calibrate-pedal');
+
+    await startPedaling();
+    await _pumpFor(tester, const Duration(milliseconds: 3750)); // t = 4.95 s
+    _expectTexts(['Finding low resistance', 'Motor Load']);
+    await _writeCapture(tester, 'calibrate-low-stop');
+
+    await _pumpFor(tester, const Duration(milliseconds: 4450)); // t = 9.4 s
+    _expectTexts(['Finding high resistance', 'Motor Load']);
+    await _writeCapture(tester, 'calibrate-high-stop');
+
+    await _pumpFor(tester, const Duration(milliseconds: 3600)); // t = 13 s
+    _expectTexts([
+      'Calibration saved',
+      'Yes, done',
+      'No, something looked wrong',
+    ]);
+    await _writeCapture(tester, 'calibrate-saved');
+
+    await tester.tap(find.text('No, something looked wrong'));
+    await _pumpFor(tester, const Duration(milliseconds: 600));
+    await tester.tap(find.text('The knob stopped before the end'));
+    await _pumpFor(tester, const Duration(milliseconds: 600));
+    _expectTexts(['What did you see?', 'Raise Homing Force', 'Try Again']);
+    await _writeCapture(tester, 'calibrate-homing-force');
+    await _unmount(tester);
+
+    // Peloton Bike+ with Grupetto sending resistance.
+    await openCalibration('pelotonBikePlus', pwr: 'Grupetto FTMS');
+    _expectTexts(['Bike+ needs resistance data', 'Start with resistance data']);
+    await _writeCapture(tester, 'calibrate-start-bikeplus');
+
+    await tester.tap(find.text('Start with resistance data'));
+    await _pumpFor(tester, const Duration(milliseconds: 1200));
+    await startPedaling();
+    await _pumpFor(tester, const Duration(milliseconds: 3750)); // t = 4.95 s
+    _expectTexts(['Measuring the low boundary', 'Finding low resistance']);
+    await _writeCapture(tester, 'calibrate-bikeplus-low');
+
+    await _pumpFor(tester, const Duration(milliseconds: 5650)); // t = 10.6 s
+    _expectTexts(['Building the resistance map', 'Building resistance map']);
+    await _writeCapture(tester, 'calibrate-bikeplus-map');
+
+    await _pumpFor(tester, const Duration(milliseconds: 2800)); // t = 13.4 s
+    _expectTexts(['Calibration saved', 'Done']);
+    await _writeCapture(tester, 'calibrate-bikeplus-saved');
+    await _unmount(tester);
+
+    // --- firmware update -----------------------------------------------------
+    // flutter test has no network, so the GitHub release list is injected.
+    // Tags and asset names follow the real releases; the demo device reports
+    // 24.1.3, so the three 26.x builds are newer and the rest older.
+    FirmwareRelease release(String tag, {bool isMostRecent = false}) =>
+        FirmwareRelease(
+          version: tag,
+          downloadUrl:
+              'https://github.com/doudar/SmartSpin2k/releases/download/'
+              '$tag/SmartSpin2kFirmware-$tag.bin.zip',
+          isMostRecent: isMostRecent,
+        );
+    FirmwareReleaseService.debugReleasesOverride = [
+      release('26.9.28', isMostRecent: true),
+      release('26.8.14'),
+      release('26.7.2'),
+      release('24.1.3'),
+      release('23.12.5'),
+    ];
+
+    // --- device-firmware-available -------------------------------------------
+    applySharedSeed();
+    await _pumpScreen(tester, theme, MainDeviceScreen(device: device));
+    _expectTexts([
+      'Device',
+      'UPDATE',
+      'Firmware 26.9.28 is available',
+      'Installed: 24.1.3',
+      'Virtual Shifter',
+      'Settings',
+      'Power Table',
+      'Workout',
+    ]);
+    await _writeCapture(tester, 'device-firmware-available');
+    await _unmount(tester);
+
+    // --- firmware-update -----------------------------------------------------
+    // The demo device reports Revision Two hardware (ESP32).
+    applySharedSeed();
+    await _pumpScreen(tester, theme, FirmwareUpdateScreen(device: device));
+    _expectTexts([
+      'Firmware Update',
+      'ESP32 • firmware.bin',
+      'Select Firmware Version:',
+      'Most Recent Release (26.9.28)',
+      'Latest',
+      '26.8.14',
+      '26.7.2',
+      '23.12.5',
+      'Update to Most Recent Release (26.9.28)',
+      'Color Coding',
+      'Firmware is NEWER than current',
+      'Firmware is OLDER than current',
+    ]);
+    expect(find.text('Loading....Please Wait'), findsNothing);
+    await _writeCapture(tester, 'firmware-update');
+    await _unmount(tester);
+
+    // --- firmware-update-progress --------------------------------------------
+    applySharedSeed();
+    await _pumpScreen(
+      tester,
+      theme,
+      FirmwareUpdateScreen(
+        device: device,
+        debugWifiUploadInProgress: (
+          progress: 0.45,
+          status: 'Uploading firmware.bin • 0.8 MB / 1.8 MB',
+          timeRemaining: '00:00:41',
+        ),
+      ),
+    );
+    _expectTexts([
+      'Firmware Update',
+      'Uploading firmware.bin • 0.8 MB / 1.8 MB',
+      '45%',
+      'Time remaining: 00:00:41',
+      'Updating via WiFi...',
+    ]);
+    await _writeCapture(tester, 'firmware-update-progress');
+    await _unmount(tester);
+    FirmwareReleaseService.debugReleasesOverride = null;
   });
 }

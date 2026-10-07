@@ -27,8 +27,17 @@ import '../widgets/ss2k_app_bar.dart';
 class FirmwareUpdateScreen extends StatefulWidget {
   final BluetoothDevice device;
 
-  const FirmwareUpdateScreen({Key? key, required this.device})
-    : super(key: key);
+  /// Test seam for documentation captures: opens the screen already showing a
+  /// WiFi upload in progress, without starting one. Never set in production.
+  @visibleForTesting
+  final ({double progress, String status, String timeRemaining})?
+  debugWifiUploadInProgress;
+
+  const FirmwareUpdateScreen({
+    Key? key,
+    required this.device,
+    this.debugWifiUploadInProgress,
+  }) : super(key: key);
 
   @override
   State<FirmwareUpdateScreen> createState() => _FirmwareUpdateState();
@@ -66,6 +75,16 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     super.initState();
     deviceData = DeviceDataManager.forDevice(this.widget.device);
     unawaited(_blockFtmsNotifications());
+
+    final debugUpload = widget.debugWifiUploadInProgress;
+    if (debugUpload != null) {
+      updatingFirmware = true;
+      _usingWifi = true;
+      _wifiOtaPhase = WifiOtaPhase.uploading;
+      _progress = debugUpload.progress;
+      _updateStatus = debugUpload.status;
+      timeRemaining = debugUpload.timeRemaining;
+    }
 
     _loaded = deviceData.firmwareVersion.value.isNotEmpty;
     _firmwareVersionListener = () {

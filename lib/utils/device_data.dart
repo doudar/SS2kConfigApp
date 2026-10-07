@@ -4620,6 +4620,21 @@ class DeviceData {
     );
   }
 
+  /// Stands in for a live indoor-bike-data notification, so headless captures
+  /// of a demo device can show screens that wait for the rider to pedal.
+  @visibleForTesting
+  void debugEmitFtmsDataUpdate() {
+    if (_characteristicChangeController.isClosed) return;
+    _characteristicChangeController.add(
+      CharacteristicChangeEvent(
+        vName: "FTMS_DATA",
+        reference: "FTMS",
+        value: "updated",
+        type: "ftms",
+      ),
+    );
+  }
+
   /// Helper method to emit characteristic change events
   void _emitCharacteristicChange(Map c) {
     if (!_characteristicChangeController.isClosed) {
