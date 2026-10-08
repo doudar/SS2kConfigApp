@@ -5,6 +5,7 @@ import '../../../utils/onboarding/wizard_session.dart';
 import '../../../widgets/onboarding/onboarding_panel.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../utils/demo.dart' show demoModeBypass;
+import '../../compatibility_check_screen.dart';
 
 class WelcomeStep extends StatefulWidget {
   const WelcomeStep({Key? key}) : super(key: key);
@@ -50,47 +51,67 @@ class _WelcomeStepState extends State<WelcomeStep> {
         children: [
           SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: OnboardingPanel(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  OnboardingBadge.icon(Icons.tune),
-                  const SizedBox(height: 16),
-                  Text(
-                    "Let's set up your SmartSpin2k",
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'This guided setup will walk you through the essentials, then hand you off to the main app ready to ride.',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(
-                        alpha: theme.brightness == Brightness.light
-                            ? 0.82
-                            : 0.86,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                OnboardingPanel(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      OnboardingBadge.icon(Icons.tune),
+                      const SizedBox(height: 16),
+                      Text(
+                        "Let's set up your SmartSpin2k",
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
-                      height: 1.5,
+                      const SizedBox(height: 16),
+                      Text(
+                        'This guided setup will walk you through the essentials, then hand you off to the main app ready to ride.',
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: theme.brightness == Brightness.light
+                                ? 0.82
+                                : 0.86,
+                          ),
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const OnboardingChecklistItem('Select your bike type'),
+                      const OnboardingChecklistItem(
+                        'Install the SmartSpin2k hardware',
+                      ),
+                      const OnboardingChecklistItem(
+                        'Connect your SmartSpin2k via Bluetooth',
+                      ),
+                      const OnboardingChecklistItem(
+                        'Pair and verify your data source',
+                      ),
+                      const OnboardingChecklistItem(
+                        'Optionally add heart rate and WiFi',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Prospective buyers land here on first launch too. The check
+                // is pushed on top, so returning comes back to this step with
+                // onboarding still incomplete.
+                TextButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const CompatibilityCheckScreen(),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  const OnboardingChecklistItem('Select your bike type'),
-                  const OnboardingChecklistItem(
-                    'Install the SmartSpin2k hardware',
+                  icon: const Icon(Icons.pedal_bike_outlined),
+                  label: const Text(
+                    "Don't have a SmartSpin2k yet? Check your bike",
                   ),
-                  const OnboardingChecklistItem(
-                    'Connect your SmartSpin2k via Bluetooth',
-                  ),
-                  const OnboardingChecklistItem(
-                    'Pair and verify your data source',
-                  ),
-                  const OnboardingChecklistItem(
-                    'Optionally add heart rate and WiFi',
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           // Hidden tap-target in bottom-left corner: 5 taps activates demo mode.

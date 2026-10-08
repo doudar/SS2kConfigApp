@@ -42,7 +42,7 @@
 		<string>_wahoo-fitness-tnp._tcp</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>This app requires Bluetooth to communicate with the SmartSpin2k.</string>
+	<string>This app uses Bluetooth to communicate with your SmartSpin2k and to check whether your bike or power meter is compatible with it.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>

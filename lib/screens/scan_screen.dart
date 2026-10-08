@@ -14,6 +14,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../utils/constants.dart';
+import 'compatibility_check_screen.dart';
 import 'main_device_screen.dart';
 import '../utils/snackbar.dart';
 import '../utils/device_data.dart';
@@ -259,13 +260,27 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
-  Widget _buildGuidedSetupButton(BuildContext context) {
+  Future<void> _openCompatibilityCheck() async {
+    // The check runs its own scan; a SmartSpin2k scan still running here would
+    // keep restarting under it.
+    if (_isScanning) await onStopPressed();
+    if (!mounted) return;
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const CompatibilityCheckScreen()));
+  }
+
+  Widget _buildSecondaryAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: OutlinedButton.icon(
-        onPressed: _openGuidedSetup,
-        icon: const Icon(Icons.route_outlined),
-        label: const Text('Guided Setup'),
+        onPressed: onPressed,
+        icon: Icon(icon),
+        label: Text(label),
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.white,
           backgroundColor: const Color.fromARGB(
@@ -568,7 +583,16 @@ class _ScanScreenState extends State<ScanScreen> {
                         },
                       ),
                       SizedBox(height: guidedSetupTopGap),
-                      _buildGuidedSetupButton(context),
+                      _buildSecondaryAction(
+                        icon: Icons.route_outlined,
+                        label: 'Guided Setup',
+                        onPressed: _openGuidedSetup,
+                      ),
+                      _buildSecondaryAction(
+                        icon: Icons.pedal_bike_outlined,
+                        label: 'Is my bike compatible?',
+                        onPressed: _openCompatibilityCheck,
+                      ),
                     ],
                   );
                 },
