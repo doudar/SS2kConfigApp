@@ -35,8 +35,15 @@ const String bleEchelonServiceUuid = '0bf669f0-45f2-11e7-9598-0800200c9a66';
 const String bleEchelonSecondaryServiceUuid =
     '0bf669f1-45f2-11e7-9598-0800200c9a66';
 const String blePelotonUartServiceUuid = 'a026ee07-0a7d-4ab3-97fa-f1500f9feb8b';
+const String bleFlywheelName = 'Flywheel 1';
 const String bleFlywheelUartServiceUuid =
     '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+
+// Data characteristics the firmware subscribes to on a connected power meter.
+const String bleCyclingPowerMeasurementUuid = '2a63';
+const String bleCscMeasurementUuid = '2a5b';
+const String bleEchelonWriteUuid = '0bf669f2-45f2-11e7-9598-0800200c9a66';
+const String bleEchelonDataUuid = '0bf669f4-45f2-11e7-9598-0800200c9a66';
 
 const String bleCyclingPowerDeviceUuid = '0x$bleCyclingPowerServiceUuid';
 const String bleCyclingSpeedCadenceDeviceUuid =
@@ -93,7 +100,7 @@ const List<BleSensorServiceDefinition> supportedBleSensorServices = [
     advertisedUuid: bleFlywheelUartServiceUuid,
     deviceUuid: bleFlywheelUartServiceUuid,
     category: BleSensorCategory.powerMeter,
-    requiredName: 'Flywheel 1',
+    requiredName: bleFlywheelName,
   ),
 ];
 

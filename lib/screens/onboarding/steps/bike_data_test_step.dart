@@ -7,6 +7,7 @@ import '../../../utils/onboarding/wizard_session.dart';
 import '../../../utils/device_data.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../widgets/onboarding/instruction_step_card.dart';
+import '../../../widgets/onboarding/data_metric_tile.dart';
 
 class BikeDataTestStep extends StatefulWidget {
   const BikeDataTestStep({Key? key}) : super(key: key);
@@ -208,7 +209,7 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
-                        child: _MetricTile(
+                        child: DataMetricTile(
                           label: 'POWER',
                           value: _lastWatts,
                           unit: 'W',
@@ -218,7 +219,7 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: _MetricTile(
+                        child: DataMetricTile(
                           label: 'CADENCE',
                           value: _lastCadence,
                           unit: 'rpm',
@@ -270,97 +271,6 @@ class _BikeDataTestStepState extends State<BikeDataTestStep> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _MetricTile extends StatelessWidget {
-  final String label;
-  final int value;
-  final String unit;
-  final bool detected;
-  final IconData waitingIcon;
-
-  const _MetricTile({
-    required this.label,
-    required this.value,
-    required this.unit,
-    required this.detected,
-    required this.waitingIcon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final accent = detected
-        ? Colors.green
-        : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4);
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-      decoration: BoxDecoration(
-        color: detected
-            ? Colors.green.withValues(alpha: 0.12)
-            : theme.colorScheme.surfaceContainerHighest,
-        border: Border.all(
-          color: detected
-              ? Colors.green.withValues(alpha: 0.6)
-              : theme.colorScheme.outline.withValues(alpha: 0.25),
-          width: detected ? 1.5 : 1,
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              letterSpacing: 1.5,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-            ),
-          ),
-          const SizedBox(height: 12),
-          AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 150),
-            style: TextStyle(
-              fontSize: 48,
-              fontWeight: FontWeight.bold,
-              color: detected
-                  ? Colors.green.shade700
-                  : theme.colorScheme.onSurface,
-              height: 1.0,
-            ),
-            child: Text('$value'),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            unit,
-            style: TextStyle(
-              fontSize: 12,
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-            ),
-          ),
-          const SizedBox(height: 14),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 250),
-            child: Icon(
-              detected ? Icons.check_circle_rounded : waitingIcon,
-              key: ValueKey(detected),
-              color: accent,
-              size: 24,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            detected ? 'Detected' : 'Waiting…',
-            style: TextStyle(fontSize: 11, color: accent),
-          ),
-        ],
       ),
     );
   }
