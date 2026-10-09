@@ -84,7 +84,10 @@ class _CompatibilityCheckScreenState extends State<CompatibilityCheckScreen> {
   @override
   void initState() {
     super.initState();
-    _scanResultsSubscription = FlutterBluePlus.scanResults.listen(
+    // Not `scanResults`, which replays the last scan (often the scan screen's
+    // SmartSpin2k scan) to a new listener and would offer stale devices
+    // before the user has searched.
+    _scanResultsSubscription = FlutterBluePlus.onScanResults.listen(
       _onScanResults,
     );
     _isScanningSubscription = FlutterBluePlus.isScanning.listen((scanning) {
@@ -96,18 +99,40 @@ class _CompatibilityCheckScreenState extends State<CompatibilityCheckScreen> {
   void dispose() {
     _scanResultsSubscription?.cancel();
     _isScanningSubscription?.cancel();
-    unawaited(_stopScan());
+    if (!_scanReleased) unawaited(_stopScan());
     _retire(_checker);
     super.dispose();
   }
 
+  bool _scanReleased = false;
+
+  /// Stops this screen's scan as the route pops rather than at dispose, which
+  /// only comes after the pop animation: by then the screen underneath may
+  /// have started its own scan, and a late stop would end it. Start and stop
+  /// are serialised in call order, so stopping first keeps theirs running.
+  void _onPop(bool didPop, Object? _) {
+    if (!didPop || _scanReleased) return;
+    _scanReleased = true;
+    unawaited(_stopScan());
+  }
+
   void _onScanResults(List<ScanResult> results) {
-    final candidates = <_Candidate>[];
+    final found = <DeviceIdentifier, _Candidate>{};
     for (final result in results) {
       final kind = classifyCompatibilityCandidate(result.advertisementData);
-      if (kind != null) candidates.add(_Candidate(result, kind));
+      if (kind != null)
+        found[result.device.remoteId] = _Candidate(result, kind);
     }
-    candidates.sort((a, b) => b.result.rssi.compareTo(a.result.rssi));
+    // Keep every device where it first appeared, so a live RSSI change cannot
+    // move a tile under the user's finger. Only newcomers are ordered by
+    // signal, below the ones already shown.
+    final candidates = [
+      for (final shown in _candidates)
+        if (found.remove(shown.result.device.remoteId) case final updated?)
+          updated,
+      ...found.values.toList()
+        ..sort((a, b) => b.result.rssi.compareTo(a.result.rssi)),
+    ];
     if (mounted) setState(() => _candidates = candidates);
   }
 
@@ -204,30 +229,33 @@ class _CompatibilityCheckScreenState extends State<CompatibilityCheckScreen> {
       );
     }
 
-    return Scaffold(
-      backgroundColor: style.scaffoldBackground,
-      appBar: AppBar(
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
-        backgroundColor: Colors.transparent,
-        foregroundColor: style.foreground,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(gradient: style.appBarGradient),
+    return PopScope(
+      onPopInvokedWithResult: _onPop,
+      child: Scaffold(
+        backgroundColor: style.scaffoldBackground,
+        appBar: AppBar(
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+          backgroundColor: Colors.transparent,
+          foregroundColor: style.foreground,
+          flexibleSpace: Container(
+            decoration: BoxDecoration(gradient: style.appBarGradient),
+          ),
+          title: const Text('Is my bike compatible?'),
         ),
-        title: const Text('Is my bike compatible?'),
-      ),
-      body: Container(
-        decoration: BoxDecoration(gradient: style.scaffoldGradient),
-        child: DefaultTextStyle(
-          style:
-              theme.textTheme.bodyMedium?.copyWith(color: style.body) ??
-              TextStyle(color: style.body),
-          child: SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: body,
+        body: Container(
+          decoration: BoxDecoration(gradient: style.scaffoldGradient),
+          child: DefaultTextStyle(
+            style:
+                theme.textTheme.bodyMedium?.copyWith(color: style.body) ??
+                TextStyle(color: style.body),
+            child: SafeArea(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: body,
+                ),
               ),
             ),
           ),

@@ -12,6 +12,7 @@ import 'package:ss2kconfigapp/screens/scan_screen.dart';
 import 'package:ss2kconfigapp/utils/ble_sensor_services.dart';
 import 'package:ss2kconfigapp/utils/compatibility/compatibility_checker.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
+import 'package:ss2kconfigapp/utils/nearby_ble_devices.dart';
 import 'package:ss2kconfigapp/utils/onboarding/onboarding_state.dart';
 import 'package:ss2kconfigapp/utils/onboarding/wizard_session.dart';
 
@@ -268,6 +269,108 @@ void main() {
     await tester.tap(find.text('Is my bike compatible?'));
     await tester.pumpAndSettle();
     expect(find.byType(CompatibilityCheckScreen), findsOneWidget);
+
+    await tearDownTree(tester);
+  });
+
+  testWidgets('a previous scan is not offered before searching', (
+    tester,
+  ) async {
+    useTallScreen(tester);
+    // The scan screen's own scan, finished before the check is opened.
+    await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
+    platform.emitScanResult(
+      DeviceIdentifier('00:00:00:00:07:01'),
+      name: 'Old Bike',
+      serviceUuids: [bleFitnessMachineServiceUuid],
+    );
+    await tester.pump();
+    await FlutterBluePlus.stopScan();
+
+    await tester.pumpWidget(
+      const MaterialApp(home: CompatibilityCheckScreen()),
+    );
+    await tester.pump();
+    expect(find.text('Old Bike'), findsNothing);
+
+    await tearDownTree(tester);
+  });
+
+  testWidgets('tiles keep their place as signal strength changes', (
+    tester,
+  ) async {
+    useTallScreen(tester);
+    final near = DeviceIdentifier('00:00:00:00:07:02');
+    final far = DeviceIdentifier('00:00:00:00:07:03');
+    await tester.pumpWidget(
+      const MaterialApp(home: CompatibilityCheckScreen()),
+    );
+    await tester.tap(find.text('Find my bike'));
+    await tester.pump();
+
+    platform.emitScanResult(
+      near,
+      name: 'Near Bike',
+      serviceUuids: [bleFitnessMachineServiceUuid],
+      rssi: -50,
+    );
+    platform.emitScanResult(
+      far,
+      name: 'Far Bike',
+      serviceUuids: [bleFitnessMachineServiceUuid],
+      rssi: -80,
+    );
+    await pumpUntil(tester, find.text('Far Bike'));
+
+    double top(String name) => tester.getTopLeft(find.text(name)).dy;
+    expect(top('Near Bike'), lessThan(top('Far Bike')));
+
+    // The far bike becomes the strongest; nothing moves.
+    platform.emitScanResult(
+      far,
+      name: 'Far Bike',
+      serviceUuids: [bleFitnessMachineServiceUuid],
+      rssi: -40,
+    );
+    platform.emitScanResult(
+      DeviceIdentifier('00:00:00:00:07:04'),
+      name: 'New Bike',
+      serviceUuids: [bleFitnessMachineServiceUuid],
+      rssi: -30,
+    );
+    await pumpUntil(tester, find.text('New Bike'));
+    expect(top('Near Bike'), lessThan(top('Far Bike')));
+    // A newcomer goes below the devices already shown, however strong.
+    expect(top('Far Bike'), lessThan(top('New Bike')));
+
+    await tearDownTree(tester);
+  });
+
+  testWidgets('the scan screen ignores the check scan and rescans on return', (
+    tester,
+  ) async {
+    useTallScreen(tester);
+    await tester.pumpWidget(const MaterialApp(home: ScanScreen()));
+    await tester.tap(find.text('Is my bike compatible?'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Find my bike'));
+    await tester.pump();
+    platform.emitScanResult(
+      DeviceIdentifier('00:00:00:00:07:05'),
+      name: 'Compat Only Meter',
+      serviceUuids: [bleCyclingPowerServiceUuid],
+    );
+    await pumpUntil(tester, find.text('Compat Only Meter'));
+    expect(
+      NearbyBleDevices.instance.devices.map((d) => d.name),
+      isNot(contains('Compat Only Meter')),
+    );
+
+    await FlutterBluePlus.stopScan();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(FlutterBluePlus.isScanningNow, isTrue);
 
     await tearDownTree(tester);
   });

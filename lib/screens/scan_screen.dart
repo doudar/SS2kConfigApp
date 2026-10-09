@@ -51,6 +51,9 @@ class _ScanScreenState extends State<ScanScreen> {
 
   StreamSubscription<List<ScanResult>>? _scanResultsSubscription;
   StreamSubscription<bool>? _isScanningSubscription;
+  // The compatibility check runs its own unfiltered scan through the same
+  // FlutterBluePlus streams; none of it is SmartSpin2k discovery.
+  bool _compatibilityCheckOpen = false;
   int _tapCount = 0; // Tap counter
   bool _showDemoButton = false; // Initially, the demo button is not shown
 
@@ -61,6 +64,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
     _scanResultsSubscription = FlutterBluePlus.scanResults.listen(
       (results) {
+        if (_compatibilityCheckOpen) return;
         NearbyBleDevices.instance.observeAll(results);
         DeviceDataManager.refreshNearbyDevices();
         _scanResults = results;
@@ -265,9 +269,16 @@ class _ScanScreenState extends State<ScanScreen> {
     // keep restarting under it.
     if (_isScanning) await onStopPressed();
     if (!mounted) return;
+    _compatibilityCheckOpen = true;
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const CompatibilityCheckScreen()));
+    _compatibilityCheckOpen = false;
+    // Same as returning from a device: the list is stale and the SmartSpin2k
+    // scan was stopped to make way for the check, so start a fresh one.
+    if (!mounted) return;
+    setState(() => _scanResults = []);
+    if (!_showDemoButton) unawaited(onScanPressed());
   }
 
   Widget _buildSecondaryAction({
