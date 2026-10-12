@@ -11,6 +11,7 @@ import '../../../utils/onboarding/wizard_session.dart';
 import '../../../utils/snackbar.dart';
 import '../../../utils/demo.dart';
 import '../../../utils/dircon_discovery.dart';
+import '../../../utils/web_bluetooth_services.dart';
 import '../../../utils/smartspin_scan_result.dart';
 import '../../../utils/nearby_ble_devices.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
@@ -64,7 +65,8 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
     _isScanningSubscription = FlutterBluePlus.isScanning.listen((state) {
       if (mounted) setState(() => _bleScanning = state);
     });
-    _startScan();
+    // Browser device selection must originate from the Scan button gesture.
+    if (!kIsWeb) _startScan();
   }
 
   @override
@@ -82,6 +84,7 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
       if (kIsWeb) {
         await FlutterBluePlus.startScan(
           withServices: [Guid(csUUID)],
+          webOptionalServices: webBluetoothServices,
           timeout: const Duration(seconds: 15),
         );
       } else {
