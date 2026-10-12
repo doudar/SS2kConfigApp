@@ -28,6 +28,7 @@ import 'smartspin_advertisement.dart';
 import 'virtual_gearing.dart';
 import 'nearby_ble_devices.dart';
 import 'workout_control_lane.dart';
+import 'compatibility/sensor_decoders.dart';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/snackbar.dart';
@@ -2756,75 +2757,19 @@ class DeviceData {
         return;
       }
 
-      Uint8List data = Uint8List.fromList(value);
-      ByteData byteData = ByteData.sublistView(data);
+      final sample = decodeIndoorBikeData(value)!;
 
-      int flags = byteData.getUint16(0, Endian.little);
-      int index = 2;
+      // Reset fields. Resistance deliberately keeps its last value when a
+      // packet omits it.
+      ftmsData.cadence = sample.cadence ?? 0;
+      ftmsData.watts = sample.power ?? 0;
+      ftmsData.heartRate = sample.heartRate ?? 0;
+      ftmsData.speed = sample.speed ?? 0;
+      if (sample.resistance != null) ftmsData.resistance = sample.resistance!;
 
-      bool hasBytes(int requiredBytes) =>
-          (index + requiredBytes) <= byteData.lengthInBytes;
-
-      // Reset fields
-      ftmsData.cadence = 0;
-      ftmsData.watts = 0;
-      ftmsData.heartRate = 0;
-      ftmsData.speed = 0;
-
-      if (!hasBytes(2)) {
-        return;
-      }
-      ftmsData.speed =
-          byteData.getUint16(index, Endian.little) ~/ 100; // resolution 0.01
-      index += 2;
-
-      if ((flags & (1 << 1)) != 0) {
-        if (!hasBytes(2)) return;
-        index += 2;
-      }
-
-      if ((flags & (1 << 2)) != 0) {
-        if (!hasBytes(2)) return;
-        ftmsData.cadence =
-            byteData.getUint16(index, Endian.little) ~/ 2; // resolution 0.5
-        index += 2;
-      }
-
-      if ((flags & (1 << 3)) != 0) {
-        if (!hasBytes(2)) return;
-        index += 2;
-      }
-      if ((flags & (1 << 4)) != 0) {
-        if (!hasBytes(3)) return;
-        index += 3;
-      }
-
-      if ((flags & (1 << 5)) != 0) {
-        if (!hasBytes(2)) return;
-        ftmsData.resistance = byteData.getInt16(index, Endian.little);
-        index += 2;
-      }
-
-      if ((flags & (1 << 6)) != 0) {
-        if (!hasBytes(2)) return;
-        ftmsData.watts = byteData.getInt16(index, Endian.little);
-        index += 2;
-      }
-
-      if ((flags & (1 << 7)) != 0) {
-        if (!hasBytes(2)) return;
-        index += 2;
-      }
-      if ((flags & (1 << 8)) != 0) {
-        if (!hasBytes(1)) return;
-        index += 1;
-      }
-
-      if ((flags & (1 << 9)) != 0) {
-        if (!hasBytes(1)) return;
-        ftmsData.heartRate = byteData.getUint8(index);
-        index += 1;
-      }
+      // A truncated packet updates the fields it did carry but is not
+      // published.
+      if (!sample.complete) return;
 
       if (DirConClient.diagnosticsEnabled && isDirConConnected) {
         print(

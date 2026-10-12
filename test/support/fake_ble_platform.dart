@@ -66,6 +66,29 @@ typedef BleWriteCall = ({
   List<int> value,
 });
 
+/// One characteristic of a [FakeGattService].
+class FakeGattCharacteristic {
+  const FakeGattCharacteristic(
+    this.uuid, {
+    this.notify = true,
+    this.indicate = false,
+    this.notifyEncryptionRequired = false,
+  });
+
+  final String uuid;
+  final bool notify;
+  final bool indicate;
+  final bool notifyEncryptionRequired;
+}
+
+/// A primary service for [FakeBlePlatform.discoveredServices].
+class FakeGattService {
+  const FakeGattService(this.uuid, this.characteristics);
+
+  final String uuid;
+  final List<FakeGattCharacteristic> characteristics;
+}
+
 /// Only the members these tests exercise are overridden; every other member of
 /// [FlutterBluePlusPlatform] already has a usable default.
 final class FakeBlePlatform extends FlutterBluePlusPlatform {
@@ -94,6 +117,8 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   // initState rather than a modelled reading.
   final StreamController<BmReadRssiResult> _readRssiResults =
       StreamController<BmReadRssiResult>.broadcast();
+  final StreamController<BmScanResponse> _scanResponses =
+      StreamController<BmScanResponse>.broadcast();
 
   /// The value [readRssi] reports. -55 lands in the strongest band.
   int rssiReading = -55;
@@ -102,6 +127,18 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   /// without Machine Status and a discovery pass that missed it — the two cases
   /// the epoch-scoped re-probe exists to tell apart.
   bool discoveryIncludesMachineStatus = true;
+
+  /// When set, discovery reports exactly these services instead of the
+  /// SmartSpin2k's, for code that connects to other devices.
+  List<FakeGattService>? discoveredServices;
+
+  /// Whether `disconnect` takes effect. Off by default: a disconnect that
+  /// reports "already disconnected" leaves the link up, which the
+  /// SmartSpin2k tests were written against.
+  bool modelDisconnect = false;
+
+  /// Every `disconnect` request, in order.
+  final List<DeviceIdentifier> disconnectCalls = [];
 
   /// How many times discovery actually reached the platform. The re-probe is
   /// budgeted at one per connection epoch, which is only observable here.
@@ -171,6 +208,35 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
 
   final Set<String> _permanentStaleNotifyUuids = {};
 
+  final Map<String, ({Object error, int? remaining})> _notifyFailures = {};
+
+  /// Makes `setNotifyValue` for [uuid] throw [error] — unlike
+  /// [failNotifyAsStaleService] the error is the caller's own, and nothing
+  /// clears it but [reset] or running out of [times] (null means every call).
+  void failNotify(String uuid, Object error, {int? times}) {
+    _notifyFailures[_key(uuid)] = (error: error, remaining: times);
+  }
+
+  /// When true, `connect` is accepted by the platform but the connected event
+  /// is withheld until [releaseHeldConnects]; a `disconnect` meanwhile cancels
+  /// the attempt the way the real plugins do (FlutterBluePlus's `connect` then
+  /// throws "connection canceled").
+  bool holdConnects = false;
+  final Set<DeviceIdentifier> _heldConnects = {};
+
+  /// Whether a connect for [remoteId] is currently being held.
+  bool isConnectHeld(DeviceIdentifier remoteId) =>
+      _heldConnects.contains(remoteId);
+
+  /// Completes every held connect successfully and stops holding new ones.
+  void releaseHeldConnects() {
+    holdConnects = false;
+    for (final remoteId in List.of(_heldConnects)) {
+      _heldConnects.remove(remoteId);
+      markConnected(remoteId);
+    }
+  }
+
   /// Parks a `setNotifyValue` for [uuid] until [releaseNotifyGate], so a test
   /// can take a block while an enable is still in flight.
   void holdNotifyGate(String uuid) {
@@ -199,16 +265,47 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   void emitNotification(
     DeviceIdentifier remoteId,
     String uuid,
-    List<int> value,
-  ) {
+    List<int> value, {
+    String? serviceUuid,
+  }) {
     _characteristicReceived.add(
       BmCharacteristicData(
         remoteId: remoteId,
         primaryServiceUuid: null,
-        serviceUuid: Guid(ftmsServiceUUID),
+        serviceUuid: Guid(serviceUuid ?? ftmsServiceUUID),
         characteristicUuid: Guid(uuid),
         instanceId: 0,
         value: List<int>.from(value),
+        success: true,
+        errorCode: 0,
+        errorString: '',
+      ),
+    );
+  }
+
+  /// Reports one advertisement to a running scan.
+  void emitScanResult(
+    DeviceIdentifier remoteId, {
+    required String name,
+    required List<String> serviceUuids,
+    int rssi = -50,
+  }) {
+    _scanResponses.add(
+      BmScanResponse(
+        advertisements: [
+          BmScanAdvertisement(
+            remoteId: remoteId,
+            platformName: name,
+            advName: name,
+            connectable: true,
+            txPowerLevel: null,
+            appearance: null,
+            manufacturerData: const {},
+            serviceData: const {},
+            serviceUuids: [for (final uuid in serviceUuids) Guid(uuid)],
+            rssi: rssi,
+          ),
+        ],
         success: true,
         errorCode: 0,
         errorString: '',
@@ -249,11 +346,17 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     _writeGates.clear();
     _writeGateWaiters.clear();
     connectCalls.clear();
+    disconnectCalls.clear();
+    discoveredServices = null;
+    modelDisconnect = false;
     discoveryIncludesMachineStatus = true;
     discoveryCount = 0;
     answerCustomRequests = true;
     _staleNotifyUuids.clear();
     _permanentStaleNotifyUuids.clear();
+    _notifyFailures.clear();
+    holdConnects = false;
+    _heldConnects.clear();
   }
 
   @override
@@ -270,27 +373,32 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     _staleNotifyUuids.removeWhere(
       (uuid) => !_permanentStaleNotifyUuids.contains(uuid),
     );
-    BmBluetoothCharacteristic characteristic(String service, String uuid) =>
-        BmBluetoothCharacteristic(
-          remoteId: request.remoteId,
-          primaryServiceUuid: null,
-          serviceUuid: Guid(service),
-          characteristicUuid: Guid(uuid),
-          instanceId: 0,
-          descriptors: [],
-          properties: BmCharacteristicProperties(
-            broadcast: false,
-            read: true,
-            writeWithoutResponse: false,
-            write: true,
-            notify: true,
-            indicate: false,
-            authenticatedSignedWrites: false,
-            extendedProperties: false,
-            notifyEncryptionRequired: false,
-            indicateEncryptionRequired: false,
-          ),
-        );
+    BmBluetoothCharacteristic characteristic(
+      String service,
+      String uuid, {
+      bool notify = true,
+      bool indicate = false,
+      bool notifyEncryptionRequired = false,
+    }) => BmBluetoothCharacteristic(
+      remoteId: request.remoteId,
+      primaryServiceUuid: null,
+      serviceUuid: Guid(service),
+      characteristicUuid: Guid(uuid),
+      instanceId: 0,
+      descriptors: [],
+      properties: BmCharacteristicProperties(
+        broadcast: false,
+        read: true,
+        writeWithoutResponse: false,
+        write: true,
+        notify: notify,
+        indicate: indicate,
+        authenticatedSignedWrites: false,
+        extendedProperties: false,
+        notifyEncryptionRequired: notifyEncryptionRequired,
+        indicateEncryptionRequired: false,
+      ),
+    );
 
     BmBluetoothService service(String uuid, List<String> characteristics) =>
         BmBluetoothService(
@@ -305,14 +413,33 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     _discoveredServices.add(
       BmDiscoverServicesResult(
         remoteId: request.remoteId,
-        services: [
-          service(csUUID, [ccUUID]),
-          service(ftmsServiceUUID, [
-            _indoorBikeUuid,
-            FTMS_CONTROL_POINT_CHARACTERISTIC_UUID,
-            if (discoveryIncludesMachineStatus) _machineStatusUuid,
-          ]),
-        ],
+        services: discoveredServices != null
+            ? [
+                for (final fake in discoveredServices!)
+                  BmBluetoothService(
+                    remoteId: request.remoteId,
+                    primaryServiceUuid: null,
+                    serviceUuid: Guid(fake.uuid),
+                    characteristics: [
+                      for (final c in fake.characteristics)
+                        characteristic(
+                          fake.uuid,
+                          c.uuid,
+                          notify: c.notify,
+                          indicate: c.indicate,
+                          notifyEncryptionRequired: c.notifyEncryptionRequired,
+                        ),
+                    ],
+                  ),
+              ]
+            : [
+                service(csUUID, [ccUUID]),
+                service(ftmsServiceUUID, [
+                  _indoorBikeUuid,
+                  FTMS_CONTROL_POINT_CHARACTERISTIC_UUID,
+                  if (discoveryIncludesMachineStatus) _machineStatusUuid,
+                ]),
+              ],
         success: true,
         errorCode: 0,
         errorString: '',
@@ -332,6 +459,22 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
       _notifyGateWaiters[uuid] = (_notifyGateWaiters[uuid] ?? 0) + 1;
       await gate.future;
       _notifyGateWaiters[uuid] = (_notifyGateWaiters[uuid] ?? 1) - 1;
+    }
+    final injected = _notifyFailures[uuid];
+    if (injected != null) {
+      notifyCalls.add((uuid: uuid, enable: request.enable));
+      final remaining = injected.remaining;
+      if (remaining != null) {
+        if (remaining <= 1) {
+          _notifyFailures.remove(uuid);
+        } else {
+          _notifyFailures[uuid] = (
+            error: injected.error,
+            remaining: remaining - 1,
+          );
+        }
+      }
+      throw injected.error;
     }
     if (_staleNotifyUuids.contains(uuid)) {
       notifyCalls.add((uuid: uuid, enable: request.enable));
@@ -368,6 +511,15 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   Stream<BmReadRssiResult> get onReadRssi => _readRssiResults.stream;
 
   @override
+  Stream<BmScanResponse> get onScanResponse => _scanResponses.stream;
+
+  @override
+  Future<bool> startScan(BmScanSettings request) async => true;
+
+  @override
+  Future<bool> stopScan(BmStopScanRequest request) async => true;
+
+  @override
   Future<bool> readRssi(BmReadRssiRequest request) async {
     // The plugin subscribes to onReadRssi before awaiting this call's result,
     // so the reading has to land after we return, not during.
@@ -396,9 +548,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   ) async => BmBluetoothAdapterState(adapterState: BmAdapterStateEnum.on);
 
   @override
-  Future<bool> writeCharacteristic(
-    BmWriteCharacteristicRequest request,
-  ) async {
+  Future<bool> writeCharacteristic(BmWriteCharacteristicRequest request) async {
     final gateKey = _key(request.characteristicUuid.str);
     final gate = _writeGates[gateKey];
     if (gate != null) {
@@ -433,9 +583,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
             // This harness models firmware from before 0x31. Unknown reads
             // are explicitly rejected, which exercises the production app's
             // legacy per-setting fallback without weakening its strict rule.
-            value: reference == 0x31
-                ? const [0xff, 0x31]
-                : [0x80, reference],
+            value: reference == 0x31 ? const [0xff, 0x31] : [0x80, reference],
             success: true,
             errorCode: 0,
             errorString: '',
@@ -460,7 +608,10 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     return true;
   }
 
+  final Set<DeviceIdentifier> _connected = {};
+
   void markConnected(DeviceIdentifier remoteId) {
+    _connected.add(remoteId);
     _connectionStates.add(
       BmConnectionStateResponse(
         remoteId: remoteId,
@@ -472,6 +623,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   }
 
   void markDisconnected(DeviceIdentifier remoteId) {
+    _connected.remove(remoteId);
     _connectionStates.add(
       BmConnectionStateResponse(
         remoteId: remoteId,
@@ -480,6 +632,31 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
         disconnectReasonString: null,
       ),
     );
+  }
+
+  @override
+  Future<bool> disconnect(BmDisconnectRequest request) async {
+    disconnectCalls.add(request.remoteId);
+    if (_heldConnects.remove(request.remoteId)) {
+      scheduleMicrotask(
+        () => _connectionStates.add(
+          BmConnectionStateResponse(
+            remoteId: request.remoteId,
+            connectionState: BmConnectionStateEnum.disconnected,
+            disconnectReasonCode: bmUserCanceledErrorCode,
+            disconnectReasonString: 'canceled',
+          ),
+        ),
+      );
+      return true;
+    }
+    // Like the real plugins, report "changed" only for a live link; the
+    // plugin waits for a disconnected event only in that case.
+    if (!modelDisconnect || !_connected.contains(request.remoteId)) {
+      return false;
+    }
+    scheduleMicrotask(() => markDisconnected(request.remoteId));
+    return true;
   }
 
   // The real plugin resolves `connect()` first and only then publishes the
@@ -493,6 +670,10 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     connectCalls.add(request);
     final failure = connectFailure;
     if (failure != null) throw failure;
+    if (holdConnects) {
+      _heldConnects.add(request.remoteId);
+      return true;
+    }
     scheduleMicrotask(() => markConnected(request.remoteId));
     return true;
   }
@@ -578,10 +759,7 @@ class BleHarness {
 
 /// Runs [body] with every `print` line also appended to [sink], so a test can
 /// assert on a specific transport log line without silencing normal output.
-Future<void> withPrintCapture(
-  List<String> sink,
-  Future<void> Function() body,
-) {
+Future<void> withPrintCapture(List<String> sink, Future<void> Function() body) {
   return runZoned(
     body,
     zoneSpecification: ZoneSpecification(
