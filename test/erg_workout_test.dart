@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:clock/clock.dart';
 import 'package:fake_async/fake_async.dart';
+import 'package:fit_tool/fit_tool.dart';
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -37,6 +38,133 @@ void main() {
       await tempDir!.delete(recursive: true);
     }
   });
+
+  const timestampWorkout = '''
+<workout_file><name>Timestamp check</name><workout>
+  <SteadyState Duration="300" Power="1.0" />
+</workout></workout_file>
+''';
+
+  void recordThreeSeconds(WorkoutController controller, DateTime start) {
+    fakeAsync((async) {
+      withClock(async.getClock(start), () {
+        controller.isPlaying = true;
+        controller.startProgress();
+        // Allow one extra timer tick for floating-point accumulation at the
+        // whole-second boundary, including after resuming.
+        async.elapse(const Duration(milliseconds: 3100));
+        controller.progressTimer?.cancel();
+      });
+    });
+  }
+
+  Future<void> expectFitDates(
+    WorkoutController controller,
+    DateTime rideStart,
+    String filename,
+  ) async {
+    final points = await controller.getExportTrackPoints();
+    expect(points, hasLength(3));
+    final gpx = await GpxFileExporter.generateGpxContent(
+      'Timestamp check',
+      points,
+    );
+    final file = File(path.join(tempDir!.path, '$filename.gpx'));
+    await file.writeAsString(gpx);
+    final fitPath = await GpxToFitConverter.convertGpxToFit(file.path);
+    final fit = FitFile.fromBytes(await File(fitPath).readAsBytes());
+    final messages = fit.records.map((record) => record.message).toList();
+    // Recording samples start one second into the ride.
+    final first = rideStart
+        .add(const Duration(seconds: 1))
+        .millisecondsSinceEpoch;
+    final last = rideStart
+        .add(const Duration(seconds: 3))
+        .millisecondsSinceEpoch;
+    expect(messages.whereType<FileIdMessage>().single.timeCreated, first);
+    expect(messages.whereType<EventMessage>().single.timestamp, first);
+    expect(messages.whereType<LapMessage>().single.startTime, first);
+    final session = messages.whereType<SessionMessage>().single;
+    expect(session.startTime, first);
+    expect(session.timestamp, last);
+    expect(session.totalTimerTime, 2);
+    expect(messages.whereType<ActivityMessage>().single.timestamp, last);
+    final records = messages.whereType<RecordMessage>().toList();
+    expect(records.map((record) => record.timestamp), [
+      first,
+      first + 1000,
+      last,
+    ]);
+    expect(records.map((record) => record.power), everyElement(250));
+    expect(records.map((record) => record.cadence), everyElement(85));
+    expect(records.map((record) => record.heartRate), everyElement(150));
+  }
+
+  for (final resetSameWorkout in [true, false]) {
+    test(
+      '${resetSameWorkout ? 'Resetting' : 'Loading'} a workout gives the next FIT its own date',
+      () async {
+        final data = DeviceData();
+        final controller = WorkoutController(
+          data,
+          BluetoothDevice.fromId('00:00:00:00:00:02'),
+        );
+        addTearDown(() {
+          controller.cleanup();
+          data.dispose();
+        });
+        await Future<void>.delayed(Duration.zero);
+        data.ftmsData = FtmsData()
+          ..watts = 250
+          ..cadence = 85
+          ..heartRate = 150;
+        controller.loadWorkout(timestampWorkout);
+        final firstStart = DateTime.utc(2026, 10, 10, 15);
+        recordThreeSeconds(controller, firstStart);
+        await controller.togglePlayPause();
+        await expectFitDates(controller, firstStart, 'first');
+
+        if (resetSameWorkout) {
+          controller.resetWorkout();
+        } else {
+          controller.loadWorkout(timestampWorkout.replaceFirst('300', '600'));
+        }
+        final nextStart = DateTime.utc(2026, 10, 12, 17, 30);
+        recordThreeSeconds(controller, nextStart);
+        await controller.togglePlayPause();
+        await expectFitDates(controller, nextStart, 'second');
+      },
+    );
+  }
+
+  test(
+    'Pausing and resuming preserves the current ride timestamp base',
+    () async {
+      final data = DeviceData();
+      final controller = WorkoutController(
+        data,
+        BluetoothDevice.fromId('00:00:00:00:00:03'),
+      );
+      addTearDown(() {
+        controller.cleanup();
+        data.dispose();
+      });
+      await Future<void>.delayed(Duration.zero);
+      controller.loadWorkout(timestampWorkout);
+      final start = DateTime.utc(2026, 10, 10, 15);
+      recordThreeSeconds(controller, start);
+      await controller.togglePlayPause();
+      // A resumed load must also retain the existing ride's timestamp base.
+      controller.loadWorkout(timestampWorkout, isResume: true);
+      recordThreeSeconds(controller, start.add(const Duration(minutes: 5)));
+      await controller.togglePlayPause();
+      expect(controller.trackPoints, hasLength(6));
+      expect(
+        controller.trackPoints.map((point) => point.timestamp),
+        List.generate(6, (index) => start.add(Duration(seconds: index + 1))),
+      );
+    },
+  );
 
   test('Generate 1-hour ERG workout FIT file', () async {
     // Create a constant power workout XML content

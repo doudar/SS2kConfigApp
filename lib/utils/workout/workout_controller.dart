@@ -634,6 +634,9 @@ class WorkoutController extends ChangeNotifier {
 
       // Only reset these values if it's not a resume
       if (!isResume) {
+        // The controller is reused across rides. Set a fresh timestamp when
+        // the next ride starts, rather than retaining the previous ride's date.
+        _workoutStartTime = null;
         progressPosition = 0;
         actualPowerPoints = {};
         actualHrPoints = {};
