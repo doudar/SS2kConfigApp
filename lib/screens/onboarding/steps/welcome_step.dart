@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../utils/onboarding/wizard_step_machine.dart';
 import '../../../utils/onboarding/wizard_session.dart';
-import '../../../widgets/onboarding/onboarding_panel.dart';
+import '../../../widgets/smartspin_introduction.dart';
 import '../../../widgets/onboarding/wizard_scaffold.dart';
 import '../../../utils/demo.dart' show demoModeBypass;
 
@@ -31,10 +31,10 @@ class _WelcomeStepState extends State<WelcomeStep> {
   Widget build(BuildContext context) {
     final session = context.read<WizardSession>();
     final machine = WizardStepMachine();
-    final theme = Theme.of(context);
 
     return WizardScaffold(
       title: 'Welcome',
+      nextLabel: 'Set up my hardware',
       stepId: WizardStepId.welcome,
       onNext: () {
         final next = machine.nextStep(
@@ -49,47 +49,25 @@ class _WelcomeStepState extends State<WelcomeStep> {
       body: Stack(
         children: [
           SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: OnboardingPanel(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  OnboardingBadge.icon(Icons.tune),
-                  const SizedBox(height: 16),
-                  Text(
-                    "Let's set up your SmartSpin2k",
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'This guided setup will walk you through the essentials, then hand you off to the main app ready to ride.',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(
-                        alpha: theme.brightness == Brightness.light
-                            ? 0.82
-                            : 0.86,
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 960),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SmartSpinIntroduction(),
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(8, 20, 8, 12),
+                      child: Text(
+                        'Already have your SmartSpin2k? We’ll guide you '
+                        'through installation, connection and your bike’s data source. '
+                        'If it’s already set up, use Exit Setup to find your device.',
+                        style: TextStyle(height: 1.5),
                       ),
-                      height: 1.5,
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  const OnboardingChecklistItem('Select your bike type'),
-                  const OnboardingChecklistItem(
-                    'Install the SmartSpin2k hardware',
-                  ),
-                  const OnboardingChecklistItem(
-                    'Connect your SmartSpin2k via Bluetooth',
-                  ),
-                  const OnboardingChecklistItem(
-                    'Pair and verify your data source',
-                  ),
-                  const OnboardingChecklistItem(
-                    'Optionally add heart rate and WiFi',
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

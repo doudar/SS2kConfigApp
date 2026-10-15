@@ -48,6 +48,20 @@ A Flutter-based mobile application for controlling and configuring SmartSpin2K d
 
 ## Development
 
+### Opening screens
+
+First-run setup and empty device discovery share `SmartSpinIntroduction`, which
+explains the physical hardware, automatic resistance, ERG targets and virtual
+shifting. It reuses the bundled `assets/ss2kv3.png` product render (no extra
+download or video). Connection actions remain above the introduction on phones
+and alongside it on wide screens; discovered devices take priority.
+
+Run `flutter test test/hardware_introduction_test.dart` for phone, landscape,
+large-text and setup-navigation checks. Add `--dart-define=INTRO_SCREENSHOTS=true`
+to render the actual screens into `build/intro-*.png`. The test loads local Flutter
+fonts for portable captures. Run the native demo walkthrough on Windows with
+`flutter test integration_test/hardware_introduction_test.dart -d windows`.
+
 ### Crank Quest arcade workouts
 
 Open a workout and tap the **gamepad** in the app bar to enter Arcade mode.
