@@ -14,6 +14,20 @@ import 'package:ss2kconfigapp/utils/onboarding/wizard_session.dart';
 import 'package:ss2kconfigapp/utils/theme_provider.dart';
 import 'package:ss2kconfigapp/widgets/smartspin_introduction.dart';
 
+File _findFlutterFont(String name) {
+  var folder = File(Platform.resolvedExecutable).parent;
+  while (true) {
+    // Flutter SDK artifacts can use either casing on case-sensitive hosts.
+    for (final filename in [name, name.toLowerCase()]) {
+      final file = File('${folder.path}/material_fonts/$filename');
+      if (file.existsSync()) return file;
+    }
+    if (folder.parent.path == folder.path) break;
+    folder = folder.parent;
+  }
+  throw StateError('Could not locate $name in the Flutter SDK.');
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -27,17 +41,8 @@ void main() {
   ) async {
     final screenshots = const bool.fromEnvironment('INTRO_SCREENSHOTS');
     await tester.runAsync(() async {
-      var folder = File(Platform.resolvedExecutable).parent;
-      while (!File(
-            '${folder.path}/material_fonts/roboto-regular.ttf',
-          ).existsSync() &&
-          folder.parent.path != folder.path) {
-        folder = folder.parent;
-      }
       final bytes = ByteData.sublistView(
-        File(
-          '${folder.path}/material_fonts/roboto-regular.ttf',
-        ).readAsBytesSync(),
+        _findFlutterFont('Roboto-Regular.ttf').readAsBytesSync(),
       );
       for (final family in ['Ahem', 'Roboto', 'Segoe UI']) {
         await (FontLoader(family)..addFont(Future.value(bytes))).load();
@@ -45,9 +50,7 @@ void main() {
       await (FontLoader('MaterialIcons')..addFont(
             Future.value(
               ByteData.sublistView(
-                File(
-                  '${folder.path}/material_fonts/materialicons-regular.otf',
-                ).readAsBytesSync(),
+                _findFlutterFont('MaterialIcons-Regular.otf').readAsBytesSync(),
               ),
             ),
           ))
