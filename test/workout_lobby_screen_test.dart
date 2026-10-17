@@ -66,18 +66,11 @@ void main() {
       addTearDown(() => debugWorkoutPainterFontFamily = null);
       FlutterBluePlusPlatform.instance = _BlePlatform();
       WakelockPlusPlatformInterface.instance = _WakelockPlatform();
-      SharedPreferences.setMockInitialValues({'workout_tts_enabled': false});
-      final messenger = tester.binding.defaultBinaryMessenger;
-      const audioChannel = MethodChannel('com.ryanheise.just_audio.methods');
-      messenger.setMockMethodCallHandler(audioChannel, (call) async {
-        if (call.method == 'init') {
-          throw PlatformException(
-            code: 'test',
-            message: 'Audio disabled in widget test',
-          );
-        }
-        return <String, Object>{};
+      SharedPreferences.setMockInitialValues({
+        'workout_tts_enabled': false,
+        'workout_sound_effects_enabled': false,
       });
+      final messenger = tester.binding.defaultBinaryMessenger;
       final directory = await tester.runAsync(
         () => Directory.systemTemp.createTemp('workout_lobby_'),
       );
@@ -110,7 +103,6 @@ void main() {
         data.dispose();
         messenger.setMockMethodCallHandler(pathChannel, null);
         messenger.setMockMethodCallHandler(ttsChannel, null);
-        messenger.setMockMethodCallHandler(audioChannel, null);
         tester.view.resetPhysicalSize();
         tester.view.resetDevicePixelRatio();
         await directory!.delete(recursive: true);
