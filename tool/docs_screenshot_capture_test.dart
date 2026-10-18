@@ -39,6 +39,7 @@ import 'package:ss2kconfigapp/utils/onboarding/onboarding_state.dart';
 import 'package:ss2kconfigapp/utils/onboarding/wizard_session.dart';
 import 'package:ss2kconfigapp/utils/presets.dart';
 import 'package:ss2kconfigapp/utils/theme_provider.dart';
+import 'package:ss2kconfigapp/widgets/scan_result_tile.dart';
 import 'package:ss2kconfigapp/widgets/setting_tile.dart';
 import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
@@ -418,13 +419,16 @@ void main() {
     _expectTexts([
       'Welcome',
       'Exit Setup',
-      "Let's set up your SmartSpin2k",
-      'Select your bike type',
-      'Install the SmartSpin2k hardware',
-      'Connect your SmartSpin2k via Bluetooth',
-      'Pair and verify your data source',
-      'Optionally add heart rate and WiFi',
+      'MEET SMARTSPIN2K',
+      'Your spin bike.\nA smarter ride.',
+      'Hardware required',
+      'Set up my hardware',
     ]);
+    // Capture the top of the scrollable introduction with the fixed setup
+    // controls visible; do not scroll to the former welcome checklist.
+    expect(find.text('MEET SMARTSPIN2K').hitTestable(), findsOneWidget);
+    expect(find.text('Set up my hardware').hitTestable(), findsOneWidget);
+    expect(find.text('Exit Setup').hitTestable(), findsOneWidget);
     await _writeCapture(tester, 'wizard-welcome-exit');
     await _unmount(tester);
     OnboardingState.completedNotifier.value = true;
@@ -432,11 +436,13 @@ void main() {
     // --- scan-empty ----------------------------------------------------------
     await _pumpScreen(tester, theme, const ScanScreen(), isHome: true);
     _expectTexts([
-      'Find Your SmartSpin2k:',
+      'Ready to ride?',
       'SCAN',
       'Guided Setup',
-      'Having Trouble?',
+      'Having trouble connecting?',
     ]);
+    expect(find.text('SCAN').hitTestable(), findsOneWidget);
+    expect(find.text('Guided Setup').hitTestable(), findsOneWidget);
     await _writeCapture(tester, 'scan-empty');
 
     // --- scan-found (same mounted ScanScreen) --------------------------------
@@ -453,7 +459,19 @@ void main() {
     expect(demoButton, findsOneWidget);
     await tester.tap(demoButton);
     await _pumpStableFrame(tester);
-    _expectTexts(['Find Your SmartSpin2k:', 'SmartSpin2k', 'CONNECT']);
+    // Results precede the connection panel. Keep the device and CONNECT
+    // action in view even if a preceding capture changes the scroll offset.
+    await tester.ensureVisible(find.byType(ScanResultTile));
+    await _pumpStableFrame(tester);
+    _expectTexts(['Ready to ride?', 'CONNECT']);
+    expect(
+      find.descendant(
+        of: find.byType(ScanResultTile),
+        matching: find.text('SmartSpin2k'),
+      ).hitTestable(),
+      findsOneWidget,
+    );
+    expect(find.text('CONNECT').hitTestable(), findsOneWidget);
     expect(find.text('SmartSpin2k Demo'), findsNothing);
     expect(find.text('Signal strength:'), findsOneWidget);
     await _writeCapture(tester, 'scan-found');

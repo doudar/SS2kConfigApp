@@ -14,19 +14,14 @@ void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
   final messenger = binding.defaultBinaryMessenger;
   const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
-  const audioChannel = MethodChannel('com.ryanheise.just_audio.methods');
   Directory? tempDirectory;
 
   setUp(() async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      'workout_sound_effects_enabled': false,
+    });
     await SharedPreferences.getInstance();
     tempDirectory = await Directory.systemTemp.createTemp('workout_control');
-    messenger.setMockMethodCallHandler(audioChannel, (call) async {
-      if (call.method == 'init') {
-        throw PlatformException(code: 'test', message: 'Audio disabled in test');
-      }
-      return <String, dynamic>{};
-    });
     messenger.setMockMethodCallHandler(pathProviderChannel, (call) async {
       if (call.method == 'getApplicationDocumentsDirectory' ||
           call.method == 'getTemporaryDirectory') {
@@ -38,7 +33,6 @@ void main() {
 
   tearDown(() async {
     messenger.setMockMethodCallHandler(pathProviderChannel, null);
-    messenger.setMockMethodCallHandler(audioChannel, null);
     final directory = tempDirectory;
     if (directory != null && await directory.exists()) {
       await directory.delete(recursive: true);

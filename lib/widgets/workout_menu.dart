@@ -19,6 +19,7 @@ import '../utils/workout/workout_connected_accounts.dart';
 import 'workout_library.dart';
 import 'audio_coach_dialog.dart';
 import 'completed_activities.dart';
+import 'workout_sound_effects_toggle.dart';
 
 /// Unified Workout Menu (Refactored)
 /// ---------------------------------
@@ -126,7 +127,7 @@ class WorkoutMenu extends StatelessWidget {
               ),
               _menuGroup(
                 title: 'Ride settings',
-                subtitle: 'Voice, messages and trainer',
+                subtitle: 'Voice, sounds, messages and trainer',
                 icon: Icons.tune_rounded,
                 children: [
                   _menuTile(
@@ -136,6 +137,7 @@ class WorkoutMenu extends StatelessWidget {
                     'Voice coach',
                     subtitle: 'Spoken guidance during your ride',
                   ),
+                  const WorkoutSoundEffectsToggle(),
                   _menuTile(
                     dialogContext,
                     _MenuAction.workoutText,
