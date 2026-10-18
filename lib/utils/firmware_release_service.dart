@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import 'firmware_architecture.dart';
@@ -26,7 +27,18 @@ class FirmwareReleaseService {
     'https://api.github.com/repos/doudar/SmartSpin2k/releases',
   );
 
+  /// Test seam: when set, [fetchAll] returns these releases instead of
+  /// calling GitHub. Headless captures have no network. Never set in
+  /// production code.
+  @visibleForTesting
+  static List<FirmwareRelease>? debugReleasesOverride;
+
+  /// Whether a test has injected releases via [debugReleasesOverride].
+  static bool get hasDebugReleasesOverride => debugReleasesOverride != null;
+
   Future<List<FirmwareRelease>> fetchAll() async {
+    final override = debugReleasesOverride;
+    if (override != null) return List.of(override);
     final response = await http.get(releasesUri);
     if (response.statusCode != 200) {
       throw HttpException(

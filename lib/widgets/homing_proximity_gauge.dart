@@ -56,6 +56,8 @@ class HomingProximityGauge extends StatelessWidget {
                     outlineColor: theme.colorScheme.outlineVariant,
                     bubbleColor: theme.colorScheme.secondaryContainer,
                     bubbleTextColor: theme.colorScheme.onSecondaryContainer,
+                    // Canvas text does not inherit the theme's typeface.
+                    fontFamily: theme.textTheme.labelSmall?.fontFamily,
                   ),
                 ),
               ),
@@ -87,6 +89,7 @@ class _GaugePainter extends CustomPainter {
     required this.outlineColor,
     required this.bubbleColor,
     required this.bubbleTextColor,
+    this.fontFamily,
   });
 
   final double progress;
@@ -94,6 +97,7 @@ class _GaugePainter extends CustomPainter {
   final Color outlineColor;
   final Color bubbleColor;
   final Color bubbleTextColor;
+  final String? fontFamily;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -146,6 +150,7 @@ class _GaugePainter extends CustomPainter {
         text: '${(progress * 100).round()}%',
         style: TextStyle(
           color: bubbleTextColor,
+          fontFamily: fontFamily,
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
@@ -164,5 +169,6 @@ class _GaugePainter extends CustomPainter {
       pointerColor != oldDelegate.pointerColor ||
       outlineColor != oldDelegate.outlineColor ||
       bubbleColor != oldDelegate.bubbleColor ||
-      bubbleTextColor != oldDelegate.bubbleTextColor;
+      bubbleTextColor != oldDelegate.bubbleTextColor ||
+      fontFamily != oldDelegate.fontFamily;
 }

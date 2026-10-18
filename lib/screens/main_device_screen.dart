@@ -65,6 +65,11 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
 
     if (widget.device.remoteId.toString() == "SmartSpin2k Demo") {
       _demoDeviceSetup();
+      // Test seam: the demo device skips the GitHub check unless a test has
+      // injected releases (FirmwareReleaseService.debugReleasesOverride).
+      if (FirmwareReleaseService.hasDebugReleasesOverride) {
+        unawaited(_checkForFirmwareUpdate());
+      }
       return;
     }
 
