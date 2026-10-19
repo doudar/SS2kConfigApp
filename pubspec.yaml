@@ -1,6 +1,6 @@
 name: ss2kconfigapp
 description: Configures the SmartSpin2k using BLE
-version: 2.0.4+81
+version: 2.0.5+82
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: "none"
@@ -16,6 +16,9 @@ dependencies:
   flutter_launcher_icons: ^0.14.2
   flutter_native_splash: ^2.3.9
   shared_preferences: ^2.2.0
+  # 2.5.0 moved to JNI bindings that break under R8 in release builds
+  # (NoSuchMethodError in getAll on every launch). flutter/flutter#194649
+  shared_preferences_android: ">=2.4.28 <2.5.0"
   wakelock_plus: ^1.5.2
   http: ^1.2.0
   archive: ^4.0.9
