@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_tts_settings.dart';
+import 'package:ss2kconfigapp/utils/workout/sounds.dart';
 import 'package:ss2kconfigapp/widgets/audio_coach_dialog.dart';
 import 'package:ss2kconfigapp/widgets/workout_dialog.dart';
 import 'package:ss2kconfigapp/widgets/workout_ftp_dialog.dart';
@@ -272,6 +273,32 @@ void main() {
     expect(prefs.getBool('workout_tts_enabled'), isFalse);
     expect(find.byType(Slider), findsNothing);
     await tapVisible(tester, find.text('CLOSE'));
+  });
+
+  testWidgets('sound effects toggle persists independently of voice coach', (
+    tester,
+  ) async {
+    await host(tester);
+    await openGroup(tester, 'Voice coach');
+    final toggle = find.widgetWithText(SwitchListTile, 'Sound effects');
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+    await tapVisible(tester, find.text('Sound effects'));
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(WorkoutSoundGenerator.preferenceKey), isFalse);
+    expect(tts.enabled, isTrue);
+
+    await tapVisible(tester, find.text('Back to ride'));
+    await host(tester);
+    await openGroup(tester, 'Voice coach');
+    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+    await tapVisible(tester, find.text('Voice coach'));
+    await tapVisible(tester, find.text('Enable Audio Coach'));
+    expect(tts.enabled, isFalse);
+    await tapVisible(tester, find.text('CLOSE'));
+    await tapVisible(tester, find.text('Sound effects'));
+    expect(prefs.getBool(WorkoutSoundGenerator.preferenceKey), isTrue);
+    expect(tts.enabled, isFalse);
+    await tapVisible(tester, find.text('Back to ride'));
   });
 
   testWidgets(

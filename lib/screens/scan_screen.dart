@@ -7,11 +7,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io' as io show Platform;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../widgets/smartspin_introduction.dart';
 
 import '../utils/constants.dart';
 import 'main_device_screen.dart';
@@ -279,168 +278,69 @@ class _ScanScreenState extends State<ScanScreen> {
             borderRadius: BorderRadius.circular(14),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          textStyle: Theme.of(
+            context,
+          ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
         ),
       ),
     );
   }
 
-  Widget _buildEmptyStatePanel(BuildContext context) {
+  Widget _buildConnectionPanel(BuildContext context) {
     final theme = Theme.of(context);
-    final headingColor = Colors.white;
-    final bodyColor = Colors.white.withValues(alpha: 0.92);
-    final secondaryBodyColor = Colors.white.withValues(alpha: 0.85);
-
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 1.2, sigmaY: 1.2),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.red.withValues(alpha: 0.8),
-                  Colors.black.withValues(alpha: 0.93),
-                  const Color(0xFF1A0606).withValues(alpha: 0.90),
-                ],
-                stops: const [0.0, 0.62, 1.0],
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Ready to ride?',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
               ),
-              border: Border.all(
-                color: Colors.red.withValues(alpha: 0.45),
-                width: 1.2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 14,
-                  offset: const Offset(0, 4),
-                ),
-              ],
             ),
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(height: 8),
+            const Text(
+              'Power on your SmartSpin2k, then scan to connect.',
+              style: TextStyle(height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            buildScanButton(context),
+            const SizedBox(height: 12),
+            _buildGuidedSetupButton(context),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('Having trouble connecting?'),
               children: [
-                OutlinedButton(
-                  onPressed: () async {
-                    Uri url = Uri(
-                      scheme: 'https',
-                      host: 'SmartSpin2k.com',
-                      path: '/',
-                      fragment: '',
-                    ); //http://SmartSpin2k.com";
-                    if (await canLaunchUrl(url)) {
-                      await launchUrl(url);
-                    }
-                  },
-                  style: OutlinedButton.styleFrom(
-                    alignment: Alignment.centerLeft,
-                    minimumSize: const Size.fromHeight(0),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    backgroundColor: const Color.fromARGB(
-                      255,
-                      54,
-                      27,
-                      26,
-                    ).withValues(alpha: 0.24),
-                    foregroundColor: bodyColor,
-                    side: BorderSide(
-                      color: const Color.fromARGB(
-                        255,
-                        66,
-                        26,
-                        23,
-                      ).withValues(alpha: 0.42),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
-                  ),
-                  child: Text(
-                    'SmartSpin2k is a device that adds automatic resistance and virtual shifting to spin bikes. Click to learn more!',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: bodyColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                const Text(
+                  '1. Keep your SmartSpin2k powered on and within range.\n'
+                  '2. Turn Bluetooth off and on, then scan again.\n'
+                  '3. Restart your SmartSpin2k.\n'
+                  '4. Close other connected apps if needed. Each SmartSpin2k '
+                  'supports up to 3 app connections.',
+                  style: TextStyle(height: 1.5),
                 ),
-                const SizedBox(height: 10),
-                OutlinedButton(
-                  onPressed: () async {
-                    final Uri docsUrl = Uri.parse(
-                      'https://docs.smartspin2k.com/',
-                    );
-                    if (await canLaunchUrl(docsUrl)) {
-                      await launchUrl(docsUrl);
-                    }
-                  },
-                  style: OutlinedButton.styleFrom(
-                    alignment: Alignment.centerLeft,
-                    minimumSize: const Size(0, 0),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    backgroundColor: const Color.fromARGB(
-                      255,
-                      54,
-                      27,
-                      26,
-                    ).withValues(alpha: 0.24),
-                    foregroundColor: headingColor,
-                    side: BorderSide(
-                      color: const Color.fromARGB(
-                        255,
-                        66,
-                        26,
-                        23,
-                      ).withValues(alpha: 0.42),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: () => openSmartSpinLink(
+                    context,
+                    'https://docs.smartspin2k.com/',
                   ),
-                  child: Text(
-                    'Having Trouble?',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: headingColor,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'If you cannot find your SmartSpin2k, try the following steps:',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: bodyColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  '1. Ensure your SmartSpin2k is powered on and within range.\n'
-                  '2. Turn off and on the Bluetooth on your device, then try scanning again.\n'
-                  '3. Restart your SmartSpin2k device.\n'
-                  '4. Each SmartSpin2k has a max connection of 3 apps (including this one). Close some if needed.\n'
-                  '5. If none of these steps work, please contact support for further assistance.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: secondaryBodyColor,
-                    height: 1.32,
-                  ),
+                  icon: const Icon(Icons.help_outline),
+                  label: const Text('Setup help & support'),
                 ),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -521,8 +421,8 @@ class _ScanScreenState extends State<ScanScreen> {
               ],
             ),
           ),
-          title: Text('Find Your SmartSpin2k:'),
-          titleTextStyle: const TextStyle(
+          title: Text('SmartSpin2k'),
+          titleTextStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
             fontSize: 30,
             fontWeight: FontWeight.w700,
             color: Colors.white,
@@ -541,34 +441,41 @@ class _ScanScreenState extends State<ScanScreen> {
               onRefresh: onRefresh,
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final guidedSetupTopGap =
-                      constraints.maxHeight * (_results.isEmpty ? 0.10 : 0.18);
-
+                  final wide = constraints.maxWidth >= 1000;
+                  final introduction = const SmartSpinIntroduction();
+                  final connection = _buildConnectionPanel(context);
                   return ListView(
-                    children: <Widget>[
-                      ..._buildScanResultTiles(context),
-                      if (_results
-                          .isEmpty) // This line checks if there are no scan results
-                        _buildEmptyStatePanel(context),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final buttonWidth = (constraints.maxWidth * 0.55)
-                              .clamp(170.0, 320.0)
-                              .toDouble();
-                          return Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 15),
-                            child: Align(
-                              alignment: Alignment.center,
-                              child: SizedBox(
-                                width: buttonWidth,
-                                child: buildScanButton(context),
-                              ),
-                            ),
-                          );
-                        },
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1200),
+                          child: Column(
+                            children: [
+                              ..._buildScanResultTiles(context),
+                              if (_results.isNotEmpty)
+                                const SizedBox(height: 16),
+                              if (_results.isEmpty && wide)
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(flex: 7, child: introduction),
+                                    const SizedBox(width: 20),
+                                    Expanded(flex: 4, child: connection),
+                                  ],
+                                )
+                              else ...[
+                                connection,
+                                if (_results.isEmpty) ...[
+                                  const SizedBox(height: 20),
+                                  introduction,
+                                ],
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
-                      SizedBox(height: guidedSetupTopGap),
-                      _buildGuidedSetupButton(context),
                     ],
                   );
                 },

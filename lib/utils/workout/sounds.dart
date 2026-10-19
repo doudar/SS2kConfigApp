@@ -1,42 +1,90 @@
-import 'package:just_audio/just_audio.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class WorkoutSoundGenerator {
-  static final WorkoutSoundGenerator _instance = WorkoutSoundGenerator._internal();
-  final AudioPlayer _player = AudioPlayer();
-  
-  factory WorkoutSoundGenerator() {
-    return _instance;
+  WorkoutSoundGenerator({AudioPlayer Function()? playerFactory})
+    : _playerFactory = playerFactory ?? AudioPlayer.new;
+
+  static const preferenceKey = 'workout_sound_effects_enabled';
+
+  final AudioPlayer Function() _playerFactory;
+  AudioPlayer? _player;
+  Future<void>? _pending;
+  int _revision = 0;
+
+  Future<bool> getEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(preferenceKey) ?? true;
   }
 
-  WorkoutSoundGenerator._internal();
-
-  Future<void> dispose() async {
-    await _player.dispose();
+  Future<void> setEnabled(bool enabled) {
+    // Cancel cues requested before the setting changed, including ones still
+    // preparing their audio player.
+    ++_revision;
+    return _enqueue(() async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(preferenceKey, enabled);
+      if (!enabled) await _player?.stop();
+    });
   }
 
-  Future<void> _playSound(String assetPath) async {
-    try {
-      await _player.setAsset(assetPath);
-      await _player.play();
-    } catch (e) {
-      print('Error playing sound: $e');
-    }
+  Future<void> _enqueue(Future<void> Function() operation) {
+    final previous = _pending;
+    late final Future<void> pending;
+    pending =
+        (previous == null
+                ? Future<void>.sync(operation)
+                : previous.then((_) => operation()))
+            .catchError((Object error) {
+              debugPrint('Workout sound error: $error');
+            })
+            .whenComplete(() {
+              if (identical(_pending, pending)) _pending = null;
+            });
+    _pending = pending;
+    return pending;
   }
 
-  // Play button sound - mouse click
-  Future<void> playButtonSound() async {
-    await _playSound('assets/sounds/mouseclick.mp3');
+  Future<void> dispose() {
+    ++_revision;
+    return _enqueue(() async {
+      final player = _player;
+      _player = null;
+      await player?.dispose();
+    });
   }
 
-  // Interval countdown sound - ding ding for new segment
-  Future<void> intervalCountdownSound() async {
-    await _playSound('assets/sounds/dingding.mp3');
+  Future<void> _playSound(String assetPath) {
+    final revision = _revision;
+    return _enqueue(() async {
+      if (revision != _revision || !await getEnabled()) return;
+      if (revision != _revision) return;
+      // Create lazily so muted workouts never activate an audio session, and
+      // reopening the workout screen gets a fresh player after disposal.
+      final player = _player ??= _playerFactory();
+      // iOS audio sessions are shared with other plugins (including TTS), so
+      // reapply mixing before each cue rather than only during initialization.
+      await player.setAudioContext(
+        AudioContext(
+          android: const AudioContextAndroid(
+            audioFocus: AndroidAudioFocus.none,
+          ),
+          iOS: AudioContextIOS(
+            options: const {AVAudioSessionOptions.mixWithOthers},
+          ),
+        ),
+      );
+      if (revision != _revision) return;
+      await player.play(AssetSource(assetPath), position: Duration.zero);
+    });
   }
 
-  // Workout end sound - fanfare
-  Future<void> workoutEndSound() async {
-    await _playSound('assets/sounds/fanfare.mp3');
-  }
+  Future<void> playButtonSound() => _playSound('sounds/mouseclick.mp3');
+
+  Future<void> intervalCountdownSound() => _playSound('sounds/dingding.mp3');
+
+  Future<void> workoutEndSound() => _playSound('sounds/fanfare.mp3');
 }
 
 // Global instance for easy access
