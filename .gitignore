@@ -70,6 +70,8 @@ pubspec.lock
 # Temporary files
 *.swp
 *.lock
+# Track the app lockfile so CI builds the exact dependency versions we tested.
+!/pubspec.lock
 .DS_Store
 
 # Platform-specific files that should not be tracked
