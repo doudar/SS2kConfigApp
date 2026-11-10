@@ -4,6 +4,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2kconfigapp/screens/calibration_screen.dart';
+import 'package:ss2kconfigapp/utils/calibration_monitor.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/constants.dart';
 import 'package:ss2kconfigapp/widgets/homing_proximity_gauge.dart';
@@ -13,8 +14,10 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late BluetoothDevice device;
+  late int stopCues;
 
   setUp(() {
+    stopCues = 0;
     SharedPreferences.setMockInitialValues({});
     device = BluetoothDevice.fromId('AA:BB:CC:DD:EE:01');
     final deviceData = DeviceDataManager.forDevice(device)..isSimulated = true;
@@ -30,10 +33,41 @@ void main() {
   Future<void> pumpScreen(WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: CalibrationScreen(device: device, showDeviceHeader: false),
+        home: CalibrationScreen(
+          device: device,
+          showDeviceHeader: false,
+          stopCue: () async => stopCues++,
+        ),
       ),
     );
     await tester.pumpAndSettle();
+  }
+
+  /// Simulates the rider pedaling at [rpm].
+  void pedal(int rpm) {
+    final deviceData = DeviceDataManager.forDevice(device);
+    deviceData.ftmsData.cadence = rpm;
+    deviceData.debugEmitFtmsDataUpdate();
+  }
+
+  List<Object?> recordHaptics(WidgetTester tester) {
+    final haptics = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    return haptics;
   }
 
   testWidgets('calibration fits the shared workout dialog on a narrow phone', (
@@ -177,7 +211,23 @@ void main() {
     expect(find.text('CADENCE'), findsOneWidget);
     expect(find.byType(HomingProximityGauge), findsNothing);
 
-    await tester.pump(const Duration(seconds: 12));
+    pedal(80);
+    await tester.pump(const Duration(seconds: 5));
+    expect(find.text('Stop pedaling'), findsOneWidget);
+    expect(
+      find.text(
+        "SmartSpin2k is turning the knob to learn your bike's full resistance range. This takes a few minutes.",
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('lowest and highest'), findsNothing);
+    expect(
+      find.textContaining('increase Homing Force'),
+      findsNothing,
+      reason: 'Homing Force does not apply to Bike+',
+    );
+
+    await tester.pump(const Duration(seconds: 7));
     await tester.pump(const Duration(milliseconds: 601));
 
     expect(find.text('Calibration saved'), findsOneWidget);
@@ -230,7 +280,7 @@ void main() {
     );
     expect(
       find.text(
-        "SmartSpin2k turns the knob all the way down, then all the way up, to learn your bike's limits.",
+        "SmartSpin2k turns the knob to find your bike's lowest and highest resistance.",
       ),
       findsOneWidget,
     );
@@ -242,22 +292,7 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'calibration_setup': 'physicalStops',
     });
-    final haptics = <Object?>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'HapticFeedback.vibrate') {
-          haptics.add(call.arguments);
-        }
-        return null;
-      },
-    );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        null,
-      ),
-    );
+    final haptics = recordHaptics(tester);
 
     await pumpScreen(tester);
     await tester.tap(find.text('Start Calibration'));
@@ -282,30 +317,43 @@ void main() {
       findsNothing,
       reason: 'nothing is moving yet, so there is nothing to gauge',
     );
-    expect(find.text('Motor Load'), findsNothing);
     expect(
       find.textContaining('To cancel, press either shifter button'),
       findsOneWidget,
     );
-    expect(haptics, isEmpty);
+    expect(find.textContaining('increase Homing Force'), findsOneWidget);
 
-    // The device starts homing. It only does that after seeing enough
-    // pedaling, and it never consults cadence again.
-    await tester.pump(const Duration(milliseconds: 1300));
-    await tester.pump(const Duration(milliseconds: 350));
+    pedal(72);
+    await tester.pump();
+    // The demo device reports homing ~1.3 s after the start, but the app has
+    // only seen cadence for ~1.35 s, less than the firmware's own gate.
+    await tester.pump(const Duration(milliseconds: 1350));
+
+    expect(
+      find.text('Keep pedaling…'),
+      findsOneWidget,
+      reason: 'a homing signal this early is not trusted yet',
+    );
+    expect(find.text('Stop pedaling'), findsNothing);
+    expect(haptics, isEmpty);
+    expect(stopCues, 0);
+
+    await tester.pump(const Duration(milliseconds: 700));
 
     expect(find.text('Stop pedaling'), findsOneWidget);
-    expect(find.text('Start pedaling'), findsNothing);
+    expect(find.text('Keep pedaling…'), findsNothing);
     expect(find.text('CADENCE'), findsNothing);
-    expect(find.textContaining('all the way down, then all the way up'), findsOneWidget);
+    expect(
+      find.text(
+        "SmartSpin2k is turning the knob to find your bike's lowest and highest resistance.",
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Pedaling detected — you can stop'), findsOneWidget);
     expect(find.text('Waiting for you to pedal'), findsNothing);
     expect(find.byType(HomingProximityGauge), findsOneWidget);
-    expect(
-      haptics,
-      ['HapticFeedbackType.heavyImpact'],
-      reason: 'the stop cue is felt once, not on every monitor update',
-    );
+    expect(haptics, ['HapticFeedbackType.heavyImpact']);
+    expect(stopCues, 1, reason: 'the chime reaches riders without haptics');
 
     await tester.pump(const Duration(milliseconds: 4700));
 
@@ -314,7 +362,8 @@ void main() {
       findsOneWidget,
       reason: 'the instruction holds for the rest of the run',
     );
-    expect(haptics, hasLength(1));
+    expect(haptics, hasLength(1), reason: 'the cue fires once per run');
+    expect(stopCues, 1);
   });
 
   testWidgets('a first cadence reading asks for more, not for a stop', (
@@ -329,16 +378,15 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    final deviceData = DeviceDataManager.forDevice(device);
-    deviceData.ftmsData.cadence = 72;
-    deviceData.debugEmitFtmsDataUpdate();
+    pedal(72);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
 
+    expect(find.text('Keep pedaling…'), findsOneWidget);
     expect(
-      find.text('Keep pedaling…'),
-      findsNWidgets(2),
-      reason: 'the card and the checklist row agree',
+      find.text('Waiting for you to pedal'),
+      findsOneWidget,
+      reason: 'the checklist does not repeat the card',
     );
     expect(find.text('72'), findsOneWidget);
     expect(
@@ -348,11 +396,110 @@ void main() {
           'the firmware wants about two seconds of cadence; stopping on the '
           'first reading would reset its count',
     );
-    expect(
-      find.byIcon(Icons.check_circle),
-      findsNothing,
-      reason: 'the pedal step is only done once the device starts homing',
-    );
+    expect(find.byIcon(Icons.check_circle), findsNothing);
     expect(find.byType(HomingProximityGauge), findsNothing);
+  });
+
+  testWidgets('without cadence, only a found end stop means stop', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'calibration_setup': 'physicalStops',
+    });
+
+    await pumpScreen(tester);
+    await tester.tap(find.text('Start Calibration'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 2700));
+
+    expect(
+      find.text('Start pedaling'),
+      findsOneWidget,
+      reason: 'a homing signal the app saw no cadence for may be a duplicate ack',
+    );
+
+    // The demo device finds its min end stop by 6 s.
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('Stop pedaling'), findsOneWidget);
+    expect(stopCues, 1);
+  });
+
+  testWidgets('Try Again cues the stop again on the next run', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'calibration_setup': 'physicalStops',
+    });
+    final haptics = recordHaptics(tester);
+
+    await pumpScreen(tester);
+    await tester.tap(find.text('Start Calibration'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    pedal(80);
+    await tester.pump(const Duration(seconds: 12));
+    await tester.pump(const Duration(milliseconds: 601));
+    expect(find.text('Calibration saved'), findsOneWidget);
+    expect(stopCues, 1);
+
+    await tester.tap(find.text('No, something looked wrong'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Try Again'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      find.text('Start pedaling'),
+      findsOneWidget,
+      reason: 'a retry starts from the beginning, not from the last run',
+    );
+
+    pedal(80);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+
+    expect(find.text('Stop pedaling'), findsOneWidget);
+    expect(stopCues, 2);
+    expect(haptics, hasLength(2));
+  });
+
+  group('riderCanStopPedaling', () {
+    bool canStop({
+      CalibrationPhase phase = CalibrationPhase.waitingForCadence,
+      bool minFound = false,
+      bool homingStarted = false,
+      bool cadenceTrusted = false,
+      bool cadenceSustained = false,
+    }) => riderCanStopPedaling(
+      phase: phase,
+      minFound: minFound,
+      homingStarted: homingStarted,
+      cadenceTrusted: cadenceTrusted,
+      cadenceSustained: cadenceSustained,
+    );
+
+    test('nothing yet means keep pedaling', () {
+      expect(canStop(), isFalse);
+      expect(canStop(cadenceTrusted: true), isFalse);
+    });
+
+    test('an early homing signal waits for trusted cadence', () {
+      expect(canStop(homingStarted: true), isFalse);
+      expect(canStop(phase: CalibrationPhase.searchingMin), isFalse);
+      expect(canStop(homingStarted: true, cadenceTrusted: true), isTrue);
+      expect(
+        canStop(phase: CalibrationPhase.searchingMin, cadenceTrusted: true),
+        isTrue,
+      );
+    });
+
+    test('proof that homing ran needs no cadence', () {
+      expect(canStop(minFound: true), isTrue);
+      expect(canStop(phase: CalibrationPhase.searchingMax), isTrue);
+      expect(canStop(phase: CalibrationPhase.complete), isTrue);
+    });
+
+    test('sustained cadence stands in for a homing signal that never came', () {
+      expect(canStop(cadenceSustained: true), isTrue);
+    });
   });
 }

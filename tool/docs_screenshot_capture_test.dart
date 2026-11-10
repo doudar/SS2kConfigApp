@@ -735,7 +735,11 @@ void main() {
       c(homingSensitivityVname)['value'] = '50';
       if (pwr != null) c(connectedPWRVname)['value'] = pwr;
       data.ftmsData.cadence = 0;
-      await _pumpScreen(tester, theme, CalibrationScreen(device: device));
+      await _pumpScreen(
+        tester,
+        theme,
+        CalibrationScreen(device: device, stopCue: () async {}),
+      );
     }
 
     Future<void> startPedaling() async {

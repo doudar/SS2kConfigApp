@@ -16,6 +16,7 @@ import '../utils/device_data.dart';
 import '../utils/calibration_monitor.dart';
 import '../utils/constants.dart';
 import '../utils/onboarding/wizard_step_machine.dart';
+import '../utils/workout/sounds.dart';
 import '../widgets/setting_tile.dart';
 import '../widgets/homing_proximity_gauge.dart';
 import '../widgets/ftms_calibration_progress.dart';
@@ -37,6 +38,29 @@ const Map<BikeType, ({String label, String? detail})> _bikeTypeCopy = {
 
 String _bikeTypeLabel(BikeType type) => _bikeTypeCopy[type]?.label ?? type.name;
 
+/// True once the rider can stop pedaling. The firmware starts homing after
+/// about two seconds of cadence and never consults cadence again.
+///
+/// A found min end stop or a max search cannot happen before homing, so either
+/// proves it. The opening homing signal is weaker: it can arrive as a
+/// duplicated acknowledgement before the cadence gate opens, so it only counts
+/// once the app has itself seen cadence long enough ([cadenceTrusted]) to open
+/// that gate. When no homing signal reaches the app at all (no Machine Status,
+/// silent log), unbroken cadence well past the gate ([cadenceSustained])
+/// stands in for one.
+@visibleForTesting
+bool riderCanStopPedaling({
+  required CalibrationPhase phase,
+  required bool minFound,
+  required bool homingStarted,
+  required bool cadenceTrusted,
+  required bool cadenceSustained,
+}) {
+  if (minFound || phase == CalibrationPhase.searchingMax || phase == CalibrationPhase.complete) return true;
+  final homingSignal = homingStarted || phase == CalibrationPhase.searchingMin;
+  return (homingSignal && cadenceTrusted) || cadenceSustained;
+}
+
 /// Guided knob calibration.
 ///
 /// Replaces the old fixed-30-second calibration dialog. It explains the two
@@ -50,8 +74,18 @@ class CalibrationScreen extends StatefulWidget {
   /// Workout settings supply their own shared dialog chrome.
   final bool embedded;
 
-  const CalibrationScreen({Key? key, required this.device, this.showDeviceHeader = true, this.embedded = false})
-    : super(key: key);
+  /// Plays the audible "stop pedaling" cue. Defaults to the workout countdown
+  /// chime, which honours the workout sound-effects setting. Tests and the
+  /// docs capture replace it so they never touch a platform audio session.
+  final Future<void> Function()? stopCue;
+
+  const CalibrationScreen({
+    Key? key,
+    required this.device,
+    this.showDeviceHeader = true,
+    this.embedded = false,
+    this.stopCue,
+  }) : super(key: key);
 
   @override
   State<CalibrationScreen> createState() => _CalibrationScreenState();
@@ -76,9 +110,27 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   StreamSubscription<CharacteristicChangeEvent>? _cadenceSubscription;
   Timer? _verdictTimer;
 
+  /// How long the app must have seen cadence before it trusts a homing-started
+  /// signal. The firmware itself wants about two seconds, so an earlier signal
+  /// is more likely a duplicated acknowledgement than real homing.
+  static const Duration _cadenceTrustDelay = Duration(seconds: 2);
+
+  /// Unbroken cadence after which the firmware has certainly started, whether
+  /// or not any homing signal reached the app.
+  static const Duration _sustainedCadenceDelay = Duration(seconds: 4);
+
+  Timer? _cadenceTrustTimer;
+  Timer? _sustainedCadenceTimer;
+
   int _pageIndex = 0;
   int _cadence = 0;
   bool _cadenceDetected = false;
+
+  /// [_cadenceTrustDelay] has passed since cadence was first seen this run.
+  bool _cadenceTrusted = false;
+
+  /// Cadence stayed above the firmware's gate for [_sustainedCadenceDelay].
+  bool _cadenceSustained = false;
 
   /// True once this run has buzzed the rider to stop pedaling, so the cue fires
   /// once per run rather than on every monitor update.
@@ -105,7 +157,16 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _cadenceSubscription = deviceData.characteristicChanges.listen((event) {
       if (!mounted) return;
       final cadence = deviceData.ftmsData.cadence;
-      final cadenceDetected = _cadenceDetected || (_monitor.phase.isRunning && cadence > 10);
+      final aboveGate = _monitor.phase.isRunning && cadence > 10;
+      final cadenceDetected = _cadenceDetected || aboveGate;
+      if (aboveGate) {
+        _cadenceTrustTimer ??= Timer(_cadenceTrustDelay, () => _onCadenceTimer(() => _cadenceTrusted = true));
+        _sustainedCadenceTimer ??= Timer(_sustainedCadenceDelay, () => _onCadenceTimer(() => _cadenceSustained = true));
+      } else if (!_cadenceSustained) {
+        // The firmware's own count resets when cadence drops, so this one does too.
+        _sustainedCadenceTimer?.cancel();
+        _sustainedCadenceTimer = null;
+      }
       if (cadence != _cadence || cadenceDetected != _cadenceDetected || event.vName == homingSensitivityVname) {
         setState(() {
           _cadence = cadence;
@@ -135,6 +196,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _monitor.dispose();
     _cadenceSubscription?.cancel();
     _verdictTimer?.cancel();
+    _cancelCadenceTimers();
     _pageController.dispose();
     super.dispose();
   }
@@ -142,13 +204,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   void _onMonitorChanged() {
     if (!mounted) return;
     setState(() {});
-
-    // The rider is on the bike and may be watching the knob rather than the
-    // phone, so the moment they can stop is felt as well as shown.
-    if (!_stopCueFired && _monitor.phase.isRunning && _homingUnderway) {
-      _stopCueFired = true;
-      unawaited(HapticFeedback.heavyImpact());
-    }
+    _maybeCueStop();
 
     // A verdict does not move the user anywhere — it appears under the finished
     // checklist, a beat later so the last checkmark is seen to land.
@@ -166,18 +222,37 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   bool get _isBikePlus => _calibrationSetup == CalibrationSetup.pelotonBikePlus;
 
-  /// True once the device has shown it is homing. The firmware only starts
-  /// after about two seconds of cadence and never consults cadence again, so
-  /// this — not the first cadence reading the app happens to see — is the
-  /// moment the rider can stop pedaling.
-  bool get _homingUnderway {
-    final phase = _monitor.phase;
-    return _monitor.homingStarted ||
-        _monitor.minFound ||
-        phase == CalibrationPhase.searchingMin ||
-        phase == CalibrationPhase.searchingMax ||
-        phase == CalibrationPhase.complete;
+  void _onCadenceTimer(VoidCallback mark) {
+    if (!mounted || !_monitor.phase.isRunning) return;
+    setState(mark);
+    _maybeCueStop();
   }
+
+  void _cancelCadenceTimers() {
+    _cadenceTrustTimer?.cancel();
+    _cadenceTrustTimer = null;
+    _sustainedCadenceTimer?.cancel();
+    _sustainedCadenceTimer = null;
+  }
+
+  /// The rider is on the bike and may be watching the knob rather than the
+  /// phone, so the moment they can stop is heard and felt as well as shown.
+  void _maybeCueStop() {
+    if (_stopCueFired || !_monitor.phase.isRunning || !_homingUnderway) return;
+    _stopCueFired = true;
+    unawaited(HapticFeedback.heavyImpact());
+    // Touch haptics are off on many Android phones, so the chime is what
+    // reliably reaches a rider who is not looking at the screen.
+    unawaited((widget.stopCue ?? workoutSoundGenerator.intervalCountdownSound)());
+  }
+
+  bool get _homingUnderway => riderCanStopPedaling(
+    phase: _monitor.phase,
+    minFound: _monitor.minFound,
+    homingStarted: _monitor.homingStarted,
+    cadenceTrusted: _cadenceTrusted,
+    cadenceSustained: _cadenceSustained,
+  );
 
   bool get _powerTableWillReset => deviceData.getVnameValue(pTab4pwrVname) != "true";
 
@@ -200,6 +275,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _symptom = null;
     _cadence = 0;
     _cadenceDetected = false;
+    _cadenceTrusted = false;
+    _cadenceSustained = false;
+    _cancelCadenceTimers();
     _stopCueFired = false;
     _goTo(1);
     await _monitor.start();
@@ -424,7 +502,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         _WhatWillHappen(
           lastStep: _isBikePlus
               ? "SmartSpin2k turns the knob to learn your bike's full resistance range. This takes a few minutes."
-              : "SmartSpin2k turns the knob all the way down, then all the way up, to learn your bike's limits.",
+              : "SmartSpin2k turns the knob to find your bike's lowest and highest resistance.",
         ),
         const SizedBox(height: 16),
         if (_isBikePlus) ...[
@@ -566,7 +644,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             instruction: instruction,
             cadence: _cadence,
             showHint: _monitor.showPedalHint,
-            reportsResistance: expectsFtms,
+            reportsResistance: _isBikePlus,
           ),
           const SizedBox(height: 16),
         ],
@@ -611,7 +689,6 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           phase: phase,
           minFound: _monitor.minFound,
           maxFound: _monitor.maxFound,
-          cadenceDetected: _cadenceDetected,
           pedalingDone: homingUnderway,
           ftmsStage: _monitor.ftmsStage,
         ),
@@ -664,7 +741,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         if (!_showVerdict) ...[
           const SizedBox(height: 8),
           Text(
-            '${expectsFtms ? '' : 'Brief contact with each stop is normal. If motor load maxes before the knob '
+            '${!_endStopsApply ? '' : 'Brief contact with each stop is normal. If motor load maxes before the knob '
                       'reaches a stop, increase Homing Force.\n'}'
             'Calibration keeps running if you leave this screen. To cancel, press either shifter button.',
             style: Theme.of(context).textTheme.bodySmall,
@@ -915,8 +992,6 @@ class _PhaseChecklist extends StatelessWidget {
   final CalibrationPhase phase;
   final bool minFound;
   final bool maxFound;
-  final bool cadenceDetected;
-
   /// The device has started homing, which it only does once it has seen enough
   /// pedaling. Completes the first step.
   final bool pedalingDone;
@@ -926,7 +1001,6 @@ class _PhaseChecklist extends StatelessWidget {
     required this.phase,
     required this.minFound,
     required this.maxFound,
-    required this.cadenceDetected,
     required this.pedalingDone,
     this.ftmsStage,
   });
@@ -949,12 +1023,9 @@ class _PhaseChecklist extends StatelessWidget {
     // A first cadence reading is not enough to finish this step: the firmware
     // wants about two seconds of it, and a rider who stops early resets that
     // count. The step is done when the device starts homing, and its label then
-    // keeps "you can stop" on screen for anyone who looks late.
-    final pedalLabel = pedalingDone
-        ? 'Pedaling detected — you can stop'
-        : cadenceDetected && !failed
-        ? 'Keep pedaling…'
-        : 'Waiting for you to pedal';
+    // keeps "you can stop" on screen for anyone who looks late. "Keep
+    // pedaling" lives on the instruction card only, not repeated here.
+    final pedalLabel = pedalingDone ? 'Pedaling detected — you can stop' : 'Waiting for you to pedal';
 
     return Column(
       children: [
@@ -1092,7 +1163,7 @@ class _RiderInstructionCard extends StatelessWidget {
         headline = 'Stop pedaling';
         detail = reportsResistance
             ? "SmartSpin2k is turning the knob to learn your bike's full resistance range. This takes a few minutes."
-            : "SmartSpin2k is turning the knob all the way down, then all the way up, to learn your bike's limits.";
+            : "SmartSpin2k is turning the knob to find your bike's lowest and highest resistance.";
         break;
     }
 
