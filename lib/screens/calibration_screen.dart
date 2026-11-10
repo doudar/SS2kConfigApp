@@ -157,17 +157,12 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _cadenceSubscription = deviceData.characteristicChanges.listen((event) {
       if (!mounted) return;
       final cadence = deviceData.ftmsData.cadence;
-      final aboveGate = _monitor.phase.isRunning && cadence > 10;
-      final cadenceDetected = _cadenceDetected || aboveGate;
-      if (aboveGate) {
-        _cadenceTrustTimer ??= Timer(_cadenceTrustDelay, () => _onCadenceTimer(() => _cadenceTrusted = true));
-        _sustainedCadenceTimer ??= Timer(_sustainedCadenceDelay, () => _onCadenceTimer(() => _cadenceSustained = true));
-      } else if (!_cadenceSustained) {
-        // The firmware's own count resets when cadence drops, so this one does too.
-        _sustainedCadenceTimer?.cancel();
-        _sustainedCadenceTimer = null;
-      }
-      if (cadence != _cadence || cadenceDetected != _cadenceDetected || event.vName == homingSensitivityVname) {
+      final cadenceDetected = _cadenceDetected || (_monitor.phase.isRunning && _inFirmwareCadenceGate(cadence));
+      final countChanged = _trackFirmwareCadenceCount();
+      if (countChanged ||
+          cadence != _cadence ||
+          cadenceDetected != _cadenceDetected ||
+          event.vName == homingSensitivityVname) {
         setState(() {
           _cadence = cadence;
           _cadenceDetected = cadenceDetected;
@@ -203,6 +198,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   void _onMonitorChanged() {
     if (!mounted) return;
+    // Dispatch can land while the rider is already pedaling.
+    _trackFirmwareCadenceCount();
     setState(() {});
     _maybeCueStop();
 
@@ -226,6 +223,32 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     if (!mounted || !_monitor.phase.isRunning) return;
     setState(mark);
     _maybeCueStop();
+  }
+
+  /// The firmware's own cadence gate (`BLE_Client.cpp`): it only counts
+  /// samples strictly between 10 and 200 rpm.
+  static bool _inFirmwareCadenceGate(int cadence) => cadence > 10 && cadence < 200;
+
+  /// Mirrors the firmware's cadence count for the stop timers. The firmware
+  /// starts counting once it has the homing command and restarts whenever
+  /// cadence leaves its gate, so the app's count does the same until the rider
+  /// has been told to stop. Returns true when the trust state was reset.
+  bool _trackFirmwareCadenceCount() {
+    final counting =
+        _monitor.phase.isRunning &&
+        _monitor.spinDownDispatched &&
+        _inFirmwareCadenceGate(deviceData.ftmsData.cadence);
+    if (counting) {
+      _cadenceTrustTimer ??= Timer(_cadenceTrustDelay, () => _onCadenceTimer(() => _cadenceTrusted = true));
+      _sustainedCadenceTimer ??= Timer(_sustainedCadenceDelay, () => _onCadenceTimer(() => _cadenceSustained = true));
+      return false;
+    }
+    if (_stopCueFired) return false;
+    final hadTrust = _cadenceTrusted || _cadenceSustained;
+    _cancelCadenceTimers();
+    _cadenceTrusted = false;
+    _cadenceSustained = false;
+    return hadTrust;
   }
 
   void _cancelCadenceTimers() {

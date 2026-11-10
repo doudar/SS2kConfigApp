@@ -27,6 +27,7 @@ void main() {
   });
 
   tearDown(() {
+    CalibrationMonitor.debugDemoDispatchDelay = Duration.zero;
     DeviceDataManager.clearDataForDevice(device);
   });
 
@@ -423,6 +424,93 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     expect(find.text('Stop pedaling'), findsOneWidget);
     expect(stopCues, 1);
+  });
+
+  testWidgets('pedaling before the homing command goes out does not count', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'calibration_setup': 'physicalStops',
+    });
+    CalibrationMonitor.debugDemoDispatchDelay = const Duration(seconds: 6);
+
+    await pumpScreen(tester);
+    await tester.tap(find.text('Start Calibration'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    pedal(80);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 5500));
+
+    expect(
+      find.text('Stop pedaling'),
+      findsNothing,
+      reason: 'the firmware has not seen the command, so it is not counting',
+    );
+    expect(stopCues, 0);
+
+    // Dispatch lands at 6 s; the firmware wants two seconds from there.
+    await tester.pump(const Duration(milliseconds: 1900));
+    expect(find.text('Stop pedaling'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Stop pedaling'), findsOneWidget);
+    expect(stopCues, 1);
+  });
+
+  testWidgets('a cadence dropout restarts the count, as it does on the device', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'calibration_setup': 'physicalStops',
+    });
+
+    await pumpScreen(tester);
+    await tester.tap(find.text('Start Calibration'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    pedal(80);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    pedal(0);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1700));
+
+    expect(
+      find.text('Stop pedaling'),
+      findsNothing,
+      reason: 'half a second of cadence never opened the firmware gate',
+    );
+    expect(stopCues, 0);
+
+    pedal(80);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1900));
+    expect(find.text('Stop pedaling'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Stop pedaling'), findsOneWidget);
+    expect(stopCues, 1);
+  });
+
+  testWidgets('200 rpm is outside the firmware gate and never counts', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'calibration_setup': 'physicalStops',
+    });
+
+    await pumpScreen(tester);
+    await tester.tap(find.text('Start Calibration'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    pedal(200);
+    await tester.pump();
+    // Past both the trust and sustained delays, before the demo min end stop.
+    await tester.pump(const Duration(milliseconds: 4800));
+
+    expect(find.text('Stop pedaling'), findsNothing);
+    expect(stopCues, 0);
   });
 
   testWidgets('Try Again cues the stop again on the next run', (tester) async {
