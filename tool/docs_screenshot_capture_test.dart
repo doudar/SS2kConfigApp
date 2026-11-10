@@ -755,12 +755,12 @@ void main() {
 
     await tester.tap(find.text('Start Calibration'));
     await _pumpFor(tester, const Duration(milliseconds: 1200));
-    _expectTexts(['Watch the knob', 'CADENCE', 'Waiting for you to pedal']);
+    _expectTexts(['Start pedaling', 'CADENCE', 'Waiting for you to pedal']);
     await _writeCapture(tester, 'calibrate-pedal');
 
     await startPedaling();
     await _pumpFor(tester, const Duration(milliseconds: 3750)); // t = 4.95 s
-    _expectTexts(['Finding low resistance', 'Motor Load']);
+    _expectTexts(['Stop pedaling', 'Finding low resistance', 'Motor Load']);
     await _writeCapture(tester, 'calibrate-low-stop');
 
     await _pumpFor(tester, const Duration(milliseconds: 4450)); // t = 9.4 s

@@ -79,6 +79,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   int _pageIndex = 0;
   int _cadence = 0;
   bool _cadenceDetected = false;
+
+  /// True once this run has buzzed the rider to stop pedaling, so the cue fires
+  /// once per run rather than on every monitor update.
+  bool _stopCueFired = false;
   BikeType? _bikeType;
   CalibrationSetup? _calibrationSetup;
   bool _setupLoaded = false;
@@ -139,6 +143,13 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     if (!mounted) return;
     setState(() {});
 
+    // The rider is on the bike and may be watching the knob rather than the
+    // phone, so the moment they can stop is felt as well as shown.
+    if (!_stopCueFired && _monitor.phase.isRunning && _homingUnderway) {
+      _stopCueFired = true;
+      unawaited(HapticFeedback.heavyImpact());
+    }
+
     // A verdict does not move the user anywhere — it appears under the finished
     // checklist, a beat later so the last checkmark is seen to land.
     if (!_monitor.phase.isTerminal || _showVerdict || _verdictTimer != null) return;
@@ -154,6 +165,19 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   bool get _endStopsApply => _calibrationSetup == CalibrationSetup.physicalStops && !_monitor.usedFtmsPath;
 
   bool get _isBikePlus => _calibrationSetup == CalibrationSetup.pelotonBikePlus;
+
+  /// True once the device has shown it is homing. The firmware only starts
+  /// after about two seconds of cadence and never consults cadence again, so
+  /// this — not the first cadence reading the app happens to see — is the
+  /// moment the rider can stop pedaling.
+  bool get _homingUnderway {
+    final phase = _monitor.phase;
+    return _monitor.homingStarted ||
+        _monitor.minFound ||
+        phase == CalibrationPhase.searchingMin ||
+        phase == CalibrationPhase.searchingMax ||
+        phase == CalibrationPhase.complete;
+  }
 
   bool get _powerTableWillReset => deviceData.getVnameValue(pTab4pwrVname) != "true";
 
@@ -176,6 +200,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _symptom = null;
     _cadence = 0;
     _cadenceDetected = false;
+    _stopCueFired = false;
     _goTo(1);
     await _monitor.start();
   }
@@ -396,6 +421,12 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           ],
           const SizedBox(height: 16),
         ],
+        _WhatWillHappen(
+          lastStep: _isBikePlus
+              ? "SmartSpin2k turns the knob to learn your bike's full resistance range. This takes a few minutes."
+              : "SmartSpin2k turns the knob all the way down, then all the way up, to learn your bike's limits.",
+        ),
+        const SizedBox(height: 16),
         if (_isBikePlus) ...[
           _Callout(
             icon: Icons.pedal_bike,
@@ -436,7 +467,12 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     final preparing = _monitor.awaitingNotifications;
     final showGauge = !_showVerdict && !preparing;
     final expectsFtms = _isBikePlus || _monitor.usedFtmsPath;
-    final showCadence = !_cadenceDetected;
+    final homingUnderway = _homingUnderway;
+    final instruction = homingUnderway
+        ? _RiderInstruction.stopPedaling
+        : _cadenceDetected
+        ? _RiderInstruction.keepPedaling
+        : _RiderInstruction.startPedaling;
     final succeeded = phase == CalibrationPhase.complete;
     final needsVisualConfirmation = succeeded && _endStopsApply;
     // The troubleshooting page is entirely about homing force and end stops.
@@ -519,51 +555,40 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           ),
           const SizedBox(height: 16),
         ],
-        // Held until the verdict is actually on screen rather than dropped the
+        // The one thing the rider has to do right now leads the page and
+        // changes with the run; everything below it is supporting detail. Held
+        // until the verdict is actually on screen rather than dropped the
         // moment the phase turns terminal — the last checkmark should be the
         // only thing moving at that instant.
-        if (!_showVerdict) ...[
-          if (_monitor.ftmsStage != null)
-            FtmsCalibrationProgress(
-              stage: _monitor.ftmsStage!,
-              samples: _monitor.mapSamples,
-              elapsed: _monitor.elapsed,
-              reading: gauge,
-            )
-          else
-            _Callout(
-              icon: Icons.visibility,
-              color: Theme.of(context).colorScheme.primary,
-              title: expectsFtms ? 'Watch the resistance' : 'Watch the knob',
-              body: expectsFtms
-                  ? 'SmartSpin2k will use the resistance reported by your Bike+ to learn its low '
-                        'and high limits. The knob may keep turning; it will not hit a physical stop. '
-                        'Press either shifter button if you need to cancel.'
-                  : 'SmartSpin2k will turn the knob to low resistance, then high resistance. Brief '
-                        'contact with each stop is normal. Press either shifter button if the motor '
-                        'keeps pushing or you need to cancel.\nIf motor load maxes before the knob reaches a stop, increase homing force.',
-            ),
+        if (showGauge) ...[
+          _RiderInstructionCard(
+            key: const ValueKey('rider_instruction_card'),
+            instruction: instruction,
+            cadence: _cadence,
+            showHint: _monitor.showPedalHint,
+            reportsResistance: expectsFtms,
+          ),
           const SizedBox(height: 16),
         ],
-        if (showGauge) ...[
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 700),
-            switchInCurve: Curves.easeInOut,
-            switchOutCurve: Curves.easeInOut,
-            child: showCadence
-                ? _CadenceIndicator(
-                    key: const ValueKey('cadence_indicator'),
-                    cadence: _cadence,
-                    showHint: _monitor.showPedalHint,
-                  )
-                : HomingProximityGauge(
-                    key: const ValueKey('homing_proximity_gauge'),
-                    progress: gauge?.progress ?? (expectsFtms ? 0 : 0.5),
-                    title: gauge?.title ?? (expectsFtms ? 'Resistance Position' : 'Motor Load'),
-                    currentLabel: gauge?.currentLabel ?? (expectsFtms ? '0' : 'Min'),
-                    targetLabel: gauge?.targetLabel ?? (expectsFtms ? '100' : 'Max'),
-                    detailLabel: gauge?.detailLabel ?? '',
-                  ),
+        if (!_showVerdict && _monitor.ftmsStage != null) ...[
+          FtmsCalibrationProgress(
+            stage: _monitor.ftmsStage!,
+            samples: _monitor.mapSamples,
+            elapsed: _monitor.elapsed,
+            reading: gauge,
+          ),
+          const SizedBox(height: 16),
+        ],
+        // Nothing is moving until homing starts, so the gauge would only be a
+        // second thing to look at while the rider is being asked to pedal.
+        if (showGauge && homingUnderway) ...[
+          HomingProximityGauge(
+            key: const ValueKey('homing_proximity_gauge'),
+            progress: gauge?.progress ?? (expectsFtms ? 0 : 0.5),
+            title: gauge?.title ?? (expectsFtms ? 'Resistance Position' : 'Motor Load'),
+            currentLabel: gauge?.currentLabel ?? (expectsFtms ? '0' : 'Min'),
+            targetLabel: gauge?.targetLabel ?? (expectsFtms ? '100' : 'Max'),
+            detailLabel: gauge?.detailLabel ?? '',
           ),
           const SizedBox(height: 16),
         ],
@@ -587,6 +612,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           minFound: _monitor.minFound,
           maxFound: _monitor.maxFound,
           cadenceDetected: _cadenceDetected,
+          pedalingDone: homingUnderway,
           ftmsStage: _monitor.ftmsStage,
         ),
         // The verdict is the checklist's last step, so it grows in below the
@@ -638,6 +664,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         if (!_showVerdict) ...[
           const SizedBox(height: 8),
           Text(
+            '${expectsFtms ? '' : 'Brief contact with each stop is normal. If motor load maxes before the knob '
+                      'reaches a stop, increase Homing Force.\n'}'
             'Calibration keeps running if you leave this screen. To cancel, press either shifter button.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -888,6 +916,10 @@ class _PhaseChecklist extends StatelessWidget {
   final bool minFound;
   final bool maxFound;
   final bool cadenceDetected;
+
+  /// The device has started homing, which it only does once it has seen enough
+  /// pedaling. Completes the first step.
+  final bool pedalingDone;
   final FtmsCalibrationStage? ftmsStage;
 
   const _PhaseChecklist({
@@ -895,6 +927,7 @@ class _PhaseChecklist extends StatelessWidget {
     required this.minFound,
     required this.maxFound,
     required this.cadenceDetected,
+    required this.pedalingDone,
     this.ftmsStage,
   });
 
@@ -913,26 +946,29 @@ class _PhaseChecklist extends StatelessWidget {
       return isCurrent ? _RowState.active : _RowState.pending;
     }
 
-    final searchStarted =
-        minFound || complete || phase == CalibrationPhase.searchingMin || phase == CalibrationPhase.searchingMax;
-    // Search-start acknowledgements can arrive before the app observes a
-    // cadence packet. Only a cadence reading above the firmware's 10 RPM gate
-    // completes this step.
-    final cadenceConfirmed = cadenceDetected;
+    // A first cadence reading is not enough to finish this step: the firmware
+    // wants about two seconds of it, and a rider who stops early resets that
+    // count. The step is done when the device starts homing, and its label then
+    // keeps "you can stop" on screen for anyone who looks late.
+    final pedalLabel = pedalingDone
+        ? 'Pedaling detected — you can stop'
+        : cadenceDetected && !failed
+        ? 'Keep pedaling…'
+        : 'Waiting for you to pedal';
 
     return Column(
       children: [
         _ChecklistRow(
-          label: 'Waiting for you to pedal',
-          state: stateFor(done: cadenceConfirmed, isCurrent: !cadenceConfirmed),
+          label: pedalLabel,
+          state: stateFor(done: pedalingDone, isCurrent: !pedalingDone),
         ),
         _ChecklistRow(
           label: 'Finding low resistance',
-          state: stateFor(done: minFound, isCurrent: cadenceConfirmed && searchStarted && !minFound),
+          state: stateFor(done: minFound, isCurrent: pedalingDone && !minFound),
         ),
         _ChecklistRow(
           label: 'Finding high resistance',
-          state: stateFor(done: highFound, isCurrent: cadenceConfirmed && minFound && !highFound),
+          state: stateFor(done: highFound, isCurrent: pedalingDone && minFound && !highFound),
         ),
         if (ftmsStage != null)
           _ChecklistRow(
@@ -1009,65 +1045,149 @@ class _ChecklistRow extends StatelessWidget {
   }
 }
 
-/// Live cadence while the firmware waits for the rider to spin up.
-class _CadenceIndicator extends StatelessWidget {
+/// What the rider should be doing at this moment of a run.
+enum _RiderInstruction { startPedaling, keepPedaling, stopPedaling }
+
+/// The single instruction that leads the run page.
+///
+/// The firmware needs pedaling only to open its cadence gate; once homing
+/// starts it never looks at cadence again. Riders who were never told that
+/// kept pedaling into rising resistance, so "stop" is stated as plainly as
+/// "start".
+class _RiderInstructionCard extends StatelessWidget {
+  final _RiderInstruction instruction;
   final int cadence;
   final bool showHint;
 
-  const _CadenceIndicator({super.key, required this.cadence, required this.showHint});
+  /// The bike reports its own resistance, so there are no physical stops to
+  /// watch the knob reach.
+  final bool reportsResistance;
+
+  const _RiderInstructionCard({
+    super.key,
+    required this.instruction,
+    required this.cadence,
+    required this.showHint,
+    required this.reportsResistance,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final pedaling = cadence > 0;
+    final stop = instruction == _RiderInstruction.stopPedaling;
+    final accent = stop ? Colors.green.shade700 : theme.colorScheme.primary;
 
-    return Container(
+    final String headline;
+    final String detail;
+    switch (instruction) {
+      case _RiderInstruction.startPedaling:
+        headline = 'Start pedaling';
+        detail = "Just a few seconds. We'll tell you when to stop.";
+        break;
+      case _RiderInstruction.keepPedaling:
+        headline = 'Keep pedaling…';
+        detail = 'Almost there.';
+        break;
+      case _RiderInstruction.stopPedaling:
+        headline = 'Stop pedaling';
+        detail = reportsResistance
+            ? "SmartSpin2k is turning the knob to learn your bike's full resistance range. This takes a few minutes."
+            : "SmartSpin2k is turning the knob all the way down, then all the way up, to learn your bike's limits.";
+        break;
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: pedaling ? Colors.green.withValues(alpha: 0.12) : theme.colorScheme.surfaceContainerHighest,
-        border: Border.all(
-          color: pedaling ? Colors.green.withValues(alpha: 0.6) : theme.colorScheme.outline.withValues(alpha: 0.25),
-        ),
+        color: accent.withValues(alpha: 0.12),
+        border: Border.all(color: accent.withValues(alpha: 0.6), width: stop ? 2 : 1),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         children: [
-          Text(
-            'CADENCE',
-            style: TextStyle(
-              fontSize: 11,
-              letterSpacing: 1.5,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-            ),
-          ),
+          Icon(stop ? Icons.front_hand : Icons.pedal_bike, color: accent, size: 36),
           const SizedBox(height: 8),
-          Text(
-            '$cadence',
-            style: TextStyle(
-              fontSize: 44,
-              height: 1.0,
-              fontWeight: FontWeight.bold,
-              color: pedaling ? Colors.green.shade700 : theme.colorScheme.onSurface,
+          // Announced when it changes: the rider may not be looking.
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              headline,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 26, height: 1.15, fontWeight: FontWeight.bold, color: accent),
             ),
           ),
-          Text('rpm', style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
+          if (!stop) ...[
+            const SizedBox(height: 12),
+            Text(
+              'CADENCE',
+              style: TextStyle(
+                fontSize: 11,
+                letterSpacing: 1.5,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$cadence',
+              style: TextStyle(
+                fontSize: 44,
+                height: 1.0,
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            Text('rpm', style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
+          ],
           const SizedBox(height: 12),
-          Text(
-            pedaling ? 'Keep pedaling until the knob starts to turn' : 'Start pedaling to begin',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 14),
-          ),
-          if (showHint) ...[
+          Text(detail, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15, height: 1.4)),
+          if (showHint && instruction == _RiderInstruction.startPedaling) ...[
             const SizedBox(height: 8),
             Text(
-              'Nothing will happen until the SmartSpin2k sees a couple of seconds of pedaling.',
+              'SmartSpin2k needs a couple of seconds of steady pedaling to start.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall,
             ),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Sets the expectation before the run: pedaling is brief, and the screen says
+/// when to stop.
+class _WhatWillHappen extends StatelessWidget {
+  final String lastStep;
+
+  const _WhatWillHappen({required this.lastStep});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final steps = ['Pedal for a few seconds.', 'Stop pedaling when this screen tells you.', lastStep];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('What will happen', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        for (var i = 0; i < steps.length; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 24,
+                  child: Text('${i + 1}.', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                ),
+                Expanded(child: Text(steps[i], style: const TextStyle(fontSize: 15, height: 1.4))),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
