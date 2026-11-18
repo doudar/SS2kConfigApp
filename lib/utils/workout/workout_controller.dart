@@ -467,8 +467,8 @@ class WorkoutController extends ChangeNotifier {
         _workoutProgressTime = 0;
         _lastTrackPointTime = 0;
       }
-      // Set workout start time when starting/resuming
-      if (_workoutStartTime == null) {
+      // Replaying a completed workout can start at zero without reloading it.
+      if (progressPosition == 0 || _workoutStartTime == null) {
         _workoutStartTime = clock.now();
       }
       await _prepareInProgressFile();
