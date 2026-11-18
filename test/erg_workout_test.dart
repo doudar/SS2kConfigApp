@@ -100,9 +100,9 @@ void main() {
     expect(records.map((record) => record.heartRate), everyElement(150));
   }
 
-  for (final resetSameWorkout in [true, false]) {
+  for (final action in ['Resetting', 'Loading', 'Replaying']) {
     test(
-      '${resetSameWorkout ? 'Resetting' : 'Loading'} a workout gives the next FIT its own date',
+      '$action a workout gives the next FIT its own date',
       () async {
         final data = DeviceData();
         final controller = WorkoutController(
@@ -121,15 +121,25 @@ void main() {
         controller.loadWorkout(timestampWorkout);
         final firstStart = DateTime.utc(2026, 10, 10, 15);
         recordThreeSeconds(controller, firstStart);
-        await controller.togglePlayPause();
+        if (action == 'Replaying') {
+          controller.skipToNextSegment(); // Finish the last segment.
+          expect(controller.progressPosition, 1);
+        } else {
+          await controller.togglePlayPause();
+        }
         await expectFitDates(controller, firstStart, 'first');
 
-        if (resetSameWorkout) {
-          controller.resetWorkout();
-        } else {
-          controller.loadWorkout(timestampWorkout.replaceFirst('300', '600'));
-        }
         final nextStart = DateTime.utc(2026, 10, 12, 17, 30);
+        if (action == 'Resetting') {
+          controller.resetWorkout();
+        } else if (action == 'Loading') {
+          controller.loadWorkout(timestampWorkout.replaceFirst('300', '600'));
+        } else {
+          // WorkoutScreen rewinds before opening the export dialog. Dismissing
+          // it leaves the same workout loaded when the rider presses Play.
+          controller.progressPosition = 0;
+          await withClock(Clock.fixed(nextStart), controller.togglePlayPause);
+        }
         recordThreeSeconds(controller, nextStart);
         await controller.togglePlayPause();
         await expectFitDates(controller, nextStart, 'second');
