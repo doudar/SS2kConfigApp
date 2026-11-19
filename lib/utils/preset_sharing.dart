@@ -16,6 +16,7 @@ import './device_data.dart';
 import './snackbar.dart';
 import './presets.dart';
 import './constants.dart';
+import './file_export.dart';
 import '../widgets/settings_backup_name_dialog.dart';
 
 class PresetSharing {
@@ -27,10 +28,6 @@ class PresetSharing {
   ) async {
     Directory? exportDirectory;
     try {
-      final directory = await getTemporaryDirectory();
-      exportDirectory = await directory.createTemp('ss2k_settings_');
-      final String filePath = '${exportDirectory.path}/$fileName.ss2k';
-
       // Convert settings to JSON, excluding sensitive data and complex objects
       List<Map<String, dynamic>> exportList = [];
       for (var item in deviceData.customCharacteristic) {
@@ -41,6 +38,25 @@ class PresetSharing {
         }
       }
       String jsonContent = jsonEncode(exportList);
+
+      // Computers: Save As dialog instead of the share sheet.
+      if (FileExport.useSaveDialog) {
+        String name = FileExport.baseName(fileName, '.ss2k');
+        if (name.isEmpty) name = 'SmartSpin2k settings';
+        final savedPath = await FileExport.saveWithDialog(
+          dialogTitle: 'Export settings',
+          fileName: '$name.ss2k',
+          bytes: utf8.encode(jsonContent),
+        );
+        if (savedPath != null && context.mounted) {
+          Snackbar.show(ABC.c, 'Settings saved to $savedPath', success: true);
+        }
+        return;
+      }
+
+      final directory = await getTemporaryDirectory();
+      exportDirectory = await directory.createTemp('ss2k_settings_');
+      final String filePath = '${exportDirectory.path}/$fileName.ss2k';
 
       await File(filePath).writeAsString(jsonContent);
       if (!context.mounted) return;

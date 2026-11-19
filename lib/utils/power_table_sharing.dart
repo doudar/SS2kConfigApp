@@ -15,8 +15,19 @@ import './device_data.dart';
 import './snackbar.dart';
 import './power_table_management.dart';
 import './constants.dart';
+import './file_export.dart';
 
 class PowerTableSharing {
+  static const String emptyTableMessage =
+      "No power table data yet. Pedal for a few seconds so the SmartSpin2k "
+      "homes and loads its saved table, then try again.";
+
+  /// True when at least one cell of the table has a value. Right after power-up
+  /// the SmartSpin2k reports an empty table until it has homed (it homes after
+  /// a couple of seconds of pedalling) and loaded its saved PowerTable.txt.
+  static bool hasData(List<List<int?>> powerTableData) =>
+      powerTableData.any((row) => row.any((value) => value != null));
+
   // Convert power table data to CSV format
   static String convertToCSV(
     List<List<int?>> powerTableData,
@@ -98,18 +109,45 @@ class PowerTableSharing {
     DeviceData deviceData,
     String fileName,
   ) async {
+    if (!hasData(deviceData.powerTableData)) {
+      Snackbar.show(ABC.c, emptyTableMessage, success: false);
+      return;
+    }
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final String filePath = '${directory.path}/$fileName.ptab';
-
       // Get HMax value
       String hMaxValue = deviceData.getVnameValue(BLE_hMaxVname);
 
-      // Convert power table to CSV including HMax and save to temporary file
+      // Convert power table to CSV including HMax
       final String csvContent = convertToCSV(
         deviceData.powerTableData,
         hMaxValue != noFirmSupport ? hMaxValue : null,
       );
+
+      // Computers: Save As dialog instead of the share sheet.
+      if (FileExport.useSaveDialog) {
+        String name = FileExport.baseName(fileName, '.ptab');
+        if (name.isEmpty) name = 'PowerTable';
+        final savedPath = await FileExport.saveWithDialog(
+          dialogTitle: 'Export power table',
+          fileName: '$name.ptab',
+          bytes: utf8.encode(csvContent),
+        );
+        if (context.mounted) {
+          if (savedPath == null) {
+            Snackbar.show(ABC.c, "Export cancelled", success: false);
+          } else {
+            Snackbar.show(
+              ABC.c,
+              "Power table saved to $savedPath",
+              success: true,
+            );
+          }
+        }
+        return;
+      }
+
+      final directory = await getApplicationDocumentsDirectory();
+      final String filePath = '${directory.path}/$fileName.ptab';
       await File(filePath).writeAsString(csvContent);
 
       // Get the RenderBox for positioning the share dialog on macOS
