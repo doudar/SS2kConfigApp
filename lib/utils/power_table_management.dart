@@ -13,6 +13,7 @@ import './device_data.dart';
 import './snackbar.dart';
 import './power_table_sharing.dart';
 import './constants.dart';
+import './file_export.dart';
 
 class PowerTableManager {
   static const String _powerTablesListKey = 'power_tables_list';
@@ -566,6 +567,8 @@ class PowerTableManager {
   ) async {
     if (!context.mounted) return;
 
+    final bool onComputer = FileExport.isComputer;
+    final bool saveDialog = FileExport.useSaveDialog;
     String? action = await showDialog<String>(
       context: context,
       builder: (BuildContext context) {
@@ -587,7 +590,7 @@ class PowerTableManager {
                 _buildMenuOption(
                   context,
                   icon: Icons.save,
-                  title: 'Save to phone',
+                  title: onComputer ? 'Save in app' : 'Save to phone',
                   subtitle: 'Save current table to "My Files"',
                   value: 'save',
                 ),
@@ -611,14 +614,18 @@ class PowerTableManager {
                   context,
                   icon: Icons.file_download_outlined,
                   title: 'Import File',
-                  subtitle: 'Open a .ptab file from your phone',
+                  subtitle: onComputer
+                      ? 'Open a .ptab file from this computer'
+                      : 'Open a .ptab file from your phone',
                   value: 'import',
                 ),
                 _buildMenuOption(
                   context,
-                  icon: Icons.share_outlined,
+                  icon: saveDialog ? Icons.save_alt : Icons.share_outlined,
                   title: 'Export File',
-                  subtitle: 'Share current table as a .ptab file',
+                  subtitle: saveDialog
+                      ? 'Save current table as a .ptab file'
+                      : 'Share current table as a .ptab file',
                   value: 'export',
                 ),
 
@@ -784,7 +791,7 @@ class PowerTableManager {
                   hintText: 'Enter file name',
                   labelText: 'File Name',
                   border: OutlineInputBorder(),
-                  suffixText: '.json',
+                  suffixText: '.ptab',
                 ),
               ),
               actions: <Widget>[
