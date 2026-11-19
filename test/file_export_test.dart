@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/file_export.dart';
+import 'package:ss2kconfigapp/utils/power_table_sharing.dart';
 
 void main() {
   tearDown(() => FileExport.debugUseSaveDialog = null);
@@ -35,5 +36,12 @@ void main() {
     expect(FileExport.useSaveDialog, isTrue);
     FileExport.debugUseSaveDialog = false;
     expect(FileExport.useSaveDialog, isFalse);
+  });
+
+  test('hasData is false for an all-empty table and true with one value', () {
+    final empty = List.generate(10, (_) => List<int?>.filled(30, null));
+    expect(PowerTableSharing.hasData(empty), isFalse);
+    empty[3][7] = 1234;
+    expect(PowerTableSharing.hasData(empty), isTrue);
   });
 }

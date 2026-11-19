@@ -659,6 +659,14 @@ class PowerTableManager {
         await deviceData.resetPowerTable(device);
         break;
       case 'save':
+        if (!PowerTableSharing.hasData(deviceData.powerTableData)) {
+          Snackbar.show(
+            ABC.c,
+            PowerTableSharing.emptyTableMessage,
+            success: false,
+          );
+          break;
+        }
         SharedPreferences prefs = await SharedPreferences.getInstance();
         List<String> existingTables =
             prefs.getStringList(_powerTablesListKey) ?? [];

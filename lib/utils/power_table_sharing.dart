@@ -18,6 +18,16 @@ import './constants.dart';
 import './file_export.dart';
 
 class PowerTableSharing {
+  static const String emptyTableMessage =
+      "No power table data yet. Pedal for a few seconds so the SmartSpin2k "
+      "homes and loads its saved table, then try again.";
+
+  /// True when at least one cell of the table has a value. Right after power-up
+  /// the SmartSpin2k reports an empty table until it has homed (it homes after
+  /// a couple of seconds of pedalling) and loaded its saved PowerTable.txt.
+  static bool hasData(List<List<int?>> powerTableData) =>
+      powerTableData.any((row) => row.any((value) => value != null));
+
   // Convert power table data to CSV format
   static String convertToCSV(
     List<List<int?>> powerTableData,
@@ -99,6 +109,10 @@ class PowerTableSharing {
     DeviceData deviceData,
     String fileName,
   ) async {
+    if (!hasData(deviceData.powerTableData)) {
+      Snackbar.show(ABC.c, emptyTableMessage, success: false);
+      return;
+    }
     try {
       // Get HMax value
       String hMaxValue = deviceData.getVnameValue(BLE_hMaxVname);
