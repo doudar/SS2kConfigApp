@@ -22,10 +22,17 @@ class ArcadeDroneLayout {
     final bounds = flightBounds ?? (Offset.zero & size);
     double fit(double value, double low, double high) =>
         low <= high ? value.clamp(low, high) : (low + high) / 2;
+    // Reserve room for the body and targeting ring before sizing the patrol.
+    final margin = (frame.isBoss ? 78 : 49) * bodyScale;
+    final travel = Size(
+      math.max(0, bounds.width - margin * 2),
+      math.max(0, bounds.height - margin * 2),
+    );
     Offset hover(double clock) {
       final level = frame.levelIndex.clamp(0, 5);
       final pace = 1 + level * .10;
-      final t = clock * pace;
+      // Wider paths need gentler turns so the eight-second shot stays readable.
+      final t = clock * pace * .55;
       final amplitude = 18.0 + level * 7;
       final phase = frame.serial.toDouble();
       final dart = math.sin(t * 1.7 + phase);
@@ -84,20 +91,23 @@ class ArcadeDroneLayout {
           math.sin(t * .8 + phase) * (14 + level * 3),
         ),
       };
-      final p =
-          worldOrigin +
-          (Offset(164 + frame.hoverX, -135 + frame.hoverY) + drift) * scale;
+      // Patrol the usable screen instead of circling a small rider-relative
+      // point. Each species keeps its own path, with wider sweeps later on.
+      final p = reducedMotion
+          ? worldOrigin +
+                Offset(164 + frame.hoverX, -135 + frame.hoverY) * scale
+          : bounds.center +
+                Offset(
+                  travel.width *
+                      (frame.hoverX / 90 * .06 +
+                          drift.dx / amplitude * (.20 + level * .05)),
+                  travel.height *
+                      (frame.hoverY / 35 * .06 +
+                          drift.dy / (15 + level * 3) * (.22 + level * .045)),
+                );
       return Offset(
-        fit(
-          p.dx,
-          bounds.left + (frame.isBoss ? 64 : 46) * bodyScale,
-          bounds.right - (frame.isBoss ? 64 : 46) * bodyScale,
-        ),
-        fit(
-          p.dy,
-          bounds.top + (frame.isBoss ? 76 : 32) * bodyScale,
-          bounds.bottom - (frame.isBoss ? 62 : 32) * bodyScale,
-        ),
+        fit(p.dx, bounds.left + margin, bounds.right - margin),
+        fit(p.dy, bounds.top + margin, bounds.bottom - margin),
       );
     }
 

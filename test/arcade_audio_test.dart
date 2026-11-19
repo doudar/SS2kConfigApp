@@ -170,6 +170,48 @@ void main() {
     expect(output.disposed, true);
   });
 
+  test('firing immediately interrupts ready and warning cues', () async {
+    for (final cue in [ArcadeCue.blasterReady, ArcadeCue.attackWarning]) {
+      final output = _Effects();
+      final fx = ArcadeSoundEffects(
+        output: output,
+        onError: () => fail('unexpected error'),
+      );
+      fx.setActive(true);
+      fx.play([cue]);
+      await fx.settled;
+      fx.play([ArcadeCue.bolt]);
+      await fx.settled;
+      expect(output.played, [cue, ArcadeCue.bolt]);
+      fx.dispose();
+      await fx.settled;
+    }
+  });
+
+  test(
+    'rapid UI actions replace earlier feedback without queuing it',
+    () async {
+      final output = _Effects();
+      final fx = ArcadeSoundEffects(
+        output: output,
+        onError: () => fail('unexpected error'),
+      );
+      fx.setActive(true);
+      fx.play([ArcadeCue.rideStart], interrupt: true);
+      await fx.settled;
+      fx.play([ArcadeCue.ridePause], interrupt: true);
+      fx.play([ArcadeCue.rideResume], interrupt: true);
+      await fx.settled;
+      expect(output.played, [ArcadeCue.rideStart, ArcadeCue.rideResume]);
+      fx.setActive(false);
+      fx.play([ArcadeCue.uiConfirm], interrupt: true);
+      await fx.settled;
+      expect(output.played, hasLength(2));
+      fx.dispose();
+      await fx.settled;
+    },
+  );
+
   test('effect failures disable playback and allow a later retry', () async {
     final output = _Effects()..fail = true;
     var errors = 0;

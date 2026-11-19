@@ -14,7 +14,24 @@ import 'package:ss2kconfigapp/utils/workout/arcade/arcade_workout_view.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_world_painter.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_preferences.dart';
 import 'package:ss2kconfigapp/utils/workout/arcade/arcade_intro.dart';
+import 'package:ss2kconfigapp/utils/workout/arcade/arcade_cues.dart';
+import 'package:ss2kconfigapp/utils/workout/arcade/arcade_sound_effects.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
+
+class _EffectsOutput implements ArcadeEffectsOutput {
+  final played = <ArcadeCue>[];
+  @override
+  Future<void> prepare() async {}
+  @override
+  Future<void> play(ArcadeCue cue) async {
+    played.add(cue);
+  }
+
+  @override
+  Future<void> stop() async {}
+  @override
+  Future<void> dispose() async {}
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -65,6 +82,7 @@ void main() {
         );
       });
       final game = ArcadeSession();
+      final outputs = <_EffectsOutput>[];
       void syncRoad() => game.road.update(
         segments: controller.segments,
         seconds: controller.workoutProgressSeconds,
@@ -107,6 +125,11 @@ void main() {
                   controller: controller,
                   deviceData: data,
                   session: game,
+                  effectsOutputFactory: () {
+                    final output = _EffectsOutput();
+                    outputs.add(output);
+                    return output;
+                  },
                   onStop: () {},
                   onExit: () => exits++,
                   onOpenMenu: () => showDialog<void>(
@@ -234,6 +257,10 @@ void main() {
       await tester.tap(find.byTooltip('Arcade audio'));
       await tester.pumpAndSettle();
       expect(
+        outputs.expand((output) => output.played),
+        contains(ArcadeCue.uiSelect),
+      );
+      expect(
         tester
             .widget<SwitchListTile>(
               find.widgetWithText(SwitchListTile, 'Music'),
@@ -254,6 +281,10 @@ void main() {
       await tester.tap(find.byTooltip('Close'));
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.volume_off), findsOneWidget);
+      final mutedCueCount = outputs.fold<int>(
+        0,
+        (count, output) => count + output.played.length,
+      );
       await tester.tap(find.byTooltip('Arcade audio'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(SwitchListTile, 'Music'));
@@ -264,6 +295,10 @@ void main() {
       final savedAudio = await ArcadePreferences.load();
       expect(savedAudio.musicEnabled, isTrue);
       expect(savedAudio.effectsEnabled, isFalse);
+      expect(
+        outputs.fold<int>(0, (count, output) => count + output.played.length),
+        mutedCueCount,
+      );
       expect(savedAudio.lastStoryVariant, game.story.variant);
       expect(tester.takeException(), isNull);
       await tester.tap(find.byTooltip('How to play'));
