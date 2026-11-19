@@ -15,6 +15,7 @@ import './constants.dart';
 import './virtual_gearing.dart';
 
 import './preset_sharing.dart';
+import './file_export.dart';
 import '../widgets/settings_backup_name_dialog.dart';
 
 class PresetManager {
@@ -520,11 +521,14 @@ class PresetManager {
       case 'export':
         final fileName = await showDialog<String>(
           context: context,
-          builder: (_) => const SettingsBackupNameDialog(
+          builder: (_) => SettingsBackupNameDialog(
             title: 'Export to a file',
-            description:
-                'Create a .ss2k file from the settings currently on your SmartSpin2k. Next, choose where to save or share it.\n\nYour Wi-Fi name and password are left out.',
-            actionLabel: 'Choose where to save or share',
+            description: FileExport.useSaveDialog
+                ? 'Create a .ss2k file from the settings currently on your SmartSpin2k. Next, choose where to save it.\n\nYour Wi-Fi name and password are left out.'
+                : 'Create a .ss2k file from the settings currently on your SmartSpin2k. Next, choose where to save or share it.\n\nYour Wi-Fi name and password are left out.',
+            actionLabel: FileExport.useSaveDialog
+                ? 'Choose where to save'
+                : 'Choose where to save or share',
             initialName: 'My bike setup',
             isExport: true,
           ),
