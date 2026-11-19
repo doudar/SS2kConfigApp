@@ -115,6 +115,7 @@ void main() {
       'minWatts': 45,
       'maxWatts': 1200,
       'pTab4Pwr': true,
+      'udpLogEnabled': true,
       'gearPreset': 0,
       'gearTeeth': [5011, 5012],
       'futureSetting': 123,
@@ -126,6 +127,7 @@ void main() {
       0x21: 45,
       0x22: 1200,
       0x2d: true,
+      0x2e: true,
       0x35: 0,
       0x34: [5011, 5012],
     });

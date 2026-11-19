@@ -99,6 +99,7 @@ final String BLE_hMinVname = "BLE_homingMin";
 final String BLE_hMaxVname = "BLE_homingMax";
 final String homingSensitivityVname = "BLE_homingSensitivity";
 final String pTab4pwrVname = "BLE_pTab4pwr";
+final String udpLoggingVname = "BLE_UDPLogging";
 final String BLE_logStreamVname = "BLE_BLELogging";
 final String gearPresetVname = "BLE_gearPreset";
 final String gearTeethVname = "BLE_gearTeeth";
@@ -790,6 +791,21 @@ final dynamic customCharacteristicFramework = [
     "max": 1,
     "textDescription":
         "Enable to use the power table for power instead of a power meter",
+    "defaultData": "false",
+  },
+  {
+    "vName": udpLoggingVname,
+    "reference": "0x2E",
+    "settingsSnapshotKey": "udpLogEnabled",
+    "isSetting": true,
+    "settingType": SettingType.advanced,
+    "type": "bool",
+    "humanReadableName": "Broadcast diagnostic logs over WiFi",
+    "min": 0,
+    "max": 1,
+    "textDescription":
+        "Devices on your local network can receive ride metrics and connection details while this is on.",
+    "showDescriptionInList": true,
     "defaultData": "false",
   },
   {

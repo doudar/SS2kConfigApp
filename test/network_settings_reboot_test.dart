@@ -6,10 +6,17 @@ import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/widgets/bool_card.dart';
 import 'package:ss2kconfigapp/widgets/onboarding/wifi_credentials_form.dart';
 import 'package:ss2kconfigapp/widgets/plain_text_card.dart';
+import 'package:ss2kconfigapp/widgets/setting_tile.dart';
 
 class _DeviceData extends DeviceData {
   final writes = <List<int>>[];
   int? failReference;
+
+  @override
+  void startConnectionMonitor(
+    BluetoothDevice device, {
+    Future<void> Function()? onReconnected,
+  }) {}
 
   @override
   Future<void> writeCustomCharacteristic(
@@ -156,6 +163,33 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('SmartSpin2k is rebooting'), findsNothing);
+  });
+
+  testWidgets('UDP logging shows the disclosure before enabling broadcast', (
+    tester,
+  ) async {
+    const title = 'Broadcast diagnostic logs over WiFi';
+    const disclosure =
+        'Devices on your local network can receive ride metrics and connection details while this is on.';
+    final logging = setting(udpLoggingVname);
+    expect(logging['isSetting'], isTrue);
+    expect(logging['settingType'], SettingType.advanced);
+    logging['value'] = 'false';
+    await host(tester, SettingTile(device: device, c: logging));
+    expect(find.text(disclosure), findsOneWidget);
+    expect(find.text('Off'), findsOneWidget);
+
+    await tap(tester, title);
+    expect(find.text(disclosure), findsOneWidget);
+    expect(data.writes.where((w) => w[0] == 2), isEmpty);
+    for (final value in [1, 0]) {
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      expect(data.writes.last.take(3), [0x02, 0x2e, value]);
+    }
+    await tap(tester, 'SAVE');
+    expect(data.writes.last[1], reference(saveVname));
+    expect(find.text('Off'), findsOneWidget);
   });
 
   testWidgets('network toggle prompts after Save', (tester) async {

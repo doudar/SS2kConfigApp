@@ -248,13 +248,30 @@ class _SettingTileState extends State<SettingTile> {
             horizontal: 16,
             vertical: 10,
           ),
-          title: Text(
-            _settingTitle(c),
-            style: TextStyle(
-              color: unsupported ? WorkoutVisuals.muted : Colors.white,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-            ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _settingTitle(c),
+                style: TextStyle(
+                  color: unsupported ? WorkoutVisuals.muted : Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (c['showDescriptionInList'] == true)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    _settingDescription(c),
+                    style: const TextStyle(
+                      color: WorkoutVisuals.muted,
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+            ],
           ),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 8),
