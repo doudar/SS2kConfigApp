@@ -27,12 +27,13 @@ extension ArcadeBiomeStory on ArcadeBiome {
   };
 }
 
-ArcadeBiome biomeFor(WorkoutSegment segment) => switch (workoutEffort(segment)) {
-  WorkoutEffort.easy => ArcadeBiome.grove,
-  WorkoutEffort.steady => ArcadeBiome.coast,
-  WorkoutEffort.hard => ArcadeBiome.neon,
-  WorkoutEffort.intense => ArcadeBiome.volcano,
-};
+ArcadeBiome biomeFor(WorkoutSegment segment) =>
+    switch (workoutEffort(segment)) {
+      WorkoutEffort.easy => ArcadeBiome.grove,
+      WorkoutEffort.steady => ArcadeBiome.coast,
+      WorkoutEffort.hard => ArcadeBiome.neon,
+      WorkoutEffort.intense => ArcadeBiome.volcano,
+    };
 
 /// Presentation-only rewards. Never writes targets or drives the workout clock.
 /// State lives above the view, so switching to Classic does not lose the run.
@@ -122,12 +123,13 @@ class ArcadeSession {
     for (final event in events) {
       switch (event) {
         case ArcadeDroneEvent.ready:
-          _cues.add(ArcadeCue.combo);
+          _cues.add(ArcadeCue.blasterReady);
         case ArcadeDroneEvent.fired:
           _cues.add(ArcadeCue.bolt);
         case ArcadeDroneEvent.destroyed:
-        case ArcadeDroneEvent.bossHit:
           _cues.add(ArcadeCue.droneHit);
+        case ArcadeDroneEvent.bossHit:
+          _cues.add(ArcadeCue.bossHit);
         case ArcadeDroneEvent.bossDestroyed:
           final sector = drones.snapshot().sector;
           if (cleared.add(sector)) {
@@ -272,6 +274,7 @@ class ArcadeSession {
                 (watts - target).abs() <= math.max(10, target * .10)));
     if (seconds > _rewardUntil) reward = null;
     final delta = previous == null ? 0.0 : seconds - previous;
+    final previousDifficulty = difficultyIndex;
     if (riddenSeconds != null && riddenSeconds.isFinite) {
       // The controller excludes skipped intervals and restores resumed time.
       _riddenSeconds = math.max(0, riddenSeconds);
@@ -287,6 +290,7 @@ class ArcadeSession {
       sectors: cleared.length,
       openingSeen: openingSeen,
     );
+    final beforeCombat = drones.snapshot();
     final combatEvents = drones.update(
       seconds: wasPlaying ? delta : 0,
       playing: playing && droneInteractionEnabled && freshSignal,
@@ -306,6 +310,15 @@ class ArcadeSession {
       levelIndex: difficultyIndex,
       bossHits: (segments[index].duration / 30).ceil().clamp(1, 6),
     );
+    final afterCombat = drones.snapshot();
+    if (!_skip && playing && freshSignal && droneInteractionEnabled) {
+      if (afterCombat.serial != beforeCombat.serial && !afterCombat.isBoss) {
+        _cues.add(ArcadeCue.enemyArrive);
+      }
+      if (afterCombat.attackWarning && !beforeCombat.attackWarning) {
+        _cues.add(ArcadeCue.attackWarning);
+      }
+    }
     if (!_skip &&
         playing &&
         !wasPlaying &&
@@ -319,11 +332,17 @@ class ArcadeSession {
       _applyDroneEvents(combatEvents, seconds);
       return;
     }
-    if (playing &&
-        previous != null &&
-        segmentIndex(segments, previous) != index &&
-        biomeFor(segments[index]) == ArcadeBiome.volcano) {
-      _cues.add(ArcadeCue.bossApproach);
+    if (playing && freshSignal) {
+      if (previous != null && segmentIndex(segments, previous) != index) {
+        _cues.add(
+          currentBiome == ArcadeBiome.volcano
+              ? ArcadeCue.bossApproach
+              : ArcadeCue.sectorStart,
+        );
+      }
+      if (difficultyIndex > previousDifficulty) {
+        _cues.add(ArcadeCue.difficultyUp);
+      }
     }
     if (onTarget) {
       final oldCombo = combo;
@@ -359,7 +378,12 @@ class ArcadeSession {
     } else {
       _offTargetSeconds += delta;
       // Give riders a few seconds to settle after target changes.
-      if (_offTargetSeconds > 3) streakSeconds = 0;
+      if (_offTargetSeconds > 3) {
+        if (combo > 1 && playing && freshSignal) {
+          _cues.add(ArcadeCue.comboLost);
+        }
+        streakSeconds = 0;
+      }
     }
     final total = segments.fold(0, (sum, s) => sum + s.duration);
     if (!playing && seconds >= total && total > 0) finished = true;

@@ -57,6 +57,64 @@ void main() {
     expect(later.contains(start.position), true);
   });
 
+  test(
+    'ready enemies patrol the available screen throughout the shot window',
+    () {
+      for (final size in [const Size(390, 600), const Size(1200, 600)]) {
+        final bounds = Rect.fromLTWH(8, 98, size.width - 16, size.height - 178);
+        for (final style in ArcadeDroneStyle.values) {
+          final positions = <Offset>[];
+          var travelWidth = 0.0;
+          for (var i = 0; i <= 160; i++) {
+            final clock = 6 + i * .05;
+            final pose = ArcadeDroneLayout(
+              size: size,
+              frame: ArcadeDroneFrame(
+                phase: ArcadeDronePhase.ready,
+                style: style,
+                serial: 1,
+                age: i * .05,
+                clock: clock,
+                charge: 1,
+                lockClock: 0,
+                departureEntry: 1,
+              ),
+              worldOrigin: Offset(size.width * .43, size.height * .6),
+              muzzle: Offset(size.width * .46, size.height * .5),
+              scale: (size.width / 650).clamp(.35, 1.5),
+              reducedMotion: false,
+              flightBounds: bounds,
+            );
+            final radius = (style.isBoss ? 76 : 46) * pose.bodyScale;
+            travelWidth =
+                bounds.width - 2 * (style.isBoss ? 78 : 49) * pose.bodyScale;
+            expect(
+              pose.position.dx - radius,
+              greaterThanOrEqualTo(bounds.left),
+            );
+            expect(pose.position.dx + radius, lessThanOrEqualTo(bounds.right));
+            expect(pose.position.dy - radius, greaterThanOrEqualTo(bounds.top));
+            expect(pose.position.dy + radius, lessThanOrEqualTo(bounds.bottom));
+            expect(pose.contains(pose.position), true);
+            positions.add(pose.position);
+          }
+          final xs = positions.map((p) => p.dx).toList()..sort();
+          final ys = positions.map((p) => p.dy).toList()..sort();
+          expect(
+            xs.last - xs.first,
+            greaterThan(travelWidth * .12),
+            reason: '$style must roam horizontally on $size',
+          );
+          expect(
+            ys.last - ys.first,
+            greaterThan(8),
+            reason: '$style must also change height on $size',
+          );
+        }
+      }
+    },
+  );
+
   test('misses travel along the tapped ray and reach outside the viewport', () {
     final pose = layout(const Size(900, 500), 2);
     for (final delta in [

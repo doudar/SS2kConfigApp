@@ -15,6 +15,7 @@ import 'arcade_journey_map.dart';
 import 'arcade_lobby_workout.dart';
 import 'arcade_pedaling.dart';
 import 'arcade_sound_effects.dart';
+import 'arcade_cues.dart';
 import 'arcade_escape.dart';
 import 'arcade_escape_sound.dart';
 import 'arcade_session.dart';
@@ -39,6 +40,7 @@ class ArcadeWorkoutView extends StatefulWidget {
     this.onWorkoutLoaded,
     this.onOpenMenu,
     this.hasDeviceHeader = false,
+    this.effectsOutputFactory,
   });
 
   final WorkoutController controller;
@@ -50,6 +52,9 @@ class ArcadeWorkoutView extends StatefulWidget {
   final VoidCallback? onWorkoutLoaded;
   final Future<void> Function()? onOpenMenu;
   final bool hasDeviceHeader;
+
+  /// Each effects channel owns an output; injectable for audio-free UI tests.
+  final ArcadeEffectsOutput Function()? effectsOutputFactory;
 
   @override
   State<ArcadeWorkoutView> createState() => _ArcadeWorkoutViewState();
@@ -64,6 +69,8 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
   int _roadRevision = -1;
   late final ArcadeMusic _music;
   late final ArcadeSoundEffects _effects;
+  late final ArcadeSoundEffects _combatEffects;
+  late final ArcadeSoundEffects _uiEffects;
   final ArcadeEscapeSound _escapeSound = ArcadeEscapeSound();
   bool _escapeRunning = false;
   late int _lastCueRevision;
@@ -87,6 +94,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     if (!_showLobby || _starting) return;
     try {
       ride.loadWorkout(choice.content, isResume: false);
+      _uiCue(ArcadeCue.uiConfirm);
       widget.onWorkoutLoaded?.call();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -145,6 +153,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     );
     _lastCueRevision = game.cueRevision;
     _effects = ArcadeSoundEffects(
+      output: widget.effectsOutputFactory?.call(),
       onError: () {
         if (!mounted) return;
         setState(() => _effectsEnabled = false);
@@ -155,6 +164,24 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
             ),
           ),
         );
+      },
+    );
+    _combatEffects = ArcadeSoundEffects(
+      output: widget.effectsOutputFactory?.call(),
+      onError: () {
+        if (mounted) {
+          setState(() => _effectsEnabled = false);
+          _sync();
+        }
+      },
+    );
+    _uiEffects = ArcadeSoundEffects(
+      output: widget.effectsOutputFactory?.call(),
+      onError: () {
+        if (mounted) {
+          setState(() => _effectsEnabled = false);
+          _sync();
+        }
       },
     );
     ride.addListener(_sync);
@@ -201,6 +228,14 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     }
     _music.sync(enabled: running && _musicEnabled, biome: biome);
     _effects.setActive(running && _effectsEnabled);
+    _combatEffects.setActive(running && _effectsEnabled);
+    // UI feedback can play while paused or in this view's settings dialog.
+    _uiEffects.setActive(
+      _foreground &&
+          _effectsEnabled &&
+          TickerMode.valuesOf(context).enabled &&
+          ((ModalRoute.of(context)?.isCurrent ?? true) || _dialogOpen),
+    );
     _escapeRunning =
         running &&
         _effectsEnabled &&
@@ -210,8 +245,17 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     // Consume even when muted/hidden: re-enabling never replays old rewards.
     if (_lastCueRevision != game.cueRevision) {
       _lastCueRevision = game.cueRevision;
-      if (running && _effectsEnabled) _effects.play(game.cues);
+      if (running && _effectsEnabled) {
+        _effects.play(game.cues.where((cue) => !cue.isCombat));
+        _combatEffects.play(game.cues.where((cue) => cue.isCombat));
+      }
     }
+  }
+
+  void _uiCue(ArcadeCue cue) {
+    if (!_foreground || !_effectsEnabled) return;
+    // An explicit pause/resume or selection supersedes the previous UI sound.
+    _uiEffects.play([cue], interrupt: true);
   }
 
   void _advancePedals() {
@@ -250,11 +294,14 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
     _animation.dispose();
     _music.dispose();
     _effects.dispose();
+    _combatEffects.dispose();
+    _uiEffects.dispose();
     _escapeSound.dispose();
     super.dispose();
   }
 
   Future<void> _journey() async {
+    _uiCue(ArcadeCue.uiSelect);
     _dialogOpen = true;
     _sync();
     try {
@@ -271,6 +318,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
   }
 
   Future<void> _customizeRider() async {
+    _uiCue(ArcadeCue.uiSelect);
     _dialogOpen = true;
     _sync();
     try {
@@ -280,6 +328,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
       );
       if (!mounted || appearance == null) return;
       setState(() => game.rider = appearance);
+      _uiCue(ArcadeCue.uiConfirm);
       unawaited(ArcadePreferences.saveRider(appearance));
     } finally {
       if (mounted) {
@@ -290,6 +339,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
   }
 
   Future<void> _help() async {
+    _uiCue(ArcadeCue.uiSelect);
     _dialogOpen = true;
     _sync();
     await showDialog<void>(
@@ -348,6 +398,8 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
         (!game.openingSeen || ride.workoutProgressSeconds > 0);
     if (!newRun) {
       await ride.togglePlayPause();
+      if (mounted)
+        _uiCue(ride.isPlaying ? ArcadeCue.rideResume : ArcadeCue.ridePause);
       return;
     }
     final segments = ride.segments;
@@ -371,6 +423,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
         return;
       game.stageOpening(opening);
       await ride.togglePlayPause();
+      if (mounted && ride.isPlaying) _uiCue(ArcadeCue.rideStart);
     } finally {
       game.cancelStagedOpening();
       _starting = false;
@@ -384,6 +437,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
   Future<void> _openRideMenu() async {
     final open = widget.onOpenMenu;
     if (open == null || _dialogOpen) return;
+    _uiCue(ArcadeCue.uiSelect);
     _dialogOpen = true;
     _sync();
     try {
@@ -397,6 +451,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
   }
 
   Future<void> _audioSettings() async {
+    _uiCue(ArcadeCue.uiSelect);
     _dialogOpen = true;
     _sync();
     try {
@@ -421,6 +476,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                       update(() {});
                       unawaited(ArcadePreferences.saveMusic(value));
                       _sync();
+                      _uiCue(ArcadeCue.uiSelect);
                     },
                   ),
                   SwitchListTile(
@@ -432,6 +488,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                       update(() {});
                       unawaited(ArcadePreferences.saveEffects(value));
                       _sync();
+                      if (value) _uiCue(ArcadeCue.uiConfirm);
                     },
                   ),
                 ],
@@ -449,6 +506,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
   }
 
   Future<void> _ftp() async {
+    _uiCue(ArcadeCue.uiSelect);
     _dialogOpen = true;
     _sync();
     final result = await showDialog<double>(
@@ -690,6 +748,7 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
                               : _playPause,
                           onStop: widget.onStop,
                           onSkip: () {
+                            _uiCue(ArcadeCue.sectorSkip);
                             game.willSkip();
                             ride.skipToNextSegment();
                           },

@@ -75,10 +75,11 @@ class ArcadeSoundEffects {
     _pending = _pending.then((_) => _output.stop()).catchError((Object _) {});
   }
 
-  void play(Iterable<ArcadeCue> cues) {
+  void play(Iterable<ArcadeCue> cues, {bool interrupt = false}) {
     if (!_active || _disposed || cues.isEmpty) return;
     final cue = cues.reduce((a, b) => a.priority >= b.priority ? a : b);
-    if (_busyUntil != null &&
+    if (!interrupt &&
+        _busyUntil != null &&
         _now().isBefore(_busyUntil!) &&
         cue.priority <= _priority)
       return;
