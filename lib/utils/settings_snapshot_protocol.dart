@@ -1,8 +1,10 @@
 import 'dart:convert';
 
-const int settingsSnapshotReference = 0x31;
-const int settingsSnapshotVersion = 1;
-const int settingsSnapshotHeaderLength = 7;
+import 'package:ss2k_protocol/ss2k_protocol.dart' as protocol;
+
+const int settingsSnapshotReference = protocol.CommandId.allSettings;
+const int settingsSnapshotVersion = protocol.snapshot_version;
+const int settingsSnapshotHeaderLength = protocol.snapshot_header_length;
 
 enum SettingsSnapshotRequestResult { supported, unsupported }
 

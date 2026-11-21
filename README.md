@@ -19,7 +19,7 @@ A Flutter-based mobile application for controlling and configuring SmartSpin2K d
 
 ### ⚙️ Device Configuration
 - Easy-to-use settings interface
-- Firmware updates over WiFi or Bluetooth
+- Paired settings and firmware updates over Bluetooth or DirCon (Wi-Fi)
 - Configuration presets for quick setup
 - Customizable power curves and resistance settings
 
@@ -27,6 +27,14 @@ A Flutter-based mobile application for controlling and configuring SmartSpin2K d
 - Strava connectivity for workout uploads
 - FIT file compatibility
 - Demo mode for testing without hardware
+
+## Pairing a SmartSpin2k
+
+Connect to the trainer in the app. When prompted, press and hold both shifter buttons. The app saves the pairing in the operating system's secure storage and reuses it over Bluetooth or DirCon. Open **Settings → Forget this SmartSpin2k** to remove the pairing from both devices. If the connection drops during removal, reconnect and choose **Finish forgetting this SmartSpin2k**. A trainer factory reset clears all of its pairings. Older firmware retains its existing connection and update methods.
+
+Tap **App Version** four times on the device screen to unlock **Maintenance → Developer Options**. This preference persists across app restarts. The menu controls cadence, heart rate, power, and ERG target simulation.
+
+The Dart package in `packages/ss2k_protocol` comes from the SS2kProtocol repository. Update the shared schema and codecs there, then run `dart tool/sync_consumers.dart app ../SS2kConfigApp` from that repository to refresh the app copy.
 
 ## Installation
 

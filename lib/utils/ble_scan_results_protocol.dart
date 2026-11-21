@@ -2,9 +2,11 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
-const int bleScanResultsReference = 0x32;
-const int bleScanResultsVersion = 1;
-const int bleScanResultsHeaderLength = 10;
+import 'package:ss2k_protocol/ss2k_protocol.dart' as protocol;
+
+const int bleScanResultsReference = protocol.CommandId.scanResults;
+const int bleScanResultsVersion = protocol.scan_version;
+const int bleScanResultsHeaderLength = protocol.scan_header_length;
 
 enum BleScanResultEvent { begin, device, end }
 

@@ -26,6 +26,7 @@ import 'package:fvp/fvp.dart' as fvp;
 import 'utils/onboarding/onboarding_state.dart';
 import 'utils/onboarding/wizard_session.dart';
 import 'utils/theme_provider.dart';
+import 'utils/device_data.dart' show DeviceData;
 import 'utils/demo.dart' show demoModeBypass;
 import 'utils/app_release_service.dart';
 
@@ -73,9 +74,48 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   // kIsWeb stays true because the wizard is never shown on web.
   bool _onboardingCompleted = kIsWeb;
 
+  void _showPairingPrompt(
+    String name,
+    Future<void> approval,
+    VoidCallback cancel,
+  ) {
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) {
+      cancel();
+      return;
+    }
+    final route = DialogRoute<void>(
+      context: navigator.context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: Text('Pair with $name'),
+          content: const Text(
+            'Press and hold both shifter buttons on your SmartSpin2k until pairing finishes.',
+          ),
+          actions: [TextButton(onPressed: cancel, child: const Text('Cancel'))],
+        ),
+      ),
+    );
+    unawaited(navigator.push(route));
+    approval.then<void>(
+      (_) {
+        if (route.isActive) navigator.removeRoute(route);
+      },
+      onError: (Object error) {
+        if (route.isActive) navigator.removeRoute(route);
+        _scaffoldKey.currentState?.showSnackBar(
+          SnackBar(content: Text('Pairing did not finish. $error')),
+        );
+      },
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    DeviceData.pairingPrompt = _showPairingPrompt;
     if (!kIsWeb) {
       try {
         _adapterStateStateSubscription = FlutterBluePlus.adapterState.listen((

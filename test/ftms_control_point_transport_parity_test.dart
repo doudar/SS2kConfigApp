@@ -941,6 +941,8 @@ void main() {
 
       bool isRead(List<int> w) => w.length >= 2 && w[0] == 0x01;
 
+      // Establish the protocol before gating the first actual settings read.
+      await deviceData.usesPairedSettings(harness.device);
       blePlatform.holdWriteGate(ccUUID);
       blePlatform.writes.clear();
 

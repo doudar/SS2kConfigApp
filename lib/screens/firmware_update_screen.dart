@@ -61,6 +61,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   DateTime? startTime;
   String timeRemaining = 'Calculating...';
   bool _usingWifi = false;
+  bool _pairedUpload = false;
   WifiOtaPhase? _wifiOtaPhase;
   String _updateStatus = '';
 
@@ -111,7 +112,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     // Monitor device disconnection during firmware update
     charSubscription = this.widget.device.connectionState.listen((state) {
       // If progress is high (>95%), assume disconnect is due to reboot/completion
-      if (!_usingWifi &&
+      if (!_pairedUpload &&
+          !_usingWifi &&
           state != BluetoothConnectionState.connected &&
           updatingFirmware &&
           _progress < 0.95) {
@@ -511,82 +513,101 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       }
       await WakelockPlus.enable();
 
-      // Try WiFi update first
-      final wifiResult = await WifiOTA.updateFirmware(
-        deviceName: deviceData.preferredDeviceName(widget.device.advName),
-        deviceIp: deviceData.advertisedIpAddress,
-        firmwarePath: binFilePath,
-        firmwareFilename: _hardwareDetection!.architecture.firmwareFilename,
-        onProgress: (progress) {
-          if (!mounted) return;
-          setState(() {
-            _wifiOtaPhase = progress.phase;
-            _updateStatus = progress.message;
-            if (progress.fraction != null) {
-              _progress = progress.fraction!;
-              if (progress.phase == WifiOtaPhase.uploading) {
-                updateProgress();
-              }
-            }
-          });
-        },
-      );
-
-      bool updateSuccess = wifiResult.accepted;
-
-      if (!wifiResult.accepted && !wifiResult.shouldFallBackToBluetooth) {
-        throw Exception(wifiResult.message);
-      }
-
-      if (wifiResult.shouldFallBackToBluetooth) {
-        otaPackage = deviceData.createFirmwareOtaPackage();
-        if (otaPackage == null) {
-          throw Exception(
-            '${wifiResult.message} Bluetooth fallback is unavailable while connected over DIRCON. Reconnect using Bluetooth and try again.',
-          );
-        }
-
-        // Show message about falling back to BLE
+      bool updateSuccess;
+      _pairedUpload = await deviceData.usesPairedSettings(widget.device);
+      if (_pairedUpload) {
         setState(() {
-          _usingWifi = false;
-          _progress = 0;
-          startTime = null;
-          timeRemaining = 'Calculating...';
-          _wifiOtaPhase = null;
-          _updateStatus = 'Uploading firmware via Bluetooth…';
+          _usingWifi = deviceData.isDirConConnected;
+          _wifiOtaPhase = WifiOtaPhase.uploading;
+          _updateStatus = 'Streaming firmware over the paired connection...';
         });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'WiFi update failed. Falling back to Bluetooth (this may take up to 5 minutes)...',
-            ),
-            duration: Duration(seconds: 5),
-          ),
+        await deviceData.streamPairedFirmware(widget.device, firmwareBytes, (
+          fraction,
+        ) {
+          if (mounted)
+            setState(() {
+              _progress = fraction;
+              updateProgress();
+            });
+        });
+        updateSuccess = true;
+      } else {
+        final wifiResult = await WifiOTA.updateFirmware(
+          deviceName: deviceData.preferredDeviceName(widget.device.advName),
+          deviceIp: deviceData.advertisedIpAddress,
+          firmwarePath: binFilePath,
+          firmwareFilename: _hardwareDetection!.architecture.firmwareFilename,
+          onProgress: (progress) {
+            if (!mounted) return;
+            setState(() {
+              _wifiOtaPhase = progress.phase;
+              _updateStatus = progress.message;
+              if (progress.fraction != null) {
+                _progress = progress.fraction!;
+                if (progress.phase == WifiOtaPhase.uploading) {
+                  updateProgress();
+                }
+              }
+            });
+          },
         );
 
-        // Stop notifications before BLE update
-        if (deviceData.indoorBikeCharacteristic != null) {
-          await deviceData.indoorBikeCharacteristic!.setNotifyValue(false);
+        updateSuccess = wifiResult.accepted;
+
+        if (!wifiResult.accepted && !wifiResult.shouldFallBackToBluetooth) {
+          throw Exception(wifiResult.message);
         }
-        deviceData.subscribed = false;
 
-        // Re-initialize OTA package to ensure we have a fresh stream controller
-        otaPackage = deviceData.createFirmwareOtaPackage();
-        await _progressStreamSubscription();
+        if (wifiResult.shouldFallBackToBluetooth) {
+          otaPackage = deviceData.createFirmwareOtaPackage();
+          if (otaPackage == null) {
+            throw Exception(
+              '${wifiResult.message} Bluetooth fallback is unavailable while connected over DIRCON. Reconnect using Bluetooth and try again.',
+            );
+          }
 
-        await deviceData.updateFirmwareWithPackage(
-          otaPackage!,
-          widget.device,
-          type,
-          binFilePath: binFilePath,
-        );
+          // Show message about falling back to BLE
+          setState(() {
+            _usingWifi = false;
+            _progress = 0;
+            startTime = null;
+            timeRemaining = 'Calculating...';
+            _wifiOtaPhase = null;
+            _updateStatus = 'Uploading firmware via Bluetooth…';
+          });
 
-        updateSuccess = otaPackage!.firmwareupdate;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'WiFi update failed. Falling back to Bluetooth (this may take up to 5 minutes)...',
+              ),
+              duration: Duration(seconds: 5),
+            ),
+          );
 
-        // Restore the custom settings listener used for verification. FTMS
-        // remains blocked until this screen is disposed.
-        deviceData.decode(this.widget.device);
+          // Stop notifications before BLE update
+          if (deviceData.indoorBikeCharacteristic != null) {
+            await deviceData.indoorBikeCharacteristic!.setNotifyValue(false);
+          }
+          deviceData.subscribed = false;
+
+          // Re-initialize OTA package to ensure we have a fresh stream controller
+          otaPackage = deviceData.createFirmwareOtaPackage();
+          await _progressStreamSubscription();
+
+          await deviceData.updateFirmwareWithPackage(
+            otaPackage!,
+            widget.device,
+            type,
+            binFilePath: binFilePath,
+          );
+
+          updateSuccess = otaPackage!.firmwareupdate;
+
+          // Restore the custom settings listener used for verification. FTMS
+          // remains blocked until this screen is disposed.
+          deviceData.decode(this.widget.device);
+        }
       }
 
       // Determine whether to attempt verification
@@ -615,7 +636,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         } else {
           // Verification failed - reboot and show error
           _showUploadCompleteDialog(false);
-          deviceData.reboot(widget.device);
+          if (!_pairedUpload) deviceData.reboot(widget.device);
         }
       } else {
         _showUploadCompleteDialog(false);
@@ -623,7 +644,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     } catch (e) {
       bool recovered = false;
       // If error occurred but progress was high, try to verify anyway
-      if (!_usingWifi && _progress > 0.95) {
+      if (!_pairedUpload && !_usingWifi && _progress > 0.95) {
         print(
           'Exception caught but progress is high. Attempting verification. Error: $e',
         );
@@ -798,7 +819,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
               textAlign: TextAlign.center,
             )
           : Text(
-              "Firmware will be uploaded via WiFi if available, falling back to BLE if needed.",
+              deviceData.hasPairedSession
+                  ? 'Firmware will be streamed over your paired connection.'
+                  : 'Firmware will be uploaded via WiFi if available, falling back to BLE if needed.',
               textAlign: TextAlign.center,
             ),
       SizedBox(height: updatingFirmware ? 16 : 8),
@@ -826,7 +849,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                 if (!_usingWifi || _wifiOtaPhase == WifiOtaPhase.uploading)
                   Text('Time remaining: $timeRemaining'),
                 Text(
-                  _usingWifi
+                  _pairedUpload && _usingWifi
+                      ? 'Updating via DirCon...'
+                      : _usingWifi
                       ? 'Updating via WiFi...'
                       : 'Updating via Bluetooth...',
                 ),

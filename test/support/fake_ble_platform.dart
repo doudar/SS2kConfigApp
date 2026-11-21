@@ -396,9 +396,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   ) async => BmBluetoothAdapterState(adapterState: BmAdapterStateEnum.on);
 
   @override
-  Future<bool> writeCharacteristic(
-    BmWriteCharacteristicRequest request,
-  ) async {
+  Future<bool> writeCharacteristic(BmWriteCharacteristicRequest request) async {
     final gateKey = _key(request.characteristicUuid.str);
     final gate = _writeGates[gateKey];
     if (gate != null) {
@@ -418,7 +416,8 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     // holds the shared transport queue until it arrives. A silent fake makes
     // every settings sweep cost the full 2 s response timeout per entry, which
     // is minutes for one connection bootstrap.
-    if (answerCustomRequests &&
+    if ((answerCustomRequests ||
+            request.value.length == 2 && request.value[1] == 0x36) &&
         _key(request.characteristicUuid.str) == _key(ccUUID) &&
         request.value.length > 1) {
       final reference = request.value[1];
@@ -433,8 +432,8 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
             // This harness models firmware from before 0x31. Unknown reads
             // are explicitly rejected, which exercises the production app's
             // legacy per-setting fallback without weakening its strict rule.
-            value: reference == 0x31
-                ? const [0xff, 0x31]
+            value: reference == 0x31 || reference == 0x36
+                ? [0xff, reference]
                 : [0x80, reference],
             success: true,
             errorCode: 0,
@@ -578,10 +577,7 @@ class BleHarness {
 
 /// Runs [body] with every `print` line also appended to [sink], so a test can
 /// assert on a specific transport log line without silencing normal output.
-Future<void> withPrintCapture(
-  List<String> sink,
-  Future<void> Function() body,
-) {
+Future<void> withPrintCapture(List<String> sink, Future<void> Function() body) {
   return runZoned(
     body,
     zoneSpecification: ZoneSpecification(

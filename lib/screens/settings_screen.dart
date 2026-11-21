@@ -35,6 +35,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     deviceData = DeviceDataManager.forDevice(this.widget.device);
+    deviceData.pairingAvailable.addListener(_pairingChanged);
+  }
+
+  void _pairingChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    deviceData.pairingAvailable.removeListener(_pairingChanged);
+    super.dispose();
   }
 
   Widget _buildCategoryTile(
@@ -238,6 +249,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                         SizedBox(height: 20),
+                        if (deviceData.pairingAvailable.value)
+                          ListTile(
+                            leading: const Icon(Icons.link_off),
+                            title: Text(
+                              deviceData.forgetPending
+                                  ? 'Finish forgetting this SmartSpin2k'
+                                  : 'Forget this SmartSpin2k',
+                            ),
+                            onTap: () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (dialog) => AlertDialog(
+                                  title: const Text('Forget this SmartSpin2k?'),
+                                  content: const Text(
+                                    'Remove this pairing from the app and trainer. To connect again, hold both shifter buttons.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dialog, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dialog, true),
+                                      child: const Text('Forget'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirmed != true || !context.mounted) return;
+                              try {
+                                await deviceData.forgetPairing(widget.device);
+                                if (context.mounted)
+                                  Navigator.of(
+                                    context,
+                                  ).popUntil((route) => route.isFirst);
+                              } catch (error) {
+                                if (context.mounted)
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Could not forget SmartSpin2k. $error',
+                                      ),
+                                    ),
+                                  );
+                              }
+                            },
+                          ),
                         GridView.count(
                           crossAxisCount: columns,
                           crossAxisSpacing: 12,
