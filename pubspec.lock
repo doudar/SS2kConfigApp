@@ -1159,9 +1159,11 @@ packages:
   ss2k_protocol:
     dependency: "direct main"
     description:
-      path: "packages/ss2k_protocol"
-      relative: true
-    source: path
+      path: "."
+      ref: e83910c13674b01a3104bc86b4b4055862e2d9c2
+      resolved-ref: e83910c13674b01a3104bc86b4b4055862e2d9c2
+      url: "https://github.com/doudar/SS2kProtocol.git"
+    source: git
     version: "0.2.0"
   stack_trace:
     dependency: transitive

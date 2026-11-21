@@ -34,7 +34,7 @@ Connect to the trainer in the app. When prompted, press and hold both shifter bu
 
 Tap **App Version** four times on the device screen to unlock **Maintenance → Developer Options**. This preference persists across app restarts. The menu controls cadence, heart rate, power, and ERG target simulation.
 
-The Dart package in `packages/ss2k_protocol` comes from the SS2kProtocol repository. Update the shared schema and codecs there, then run `dart tool/sync_consumers.dart app ../SS2kConfigApp` from that repository to refresh the app copy.
+Flutter fetches the custom characteristic schema and Dart codecs from [SS2kProtocol](https://github.com/doudar/SS2kProtocol). To adopt a protocol change, update the commit pinned in `pubspec.yaml`, run `flutter pub get`, and commit the updated `pubspec.lock`.
 
 ## Updating trainer firmware
 
