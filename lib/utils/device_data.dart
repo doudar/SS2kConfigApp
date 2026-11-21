@@ -414,7 +414,7 @@ class DeviceData {
     if (isSimulated) return false;
     final link = await _queueBleOperation(() => _readyCustomLink(device));
     if (link.forgetPending)
-      throw StateError("Finish forgetting this SmartSpin2k in Settings.");
+      throw StateError("Select Finish unpairing in the trainer menu or Settings.");
     return link.authenticated;
   }
 
@@ -4050,7 +4050,7 @@ class DeviceData {
     return _queueBleOperation(priority: priority, label: 'custom char', () async {
       final link = await _readyCustomLink(device);
       if (link.forgetPending)
-        throw StateError("Finish forgetting this SmartSpin2k in Settings.");
+        throw StateError("Select Finish unpairing in the trainer menu or Settings.");
       if (link.authenticated) {
         final descriptor = protocol.command(value[1]);
         if (value[0] == protocol.read &&

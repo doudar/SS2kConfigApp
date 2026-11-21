@@ -315,7 +315,7 @@ class PairedCustomLink {
 
   Future<void> forget() async {
     if (_identity == null || _closed)
-      throw StateError('Reconnect to finish forgetting the trainer.');
+      throw StateError('Reconnect to finish unpairing the trainer.');
     if (!forgetPending) {
       if (!authenticated) throw StateError('No authenticated pairing.');
       final saved = await _storage.read(key: _bondKey!);
