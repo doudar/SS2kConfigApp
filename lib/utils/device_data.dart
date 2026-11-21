@@ -12,7 +12,6 @@ import 'package:flutter/foundation.dart';
 import 'constants.dart';
 import 'paired_custom_link.dart';
 import 'package:ss2k_protocol/ss2k_protocol.dart' as protocol;
-import 'package:crypto/crypto.dart' as crypto;
 import 'extra.dart';
 import 'bleConstants.dart';
 import 'ble_connection_retry.dart';
@@ -349,7 +348,21 @@ class DeviceData {
     link = PairedCustomLink(
       alias: device.remoteId.str,
       deviceName: preferredDeviceName(device.advName),
-      maxWire: socket != null ? 234 : (device.mtuNow - 3).clamp(20, 512),
+      maxWire: 234,
+      currentMaxWire: socket == null
+          ? () => (device.mtuNow - 3).clamp(20, 512)
+          : null,
+      dirCon: socket != null,
+      writeOtaWithoutResponse:
+          socket == null &&
+              characteristic != null &&
+              characteristic.properties.writeWithoutResponse
+          ? (packet) async {
+              if (!identical(_customLink, link))
+                throw const TransportNotConnected();
+              await characteristic.write(packet, withoutResponse: true);
+            }
+          : null,
       prompt: pairingPrompt,
       restoreNotificationMode: retry,
       legacyIndications:
@@ -414,7 +427,9 @@ class DeviceData {
     if (isSimulated) return false;
     final link = await _queueBleOperation(() => _readyCustomLink(device));
     if (link.forgetPending)
-      throw StateError("Select Finish unpairing in the trainer menu or Settings.");
+      throw StateError(
+        "Select Finish unpairing in the trainer menu or Settings.",
+      );
     return link.authenticated;
   }
 
@@ -434,61 +449,7 @@ class DeviceData {
     await _queueBleOperation(
       () async {
         final link = await _readyCustomLink(device);
-        if (link.forgetPending || !link.authenticated)
-          throw StateError('The firmware update requires a paired connection.');
-        final chunkSize = pairedFirmwareChunkSize(link.maxWire);
-        List<int> le32(int value) => [
-          value & 255,
-          value >> 8 & 255,
-          value >> 16 & 255,
-          value >> 24 & 255,
-        ];
-        Future<void> send(int op, List<int> payload, int expected) async {
-          final reply = await link.command([
-            protocol.write,
-            protocol.CommandId.firmwareStream,
-            op,
-            ...payload,
-          ]);
-          if (reply.length != 7 ||
-              reply[0] != protocol.success ||
-              reply[2] != op ||
-              ByteData.sublistView(
-                    Uint8List.fromList(reply),
-                    3,
-                  ).getUint32(0, Endian.little) !=
-                  expected) {
-            throw StateError(
-              'SmartSpin2k rejected the firmware transfer at offset $expected.',
-            );
-          }
-        }
-
-        final digest = crypto.sha256.convert(firmware).bytes;
-        try {
-          await send(protocol.ota_begin, [
-            ...le32(firmware.length),
-            ...digest,
-          ], 0);
-          var offset = 0;
-          while (offset < firmware.length) {
-            final end = (offset + chunkSize).clamp(0, firmware.length);
-            await send(protocol.ota_chunk, [
-              ...le32(offset),
-              ...Uint8List.sublistView(firmware, offset, end),
-            ], end);
-            offset = end;
-            onProgress(offset / firmware.length);
-          }
-          await send(protocol.ota_finish, [], firmware.length);
-        } catch (_) {
-          if (identical(_customLink, link) && link.authenticated) {
-            try {
-              await send(protocol.ota_abort, [], 0);
-            } catch (_) {}
-          }
-          rethrow;
-        }
+        await link.streamFirmware(firmware, onProgress);
       },
       priority: TransportOpPriority.interactive,
       label: 'paired firmware transfer',
@@ -4050,7 +4011,9 @@ class DeviceData {
     return _queueBleOperation(priority: priority, label: 'custom char', () async {
       final link = await _readyCustomLink(device);
       if (link.forgetPending)
-        throw StateError("Select Finish unpairing in the trainer menu or Settings.");
+        throw StateError(
+          "Select Finish unpairing in the trainer menu or Settings.",
+        );
       if (link.authenticated) {
         final descriptor = protocol.command(value[1]);
         if (value[0] == protocol.read &&

@@ -1,6 +1,6 @@
 name: ss2kconfigapp
 description: Configures the SmartSpin2k using BLE
-version: 2.0.11+88
+version: 2.0.12+89
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: "none"
@@ -18,7 +18,7 @@ dependencies:
   ss2k_protocol:
     git:
       url: https://github.com/doudar/SS2kProtocol.git
-      ref: e83910c13674b01a3104bc86b4b4055862e2d9c2
+      ref: fbe3d0fa52917c8b27d83a33f7603de0e2bbcb7f
   flutter_secure_storage: ^10.0.0
   pointycastle: ^4.0.0
   crypto: ^3.0.6

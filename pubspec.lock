@@ -1160,11 +1160,11 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: e83910c13674b01a3104bc86b4b4055862e2d9c2
-      resolved-ref: e83910c13674b01a3104bc86b4b4055862e2d9c2
+      ref: fbe3d0fa52917c8b27d83a33f7603de0e2bbcb7f
+      resolved-ref: fbe3d0fa52917c8b27d83a33f7603de0e2bbcb7f
       url: "https://github.com/doudar/SS2kProtocol.git"
     source: git
-    version: "0.2.0"
+    version: "0.3.0"
   stack_trace:
     dependency: transitive
     description:
