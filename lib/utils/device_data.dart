@@ -4315,8 +4315,11 @@ class DeviceData {
         }
       }
 
+      final carriesValue =
+          value.first == protocol.success ||
+          value.first == protocol.secure_notification;
       if (value.length > 1 &&
-          value[0] == 0x80 &&
+          carriesValue &&
           value[1] == bleScanResultsReference) {
         final update = _scanResultDecoder.add(value);
         if (update != null) {
@@ -4374,7 +4377,7 @@ class DeviceData {
         return;
       }
 
-      if (value[0] == 0x80) {
+      if (carriesValue) {
         if (value.length < 2) return;
 
         // Use cached map for O(1) lookup

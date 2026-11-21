@@ -80,7 +80,7 @@ class PairedCustomLink {
   void receive(List<int> wire) {
     if (_closed || wire.isEmpty) return;
     if (legacy) {
-      onInner(wire);
+      if (wire.first != protocol.secure_notification) onInner(wire);
       return;
     }
     final frame = _assembler.add(wire);
@@ -96,13 +96,9 @@ class PairedCustomLink {
         waiting.complete(packet);
       }
     }
-    if (inner) {
-      if (packet.first == protocol.secure_notification) {
-        onInner([protocol.success, ...packet.skip(1)]);
-      } else {
-        onInner(packet);
-      }
-    }
+    // Preserve the authenticated opcode so a change cannot be treated as a
+    // command acknowledgement anywhere downstream.
+    if (inner) onInner(packet);
   }
 
   Future<List<int>> _exchange(

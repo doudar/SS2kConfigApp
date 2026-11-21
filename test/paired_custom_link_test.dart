@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:crypto/crypto.dart' as digest;
+import 'package:pointycastle/export.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2k_protocol/ss2k_protocol.dart' as p;
@@ -36,12 +39,124 @@ void main() {
       expect(writes, [
         [p.read, p.CommandId.capabilities],
       ]);
+      link.receive([p.secure_notification, 8, 99, 0]);
       link.receive([p.success, 8, 77, 0]);
       expect(received, [
         [p.success, 8, 77, 0],
       ]);
     },
   );
+  test(
+    'an authenticated change and the same-reference reply remain distinct',
+    () async {
+      final deviceId = Uint8List.fromList(List.filled(8, 3));
+      final appId = List.filled(8, 4);
+      final key = Uint8List.fromList(List.filled(32, 5));
+      FlutterSecureStorage.setMockInitialValues({
+        'ss2k_bond_${base64UrlEncode(deviceId)}': base64Encode([
+          ...appId,
+          ...key,
+        ]),
+      });
+      final nonce = List.filled(16, 6);
+      late List<int> transcript;
+      final material = Uint8List(64);
+      List<int> proof(String label) => digest.Hmac(
+        digest.sha256,
+        key,
+      ).convert([...ascii.encode(label), ...transcript]).bytes.sublist(0, 16);
+      Uint8List record(int sequence, List<int> plain) {
+        final header = Uint8List.fromList([p.secure_data, sequence, 0, 0, 0]);
+        final cipher = CCMBlockCipher(AESEngine())
+          ..init(
+            true,
+            AEADParameters(
+              KeyParameter(material.sublist(16, 32)),
+              64,
+              Uint8List.fromList([
+                ...material.sublist(40, 48),
+                ...header.skip(1),
+              ]),
+              header,
+            ),
+          );
+        return Uint8List.fromList([
+          ...header,
+          ...cipher.process(Uint8List.fromList(plain)),
+        ]);
+      }
+
+      final change = [p.secure_notification, p.CommandId.shifterPosition, 4, 0];
+      final reply = [p.success, p.CommandId.shifterPosition, 5, 0];
+      late PairedCustomLink paired;
+      paired = PairedCustomLink(
+        alias: 'bench',
+        deviceName: 'bench',
+        maxWire: 234,
+        prompt: (_, _, _) => fail('Stored credentials should resume'),
+        onInner: received.add,
+        writeWire: (frame) async {
+          switch (frame.first) {
+            case p.read:
+              paired.receive([
+                p.success,
+                p.CommandId.capabilities,
+                1,
+                p.cap_secure_settings,
+                0,
+                0,
+                0,
+              ]);
+            case p.secure_info:
+              paired.receive([p.secure_identity, ...deviceId]);
+            case p.secure_resume:
+              transcript = digest.sha256.convert([
+                ...deviceId,
+                ...frame,
+                ...nonce,
+              ]).bytes;
+              final derive = HKDFKeyDerivator(SHA256Digest())
+                ..init(
+                  HkdfParameters(
+                    key,
+                    64,
+                    Uint8List.fromList(transcript),
+                    Uint8List.fromList(ascii.encode('SS2K/session/v1')),
+                  ),
+                );
+              derive.deriveKey(null, 0, material, 0);
+              paired.receive([
+                p.secure_challenge,
+                ...nonce,
+                ...proof('server'),
+              ]);
+            case p.secure_prove:
+              expect(frame.skip(1), proof('client'));
+              paired.receive([p.secure_ready, ...proof('ready')]);
+            case p.secure_data:
+              paired.receive(record(0, change));
+              paired.receive(record(1, reply));
+            default:
+              fail('Unexpected secure request');
+          }
+        },
+      );
+      await paired.initialize();
+      expect(
+        await paired.command([p.read, p.CommandId.shifterPosition]),
+        reply,
+      );
+      expect(received, [change, reply]);
+      expect(
+        p
+            .decodeResponse(received.first, kind: p.ReplyKind.notification)
+            .rawValue,
+        4,
+      );
+      paired.close();
+    },
+  );
+
   test('a pinned companion identity never falls back to plaintext', () async {
     FlutterSecureStorage.setMockInitialValues({
       'ss2k_pair_alias_${base64Url.encode(utf8.encode("bench"))}': 'pinned',

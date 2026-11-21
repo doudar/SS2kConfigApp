@@ -243,7 +243,10 @@ ProtocolPacket decodeResponse(
   final status = packet[0], id = packet[1];
   if (status == error)
     return ProtocolPacket._(status, id, WireFormat.none, packet.sublist(2));
-  if (status != success) throw const FormatException('Unknown response status');
+  if (status != success &&
+      !(status == secure_notification && kind == ReplyKind.notification)) {
+    throw const FormatException('Invalid status for response kind');
+  }
   final c = command(id);
   final f = switch (kind) {
     ReplyKind.read => c.readResponse,
