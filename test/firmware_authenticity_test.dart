@@ -239,6 +239,35 @@ void main() {
     },
   );
 
+  test(
+    'repacking a replaced BIN with its original signature fails remote and local authentication',
+    () async {
+      final fixture = _ReleaseFixture();
+      final archive = Archive();
+      final original = ZipDecoder().decodeBytes(fixture.zip);
+      for (final member in original) {
+        final copy = Uint8List.fromList(member.content);
+        if (member.name == 'firmware.bin') {
+          copy[31] ^= 1;
+        }
+        archive.add(ArchiveFile.bytes(member.name, copy));
+      }
+      fixture.zip = ZipEncoder().encodeBytes(archive);
+      await expectLater(fixture.download(), throwsFormatException);
+      expect(fixture.fetched, ['/manifest', '/signature', '/release.zip']);
+      final local = fixture.verifier.local(
+        'repacked.zip',
+        fixture.zip,
+        FirmwareArchitecture.esp32,
+      );
+      expect(
+        local.bytes[31],
+        fixture.images[FirmwareArchitecture.esp32]![31] ^ 1,
+      );
+      expect(local.official, isFalse);
+    },
+  );
+
   test('corrupt local ZIP cannot bypass the declared extraction bounds', () {
     final f = _ReleaseFixture();
     final bad = Uint8List.fromList(f.zip);
