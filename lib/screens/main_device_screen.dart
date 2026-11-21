@@ -31,6 +31,7 @@ import '../utils/firmware_release_service.dart';
 import '../utils/constants.dart';
 import '../utils/peloton_environment.dart';
 import 'settings_category_screen.dart';
+import 'developer_options_screen.dart';
 
 class MainDeviceScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -46,6 +47,26 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
 
   late DeviceData deviceData;
   bool _maintenanceExpanded = false;
+  bool _developerOptions = false;
+  int _versionTaps = 0;
+  static const _developerKey = 'developer_options_enabled';
+
+  Future<void> _loadDeveloperOptions() async {
+    final preferences = await SharedPreferences.getInstance();
+    if (mounted && preferences.getBool(_developerKey) == true) {
+      setState(() => _developerOptions = true);
+    }
+  }
+
+  Future<void> _versionTapped() async {
+    if (_developerOptions || ++_versionTaps != 4) return;
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_developerKey, true);
+    if (!mounted) return;
+    setState(() => _developerOptions = true);
+    _openScreen(DeveloperOptionsScreen(device: widget.device));
+  }
+
   late Future<String?> _appVersionFuture;
   FirmwareRelease? _availableFirmwareUpdate;
   VoidCallback? _firmwareVersionListener;
@@ -58,6 +79,7 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
     super.initState();
     deviceData = DeviceDataManager.forDevice(widget.device);
     _appVersionFuture = _loadAppVersion();
+    unawaited(_loadDeveloperOptions());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_maybeShowPelotonWifiWarning());
@@ -297,6 +319,13 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
   ];
 
   List<Widget> _buildMaintenanceActions({bool dismissPanel = false}) => [
+    if (_developerOptions)
+      _buildMaintenanceActionTile(
+        leading: const Icon(Icons.developer_mode, color: WorkoutVisuals.mint),
+        title: 'Developer Options',
+        destination: DeveloperOptionsScreen(device: widget.device),
+        dismissPanel: dismissPanel,
+      ),
     _buildMaintenanceActionTile(
       leading: Icon(Icons.tune, size: 26, color: WorkoutVisuals.mint),
       title: 'Calibrate Trainer',
@@ -594,11 +623,14 @@ class _MainDeviceScreenState extends State<MainDeviceScreen> {
                           vertical: compact ? 6 : 12,
                         ),
                         child: Center(
-                          child: Text(
-                            'App Version: $version',
-                            style: const TextStyle(
-                              color: WorkoutVisuals.muted,
-                              fontSize: 11,
+                          child: InkWell(
+                            onTap: _versionTapped,
+                            child: Text(
+                              'App Version: $version',
+                              style: const TextStyle(
+                                color: WorkoutVisuals.muted,
+                                fontSize: 11,
+                              ),
                             ),
                           ),
                         ),

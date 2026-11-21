@@ -16,6 +16,24 @@ class _HeaderData extends DeviceData {
   final actions = <String>[];
   Completer<void>? disconnectGate;
   bool failDisconnect = false;
+  bool interruptUnpair = false;
+  bool pendingUnpair = false;
+
+  @override
+  bool get forgetPending => pendingUnpair;
+  @override
+  bool get hasPairedSession => pairingAvailable.value && !pendingUnpair;
+  @override
+  Future<void> forgetPairing(BluetoothDevice device) async {
+    actions.add('unpair');
+    if (interruptUnpair) {
+      pendingUnpair = true;
+      throw StateError('Lost acknowledgement');
+    }
+    pendingUnpair = false;
+    pairingAvailable.value = false;
+    connection.markDisconnected(explicit: true);
+  }
 
   @override
   ValueNotifier<DeviceTransportState> get transportState => connection;
@@ -99,6 +117,84 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 1));
   }
+
+  Future<void> openMenu(WidgetTester tester) async {
+    await tester.tap(find.byType(PopupMenuButton<VoidCallback>));
+    await tester.pumpAndSettle();
+  }
+
+  for (final transport in [
+    DeviceTransportKind.bluetooth,
+    DeviceTransportKind.dircon,
+  ]) {
+    testWidgets('paired ${transport.name} trainer can cancel or confirm Unpair', (
+      tester,
+    ) async {
+      data.connection.markConnected(transport);
+      data.customResponseReceived.value = true;
+      data.pairingAvailable.value = true;
+      await host(tester);
+
+      await openMenu(tester);
+      await tester.tap(find.text('Unpair trainer'));
+      await tester.pumpAndSettle();
+      expect(data.actions, isEmpty);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(data.actions, isEmpty);
+      expect(data.pairingAvailable.value, isTrue);
+
+      await openMenu(tester);
+      await tester.tap(find.text('Unpair trainer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Unpair'));
+      await tester.pumpAndSettle();
+      expect(data.actions, ['unpair']);
+      expect(data.pairingAvailable.value, isFalse);
+      await unmount(tester);
+    });
+  }
+
+  testWidgets('the menu hides unpairing when pairing is unavailable', (tester) async {
+    data.connection.markConnected(DeviceTransportKind.bluetooth);
+    data.customResponseReceived.value = true;
+    await host(tester);
+    await openMenu(tester);
+    expect(find.text('Reconnect'), findsOneWidget);
+    expect(find.text('Unpair trainer'), findsNothing);
+    expect(find.textContaining('Finish unpairing'), findsNothing);
+    Navigator.of(tester.element(find.text('Reconnect'))).pop();
+    await tester.pumpAndSettle();
+    await unmount(tester);
+  });
+
+  testWidgets('interrupted unpairing can be finished from the device menu', (tester) async {
+    data.connection.markConnected(DeviceTransportKind.dircon);
+    data.customResponseReceived.value = true;
+    data.pairingAvailable.value = true;
+    data.interruptUnpair = true;
+    await host(tester);
+
+    await openMenu(tester);
+    await tester.tap(find.text('Unpair trainer'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Unpair'));
+    await tester.pumpAndSettle();
+    expect(data.actions, ['unpair']);
+    expect(data.forgetPending, isTrue);
+    expect(data.pairingAvailable.value, isTrue);
+
+    data.interruptUnpair = false;
+    await openMenu(tester);
+    expect(find.text('Unpair trainer'), findsNothing);
+    await tester.tap(find.textContaining('Finish unpairing').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Unpair'));
+    await tester.pumpAndSettle();
+    expect(data.actions, ['unpair', 'unpair']);
+    expect(data.pairingAvailable.value, isFalse);
+    await unmount(tester);
+  });
 
   testWidgets('cached firmware cannot conceal silence in a new BLE session', (
     tester,

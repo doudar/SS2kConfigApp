@@ -1,10 +1,11 @@
 import 'dart:collection';
-import 'dart:convert';
 import 'dart:typed_data';
 
-const int bleScanResultsReference = 0x32;
-const int bleScanResultsVersion = 1;
-const int bleScanResultsHeaderLength = 10;
+import 'package:ss2k_protocol/ss2k_protocol.dart' as protocol;
+
+const int bleScanResultsReference = protocol.CommandId.scanResults;
+const int bleScanResultsVersion = protocol.scan_version;
+const int bleScanResultsHeaderLength = protocol.scan_header_length;
 
 enum BleScanResultEvent { begin, device, end }
 
@@ -65,20 +66,18 @@ class BleScanResultStreamDecoder {
 
   BleScanResultUpdate? add(List<int> packet) {
     if (packet.length < bleScanResultsHeaderLength ||
-        packet[0] != 0x80 ||
-        packet[1] != bleScanResultsReference ||
-        packet[2] != bleScanResultsVersion) {
+        packet[1] != bleScanResultsReference) {
       return null;
     }
-
-    final eventValue = packet[3];
-    if (eventValue >= BleScanResultEvent.values.length) return null;
-    final event = BleScanResultEvent.values[eventValue];
-    final scanId = packet[4] | (packet[5] << 8);
-    final sequence = packet[6] | (packet[7] << 8);
-    final fragment = packet[8];
-    final fragmentCount = packet[9];
-    if (fragmentCount == 0 || fragment >= fragmentCount) return null;
+    final protocol.ScanFragment scan;
+    try {
+      scan = protocol.ScanFragment(packet);
+    } on FormatException {
+      return null;
+    }
+    final event = BleScanResultEvent.values[scan.event];
+    final scanId = scan.scanId;
+    final sequence = scan.sequence;
 
     if (event == BleScanResultEvent.begin) {
       _scanId = scanId;
@@ -110,15 +109,13 @@ class BleScanResultStreamDecoder {
 
     final assembly = _fragments.putIfAbsent(
       sequence,
-      () => _FragmentAssembly(fragmentCount),
+      () => _FragmentAssembly(scan.count),
     );
-    if (assembly.fragments.length != fragmentCount) {
+    if (assembly.fragments.length != scan.count) {
       _fragments.remove(sequence);
       return null;
     }
-    assembly.fragments[fragment] = Uint8List.fromList(
-      packet.sublist(bleScanResultsHeaderLength),
-    );
+    assembly.fragments[scan.index] = Uint8List.fromList(scan.body);
     if (!assembly.complete) {
       return BleScanResultUpdate(
         event: event,
@@ -133,13 +130,8 @@ class BleScanResultStreamDecoder {
     }
     _fragments.remove(sequence);
     final record = body.takeBytes();
-    if (record.isEmpty) return null;
-    final uuidLength = record[0];
-    if (uuidLength == 0 || 1 + uuidLength > record.length) return null;
-
     try {
-      final uuid = utf8.decode(record.sublist(1, 1 + uuidLength));
-      final name = utf8.decode(record.sublist(1 + uuidLength));
+      final (:uuid, :name) = protocol.ScanFragment.decodeDeviceBody(record);
       final device = BleScanDevice(name: name, uuid: uuid);
       _scanDevices[sequence] = device;
       final key = '$uuid\u0000$name';

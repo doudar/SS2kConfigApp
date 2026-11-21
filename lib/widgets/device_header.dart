@@ -8,6 +8,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'unpair_trainer.dart';
 import '../utils/snackbar.dart';
 import '../utils/device_data.dart';
 import '../utils/device_transport_state.dart';
@@ -51,6 +52,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       deviceData.firmwareVersion,
       deviceData.customResponseReceived,
       deviceData.customResponsesDegraded,
+      deviceData.pairingAvailable,
     ]);
     _deviceNameSubscription = deviceData.characteristicChanges
         .where((event) => event.vName == deviceNameVname)
@@ -533,7 +535,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         ),
       ),
       onSelected: (callback) => callback(),
-      itemBuilder: (BuildContext context) => <PopupMenuEntry<VoidCallback>>[
+      itemBuilder: (_) => <PopupMenuEntry<VoidCallback>>[
         PopupMenuItem<VoidCallback>(
           enabled: !_connectionBusy,
           value: isConnected ? onReconnectPressed : onConnectPressed,
@@ -570,6 +572,15 @@ class _DeviceHeaderState extends State<DeviceHeader> {
             title: Text('Reboot SS2k'),
           ),
         ),
+        if (isConnected && deviceData.pairingAvailable.value)
+          PopupMenuItem<VoidCallback>(
+            enabled: !_connectionBusy,
+            value: () => confirmUnpairTrainer(context, deviceData, widget.device),
+            child: ListTile(
+              leading: const Icon(Icons.link_off),
+              title: Text(unpairTrainerLabel(deviceData)),
+            ),
+          ),
       ],
     );
   }

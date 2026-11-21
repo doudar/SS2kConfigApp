@@ -76,6 +76,11 @@ abstract interface class DirConSession {
     List<int> value,
   );
 
+  /// Routes the write result and notifications onto one stream in TCP frame order.
+  Future<void> writeCharacteristicOrdered(
+    String characteristicUuid,
+    List<int> value,
+  );
   Stream<List<int>> characteristicNotifications(String characteristicUuid);
 
   Future<void> close();
@@ -109,6 +114,7 @@ class DirConClient implements DirConSession {
   final Stopwatch _connectionAge = Stopwatch()..start();
   int? _lastReceiveMs;
   final Map<int, Completer<DirConFrame>> _pending = {};
+  final Map<int, String> _orderedWrites = {};
   final StreamController<DirConFrame> _notifications =
       StreamController<DirConFrame>.broadcast();
   final StreamController<void> _disconnected =
@@ -159,6 +165,14 @@ class DirConClient implements DirConSession {
           if (frame.identifier == notificationMessage) {
             _notifications.add(frame);
           } else {
+            final uuid = _orderedWrites.remove(frame.sequence);
+            if (uuid != null &&
+                frame.identifier == writeCharacteristicMessage &&
+                frame.responseCode == success &&
+                frame.body.length > 16 &&
+                _uuidFromBytes(frame.body.sublist(0, 16)) == uuid) {
+              _notifications.add(frame);
+            }
             _pending.remove(frame.sequence)?.complete(frame);
           }
         }
@@ -263,6 +277,21 @@ class DirConClient implements DirConSession {
     return response.body.sublist(16);
   }
 
+  Future<void> writeCharacteristicOrdered(
+    String characteristicUuid,
+    List<int> value,
+  ) async {
+    final uuid = _normalizeUuid(characteristicUuid);
+    final response = await _request(writeCharacteristicMessage, [
+      ..._uuidBytes(uuid),
+      ...value,
+    ], orderedWrite: uuid);
+    if (response.body.length < 16 ||
+        _uuidFromBytes(response.body.sublist(0, 16)) != uuid) {
+      throw const FormatException('Invalid DIRCON write response');
+    }
+  }
+
   Stream<List<int>> characteristicNotifications(String characteristicUuid) {
     final expected = _normalizeUuid(characteristicUuid);
     return notifications
@@ -273,13 +302,18 @@ class DirConClient implements DirConSession {
         .map((frame) => frame.body.sublist(16));
   }
 
-  Future<DirConFrame> _request(int identifier, List<int> body) async {
+  Future<DirConFrame> _request(
+    int identifier,
+    List<int> body, {
+    String? orderedWrite,
+  }) async {
     if (_isClosed) throw const SocketException('DIRCON client is closed');
 
     final sequence = _nextSequence;
     _nextSequence = _nextSequence == 255 ? 1 : _nextSequence + 1;
     final completer = Completer<DirConFrame>();
     _pending[sequence] = completer;
+    if (orderedWrite != null) _orderedWrites[sequence] = orderedWrite;
     final length = body.length;
     _logFrame('TX', identifier, sequence, 0, body);
     try {
@@ -329,6 +363,7 @@ class DirConClient implements DirConSession {
       rethrow;
     } finally {
       _pending.remove(sequence);
+      _orderedWrites.remove(sequence);
     }
   }
 

@@ -50,7 +50,7 @@ class PowerTableManager {
         List<int> rowValue = [];
 
         // For each power column (0-1000W in 30W increments)
-        for (int col = 0; col < 38; col++) {
+        for (int col = 0; col < deviceData.powerTableData[rowIndex].length; col++) {
           int targetWatts = col * 30;
 
           // Calculate resistance based on cadence and target watts

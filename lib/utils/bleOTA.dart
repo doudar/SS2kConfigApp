@@ -8,7 +8,7 @@
 // ignore_for_file: annotate_overrides, avoid_print
 
 import 'dart:async';
-import 'dart:io';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -147,8 +147,7 @@ abstract class OtaPackage {
     BluetoothService service,
     BluetoothCharacteristic dataUUID,
     BluetoothCharacteristic controlUUID, {
-    String? binFilePath,
-    String? url,
+    required Uint8List firmware,
   });
 
   bool firmwareupdate = false;
@@ -177,14 +176,8 @@ class Esp32OtaPackage implements OtaPackage {
     BluetoothService service,
     BluetoothCharacteristic dataUUID,
     BluetoothCharacteristic controlUUID, {
-    String? binFilePath,
-    String? url,
+    required Uint8List firmware,
   }) async {
-    if (binFilePath == null || binFilePath.isEmpty) {
-      throw Exception('No firmware file path provided');
-    }
-
-    final firmware = await File(binFilePath).readAsBytes();
     if (firmware.isEmpty) throw Exception('No firmware data available');
 
     firmwareupdate = false;
@@ -496,20 +489,5 @@ class Esp32OtaPackage implements OtaPackage {
   void _emitProgress(int bytesWritten, int imageSize) {
     if (_percentageController.isClosed) return;
     _percentageController.add(((bytesWritten / imageSize) * 100).round());
-  }
-
-  Future<List<Uint8List>> getFirmware(
-    int firmwareType,
-    int chunkSize, {
-    String? binFilePath,
-  }) async {
-    if (binFilePath == null || binFilePath.isEmpty) return [];
-    final bytes = await File(binFilePath).readAsBytes();
-    final chunks = <Uint8List>[];
-    for (var offset = 0; offset < bytes.length; offset += chunkSize) {
-      final end = (offset + chunkSize).clamp(0, bytes.length);
-      chunks.add(Uint8List.sublistView(bytes, offset, end));
-    }
-    return chunks;
   }
 }

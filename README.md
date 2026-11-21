@@ -19,7 +19,7 @@ A Flutter-based mobile application for controlling and configuring SmartSpin2K d
 
 ### ⚙️ Device Configuration
 - Easy-to-use settings interface
-- Firmware updates over WiFi or Bluetooth
+- Paired settings and firmware updates over Bluetooth or DirCon (Wi-Fi)
 - Configuration presets for quick setup
 - Customizable power curves and resistance settings
 
@@ -27,6 +27,20 @@ A Flutter-based mobile application for controlling and configuring SmartSpin2K d
 - Strava connectivity for workout uploads
 - FIT file compatibility
 - Demo mode for testing without hardware
+
+## Pairing a SmartSpin2k
+
+Connect to the trainer in the app. When prompted, press and hold both shifter buttons. The app saves the pairing in the operating system's secure storage and reuses it over Bluetooth or DirCon. Tap the trainer name at the top of the screen and choose **Unpair trainer** to remove this app’s pairing from both devices. The same action is available in **Settings**. If the connection drops during removal, reconnect and choose **Finish unpairing**. A trainer factory reset clears all of its pairings. Older firmware retains its existing connection and update methods.
+
+Tap **App Version** four times on the device screen to unlock **Maintenance → Developer Options**. This preference persists across app restarts. The menu controls cadence, heart rate, power, and ERG target simulation.
+
+The Dart package in `packages/ss2k_protocol` comes from the SS2kProtocol repository. Update the shared schema and codecs there, then run `dart tool/sync_consumers.dart app ../SS2kConfigApp` from that repository to refresh the app copy.
+
+## Updating trainer firmware
+
+The app checks the SmartSpin2k signature on the GitHub release manifest before downloading firmware. It then verifies the downloaded archive and the image for your trainer before starting the transfer. Older GitHub releases without a signed manifest are unavailable through the in-app download.
+
+For a manual update, select the official release ZIP to keep the firmware and its signature together. You can also select a local firmware binary. If the app cannot verify the SmartSpin2k signature, it asks whether you trust the author. Cancel to leave the trainer on its current firmware.
 
 ## Installation
 

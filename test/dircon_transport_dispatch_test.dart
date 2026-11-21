@@ -20,6 +20,19 @@ void main() {
     device = BluetoothDevice.fromId('00:00:00:00:00:2B');
   });
 
+  test('legacy DirCon refuses a paired notification as a synchronous reply', () async {
+    final connector = FakeDirConConnector();
+    final data = DeviceData(dirConConnector: connector.call)
+      ..advertisedIpAddress = _ipAddress;
+    addTearDown(data.dispose);
+    await data.connectPreferred(device, waitForSetup: true);
+    connector.first.respondToWrites(ccUUID, [0x81, 8, 42, 0]);
+    await expectLater(
+      data.writeCustomCharacteristic(device, [1, 8]),
+      throwsFormatException,
+    );
+  });
+
   // The seam that makes the DIRCON->BLE fallback's own timeout satisfiable.
   //
   // The sweep is one round-trip per custom characteristic — ~80 s on a cold

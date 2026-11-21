@@ -30,6 +30,28 @@ List<int> deviceBody(String uuid, String name) {
 }
 
 void main() {
+  test('legacy and paired scan notifications share the wire decoder', () {
+    for (final opcode in [0x80, 0x81]) {
+      final decoder = BleScanResultStreamDecoder();
+      for (final event in BleScanResultEvent.values) {
+        final frame = packet(
+          event: event,
+          scanId: 7,
+          sequence: event == BleScanResultEvent.end ? 1 : 0,
+          payload: event == BleScanResultEvent.device
+              ? deviceBody('0x180d', 'Chest strap')
+              : [],
+        )..[0] = opcode;
+        final result = decoder.add(frame);
+        expect(result?.event, event);
+        if (event == BleScanResultEvent.end) {
+          expect(result?.isComplete, isTrue);
+          expect(result?.devices.single.name, 'Chest strap');
+        }
+      }
+    }
+  });
+
   test(
     'reassembles more devices than the legacy JSON characteristic can hold',
     () {
