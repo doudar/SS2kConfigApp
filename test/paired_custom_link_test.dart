@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as digest;
@@ -154,6 +155,154 @@ void main() {
         4,
       );
       paired.close();
+    },
+  );
+
+  test(
+    'concurrent setup shares one failed attempt, and the next link restores Android notification mode',
+    () async {
+      final modes = <bool>[];
+      final firstProbe = Completer<void>();
+      var probes = 0;
+      late PairedCustomLink failed;
+      failed = PairedCustomLink(
+        alias: 'android',
+        deviceName: 'trainer',
+        maxWire: 20,
+        prompt: null,
+        onInner: (_) => fail('Failed link accepted a stale reply'),
+        legacyIndications: (enabled) async => modes.add(enabled),
+        writeWire: (_) async {
+          if (++probes == 1) await firstProbe.future;
+          throw TimeoutException('No capability response');
+        },
+      );
+      final first = failed.initialize();
+      final waiting = failed.initialize();
+      expect(identical(first, waiting), isTrue);
+      firstProbe.complete();
+      await expectLater(first, throwsA(isA<TimeoutException>()));
+      expect(probes, 2);
+      expect(modes, [true]);
+      expect(failed.needsFreshSession, isTrue);
+      failed.receive([p.success, p.CommandId.capabilities, 1, 0, 0, 0, 0]);
+      expect(failed.legacy, isFalse);
+      late PairedCustomLink next;
+      next = PairedCustomLink(
+        alias: 'android',
+        deviceName: 'trainer',
+        maxWire: 20,
+        restoreNotificationMode: failed.needsFreshSession,
+        prompt: null,
+        onInner: received.add,
+        legacyIndications: (enabled) async => modes.add(enabled),
+        writeWire: (_) async {
+          expect(modes, [true, false]);
+          next.receive([
+            p.secure_identity,
+            ...List.filled(8, 0),
+          ]); // Delayed reply to an earlier handshake.
+          next.receive([p.error, p.CommandId.capabilities]);
+        },
+      );
+      await next.initialize();
+      expect(next.legacy, isTrue);
+      expect(received, isEmpty);
+    },
+  );
+
+  test(
+    'a notification-mode failure after secure discovery cannot unpin the trainer',
+    () async {
+      late PairedCustomLink trainer;
+      var probes = 0;
+      trainer = PairedCustomLink(
+        alias: 'android',
+        deviceName: 'trainer',
+        maxWire: 20,
+        prompt: null,
+        onInner: (_) => fail('Unexpected settings'),
+        legacyIndications: (enabled) async {
+          if (!enabled) throw StateError('CCCD unavailable');
+        },
+        writeWire: (_) async {
+          if (++probes == 1)
+            throw TimeoutException('No reply in notification mode');
+          trainer.receive([
+            p.success,
+            p.CommandId.capabilities,
+            1,
+            p.cap_secure_settings,
+            0,
+            0,
+            0,
+          ]);
+        },
+      );
+      await expectLater(trainer.initialize(), throwsStateError);
+      expect(trainer.needsFreshSession, isTrue);
+      expect(
+        (await const FlutterSecureStorage().readAll()).values,
+        contains('secure'),
+      );
+    },
+  );
+
+  test(
+    'successful indication-only legacy discovery keeps indications enabled',
+    () async {
+      final modes = <bool>[];
+      var writes = 0;
+      late PairedCustomLink old;
+      old = PairedCustomLink(
+        alias: 'old',
+        deviceName: 'old',
+        maxWire: 20,
+        prompt: null,
+        onInner: received.add,
+        legacyIndications: (enabled) async => modes.add(enabled),
+        writeWire: (_) async {
+          if (++writes == 1) throw TimeoutException('Notify unsupported');
+          old.receive([p.error, p.CommandId.capabilities]);
+        },
+      );
+      await old.initialize();
+      expect(modes, [true]);
+      expect(old.legacy, isTrue);
+    },
+  );
+
+  test(
+    'explicit pairing cancellation does not schedule an unattended retry',
+    () async {
+      late PairedCustomLink cancelled;
+      cancelled = PairedCustomLink(
+        alias: 'cancel',
+        deviceName: 'trainer',
+        maxWire: 234,
+        prompt: (_, _, cancel) => cancel(),
+        onInner: (_) => fail('Unexpected application frame'),
+        writeWire: (request) async {
+          if (request.first == p.read) {
+            cancelled.receive([
+              p.success,
+              p.CommandId.capabilities,
+              1,
+              p.cap_secure_settings,
+              0,
+              0,
+              0,
+            ]);
+          } else if (request.first == p.secure_info) {
+            cancelled.receive([p.secure_identity, ...List.filled(8, 7)]);
+          } else {
+            fail('Sending a pairing request after cancellation');
+          }
+        },
+      );
+      await expectLater(cancelled.initialize(), throwsStateError);
+      expect(cancelled.needsFreshSession, isFalse);
+      expect(cancelled.authenticated, isFalse);
     },
   );
 

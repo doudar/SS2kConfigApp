@@ -110,6 +110,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   /// Whether the device answers custom-characteristic requests. See
   /// [writeCharacteristic]; setting it false models a response-silent device.
   bool answerCustomRequests = true;
+  List<int> Function(List<int>)? customReply;
 
   final List<List<int>> writes = [];
 
@@ -252,6 +253,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     discoveryIncludesMachineStatus = true;
     discoveryCount = 0;
     answerCustomRequests = true;
+    customReply = null;
     _staleNotifyUuids.clear();
     _permanentStaleNotifyUuids.clear();
   }
@@ -416,11 +418,16 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     // holds the shared transport queue until it arrives. A silent fake makes
     // every settings sweep cost the full 2 s response timeout per entry, which
     // is minutes for one connection bootstrap.
-    if ((answerCustomRequests ||
-            request.value.length == 2 && request.value[1] == 0x36) &&
-        _key(request.characteristicUuid.str) == _key(ccUUID) &&
-        request.value.length > 1) {
-      final reference = request.value[1];
+    if (_key(request.characteristicUuid.str) == _key(ccUUID) &&
+        (customReply != null ||
+            request.value.length > 1 &&
+                (answerCustomRequests ||
+                    request.value.length == 2 && request.value[1] == 0x36))) {
+      final response =
+          customReply?.call(request.value) ??
+          (request.value[1] == 0x31 || request.value[1] == 0x36
+              ? [0xff, request.value[1]]
+              : [0x80, request.value[1]]);
       scheduleMicrotask(() {
         _characteristicReceived.add(
           BmCharacteristicData(
@@ -432,9 +439,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
             // This harness models firmware from before 0x31. Unknown reads
             // are explicitly rejected, which exercises the production app's
             // legacy per-setting fallback without weakening its strict rule.
-            value: reference == 0x31 || reference == 0x36
-                ? [0xff, reference]
-                : [0x80, reference],
+            value: response,
             success: true,
             errorCode: 0,
             errorString: '',

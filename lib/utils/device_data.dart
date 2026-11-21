@@ -333,8 +333,7 @@ class DeviceData {
     try {
       owner.receive(packet);
     } catch (error) {
-      owner.close();
-      owner.needsFreshSession = true;
+      owner.invalidate();
       print('[custom] Invalid secure packet: $error');
     }
   }
@@ -344,6 +343,7 @@ class DeviceData {
     DirConSession? socket,
     BluetoothCharacteristic? characteristic,
   }) {
+    final retry = _customLink?.needsFreshSession == true;
     _endCustomLink();
     late final PairedCustomLink link;
     link = PairedCustomLink(
@@ -351,6 +351,7 @@ class DeviceData {
       deviceName: preferredDeviceName(device.advName),
       maxWire: socket != null ? 234 : (device.mtuNow - 3).clamp(20, 512),
       prompt: pairingPrompt,
+      restoreNotificationMode: retry,
       legacyIndications:
           Platform.isAndroid &&
               characteristic != null &&
@@ -359,6 +360,8 @@ class DeviceData {
               if (!identical(_customLink, link))
                 throw const TransportNotConnected();
               await characteristic.setNotifyValue(false);
+              if (!identical(_customLink, link))
+                throw const TransportNotConnected();
               await characteristic.setNotifyValue(
                 true,
                 forceIndications: useIndications,
@@ -380,20 +383,21 @@ class DeviceData {
   }
 
   Future<PairedCustomLink> _readyCustomLink(BluetoothDevice device) async {
-    if (_customLink?.needsFreshSession == true) {
-      _createLink(
-        device,
-        socket: _dirConSession,
-        characteristic: _myCharacteristic,
-      );
-    }
-    if (_dirConSession == null) {
+    final socket = _dirConSession;
+    if (socket == null) {
       final characteristic = await _getMyCharacteristic(device);
-      if (characteristic == null || !characteristic.device.isConnected)
+      if (_dirConSession != null ||
+          characteristic == null ||
+          !characteristic.device.isConnected)
         throw const TransportNotConnected();
+      if (_customLink?.needsFreshSession == true) {
+        _createLink(device, characteristic: characteristic);
+      }
       if (!subscribed || _customLink == null) decode(device);
       if (!characteristic.isNotifying)
         await characteristic.setNotifyValue(true);
+    } else if (_customLink?.needsFreshSession == true) {
+      _createLink(device, socket: socket);
     }
     final link = _customLink;
     if (link == null) throw const TransportNotConnected();
@@ -4082,7 +4086,14 @@ class DeviceData {
             ccUUID,
             value,
           );
-          if (response.isNotEmpty) _decodeCustomValue(response);
+          if (response.isNotEmpty) {
+            if (response.first == protocol.secure_notification) {
+              throw const FormatException(
+                'Unexpected paired notification in a legacy DirCon reply.',
+              );
+            }
+            _decodeCustomValue(response);
+          }
         } catch (error) {
           print('[DIRCON] Custom characteristic write failed: $error');
           rethrow;

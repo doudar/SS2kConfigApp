@@ -27,6 +27,7 @@ class PairedCustomLink {
     required this.onInner,
     required this.prompt,
     this.legacyIndications,
+    this.restoreNotificationMode = false,
   });
   final String alias;
   final String deviceName;
@@ -35,6 +36,7 @@ class PairedCustomLink {
   final void Function(List<int>) onInner;
   final PairingPrompt? prompt;
   final Future<void> Function(bool enabled)? legacyIndications;
+  final bool restoreNotificationMode;
   static const _storage = FlutterSecureStorage(
     aOptions: AndroidOptions(resetOnError: false, migrateWithBackup: true),
     iOptions: IOSOptions(
@@ -50,7 +52,8 @@ class PairedCustomLink {
   bool legacy = false;
   bool authenticated = false;
   bool _closed = false;
-  bool needsFreshSession = false;
+  bool _needsFreshSession = false;
+  bool get needsFreshSession => _needsFreshSession;
   String? _bondKey;
   String? _identity;
   String? _pendingForgetAppId;
@@ -74,6 +77,23 @@ class PairedCustomLink {
     final pending = _reply;
     if (pending != null && !pending.isCompleted) {
       pending.completeError(StateError('SmartSpin2k connection closed.'));
+    }
+  }
+
+  void invalidate() {
+    // User cancellation and transport teardown close the link deliberately.
+    // Background work must not restart a cancelled pairing.
+    if (_closed) return;
+    _needsFreshSession = true;
+    close();
+  }
+
+  Future<T> _invalidateOnFailure<T>(Future<T> operation) async {
+    try {
+      return await operation;
+    } catch (_) {
+      invalidate();
+      rethrow;
     }
   }
 
@@ -136,8 +156,11 @@ class PairedCustomLink {
     Duration timeout = const Duration(seconds: 8),
   }) => _exchange(packet, (frame) => frame.first == response, timeout: timeout);
 
-  Future<void> initialize() => _setup ??= _initialize();
+  Future<void> initialize() => _setup ??= _invalidateOnFailure(_initialize());
   Future<void> _initialize() async {
+    // A failed ATT indication probe can leave Android subscribed in that mode.
+    // A replacement session starts in notification mode before sending any data.
+    if (restoreNotificationMode) await legacyIndications?.call(false);
     Future<List<int>> probe() => _exchange(
       [protocol.read, protocol.CommandId.capabilities],
       (p) =>
@@ -159,6 +182,7 @@ class PairedCustomLink {
       capability = await probe();
     }
     final pinned = await _storage.read(key: _aliasKey);
+    if (_closed) throw StateError('SmartSpin2k connection closed.');
     if (capability.first == protocol.success &&
         (capability.length != 7 || capability[2] != 1)) {
       throw const FormatException('Unknown SmartSpin2k capability format.');
@@ -173,9 +197,9 @@ class PairedCustomLink {
       return;
     }
 
-    if (forcedIndications) await legacyIndications!(false);
     if (pinned == null)
       await _storage.write(key: _aliasKey, value: _requiresAuthentication);
+    if (forcedIndications) await legacyIndications!(false);
     final deviceId = secureDeviceId(
       await _handshake(secureInfoRequest(), protocol.secure_identity),
     );
@@ -214,6 +238,7 @@ class PairedCustomLink {
         if (error.code != 3) rethrow;
       }
     }
+    if (_closed) throw StateError('SmartSpin2k connection closed.');
     final rng = Random.secure();
     final appId = forgetPending
         ? base64Decode(_pendingForgetAppId!)
@@ -264,22 +289,18 @@ class PairedCustomLink {
 
   Future<List<int>> command(List<int> packet) async {
     protocol.validateRequest(packet);
-    try {
-      return await _exchange(
+    // After an ambiguous write, a late ACK could match a subsequent request.
+    // Re-negotiate traffic keys before the next operation.
+    return _invalidateOnFailure(
+      _exchange(
         packet,
         (p) =>
             p.length >= 2 &&
             p[1] == packet[1] &&
             (p[0] == protocol.success || p[0] == protocol.error),
         inner: true,
-      );
-    } catch (_) {
-      // The peer may have applied the write. Its late ACK cannot safely match a
-      // subsequent request for this ID. Negotiate fresh traffic keys first.
-      close();
-      needsFreshSession = true;
-      rethrow;
-    }
+      ),
+    );
   }
 
   static Future<void> removeAliases(String identity) async {
@@ -305,7 +326,8 @@ class PairedCustomLink {
     // Only this explicit user action may repair an interrupted revocation.
     // Replacing the same app ID makes the old key unusable, even after an ACK
     // was lost. The replacement is immediately revoked and acknowledged too.
-    if (!authenticated) await _authenticate(base64Url.decode(_identity!));
+    if (!authenticated)
+      await _invalidateOnFailure(_authenticate(base64Url.decode(_identity!)));
     final reply = await command([
       protocol.write,
       protocol.CommandId.forgetPeer,
