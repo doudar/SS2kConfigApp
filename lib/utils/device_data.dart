@@ -1759,7 +1759,7 @@ class DeviceData {
     OtaPackage package,
     BluetoothDevice device,
     int firmwareType, {
-    required String binFilePath,
+    required Uint8List firmwareBytes,
   }) async {
     final service = _firmwareService;
     final data = _firmwareDataCharacteristic;
@@ -1776,7 +1776,7 @@ class DeviceData {
       service,
       data,
       control,
-      binFilePath: binFilePath,
+      firmware: firmwareBytes,
     );
   }
 

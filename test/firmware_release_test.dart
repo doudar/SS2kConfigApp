@@ -103,6 +103,10 @@ void main() {
       final releases = parseFirmwareReleases('''
         [
           {
+            "tag_name": "26.9.2",
+            "assets": [{"name":"SmartSpin2kFirmware-26.9.2.bin.zip", "browser_download_url":"https://example.com/unsigned.zip"}]
+          },
+          {
             "tag_name": "26.9.1-beta",
             "draft": false,
             "prerelease": true,
@@ -113,6 +117,8 @@ void main() {
             "draft": false,
             "prerelease": false,
             "assets": [
+              {"name":"firmware-manifest.json","browser_download_url":"https://example.com/m.json"},
+              {"name":"firmware-manifest.sig","browser_download_url":"https://example.com/m.sig"},
               {
                 "name": "SmartSpin2kFirmware-26.8.2.bin.zip",
                 "browser_download_url": "https://example.com/26.8.2.zip"
@@ -124,6 +130,8 @@ void main() {
             "draft": false,
             "prerelease": false,
             "assets": [
+              {"name":"firmware-manifest.json","browser_download_url":"https://example.com/m.json"},
+              {"name":"firmware-manifest.sig","browser_download_url":"https://example.com/m.sig"},
               {
                 "name": "SmartSpin2kFirmware-26.8.1.bin.zip",
                 "browser_download_url": "https://example.com/26.8.1.zip"

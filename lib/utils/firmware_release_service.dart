@@ -9,11 +9,15 @@ class FirmwareRelease {
   const FirmwareRelease({
     required this.version,
     required this.downloadUrl,
+    this.manifestUrl,
+    this.manifestSignatureUrl,
     this.isMostRecent = false,
   });
 
   final String version;
   final String downloadUrl;
+  final String? manifestUrl;
+  final String? manifestSignatureUrl;
   final bool isMostRecent;
 
   String get displayName =>
@@ -39,7 +43,9 @@ class FirmwareReleaseService {
   Future<List<FirmwareRelease>> fetchAll() async {
     final override = debugReleasesOverride;
     if (override != null) return List.of(override);
-    final response = await http.get(releasesUri);
+    final response = await http
+        .get(releasesUri)
+        .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
       throw HttpException(
         'Unable to check firmware releases (HTTP ${response.statusCode}).',
@@ -76,21 +82,33 @@ List<FirmwareRelease> parseFirmwareReleases(String responseBody) {
     final assets = item['assets'];
     if (tag is! String || assets is! List) continue;
 
-    String? downloadUrl;
     final expectedAsset = expectedReleaseAssetName(tag);
-    for (final asset in assets) {
-      if (asset is Map<String, dynamic> && asset['name'] == expectedAsset) {
-        final url = asset['browser_download_url'];
-        if (url is String) downloadUrl = url;
-        break;
-      }
+    final urls = <String, String>{};
+    final duplicates = <String>{};
+    for (final asset in assets.whereType<Map>()) {
+      final name = asset['name'];
+      final url = asset['browser_download_url'];
+      if (name is! String ||
+          url is! String ||
+          Uri.tryParse(url)?.scheme != 'https')
+        continue;
+      if (urls.containsKey(name)) duplicates.add(name);
+      urls[name] = url;
     }
-
-    if (downloadUrl != null) {
+    final requiredNames = [
+      expectedAsset,
+      'firmware-manifest.json',
+      'firmware-manifest.sig',
+    ];
+    if (requiredNames.every(
+      (name) => urls.containsKey(name) && !duplicates.contains(name),
+    )) {
       releases.add(
         FirmwareRelease(
           version: tag,
-          downloadUrl: downloadUrl,
+          downloadUrl: urls[expectedAsset]!,
+          manifestUrl: urls['firmware-manifest.json']!,
+          manifestSignatureUrl: urls['firmware-manifest.sig']!,
           isMostRecent: releases.isEmpty,
         ),
       );

@@ -9,8 +9,8 @@ import 'dart:async';
 import 'dart:io' as io;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:archive/archive_io.dart' as archive;
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import '../utils/firmware_authenticity.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:http/http.dart' as http;
@@ -23,6 +23,33 @@ import '../utils/constants.dart';
 import '../utils/firmware_architecture.dart';
 import '../utils/firmware_release_service.dart';
 import '../widgets/ss2k_app_bar.dart';
+
+Future<bool> confirmUnofficialFirmware(
+  BuildContext context,
+  String filename,
+) async {
+  return await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('Trust this firmware author?'),
+          content: Text(
+            '$filename has no valid official SmartSpin2k signature. Do you trust the author of this firmware?',
+          ),
+          actions: [
+            TextButton(
+              autofocus: true,
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('I trust the author'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+}
 
 class FirmwareUpdateScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -48,6 +75,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   VoidCallback? _firmwareVersionListener;
   Future<void>? _initializationFuture;
 
+  bool _loadingReleases = true;
   List<FirmwareRelease> _availableReleases = [];
   FirmwareRelease? _selectedRelease;
   HardwareDetection? _hardwareDetection;
@@ -229,7 +257,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       await _progressStreamSubscription();
     }
     await _detectHardwareArchitecture();
-    await _fetchAllFirmwareReleases();
+    unawaited(_fetchAllFirmwareReleases());
   }
 
   Future<void> _detectHardwareArchitecture() async {
@@ -300,6 +328,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       final releasesList = await const FirmwareReleaseService().fetchAll();
       if (!mounted) return;
       setState(() {
+        _loadingReleases = false;
         _availableReleases = releasesList;
         _selectedRelease = _availableReleases
             .cast<FirmwareRelease?>()
@@ -313,6 +342,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       print('Error fetching firmware releases: $e');
       if (!mounted) return;
       setState(() {
+        _loadingReleases = false;
         _availableReleases = [];
         _selectedRelease = null;
         _updateSelectedVersionColor();
@@ -329,44 +359,52 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     setState(() {});
   }
 
-  Future<String> _downloadAndExtractFirmware(String downloadUrl) async {
-    final architecture = _hardwareDetection!.architecture;
-    final expectedFilename = architecture.firmwareFilename;
-    final tempDir = await getTemporaryDirectory();
-    await tempDir.create(recursive: true);
-    final zipFile = io.File('${tempDir.path}/firmware.zip');
-    final firmwareFile = io.File('${tempDir.path}/$expectedFilename');
-
-    try {
-      final response = await http.get(Uri.parse(downloadUrl));
-      if (response.statusCode != 200) {
-        throw Exception(
-          'Failed to download firmware zip: HTTP ${response.statusCode}',
+  Future<FirmwareImage?> _pickFirmware(
+    FirmwareAuthenticity verifier,
+    FirmwareArchitecture architecture,
+  ) async {
+    final files = await FilePicker.pickFiles(
+      dialogTitle: 'Select firmware and optional matching .bin.sig',
+    );
+    if (files.isEmpty) return null;
+    final images = files
+        .where(
+          (f) =>
+              f.name.toLowerCase().endsWith('.bin') ||
+              f.name.toLowerCase().endsWith('.zip'),
+        )
+        .toList();
+    if (images.length != 1 || files.length > 2)
+      throw const FormatException(
+        'Select one firmware BIN or ZIP. A BIN can include its matching .bin.sig file.',
+      );
+    final file = images.single;
+    if (await file.length() > FirmwareAuthenticity.maxArchive)
+      throw const FormatException('Firmware file is too large.');
+    Uint8List? signature;
+    if (files.length == 2) {
+      final sidecar = files.firstWhere((f) => f != file);
+      if (!file.name.toLowerCase().endsWith('.bin') ||
+          sidecar.name != '${file.name}.sig')
+        throw const FormatException(
+          'Select the signature named after the BIN, with .sig appended.',
         );
-      }
-
-      await zipFile.writeAsBytes(response.bodyBytes);
-
-      final archiveBytes = await zipFile.readAsBytes();
-      final decodedArchive = archive.ZipDecoder().decodeBytes(archiveBytes);
-      final files = decodedArchive.where((file) => file.isFile).toList();
-      final selectedEntry = selectFirmwareArchiveEntry(
-        files.map((file) => file.name),
-        architecture,
-      );
-      final selectedFile = files.singleWhere(
-        (file) => file.name == selectedEntry,
-      );
-
-      final bytes = Uint8List.fromList(selectedFile.content as List<int>);
-      validateFirmwareImage(bytes, architecture);
-      await firmwareFile.writeAsBytes(bytes, flush: true);
-      return firmwareFile.path;
-    } finally {
-      if (await zipFile.exists()) {
-        await zipFile.delete();
+      if (await sidecar.length() <= 72) signature = await sidecar.readAsBytes();
+    } else if (file.name.toLowerCase().endsWith('.bin') && file.path != null) {
+      final sidecar = io.File('${file.path!}.sig');
+      try {
+        if (await sidecar.exists() && await sidecar.length() <= 72)
+          signature = await sidecar.readAsBytes();
+      } on io.FileSystemException {
+        // Mobile file providers can grant access only to the selected document.
       }
     }
+    return verifier.local(
+      file.name,
+      await file.readAsBytes(),
+      architecture,
+      signature: signature,
+    );
   }
 
   bool _isNewerVersion(String versionA, String versionB) {
@@ -422,6 +460,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     if (this.deviceData.isSimulated) return;
 
     await _initializeOnce();
+    if (!mounted || updatingFirmware) return;
     if (_hardwareDetection == null) {
       _showPreflightError('Could not determine the connected hardware.');
       return;
@@ -458,54 +497,39 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     );
 
     try {
-      String binFilePath;
-
-      if (type == PICKER) {
-        // Get firmware file path from picker
-        final pickedFile = await FilePicker.pickFile(
-          type: FileType.custom,
-          allowedExtensions: ['bin'],
-        );
-
-        if (pickedFile == null) {
-          setState(() {
-            updatingFirmware = false;
-          });
-          return;
-        }
-
-        final pickedPath = pickedFile.path;
-        if (pickedPath != null) {
-          binFilePath = pickedPath;
-        } else {
-          // Some providers expose only a URI. Materialize it because both BLE
-          // and Wi-Fi OTA require a normal filesystem path.
-          final directory = await getTemporaryDirectory();
-          final safeName = pickedFile.name.split(RegExp(r'[/\\]')).last;
-          final temporaryFirmware = io.File('${directory.path}/$safeName');
-          await temporaryFirmware.writeAsBytes(await pickedFile.readAsBytes());
-          binFilePath = temporaryFirmware.path;
-        }
-      } else if (type == RELEASE && effectiveRelease != null) {
-        // Download and extract firmware from selected release
-        binFilePath = await _downloadAndExtractFirmware(
-          effectiveRelease.downloadUrl,
-        );
-      } else {
-        throw Exception('No firmware release was selected.');
-      }
-
-      final firmwareBytes = await io.File(binFilePath).readAsBytes();
-      validateFirmwareImage(
-        Uint8List.fromList(firmwareBytes),
-        _hardwareDetection!.architecture,
+      final verifier = FirmwareAuthenticity.fromPem(
+        await rootBundle.loadString('assets/ss2k-release-public.pem'),
       );
-
+      final FirmwareImage image;
+      if (type == PICKER) {
+        final local = await _pickFirmware(
+          verifier,
+          _hardwareDetection!.architecture,
+        );
+        if (local == null || !mounted) return;
+        if (!local.official &&
+            !await confirmUnofficialFirmware(context, local.filename))
+          return;
+        image = local;
+      } else if (type == RELEASE && effectiveRelease != null) {
+        final client = http.Client();
+        try {
+          image = await verifier.download(
+            effectiveRelease,
+            _hardwareDetection!.architecture,
+            client,
+          );
+        } finally {
+          client.close();
+        }
+      } else {
+        throw const FormatException('Select a firmware release.');
+      }
+      if (!mounted) return;
+      final firmwareBytes = image.bytes;
       final confirmed = await _showConfirmDialog(
-        release: effectiveRelease?.version ?? 'Local file',
-        filename: type == PICKER
-            ? binFilePath.split(RegExp(r'[/\\]')).last
-            : _hardwareDetection!.architecture.firmwareFilename,
+        release: type == PICKER ? 'Local file' : effectiveRelease!.version,
+        filename: image.filename,
       );
       if (!confirmed) {
         setState(() => updatingFirmware = false);
@@ -535,7 +559,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         final wifiResult = await WifiOTA.updateFirmware(
           deviceName: deviceData.preferredDeviceName(widget.device.advName),
           deviceIp: deviceData.advertisedIpAddress,
-          firmwarePath: binFilePath,
+          firmwareBytes: firmwareBytes,
           firmwareFilename: _hardwareDetection!.architecture.firmwareFilename,
           onProgress: (progress) {
             if (!mounted) return;
@@ -599,7 +623,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
             otaPackage!,
             widget.device,
             type,
-            binFilePath: binFilePath,
+            firmwareBytes: firmwareBytes,
           );
 
           updateSuccess = otaPackage!.firmwareupdate;
@@ -994,14 +1018,21 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                       ],
                     ),
                   ),
-                  SizedBox(height: 20),
-                  Builder(
-                    builder: (context) {
-                      final isNarrow = MediaQuery.of(context).size.width < 600;
-                      final buttons = Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
+                ] else
+                  Text(
+                    _loadingReleases
+                        ? 'Checking for signed firmware releases…'
+                        : 'No signed firmware releases are available.',
+                  ),
+                const SizedBox(height: 20),
+                Builder(
+                  builder: (context) {
+                    final isNarrow = MediaQuery.of(context).size.width < 600;
+                    final buttons = Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_selectedRelease != null)
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Theme.of(
@@ -1024,57 +1055,51 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                                 'Update to ${_selectedRelease?.displayName ?? "Selected Version"}',
                               ),
                             ),
-                            const SizedBox(height: 8),
-                            if (!io.Platform.isMacOS)
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Theme.of(
-                                    context,
-                                  ).colorScheme.secondary,
-                                  foregroundColor: Theme.of(
-                                    context,
-                                  ).colorScheme.onSecondary,
-                                ),
-                                onPressed: () async {
-                                  startFirmwareUpdate(PICKER);
-                                },
-                                child: const Text(
-                                  textAlign: TextAlign.center,
-                                  'Choose Firmware From Dialog',
-                                ),
-                              ),
-                          ],
-                        ),
-                      );
+                          const SizedBox(height: 8),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.secondary,
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onSecondary,
+                            ),
+                            onPressed: () async {
+                              startFirmwareUpdate(PICKER);
+                            },
+                            child: const Text(
+                              textAlign: TextAlign.center,
+                              'Choose Firmware From Dialog',
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
 
-                      final legend = ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 280),
-                        child: _legendCard(),
-                      );
+                    final legend = ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 280),
+                      child: _legendCard(),
+                    );
 
-                      if (isNarrow) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Remove Expanded in Column context
-                            (buttons.child as Column),
-                            const SizedBox(height: 12),
-                            legend,
-                          ],
-                        );
-                      } else {
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            legend,
-                            const SizedBox(width: 12),
-                            buttons,
-                          ],
-                        );
-                      }
-                    },
-                  ),
-                ],
+                    if (isNarrow) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Remove Expanded in Column context
+                          (buttons.child as Column),
+                          const SizedBox(height: 12),
+                          legend,
+                        ],
+                      );
+                    } else {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [legend, const SizedBox(width: 12), buttons],
+                      );
+                    }
+                  },
+                ),
               ],
             ),
     ];

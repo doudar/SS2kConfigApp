@@ -144,6 +144,8 @@ void main() {
               () => MockClient(
                 (_) async => http.Response('''[
           {"tag_name":"99.0.0","assets":[
+            {"name":"firmware-manifest.json","browser_download_url":"https://example.com/m.json"},
+            {"name":"firmware-manifest.sig","browser_download_url":"https://example.com/m.sig"},
             {"name":"SmartSpin2kFirmware-99.0.0.bin.zip",
              "browser_download_url":"https://example.com/firmware.zip"}
           ]}

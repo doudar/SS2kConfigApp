@@ -36,6 +36,12 @@ Tap **App Version** four times on the device screen to unlock **Maintenance → 
 
 The Dart package in `packages/ss2k_protocol` comes from the SS2kProtocol repository. Update the shared schema and codecs there, then run `dart tool/sync_consumers.dart app ../SS2kConfigApp` from that repository to refresh the app copy.
 
+## Updating trainer firmware
+
+The app checks the SmartSpin2k signature on the GitHub release manifest before downloading firmware. It then verifies the downloaded archive and the image for your trainer before starting the transfer. Older GitHub releases without a signed manifest are unavailable through the in-app download.
+
+For a manual update, select the official release ZIP to keep the firmware and its signature together. You can also select a local firmware binary. If the app cannot verify the SmartSpin2k signature, it asks whether you trust the author. Cancel to leave the trainer on its current firmware.
+
 ## Installation
 
 1. Download the app from:

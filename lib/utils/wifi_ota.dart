@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
-import 'package:flutter/services.dart' show rootBundle;
 
 enum WifiOtaPhase {
   locatingDevice,
@@ -81,7 +79,7 @@ class WifiOTA {
   static Future<WifiOtaResult> updateFirmware({
     required String deviceName,
     String? deviceIp,
-    required String firmwarePath,
+    required List<int> firmwareBytes,
     required String firmwareFilename,
     required void Function(WifiOtaProgress progress) onProgress,
     http.Client? client,
@@ -94,7 +92,6 @@ class WifiOTA {
         .replaceAll(RegExp(r'[^\w\s-]'), '')
         .trim();
     print('WiFi OTA: Starting update for device: $cleanDeviceName');
-    print('WiFi OTA: Using firmware path: $firmwarePath');
     onProgress(
       const WifiOtaProgress(
         phase: WifiOtaPhase.locatingDevice,
@@ -137,25 +134,6 @@ class WifiOTA {
           fraction: 0,
         ),
       );
-
-      // Get firmware bytes - handle both asset and file paths
-      List<int> firmwareBytes;
-      try {
-        if (firmwarePath.startsWith('assets/')) {
-          print('WiFi OTA: Loading firmware from assets');
-          final byteData = await rootBundle.load(firmwarePath);
-          firmwareBytes = byteData.buffer.asUint8List();
-        } else {
-          print('WiFi OTA: Loading firmware from file system');
-          final file = File(firmwarePath);
-          firmwareBytes = await file.readAsBytes();
-        }
-        print('WiFi OTA: Firmware loaded, size: ${firmwareBytes.length} bytes');
-      } catch (error) {
-        final message = 'Could not read the firmware image: $error';
-        print('WiFi OTA: $message');
-        return WifiOtaResult(outcome: WifiOtaOutcome.failed, message: message);
-      }
 
       // Create multipart request
       late ProgressMultipartRequest request;
