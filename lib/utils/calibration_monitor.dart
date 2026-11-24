@@ -1213,7 +1213,18 @@ class CalibrationMonitor extends ChangeNotifier {
   bool _acknowledged = false;
   bool _transportStalled = false;
   DateTime? _dispatchedAt;
+  bool _spinDownDispatched = false;
   Duration? _acknowledgedAfter;
+
+  /// Holds back the simulated device's homing command, so tests can cover a
+  /// slow setup before dispatch.
+  @visibleForTesting
+  static Duration debugDemoDispatchDelay = Duration.zero;
+
+  /// Whether this run's homing command has reached the wire. The firmware only
+  /// counts cadence once it has the command, so nothing the rider did before
+  /// this moment moves the run along.
+  bool get spinDownDispatched => _spinDownDispatched;
 
   /// Whether some channel can observe this run — the single definition of that.
   ///
@@ -1363,6 +1374,7 @@ class CalibrationMonitor extends ChangeNotifier {
     _acknowledged = false;
     _transportStalled = false;
     _dispatchedAt = null;
+    _spinDownDispatched = false;
     _acknowledgedAfter = null;
     _notificationsReadiness = FtmsNotificationsReadiness.unavailable;
     // Before the first fallible step, so a throw below always lands on a
@@ -1416,7 +1428,13 @@ class CalibrationMonitor extends ChangeNotifier {
     if (deviceData.isSimulated) {
       _notificationsReadiness = FtmsNotificationsReadiness.ready;
       _startRunWatchdogs();
+      if (debugDemoDispatchDelay > Duration.zero) {
+        await Future<void>.delayed(debugDemoDispatchDelay);
+        if (_disposed) return;
+      }
       _tracker.markRequestSent();
+      _spinDownDispatched = true;
+      _safeNotify();
       _runDemoScript();
       return;
     }
@@ -1503,6 +1521,8 @@ class CalibrationMonitor extends ChangeNotifier {
       onDispatch: () {
         _tracker.markRequestSent();
         _dispatchedAt = DateTime.now();
+        _spinDownDispatched = true;
+        _safeNotify();
       },
     );
     if (_disposed) return;
