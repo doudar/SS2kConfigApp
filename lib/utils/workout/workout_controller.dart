@@ -804,8 +804,8 @@ class WorkoutController extends ChangeNotifier {
         trackPoints.add(
           TrackPoint(
             timestamp: timestamp,
-            lat:
-                44.8113, // Eau Claire center - this will be updated by GPX exporter to create bike shape
+            // Legacy checkpoint coordinates. The exporter applies the ride map.
+            lat: 44.8113,
             lon: -91.4985,
             elevation: _lastAltitude,
             heartRate: currentHeartRate,

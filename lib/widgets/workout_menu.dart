@@ -20,6 +20,7 @@ import 'workout_library.dart';
 import 'audio_coach_dialog.dart';
 import 'completed_activities.dart';
 import 'workout_sound_effects_toggle.dart';
+import 'ride_map_dialog.dart';
 
 /// Unified Workout Menu (Refactored)
 /// ---------------------------------
@@ -152,6 +153,13 @@ class WorkoutMenu extends StatelessWidget {
                   const WorkoutSoundEffectsToggle(),
                   _menuTile(
                     dialogContext,
+                    _MenuAction.rideMap,
+                    Icons.map_outlined,
+                    'Ride map',
+                    subtitle: 'Drawing and location for workout uploads',
+                  ),
+                  _menuTile(
+                    dialogContext,
                     _MenuAction.workoutText,
                     Icons.text_fields_rounded,
                     'On-screen messages',
@@ -242,6 +250,9 @@ class WorkoutMenu extends StatelessWidget {
 
   void _handleAction(BuildContext context, _MenuAction action) {
     switch (action) {
+      case _MenuAction.rideMap:
+        RideMapDialog.show(context);
+        break;
       case _MenuAction.ftp:
         _showFtpDialog(context);
         break;
@@ -896,6 +907,7 @@ class WorkoutMenu extends StatelessWidget {
 }
 
 enum _MenuAction {
+  rideMap,
   ftp,
   freeRide,
   selectWorkout,
