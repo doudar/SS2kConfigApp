@@ -254,6 +254,48 @@ void main() {
     ]);
   });
 
+  test('return to previous ERG target cancels in-flight free ride', () async {
+    final ack = Completer<void>();
+    var delayAck = false;
+    final harness = _Harness(
+      afterWrite: (_) async {
+        if (delayAck) await ack.future;
+      },
+    );
+    final lane = harness.createLane();
+    addTearDown(lane.dispose);
+    lane.setTargetPower(100);
+    await _flush();
+    delayAck = true;
+    lane.setTargetPower(0);
+    await _flush();
+    lane.setTargetPower(100);
+    ack.complete();
+    await _flush();
+    expect(harness.writes, [
+      [0x05, 100, 0],
+      [0x05, 0, 0],
+      [0x05, 100, 0],
+    ]);
+  });
+
+  test(
+    'reselecting the in-flight value supersedes the pending value',
+    () async {
+      final gate = Completer<void>();
+      final harness = _Harness(beforeWrite: () => gate.future);
+      final lane = harness.createLane();
+      lane.setTargetPower(100);
+      lane.setTargetPower(200);
+      lane.setTargetPower(100);
+      gate.complete();
+      await _flush();
+      expect(harness.writes, [
+        [0x05, 100, 0],
+      ]);
+    },
+  );
+
   test('superseding zero target skips its simulation command', () async {
     final firstWrite = Completer<void>();
     final continueBatch = Completer<void>();

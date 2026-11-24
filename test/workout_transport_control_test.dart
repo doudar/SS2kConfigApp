@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:clock/clock.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -84,6 +85,50 @@ void main() {
       deviceData.dispose();
     },
   );
+
+  test('interval and skip targets bypass the ramp throttle', () async {
+    final data = _RecordingDeviceData();
+    final ride = WorkoutController(
+      data,
+      BluetoothDevice.fromId('00:00:00:00:00:94'),
+    );
+    addTearDown(() {
+      ride.cleanup();
+      data.dispose();
+    });
+    await Future<void>.delayed(Duration.zero);
+    ride.loadWorkout('''
+<workout_file><workout>
+  <SteadyState Duration="1" Power="1.0"/>
+  <FreeRide Duration="1"/>
+  <Ramp Duration="6" PowerLow="0.5" PowerHigh="1.1"/>
+  <SteadyState Duration="10" Power="1.5"/>
+</workout></workout_file>
+''');
+    final start = DateTime.utc(2026, 1, 1);
+    await withClock(Clock.fixed(start), ride.togglePlayPause);
+    fakeAsync((async) {
+      ride.startProgress();
+      List<int> watts() => data.targets.map((entry) => entry.watts).toList();
+      async.elapse(const Duration(milliseconds: 900));
+      expect(watts(), [200]);
+      expect(ride.currentSegment, same(ride.segments.first));
+      expect(ride.currentSegmentTimeRemaining, 1);
+      async.elapse(const Duration(milliseconds: 100));
+      expect(watts(), [200, 0]);
+      expect(ride.currentSegmentElapsedSeconds, 0);
+      async.elapse(const Duration(seconds: 1));
+      expect(watts(), [200, 0, 100]);
+      async.elapse(const Duration(milliseconds: 1900));
+      expect(watts(), [200, 0, 100]);
+      async.elapse(const Duration(milliseconds: 100));
+      expect(watts(), [200, 0, 100, 140]);
+      ride.skipToNextSegment();
+      expect(watts(), [200, 0, 100, 140, 300]);
+      ride.progressTimer?.cancel();
+    }, initialTime: start);
+    await ride.stopWorkout();
+  });
 
   test('loading and stopping an idle workout never request control', () async {
     final deviceData = _RecordingDeviceData();

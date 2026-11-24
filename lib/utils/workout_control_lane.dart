@@ -289,6 +289,9 @@ class WorkoutControlLane {
   }
 
   void _start(_WorkoutControlRequest request) {
+    // This batch can change the trainer before its acknowledgement arrives.
+    // A request to return to the previous target must supersede it.
+    _delivered = null;
     _inFlight = request;
     final batch = WorkoutControlBatch(
       kind: request.desired.kind,
@@ -364,12 +367,14 @@ class WorkoutControlLane {
   bool _hasMatchingActiveRequest(_WorkoutControlDesired desired, int epoch) {
     final inFlight = _inFlight;
     if (inFlight != null &&
+        inFlight.generation == _generation &&
         inFlight.epoch == epoch &&
         inFlight.desired.samePayload(desired)) {
       return true;
     }
     final pending = _pending;
     return pending != null &&
+        pending.generation == _generation &&
         pending.epoch == epoch &&
         pending.desired.samePayload(desired);
   }

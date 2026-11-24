@@ -67,6 +67,7 @@ class WorkoutController extends ChangeNotifier {
   late final ConnectedEpochWatcher _connectedEpochWatcher;
   static const _targetUpdateInterval = Duration(seconds: 2);
   DateTime? _lastTargetUpdate;
+  WorkoutSegment? _lastTargetSegment;
 
   List<WorkoutSegment> segments = [];
   String? workoutName;
@@ -101,8 +102,6 @@ class WorkoutController extends ChangeNotifier {
   // Store track points during workout
   final List<TrackPoint> trackPoints = [];
   DateTime? _workoutStartTime; // Base timestamp for calculating absolute times
-  DateTime?
-  _lastTickTime; // Track last timer tick for accurate drift compensation
   double _lastTrackPointTime =
       0; // Last track point time in workout progress seconds
   int _lastRecordedSecond = -1; // Track last whole-second data point recorded
@@ -259,7 +258,7 @@ class WorkoutController extends ChangeNotifier {
     int totalTime = 0;
     for (var segment in segments) {
       totalTime += segment.duration;
-      if (totalTime > _workoutProgressTime.round()) {
+      if (totalTime > _workoutProgressTime) {
         return segment;
       }
     }
@@ -270,8 +269,8 @@ class WorkoutController extends ChangeNotifier {
     if (segments.isEmpty) return 0;
     int totalTime = 0;
     for (var segment in segments) {
-      if (totalTime + segment.duration > _workoutProgressTime.round()) {
-        return _workoutProgressTime.round() - totalTime;
+      if (totalTime + segment.duration > _workoutProgressTime) {
+        return _workoutProgressTime.floor() - totalTime;
       }
       totalTime += segment.duration;
     }
@@ -546,7 +545,7 @@ class WorkoutController extends ChangeNotifier {
         _lastRecordedSecond = _workoutProgressTime.floor();
 
         progressPosition = _workoutProgressTime / totalDuration;
-        _lastTargetUpdate = null;
+        _updateTargetPower();
 
         _saveWorkoutState();
         if (!_isDisposed) {
@@ -678,7 +677,7 @@ class WorkoutController extends ChangeNotifier {
   }) {
     if (segments.isEmpty) return;
 
-    double currentTime = progressPosition * totalDuration;
+    final currentTime = _workoutProgressTime;
     double elapsedTime = 0;
 
     for (var segment in segments) {
@@ -705,6 +704,7 @@ class WorkoutController extends ChangeNotifier {
 
         final now = clock.now();
         if (force ||
+            !identical(segment, _lastTargetSegment) ||
             _lastTargetUpdate == null ||
             now.difference(_lastTargetUpdate!) >= _targetUpdateInterval) {
           deviceData.setWorkoutTargetPower(
@@ -713,9 +713,10 @@ class WorkoutController extends ChangeNotifier {
             resetSimulationFirst: resetSimulationFirst,
           );
           _lastTargetUpdate = now;
+          _lastTargetSegment = segment;
         }
         currentSegmentTimeRemaining =
-            ((elapsedTime + segment.duration) - currentTime).round();
+            ((elapsedTime + segment.duration) - currentTime).ceil();
 
         _handleSegmentCountdown(currentSegmentTimeRemaining);
         break;
@@ -726,7 +727,7 @@ class WorkoutController extends ChangeNotifier {
 
   void startProgress() {
     progressTimer?.cancel();
-    _lastTickTime = clock.now();
+    var lastTickTime = clock.now();
 
     // Initialize workout start time if not set
     if (_workoutStartTime == null) {
@@ -752,14 +753,18 @@ class WorkoutController extends ChangeNotifier {
 
       // Calculate actual time elapsed since last tick to prevent drift
       final now = clock.now();
-      final double delta = _lastTickTime != null
-          ? now.difference(_lastTickTime!).inMicroseconds / 1000000.0
-          : 0.1;
-      _lastTickTime = now;
+      final elapsedMicros = now.difference(lastTickTime).inMicroseconds;
+      lastTickTime = now;
+      const micros = Duration.microsecondsPerSecond;
+      final delta = elapsedMicros / micros;
 
       // Update workout progress time based on actual elapsed time
-      _workoutProgressTime += delta;
+      // Keep exact timer boundaries when accumulating fractional seconds.
+      _workoutProgressTime =
+          ((_workoutProgressTime * micros).round() + elapsedMicros) / micros;
       progressPosition = _workoutProgressTime / totalDuration;
+
+      if (progressPosition < 1.0) _updateTargetPower();
 
       // Store power value at current time index
       final currentPower = deviceData.ftmsData.watts.toDouble();
@@ -840,9 +845,6 @@ class WorkoutController extends ChangeNotifier {
         }
         return;
       }
-
-      // Update target watts and remaining time based on current position
-      _updateTargetPower();
 
       _saveWorkoutState();
       if (!_isDisposed) {

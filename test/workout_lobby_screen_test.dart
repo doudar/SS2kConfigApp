@@ -187,7 +187,8 @@ void main() {
       // The compact in-ride FTP action reflects edits made in the lobby.
       await controller.updateFTP(250);
       await tester.pump();
-      expect(find.text('FTP 250'), findsOneWidget);
+      expect(find.text('FTP 250 W · Adjust'), findsOneWidget);
+      expect(find.byType(ClassicWorkoutPreview), findsNothing);
       data.ftmsData.watts = 177;
       data.ftmsData.cadence = 92;
       data.ftmsData.heartRate = 145;
@@ -202,6 +203,7 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(controller.isPlaying, isTrue);
       expect(find.byType(WorkoutLobby), findsNothing);
+      expect(find.text('FTP 250').hitTestable(), findsOneWidget);
       await tester.tap(find.text('Ride menu'));
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Just ride'), findsOneWidget);
@@ -314,6 +316,10 @@ void main() {
       expect(find.text('Ride menu').hitTestable(), findsOneWidget);
       expect(find.text('Classic mode').hitTestable(), findsOneWidget);
       expect(find.byTooltip('Return to Classic').hitTestable(), findsOneWidget);
+      expect(
+        find.byType(ClassicWorkoutPreview, skipOffstage: false),
+        findsNothing,
+      );
       if (const bool.fromEnvironment('CLASSIC_STYLE_SCREENSHOTS')) {
         await tester.runAsync(() async {
           final boundary =

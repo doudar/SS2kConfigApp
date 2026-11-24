@@ -9,7 +9,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
+    show kDebugMode, kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:app_links/app_links.dart';
@@ -31,8 +31,8 @@ import 'utils/demo.dart' show demoModeBypass;
 import 'utils/app_release_service.dart';
 
 void main() async {
-  FlutterBluePlus.setLogLevel(LogLevel.verbose, color: true);
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterBluePlus.setLogLevel(kDebugMode ? LogLevel.verbose : LogLevel.warning);
   fvp.registerWith(
     options: {
       'platforms': ['windows', 'macos', 'linux'],

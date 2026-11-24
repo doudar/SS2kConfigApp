@@ -2988,7 +2988,7 @@ class DeviceData {
         );
       }
 
-      if (!_ftmsDataController.isClosed) {
+      if (_ftmsDataController.hasListener && !_ftmsDataController.isClosed) {
         _ftmsDataController.add(
           FtmsData(
             cadence: ftmsData.cadence,
@@ -3002,8 +3002,9 @@ class DeviceData {
         );
       }
 
-      // Emit a characteristic change event for FTMS data updates
-      if (!_characteristicChangeController.isClosed) {
+      // The current readings above are available even without stream listeners.
+      if (_characteristicChangeController.hasListener &&
+          !_characteristicChangeController.isClosed) {
         _characteristicChangeController.add(
           CharacteristicChangeEvent(
             vName: "FTMS_DATA",
