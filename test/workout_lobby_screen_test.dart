@@ -221,10 +221,28 @@ void main() {
       expect(find.text('177 W'), findsOneWidget);
       expect(find.text('175 W'), findsOneWidget);
       expect(find.text('Cadence'), findsOneWidget);
-      expect(find.text('92 RPM'), findsOneWidget);
+      final twoDigitCadence = find.text('\u200792 RPM');
+      expect(twoDigitCadence, findsOneWidget);
+      final cadenceRight = tester.getRect(twoDigitCadence).right;
+      expect(find.text('145 BPM'), findsOneWidget);
+      final countdown = tester.getRect(find.textContaining('left in interval'));
+      final heartRate = tester.getRect(find.text('145 BPM'));
+      expect(heartRate.left, greaterThan(countdown.right));
+      expect(heartRate.center.dy, closeTo(countdown.center.dy, 1));
       data.ftmsData.cadence = 105;
+      data.ftmsData.heartRate = 98;
+      data.ftmsData.watts = 1012;
       await tester.pump(const Duration(milliseconds: 200));
       expect(find.text('105 RPM'), findsOneWidget);
+      expect(
+        tester.getRect(find.text('105 RPM')).right,
+        closeTo(cadenceRight, 0.1),
+      );
+      expect(find.text('\u200798 BPM'), findsOneWidget);
+      expect(find.text('1012 W'), findsOneWidget);
+      data.ftmsData.heartRate = 0;
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.textContaining('BPM'), findsNothing);
       expect(find.textContaining('left in interval'), findsOneWidget);
       expect(find.byType(WorkoutControls), findsNothing);
       expect(tester.takeException(), isNull);

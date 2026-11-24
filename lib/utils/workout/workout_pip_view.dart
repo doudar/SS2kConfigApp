@@ -5,6 +5,10 @@ import 'workout_controller.dart';
 import 'workout_painter.dart';
 import 'workout_visuals.dart';
 
+// A figure space occupies one digit position without displaying a leading zero.
+String _digits(int value) => value.toString().padLeft(3, '\u2007');
+const _numberStyle = TextStyle(fontFamily: 'monospace');
+
 /// The system manages PiP gestures. Expanding the window restores ride controls.
 class WorkoutPipView extends StatelessWidget {
   const WorkoutPipView({
@@ -74,13 +78,61 @@ class WorkoutPipView extends StatelessWidget {
                       ],
                     ),
                   ),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '${arcadeIntervalDuration(controller.currentSegmentTimeRemaining)} left in interval',
-                      style: const TextStyle(color: Colors.white, fontSize: 16),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: arcadeIntervalDuration(
+                                    controller.currentSegmentTimeRemaining,
+                                  ),
+                                  style: _numberStyle,
+                                ),
+                                const TextSpan(text: ' left in interval'),
+                              ],
+                            ),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (metrics.heartRate > 0) ...[
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.favorite,
+                                  size: 12,
+                                  color: WorkoutVisuals.heartRate,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  '${_digits(metrics.heartRate)} BPM',
+                                  semanticsLabel:
+                                      'Heart rate, ${metrics.heartRate} beats per minute',
+                                  style: _numberStyle.copyWith(
+                                    color: WorkoutVisuals.heartRate,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Expanded(
@@ -135,14 +187,14 @@ class _MetricReading extends StatelessWidget {
           ),
           Text.rich(
             TextSpan(
-              text: '$value',
+              text: _digits(value),
               children: [
                 TextSpan(text: ' $unit', style: const TextStyle(fontSize: 12)),
               ],
             ),
-            style: TextStyle(
+            style: _numberStyle.copyWith(
               color: color,
-              fontSize: 27,
+              fontSize: 25,
               fontWeight: FontWeight.bold,
             ),
           ),
