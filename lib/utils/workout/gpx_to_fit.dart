@@ -54,20 +54,76 @@ class GpxToFitConverter {
     final gpxString = await gpxFile.readAsString();
     final xmlGpx = GpxReader().fromString(gpxString);
 
-    // Create FIT file builder
+    if (xmlGpx.trks.isEmpty ||
+        xmlGpx.trks.first.trksegs.isEmpty ||
+        xmlGpx.trks.first.trksegs.first.trkpts.isEmpty) {
+      throw const FormatException('No track points found in GPX file');
+    }
+    final points = xmlGpx.trks.first.trksegs.first.trkpts;
+    final startTimestamp = _toEpochMillis(
+      points.first.time ?? DateTime.now().toUtc(),
+    );
+    // Process track points
+    final records = <RecordMessage>[];
+    // Seed one second before the start so that when GPX timestamps are missing, the first
+    // fallback calculation lands exactly on startTimestamp,
+    // ensuring the first record starts at the correct time
+    int previousTimestamp = startTimestamp - Duration.millisecondsPerSecond;
+
+    for (final trackPoint in points) {
+      final tpTime = trackPoint.time;
+      final timestamp = tpTime != null
+          ? _toEpochMillis(tpTime)
+          : (previousTimestamp + Duration.millisecondsPerSecond);
+      final record = RecordMessage()
+        ..timestamp = timestamp
+        ..positionLong = trackPoint.lon
+        ..positionLat = trackPoint.lat
+        ..altitude = trackPoint.ele;
+
+      // Extract heart rate, cadence, and power from extensions
+      final ext = trackPoint.extensions;
+
+      // Extract power
+      final powerStr = _extensionText(ext['power']) ?? '0';
+      record.power = int.tryParse(powerStr) ?? 0;
+
+      // Extract heart rate and cadence from TrackPointExtension
+      final tpExt = ext['gpxtpx:TrackPointExtension'];
+      final tpExtStr = _extensionText(tpExt);
+      final heartRate = _extractExtensionInt(tpExt, 'hr');
+      final cadence = _extractExtensionInt(tpExt, 'cad');
+      if (heartRate != null) {
+        record.heartRate = heartRate;
+      }
+      if (cadence != null) {
+        record.cadence = cadence;
+      }
+
+      if (tpExtStr != null && heartRate == null && cadence == null) {
+        final values = tpExtStr
+            .trim()
+            .split('\n')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+        if (values.length >= 2) {
+          record.heartRate = int.tryParse(values[0]) ?? 0;
+          record.cadence = int.tryParse(values[1]) ?? 0;
+        }
+      }
+
+      records.add(record);
+      previousTimestamp = timestamp;
+    }
+    final path = gpxFilePath.replaceAll('.gpx', '.fit');
+    await File(path).writeAsBytes(buildActivity(records).toBytes());
+    return path;
+  }
+
+  static FitFile buildActivity(List<RecordMessage> records) {
     final builder = FitFileBuilder(autoDefine: true, minStringSize: 50);
-
-    // Use GPX timestamps when available
-    final firstTrackPointTime =
-        xmlGpx.trks.isNotEmpty &&
-            xmlGpx.trks[0].trksegs.isNotEmpty &&
-            xmlGpx.trks[0].trksegs[0].trkpts.isNotEmpty
-        ? xmlGpx.trks[0].trksegs[0].trkpts.first.time
-        : null;
-
-    final DateTime baseDateTime = firstTrackPointTime ?? DateTime.now().toUtc();
-    final int startTimestamp = _toEpochMillis(baseDateTime);
-
+    final startTimestamp = records.first.timestamp!;
     // Add File ID message
     final fileIdMessage = FileIdMessage()
       ..type = FileType.activity
@@ -84,105 +140,43 @@ class GpxToFitConverter {
       ..timestamp = startTimestamp;
     builder.add(eventMessage);
 
-    // Process track points
-    final records = <RecordMessage>[];
-    // Seed one second before the start so that when GPX timestamps are missing, the first
-    // fallback calculation lands exactly on startTimestamp,
-    // ensuring the first record starts at the correct time
-    int previousTimestamp = startTimestamp - Duration.millisecondsPerSecond;
+    builder.addAll(records);
+    // Add Lap message
+    final lastRecordTimestamp = records.last.timestamp!;
+    final elapsedSeconds =
+        (lastRecordTimestamp - startTimestamp) / Duration.millisecondsPerSecond;
+    final lapMessage = LapMessage()
+      ..timestamp = lastRecordTimestamp
+      ..startTime = startTimestamp
+      ..totalElapsedTime = elapsedSeconds
+      ..totalTimerTime = elapsedSeconds;
+    lapMessage.totalDistance = records.last.distance;
+    builder.add(lapMessage);
 
-    if (xmlGpx.trks.isNotEmpty && xmlGpx.trks[0].trksegs.isNotEmpty) {
-      for (var trackPoint in xmlGpx.trks[0].trksegs[0].trkpts) {
-        final tpTime = trackPoint.time;
-        final timestamp = tpTime != null
-            ? _toEpochMillis(tpTime)
-            : (previousTimestamp + Duration.millisecondsPerSecond);
-        final record = RecordMessage()
-          ..timestamp = timestamp
-          ..positionLong = trackPoint.lon
-          ..positionLat = trackPoint.lat
-          ..altitude = trackPoint.ele;
+    // Add Session message
+    final sessionMessage = SessionMessage()
+      ..timestamp = lastRecordTimestamp
+      ..startTime = startTimestamp
+      ..totalElapsedTime = elapsedSeconds
+      ..totalTimerTime = elapsedSeconds
+      ..sport = Sport.cycling
+      ..subSport = SubSport.virtualActivity
+      ..firstLapIndex = 0
+      ..numLaps = 1;
+    sessionMessage.totalDistance = records.last.distance;
+    builder.add(sessionMessage);
 
-        // Extract heart rate, cadence, and power from extensions
-        final ext = trackPoint.extensions;
+    // Add Activity message for summary timing
+    final activityMessage = ActivityMessage()
+      ..timestamp = lastRecordTimestamp
+      ..totalTimerTime = elapsedSeconds
+      ..numSessions = 1
+      ..type = Activity.manual
+      ..event = Event.activity
+      ..eventType = EventType.stop;
+    builder.add(activityMessage);
 
-        // Extract power
-        final powerStr = _extensionText(ext['power']) ?? '0';
-        record.power = int.tryParse(powerStr) ?? 0;
-
-        // Extract heart rate and cadence from TrackPointExtension
-        final tpExt = ext['gpxtpx:TrackPointExtension'];
-        final tpExtStr = _extensionText(tpExt);
-        final heartRate = _extractExtensionInt(tpExt, 'hr');
-        final cadence = _extractExtensionInt(tpExt, 'cad');
-        if (heartRate != null) {
-          record.heartRate = heartRate;
-        }
-        if (cadence != null) {
-          record.cadence = cadence;
-        }
-
-        if (tpExtStr != null && heartRate == null && cadence == null) {
-          final values = tpExtStr
-              .trim()
-              .split('\n')
-              .map((s) => s.trim())
-              .where((s) => s.isNotEmpty)
-              .toList();
-          if (values.length >= 2) {
-            record.heartRate = int.tryParse(values[0]) ?? 0;
-            record.cadence = int.tryParse(values[1]) ?? 0;
-          }
-        }
-
-        records.add(record);
-        previousTimestamp = timestamp;
-      }
-      builder.addAll(records);
-      // Add Lap message
-      final lastRecordTimestamp = previousTimestamp;
-      final elapsedSeconds =
-          (lastRecordTimestamp - startTimestamp) /
-          Duration.millisecondsPerSecond;
-      final lapMessage = LapMessage()
-        ..timestamp = lastRecordTimestamp
-        ..startTime = startTimestamp
-        ..totalElapsedTime = elapsedSeconds
-        ..totalTimerTime = elapsedSeconds;
-      builder.add(lapMessage);
-
-      // Add Session message
-      final sessionMessage = SessionMessage()
-        ..timestamp = lastRecordTimestamp
-        ..startTime = startTimestamp
-        ..totalElapsedTime = elapsedSeconds
-        ..totalTimerTime = elapsedSeconds
-        ..sport = Sport.cycling
-        ..subSport = SubSport.virtualActivity
-        ..firstLapIndex = 0
-        ..numLaps = 1;
-      builder.add(sessionMessage);
-
-      // Add Activity message for summary timing
-      final activityMessage = ActivityMessage()
-        ..timestamp = lastRecordTimestamp
-        ..totalTimerTime = elapsedSeconds
-        ..numSessions = 1
-        ..type = Activity.manual
-        ..event = Event.activity
-        ..eventType = EventType.stop;
-      builder.add(activityMessage);
-
-      // Build and save FIT file
-      final fitFile = builder.build();
-      final fitFilePath = gpxFilePath.replaceAll('.gpx', '.fit');
-      final outFile = File(fitFilePath);
-      await outFile.writeAsBytes(fitFile.toBytes());
-
-      return fitFilePath;
-    } else {
-      throw Exception('No track points found in GPX file');
-    }
+    return builder.build();
   }
 
   /// Converts GPX to FIT, deletes the GPX file, and returns the FIT file path

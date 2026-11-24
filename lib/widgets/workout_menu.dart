@@ -20,6 +20,7 @@ import 'workout_library.dart';
 import 'audio_coach_dialog.dart';
 import 'completed_activities.dart';
 import 'workout_sound_effects_toggle.dart';
+import 'ride_map_dialog.dart';
 
 /// Unified Workout Menu (Refactored)
 /// ---------------------------------
@@ -36,12 +37,14 @@ class WorkoutMenu extends StatelessWidget {
     required this.device,
     required this.ttsSettings,
     required this.onWorkoutLoaded,
+    this.onOpenWorkoutOverlay,
   });
 
   final WorkoutController workoutController;
   final DeviceData deviceData;
   final BluetoothDevice device;
   final WorkoutTTSSettings ttsSettings;
+  final VoidCallback? onOpenWorkoutOverlay;
   final void Function(String content, {String? name}) onWorkoutLoaded;
 
   @override
@@ -92,7 +95,7 @@ class WorkoutMenu extends StatelessWidget {
 
   Future<void> _showMenuDialog(BuildContext context, {_MenuAction? initialAction}) async {
     var openedInitialAction = false;
-    await showDialog<void>(
+    final openOverlay = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
@@ -111,6 +114,16 @@ class WorkoutMenu extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (onOpenWorkoutOverlay != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: WorkoutActionTile(
+                    icon: Icons.picture_in_picture_alt,
+                    title: 'Workout overlay',
+                    subtitle: 'Keep ride metrics visible over other apps',
+                    onTap: () => Navigator.pop(dialogContext, true),
+                  ),
+                ),
               _menuTile(
                 dialogContext,
                 _MenuAction.selectWorkout,
@@ -138,6 +151,13 @@ class WorkoutMenu extends StatelessWidget {
                     subtitle: 'Spoken guidance during your ride',
                   ),
                   const WorkoutSoundEffectsToggle(),
+                  _menuTile(
+                    dialogContext,
+                    _MenuAction.rideMap,
+                    Icons.map_outlined,
+                    'Ride map',
+                    subtitle: 'Drawing and location for workout uploads',
+                  ),
                   _menuTile(
                     dialogContext,
                     _MenuAction.workoutText,
@@ -194,6 +214,7 @@ class WorkoutMenu extends StatelessWidget {
         );
       },
     );
+    if (openOverlay == true) onOpenWorkoutOverlay?.call();
   }
 
   Widget _menuGroup({
@@ -229,6 +250,9 @@ class WorkoutMenu extends StatelessWidget {
 
   void _handleAction(BuildContext context, _MenuAction action) {
     switch (action) {
+      case _MenuAction.rideMap:
+        RideMapDialog.show(context);
+        break;
       case _MenuAction.ftp:
         _showFtpDialog(context);
         break;
@@ -883,6 +907,7 @@ class WorkoutMenu extends StatelessWidget {
 }
 
 enum _MenuAction {
+  rideMap,
   ftp,
   freeRide,
   selectWorkout,

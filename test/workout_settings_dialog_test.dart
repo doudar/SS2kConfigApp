@@ -154,6 +154,7 @@ void main() {
   Future<void> openGroup(WidgetTester tester, String item) async {
     final group = switch (item) {
       'Voice coach' ||
+      'Ride map' ||
       'On-screen messages' ||
       'Power target (FTP)' ||
       'Trainer setup' => 'Ride settings',
@@ -205,6 +206,7 @@ void main() {
         for (final brightness in Brightness.values) {
           for (final entry in {
             'Voice coach': 'Voice coach',
+            'Ride map': 'Ride map',
             'On-screen messages': 'On-screen messages',
             'Connected apps': 'Connected apps',
             'Choose a workout': 'Choose a workout',
@@ -245,6 +247,46 @@ void main() {
           }
         }
       }
+    },
+  );
+
+  testWidgets(
+    'Ride map saves the drawing and keeps canceled edits out of uploads',
+    (tester) async {
+      await host(tester);
+      await openGroup(tester, 'Ride map');
+      await tapVisible(tester, find.text('Ride map'));
+      expect(
+        tester
+            .widget<ChoiceChip>(
+              find.widgetWithText(ChoiceChip, 'Random drawing'),
+            )
+            .selected,
+        isTrue,
+      );
+      await tapVisible(tester, find.text('SmartSpin2k'));
+      await tapVisible(tester, find.text('Map center'));
+      await tapVisible(tester, find.text('Eau Claire, WI').last);
+      await tapVisible(tester, find.text('Save'));
+      await tapVisible(tester, find.text('Ride map'));
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'SmartSpin2k'))
+            .selected,
+        isTrue,
+      );
+      await tapVisible(tester, find.text('No map'));
+      expect(find.text('Map center'), findsNothing);
+      await tapVisible(tester, find.byTooltip('Close').last);
+      await tapVisible(tester, find.text('Ride map'));
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'SmartSpin2k'))
+            .selected,
+        isTrue,
+      );
+      await tapVisible(tester, find.byTooltip('Close').last);
+      await tapVisible(tester, find.text('Back to ride'));
     },
   );
 
