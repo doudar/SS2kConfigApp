@@ -24,11 +24,17 @@ class WorkoutPipView extends StatelessWidget {
   Widget build(BuildContext context) => Material(
     color: WorkoutVisuals.ink,
     child: FittedBox(
-      child: SizedBox(
+      child: Container(
         width: 240,
         height: 120,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.all(2),
+        child: Container(
+          decoration: BoxDecoration(
+            color: WorkoutVisuals.panel,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xff43516a)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
           child: ListenableBuilder(
             listenable: controller,
             builder: (context, _) {
@@ -134,19 +140,25 @@ class WorkoutPipView extends StatelessWidget {
                       ],
                     ],
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Expanded(
                     child: Semantics(
                       label: 'Current interval and upcoming workout profile',
                       image: true,
-                      child: CustomPaint(
-                        painter: WorkoutPainter.preview(
-                          ahead,
-                          progress: duration > 0
-                              ? controller.currentSegmentElapsedSeconds /
-                                    duration
-                              : 0,
-                          highlightCurrent: true,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: ColoredBox(
+                          color: WorkoutVisuals.ink,
+                          child: CustomPaint(
+                            painter: WorkoutPainter.preview(
+                              ahead,
+                              progress: duration > 0
+                                  ? controller.currentSegmentElapsedSeconds /
+                                        duration
+                                  : 0,
+                              highlightCurrent: true,
+                            ),
+                          ),
                         ),
                       ),
                     ),
