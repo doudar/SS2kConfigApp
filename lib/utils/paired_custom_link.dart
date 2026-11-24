@@ -30,6 +30,7 @@ class PairedCustomLink {
     required this.writeWire,
     required this.onInner,
     required this.prompt,
+    this.confirmLegacy,
     this.legacyIndications,
     this.restoreNotificationMode = false,
   }) : _currentMaxWire = currentMaxWire ?? (() => maxWire);
@@ -43,6 +44,9 @@ class PairedCustomLink {
   final Future<void> Function(List<int>) writeWire;
   final void Function(List<int>) onInner;
   final PairingPrompt? prompt;
+  final void Function(String, Future<void>, void Function(), void Function())?
+  confirmLegacy;
+  Completer<void>? _legacyApproval;
   final Future<void> Function(bool enabled)? legacyIndications;
   final bool restoreNotificationMode;
   static const _storage = FlutterSecureStorage(
@@ -77,6 +81,10 @@ class PairedCustomLink {
 
   void close() {
     _closed = true;
+    final approval = _legacyApproval;
+    if (approval != null && !approval.isCompleted) {
+      approval.completeError(StateError('SmartSpin2k connection closed.'));
+    }
     authenticated = false;
     legacy = false;
     _client?.close();
@@ -215,12 +223,32 @@ class PairedCustomLink {
         (capability.length != 7 || capability[2] != 1)) {
       throw const FormatException('Unknown SmartSpin2k capability format.');
     }
+    if (capability.first == protocol.error && capability.length != 2) {
+      throw const FormatException('Unknown SmartSpin2k capability error.');
+    }
     if (capability.first == protocol.error ||
         capability[3] & protocol.cap_secure_settings == 0) {
-      if (pinned != null)
-        throw StateError(
-          'This paired SmartSpin2k requires an encrypted connection.',
-        );
+      if (pinned != null) {
+        final confirm = confirmLegacy;
+        if (confirm == null) {
+          throw StateError(
+            'This paired SmartSpin2k requires an encrypted connection.',
+          );
+        }
+        // Scope consent to this transport session. Keep the stored identity
+        // and keys for when the trainer runs pairing-capable firmware again.
+        final approval = _legacyApproval = Completer<void>();
+        approval.future.ignore();
+        try {
+          confirm(deviceName, approval.future, () {
+            if (!_closed && !approval.isCompleted) approval.complete();
+          }, close);
+          await approval.future;
+          if (_closed) throw StateError('SmartSpin2k connection closed.');
+        } finally {
+          _legacyApproval = null;
+        }
+      }
       legacy = true;
       return;
     }

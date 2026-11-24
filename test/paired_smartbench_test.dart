@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -86,8 +87,13 @@ void main() {
     'SmartBench settings survive two real DirCon connections',
     () async {
       SharedPreferences.setMockInitialValues({});
-      FlutterSecureStorage.setMockInitialValues({});
       final device = BluetoothDevice.fromId('mdns:smartbench-test');
+      const previousPair = bool.fromEnvironment('SS2K_BENCH_PREVIOUS_PAIR');
+      FlutterSecureStorage.setMockInitialValues({
+        if (previousPair)
+          'ss2k_pair_alias_${base64UrlEncode(utf8.encode(device.remoteId.str))}':
+              'previous-identity',
+      });
       const secure = bool.fromEnvironment('SS2K_BENCH_PAIRED');
       const image = String.fromEnvironment('SS2K_BENCH_OTA');
       const expected = String.fromEnvironment('SS2K_BENCH_EXPECT_VERSION');
@@ -95,6 +101,12 @@ void main() {
       if (image.isNotEmpty && !secure)
         fail('Hardware OTA requires SS2K_BENCH_PAIRED=true.');
       int approvals = 0;
+      int legacyApprovals = 0;
+      DeviceData.legacyConnectionPrompt = (_, _, allow, _) {
+        legacyApprovals++;
+        allow();
+      };
+      addTearDown(() => DeviceData.legacyConnectionPrompt = null);
       DeviceData.pairingPrompt = (_, _, _) {
         approvals++;
         print("PAIR PENDING");
@@ -108,6 +120,8 @@ void main() {
           await data.connectPreferred(device, waitForSetup: true);
           expect(data.isDirConConnected, isTrue);
           expect(data.hasPairedSession, secure);
+          expect(await data.usesPairedSettings(device), secure);
+          expect(legacyApprovals, previousPair && !secure ? i + 1 : 0);
           expect(approvals, secure ? 1 : 0);
           await data.writeCustomCharacteristic(device, [1, 0x25]);
           expect(data.firmwareVersion.value, isNotEmpty);

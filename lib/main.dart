@@ -9,7 +9,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
-    show kDebugMode, kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
+    show
+        kDebugMode,
+        kIsWeb,
+        defaultTargetPlatform,
+        TargetPlatform,
+        visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:app_links/app_links.dart';
@@ -78,13 +83,16 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   void _showPairingPrompt(
     String name,
     Future<void> approval,
-    Future<void> Function() disconnect,
-  ) {
+    Future<void> Function() disconnect, [
+    void Function()? allowLegacy,
+  ]) {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) {
-      unawaited(disconnect().catchError((Object error) {
-        debugPrint('Could not disconnect after cancelling pairing: $error');
-      }));
+      unawaited(
+        disconnect().catchError((Object error) {
+          debugPrint('Could not disconnect after cancelling pairing: $error');
+        }),
+      );
       return;
     }
     var cancelled = false;
@@ -106,17 +114,31 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
         }
       }
     }
+
     final route = DialogRoute<void>(
       context: navigator.context,
       barrierDismissible: false,
       builder: (context) => PopScope(
         canPop: false,
         child: AlertDialog(
-          title: Text('Pair with $name'),
-          content: const Text(
-            'Press and hold both shifter buttons on your SmartSpin2k until pairing finishes.',
+          title: Text(
+            allowLegacy == null
+                ? 'Pair with $name'
+                : 'Use older firmware on $name?',
           ),
-          actions: [TextButton(onPressed: cancel, child: const Text('Cancel'))],
+          content: Text(
+            allowLegacy == null
+                ? 'Press and hold both shifter buttons on your SmartSpin2k until pairing finishes.'
+                : 'This trainer previously supported encrypted connections. It now reports older firmware. If you expect this, you can use unencrypted settings and firmware updates for this connection.',
+          ),
+          actions: [
+            TextButton(onPressed: cancel, child: const Text('Cancel')),
+            if (allowLegacy != null)
+              FilledButton(
+                onPressed: allowLegacy,
+                child: const Text('Use older firmware'),
+              ),
+          ],
         ),
       ),
     );
@@ -129,16 +151,30 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
         if (cancelled || !navigator.mounted) return;
         if (route.isActive) navigator.removeRoute(route);
         ScaffoldMessenger.of(navigator.context).showSnackBar(
-          SnackBar(content: Text('Pairing did not finish. $error')),
+          SnackBar(
+            content: Text(
+              allowLegacy == null
+                  ? 'Pairing did not finish. $error'
+                  : 'Connection closed.',
+            ),
+          ),
         );
       },
     );
   }
 
+  void _showLegacyPrompt(
+    String name,
+    Future<void> approval,
+    void Function() allow,
+    Future<void> Function() disconnect,
+  ) => _showPairingPrompt(name, approval, disconnect, allow);
+
   @override
   void initState() {
     super.initState();
     DeviceData.pairingPrompt = _showPairingPrompt;
+    DeviceData.legacyConnectionPrompt = _showLegacyPrompt;
     if (!kIsWeb) {
       try {
         _adapterStateStateSubscription = FlutterBluePlus.adapterState.listen((
@@ -464,6 +500,9 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   void dispose() {
     if (DeviceData.pairingPrompt == _showPairingPrompt) {
       DeviceData.pairingPrompt = null;
+    }
+    if (DeviceData.legacyConnectionPrompt == _showLegacyPrompt) {
+      DeviceData.legacyConnectionPrompt = null;
     }
     _adapterStateStateSubscription.cancel();
     _linkSubscription?.cancel();

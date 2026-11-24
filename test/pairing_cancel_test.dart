@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_blue_plus_platform_interface/flutter_blue_plus_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2k_protocol/ss2k_protocol.dart' as p;
@@ -39,6 +41,50 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final ble = FakeBlePlatform();
   FlutterBluePlusPlatform.instance = ble;
+
+  test(
+    'a previously paired BLE trainer can use legacy settings and OTA selection',
+    () async {
+      final harness = await BleHarness.connect(ble);
+      addTearDown(harness.dispose);
+      final alias = base64UrlEncode(utf8.encode(harness.device.remoteId.str));
+      FlutterSecureStorage.setMockInitialValues({
+        'ss2k_pair_alias_$alias': 'secure',
+      });
+      int approvals = 0;
+      DeviceData.legacyConnectionPrompt = (_, _, allow, _) {
+        approvals++;
+        allow();
+      };
+      addTearDown(() => DeviceData.legacyConnectionPrompt = null);
+      expect(
+        await harness.deviceData.usesPairedSettings(harness.device),
+        isFalse,
+      );
+      await harness.deviceData.writeCustomCharacteristic(harness.device, [
+        p.read,
+        8,
+      ]);
+      final setting = [p.write, 8, 77, 0];
+      await harness.deviceData.writeCustomCharacteristic(
+        harness.device,
+        setting,
+      );
+      expect(
+        ble.writes,
+        containsAllInOrder([
+          [p.read, p.CommandId.capabilities],
+          [p.read, 8],
+          setting,
+        ]),
+      );
+      expect(
+        await harness.deviceData.usesPairedSettings(harness.device),
+        isFalse,
+      );
+      expect(approvals, 1);
+    },
+  );
 
   test('Cancel disconnects a trainer paired over Bluetooth', () async {
     final harness = await BleHarness.connect(ble);
@@ -123,5 +169,47 @@ void main() {
         expect(await OnboardingState.isCompleted(), onboarded);
       },
     );
+  }
+
+  for (final accept in [true, false]) {
+    testWidgets('previous pairing on legacy firmware (accept=$accept)', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({'onboarding_completed': true});
+      for (final channel in ['messages', 'events']) {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          MethodChannel('com.llfbandit.app_links/$channel'),
+          (_) async => null,
+        );
+      }
+      await tester.pumpWidget(
+        ChangeNotifierProvider(
+          create: (_) => ThemeProvider(),
+          child: const SmartSpin2kApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final approval = Completer<void>();
+      bool disconnected = false;
+      DeviceData.legacyConnectionPrompt!(
+        'SmartTestS3',
+        approval.future,
+        approval.complete,
+        () async {
+          disconnected = true;
+          approval.completeError(StateError('Disconnected'));
+        },
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Use older firmware'), findsOneWidget);
+      await tester.tap(find.text(accept ? 'Use older firmware' : 'Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Use older firmware'), findsNothing);
+      expect(approval.isCompleted, isTrue);
+      expect(disconnected, !accept);
+      if (!accept) {
+        expect(find.byType(ScanScreen), findsOneWidget);
+      }
+    });
   }
 }

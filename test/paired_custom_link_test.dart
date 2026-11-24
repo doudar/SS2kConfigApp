@@ -306,17 +306,67 @@ void main() {
     },
   );
 
-  test('a pinned companion identity never falls back to plaintext', () async {
-    FlutterSecureStorage.setMockInitialValues({
-      'ss2k_pair_alias_${base64Url.encode(utf8.encode("bench"))}': 'pinned',
-    });
-    await expectLater(link.initialize(), throwsStateError);
-    link.receive([p.success, 8, 77, 0]);
+  test(
+    'a pinned companion identity requires explicit legacy consent',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'ss2k_pair_alias_${base64Url.encode(utf8.encode("bench"))}': 'pinned',
+      });
+      await expectLater(link.initialize(), throwsStateError);
+      link.receive([p.success, 8, 77, 0]);
+      expect(link.legacy, isFalse);
+      expect(received, isEmpty);
+      expect(writes, [
+        [p.read, p.CommandId.capabilities],
+      ]);
+    },
+  );
+  for (final closeBeforeApproval in [true, false]) {
+    test(
+      'legacy consent belongs to one live connection (closed=$closeBeforeApproval)',
+      () async {
+        final stored = {
+          'ss2k_pair_alias_${base64Url.encode(utf8.encode("bench"))}': 'pinned',
+          'ss2k_bond_pinned': 'stored-bond',
+        };
+        FlutterSecureStorage.setMockInitialValues(stored);
+        final requested = Completer<void Function()>();
+        link = PairedCustomLink(
+          alias: 'bench',
+          deviceName: 'SmartTestS3',
+          maxWire: 20,
+          onInner: received.add,
+          writeWire: (frame) async {
+            writes.add(frame);
+            link.receive(probe);
+          },
+          prompt: (_, _, _) => fail('Legacy firmware cannot exchange keys'),
+          confirmLegacy: (name, _, allow, _) => requested.complete(allow),
+        );
+        final setup = link.initialize();
+        expect(identical(setup, link.initialize()), isTrue);
+        final allow = await requested.future;
+        expect(link.legacy, isFalse);
+        if (closeBeforeApproval) link.close();
+        allow();
+        if (closeBeforeApproval) {
+          await expectLater(setup, throwsStateError);
+        } else {
+          await setup;
+        }
+        expect(link.legacy, !closeBeforeApproval);
+        expect(link.authenticated, isFalse);
+        expect(await const FlutterSecureStorage().readAll(), stored);
+        expect(writes, [
+          [p.read, p.CommandId.capabilities],
+        ]);
+      },
+    );
+  }
+  test('an unrecognized capability error cannot select legacy mode', () async {
+    probe = [p.error, p.CommandId.capabilities, 1];
+    await expectLater(link.initialize(), throwsFormatException);
     expect(link.legacy, isFalse);
-    expect(received, isEmpty);
-    expect(writes, [
-      [p.read, p.CommandId.capabilities],
-    ]);
   });
   test(
     'forget clears both transport aliases owned by the verified trainer',

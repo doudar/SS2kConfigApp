@@ -314,7 +314,14 @@ class DeviceData {
   }
 
   static void Function(String, Future<void>, Future<void> Function())?
-      pairingPrompt;
+  pairingPrompt;
+  static void Function(
+    String,
+    Future<void>,
+    void Function(),
+    Future<void> Function(),
+  )?
+  legacyConnectionPrompt;
   PairedCustomLink? _customLink;
   bool get hasPairedSession => _customLink?.authenticated ?? false;
 
@@ -346,6 +353,13 @@ class DeviceData {
     final retry = _customLink?.needsFreshSession == true;
     _endCustomLink();
     late final PairedCustomLink link;
+    Future<void> disconnectLink(void Function() close) async {
+      if (!identical(link, _customLink)) return;
+      close();
+      await disconnectPreferred(device);
+    }
+
+    final confirmLegacy = legacyConnectionPrompt;
     link = PairedCustomLink(
       alias: device.remoteId.str,
       deviceName: preferredDeviceName(device.advName),
@@ -365,12 +379,20 @@ class DeviceData {
             }
           : null,
       prompt: (name, approval, cancelHandshake) {
-        pairingPrompt?.call(name, approval, () async {
-          if (!identical(link, _customLink)) return;
-          cancelHandshake();
-          await disconnectPreferred(device);
-        });
+        pairingPrompt?.call(
+          name,
+          approval,
+          () => disconnectLink(cancelHandshake),
+        );
       },
+      confirmLegacy: confirmLegacy == null
+          ? null
+          : (name, approval, allow, close) => confirmLegacy(
+              name,
+              approval,
+              allow,
+              () => disconnectLink(close),
+            ),
       restoreNotificationMode: retry,
       legacyIndications:
           Platform.isAndroid &&
