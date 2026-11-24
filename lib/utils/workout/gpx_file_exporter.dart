@@ -8,54 +8,31 @@ import '../../services/intervals_service.dart';
 import 'workout_controller.dart';
 import 'workout_export_dialog.dart';
 import 'workout_uploads.dart';
-import 'bike_shape_generator.dart';
+import 'ride_map.dart';
+import 'workout_fit_export.dart';
+import 'package:fit_tool/fit_tool.dart';
+import 'package:xml/xml.dart';
 import 'gpx_to_fit.dart';
 import 'workout_coach_repository.dart';
 
 class GpxFileExporter {
-  static Future<List<TrackPoint>> generateBikeTrackPoints(
-    List<TrackPoint> originalPoints,
-  ) async {
-    final mappedPoints = <TrackPoint>[];
-
-    // Extract speeds from original points
-    final speeds = originalPoints.map((point) => point.speed).toList();
-
-    // Generate bike shape coordinates based on speeds
-    final bikePoints = await BikeShapeGenerator.generateBikeShape(speeds);
-
-    // Map original data to new coordinates
-    for (int i = 0; i < originalPoints.length; i++) {
-      final point = originalPoints[i];
-      final bikePoint = bikePoints[i];
-
-      mappedPoints.add(
-        TrackPoint(
-          timestamp: point.timestamp,
-          lat: bikePoint.lat,
-          lon: bikePoint.lon,
-          elevation: point.elevation,
-          heartRate: point.heartRate,
-          cadence: point.cadence,
-          power: point.power,
-          speed: point.speed,
-        ),
-      );
-    }
-
-    return mappedPoints;
-  }
-
   static Future<String> generateGpxContent(
     String workoutName,
-    List<TrackPoint> trackPoints,
-  ) async {
-    if (trackPoints.isEmpty) {
-      return ''; // Return empty string if no track points
-    }
+    List<TrackPoint> trackPoints, {
+    RideMapSettings settings = const RideMapSettings(),
+  }) async {
+    if (trackPoints.isEmpty || settings.drawing == RideDrawing.none) return '';
+    return _gpxContent(
+      workoutName,
+      WorkoutFitExport.records(trackPoints, settings),
+    );
+  }
 
-    // Generate bike shape track points based on speed and distance
-    final bikeTrackPoints = await generateBikeTrackPoints(trackPoints);
+  static String _gpxContent(String workoutName, List<RecordMessage> records) {
+    String time(RecordMessage point) => DateTime.fromMillisecondsSinceEpoch(
+      point.timestamp!,
+      isUtc: true,
+    ).toIso8601String();
 
     return '''<?xml version="1.0" encoding="UTF-8"?>
 <gpx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
@@ -65,15 +42,15 @@ class GpxFileExporter {
      xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"
      xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3">
  <metadata>
-  <time>${bikeTrackPoints.first.timestamp.toIso8601String()}</time>
+  <time>${time(records.first)}</time>
  </metadata>
  <trk>
-  <name>$workoutName</name>
+  <name>${XmlText(workoutName).toXmlString()}</name>
   <type>VirtualRide</type>
   <trkseg>
-${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lon}">
-    <ele>${point.elevation}</ele>
-    <time>${point.timestamp.toIso8601String()}</time>
+${records.map((point) => '''   <trkpt lat="${point.positionLat}" lon="${point.positionLong}">
+    <ele>${point.altitude}</ele>
+    <time>${time(point)}</time>
     <extensions>
      <power>${point.power}</power>
      <gpxtpx:TrackPointExtension>
@@ -145,12 +122,13 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         intervalsConnected: isIntervalsConnected,
       );
       if (!context.mounted) return;
-      await exportWorkoutFile(
+      final saved = await exportWorkoutFile(
         context,
         workoutController,
         uploadToStrava: exportChoice.uploadToStrava,
         uploadToIntervals: exportChoice.uploadToIntervals,
       );
+      if (!saved) return;
     }
 
     await workoutController.clearInProgressFile();
@@ -158,7 +136,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
     workoutController.resetWorkout();
   }
 
-  static Future<void> exportWorkoutFile(
+  static Future<bool> exportWorkoutFile(
     BuildContext context,
     WorkoutController workoutController, {
     bool uploadToStrava = false,
@@ -184,16 +162,12 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
     }
     try {
       final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-      final gpxFileName = 'workout_${timestamp}.gpx';
       final workoutName = workoutController.workoutName ?? 'Unnamed Workout';
 
       progressMessage.value = 'Generating workout track...';
       final trackPoints = await workoutController.getExportTrackPoints();
 
-      // Generate GPX content using collected track points
-      final gpxContent = await generateGpxContent(workoutName, trackPoints);
-
-      if (gpxContent.isEmpty) {
+      if (trackPoints.isEmpty) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -202,19 +176,16 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
             ),
           );
         }
-        return;
+        return false;
       }
 
       progressMessage.value = 'Saving workout file...';
-      // Get the appropriate directory based on platform
-      final Directory appDir;
-      if (Platform.isIOS) {
-        appDir = await getApplicationDocumentsDirectory();
-      } else {
-        appDir = await getApplicationDocumentsDirectory();
-      }
+      final settings = RideMapSettings.load(
+        await SharedPreferences.getInstance(),
+      );
+      final records = WorkoutFitExport.records(trackPoints, settings);
+      final appDir = await getApplicationDocumentsDirectory();
 
-      // Create workouts directory if it doesn't exist
       final workoutsDir = Directory(
         '${appDir.path}${Platform.pathSeparator}workouts',
       );
@@ -222,77 +193,20 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
         await workoutsDir.create(recursive: true);
       }
 
-      // Save the GPX file temporarily
-      final gpxFile = File(
-        '${workoutsDir.path}${Platform.pathSeparator}$gpxFileName',
-      );
-      await gpxFile.writeAsString(gpxContent);
-
+      final fitFilePath = '${workoutsDir.path}/workout_$timestamp.fit';
       try {
-        progressMessage.value = 'Converting to FIT format...';
-        // Convert GPX to FIT
-        final fitFilePath = await GpxToFitConverter.convertAndCleanup(
-          gpxFile.path,
-        );
-        WorkoutCoachRepository.invalidateLocal();
-
-        final uploadResults = await uploadWorkoutToApps(
-          {
-            if (uploadToStrava)
-              'Strava': () => StravaService.uploadActivity(
-                fitFilePath,
-                workoutName,
-                'Workout completed using SmartSpin2k',
-              ),
-            if (uploadToIntervals)
-              'Intervals.icu': () => IntervalsService.uploadWorkout(
-                fitFilePath,
-                workoutName,
-                'Workout completed using SmartSpin2k',
-              ),
-          },
-          onUploading: (app) => progressMessage.value = 'Uploading to $app...',
-        );
-        if (context.mounted) {
-          if (_tryCloseDialogIfShown(context, progressDialogShown)) {
-            progressDialogShown = false;
-          }
-          final bool? shouldShare = await showDialog<bool>(
-            context: context,
-            builder: (BuildContext context) {
-              return WorkoutSavedDialog(
-                filePath: fitFilePath,
-                uploadResults: uploadResults,
-              );
-            },
-          );
-
-          if (shouldShare == true) {
-            try {
-              await SharePlus.instance.share(
-                ShareParams(files: [XFile(fitFilePath)]),
-              );
-            } catch (e) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Failed to share file: $e'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            }
-          }
-        }
+        final bytes = GpxToFitConverter.buildActivity(records).toBytes();
+        await File(fitFilePath).writeAsBytes(bytes);
       } catch (e) {
-        // If FIT conversion fails, fall back to sharing GPX
+        if (settings.drawing == RideDrawing.none) rethrow;
+        final gpxFile = File('${workoutsDir.path}/workout_$timestamp.gpx');
+        await gpxFile.writeAsString(_gpxContent(workoutName, records));
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Failed to convert to FIT format: $e\nSharing GPX file instead.',
+                'Could not save FIT file. Saved GPX to ${gpxFile.path}',
               ),
-              backgroundColor: Colors.orange,
             ),
           );
           if (!uploadToStrava && !uploadToIntervals) {
@@ -301,7 +215,56 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
             );
           }
         }
+        return true;
       }
+      WorkoutCoachRepository.invalidateLocal();
+
+      final uploadResults = await uploadWorkoutToApps({
+        if (uploadToStrava)
+          'Strava': () => StravaService.uploadActivity(
+            fitFilePath,
+            workoutName,
+            'Workout completed using SmartSpin2k',
+          ),
+        if (uploadToIntervals)
+          'Intervals.icu': () => IntervalsService.uploadWorkout(
+            fitFilePath,
+            workoutName,
+            'Workout completed using SmartSpin2k',
+          ),
+      }, onUploading: (app) => progressMessage.value = 'Uploading to $app...');
+      if (context.mounted) {
+        if (_tryCloseDialogIfShown(context, progressDialogShown)) {
+          progressDialogShown = false;
+        }
+        final bool? shouldShare = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) {
+            return WorkoutSavedDialog(
+              filePath: fitFilePath,
+              uploadResults: uploadResults,
+            );
+          },
+        );
+
+        if (shouldShare == true) {
+          try {
+            await SharePlus.instance.share(
+              ShareParams(files: [XFile(fitFilePath)]),
+            );
+          } catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to share file: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        }
+      }
+      return true;
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -311,6 +274,7 @@ ${bikeTrackPoints.map((point) => '''   <trkpt lat="${point.lat}" lon="${point.lo
           ),
         );
       }
+      return false;
     } finally {
       if (_tryCloseDialogIfShown(context, progressDialogShown)) {
         progressDialogShown = false;

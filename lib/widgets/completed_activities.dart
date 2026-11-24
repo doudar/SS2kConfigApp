@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/workout/ride_map.dart';
+import '../utils/workout/workout_fit_export.dart';
 import 'package:flutter/material.dart';
 import 'workout_dialog.dart';
 import '../utils/workout/fit_file_reader.dart';
@@ -229,11 +232,17 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
         );
       }
 
-      final success = await StravaService.uploadActivity(
-        activity.filePath,
-        activity.name,
-        'Workout completed using SmartSpin2k',
-      );
+      bool success;
+      try {
+        final settings = RideMapSettings.load(await SharedPreferences.getInstance());
+        success = await WorkoutFitExport.uploadSavedRide(
+          File(activity.filePath), settings, (path) => StravaService.uploadActivity(
+            path, activity.name, 'Workout completed using SmartSpin2k',
+          ),
+        );
+      } catch (_) {
+        success = false;
+      }
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
