@@ -220,6 +220,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('177 W'), findsOneWidget);
       expect(find.text('175 W'), findsOneWidget);
+      expect(find.text('Cadence'), findsOneWidget);
+      expect(find.text('92 RPM'), findsOneWidget);
+      data.ftmsData.cadence = 105;
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('105 RPM'), findsOneWidget);
       expect(find.textContaining('left in interval'), findsOneWidget);
       expect(find.byType(WorkoutControls), findsNothing);
       expect(tester.takeException(), isNull);

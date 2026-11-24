@@ -53,15 +53,23 @@ class WorkoutPipView extends StatelessWidget {
                     flex: 2,
                     child: Row(
                       children: [
-                        _PowerReading(
+                        _MetricReading(
                           label: 'Power',
-                          watts: metrics.watts,
+                          value: metrics.watts,
+                          unit: 'W',
                           color: WorkoutVisuals.power,
                         ),
-                        _PowerReading(
+                        _MetricReading(
                           label: 'Target',
-                          watts: metrics.targetERG,
+                          value: metrics.targetERG,
+                          unit: 'W',
                           color: WorkoutVisuals.gold,
+                        ),
+                        _MetricReading(
+                          label: 'Cadence',
+                          value: metrics.cadence,
+                          unit: 'RPM',
+                          color: WorkoutVisuals.cadence,
                         ),
                       ],
                     ),
@@ -101,14 +109,16 @@ class WorkoutPipView extends StatelessWidget {
   );
 }
 
-class _PowerReading extends StatelessWidget {
-  const _PowerReading({
+class _MetricReading extends StatelessWidget {
+  const _MetricReading({
     required this.label,
-    required this.watts,
+    required this.value,
+    required this.unit,
     required this.color,
   });
   final String label;
-  final int watts;
+  final int value;
+  final String unit;
   final Color color;
 
   @override
@@ -123,8 +133,13 @@ class _PowerReading extends StatelessWidget {
             label,
             style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
-          Text(
-            '$watts W',
+          Text.rich(
+            TextSpan(
+              text: '$value',
+              children: [
+                TextSpan(text: ' $unit', style: const TextStyle(fontSize: 12)),
+              ],
+            ),
             style: TextStyle(
               color: color,
               fontSize: 27,
