@@ -14,6 +14,7 @@ import 'package:ss2kconfigapp/screens/workout_screen.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controls.dart';
+import 'package:ss2kconfigapp/utils/workout/workout_export_dialog.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_lobby.dart';
 import 'package:ss2kconfigapp/utils/workout/classic_workout_preview.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_painter.dart';
@@ -71,6 +72,25 @@ void main() {
         'workout_sound_effects_enabled': false,
       });
       final messenger = tester.binding.defaultBinaryMessenger;
+      const pipChannel = MethodChannel('com.smartspin2k.app/workout_pip');
+      var allowPip = false;
+      messenger.setMockMethodCallHandler(pipChannel, (call) async {
+        return call.method == 'isSupported' ||
+            (call.method == 'enter' && allowPip);
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(pipChannel, null));
+      Future<void> expandOverlay() async {
+        tester.view.physicalSize = const Size(1200, 900);
+        await messenger.handlePlatformMessage(
+          pipChannel.name,
+          pipChannel.codec.encodeMethodCall(
+            const MethodCall('modeChanged', false),
+          ),
+          null,
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+
       final directory = await tester.runAsync(
         () => Directory.systemTemp.createTemp('workout_lobby_'),
       );
@@ -158,6 +178,7 @@ void main() {
       await tester.tap(find.text('Ride menu'));
       await tester.pumpAndSettle();
       expect(find.text('Just ride'), findsOneWidget);
+      expect(find.text('Workout overlay'), findsNothing);
       await tester.ensureVisible(find.text('Back to ride'));
       await tester.tap(find.text('Back to ride'));
       await tester.pumpAndSettle();
@@ -185,9 +206,25 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Just ride'), findsOneWidget);
       expect(controller.isPlaying, isTrue);
-      await tester.ensureVisible(find.text('Back to ride'));
-      await tester.tap(find.text('Back to ride'));
+      await tester.tap(find.text('Workout overlay'));
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('Could not open the overlay'), findsOneWidget);
+      expect(controller.isPlaying, isTrue);
+      allowPip = true;
+      await tester.tap(find.text('Ride menu'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.text('Workout overlay'));
+      await tester.pump();
+      tester.view.physicalSize = const Size(192, 96);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('177 W'), findsOneWidget);
+      expect(find.text('175 W'), findsOneWidget);
+      expect(find.textContaining('left in interval'), findsOneWidget);
+      expect(find.byType(WorkoutControls), findsNothing);
+      expect(tester.takeException(), isNull);
+      expect(controller.isPlaying, isTrue);
+      await expandOverlay();
       expect(controller.isPlaying, isTrue);
       expect(find.byType(WorkoutControls), findsOneWidget);
       expect(find.byType(ClassicWorkoutPreview), findsOneWidget);
@@ -364,7 +401,20 @@ void main() {
       expect(controller.isPlaying, isTrue);
       expect(controller.workoutProgressSeconds, greaterThanOrEqualTo(progress));
       expect(find.byType(WorkoutLobby), findsNothing);
-      await tester.runAsync(() => controller.stopWorkout());
+      await tester.tap(find.text('Ride menu'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.text('Workout overlay'));
+      await tester.pump();
+      tester.view.physicalSize = const Size(192, 96);
+      await tester.pump(const Duration(milliseconds: 400));
+      controller.skipToNextSegment(); // End this single-interval ride.
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Workout complete'), findsOneWidget);
+      expect(find.byType(WorkoutExportDialog), findsNothing);
+      await expandOverlay();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(WorkoutExportDialog), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pumpWidget(MaterialApp(home: WorkoutScreen(device: device)));
