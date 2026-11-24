@@ -121,7 +121,7 @@ void main() {
           expect(data.isDirConConnected, isTrue);
           expect(data.hasPairedSession, secure);
           expect(await data.usesPairedSettings(device), secure);
-          expect(legacyApprovals, previousPair && !secure ? i + 1 : 0);
+          expect(legacyApprovals, previousPair && !secure ? 1 : 0);
           expect(approvals, secure ? 1 : 0);
           await data.writeCustomCharacteristic(device, [1, 0x25]);
           expect(data.firmwareVersion.value, isNotEmpty);

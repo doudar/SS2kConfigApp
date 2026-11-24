@@ -129,7 +129,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
           content: Text(
             allowLegacy == null
                 ? 'Press and hold both shifter buttons on your SmartSpin2k until pairing finishes.'
-                : 'This trainer previously supported encrypted connections. It now reports older firmware. If you expect this, you can use unencrypted settings and firmware updates for this connection.',
+                : 'This trainer previously supported encrypted connections. It now reports older firmware. Allow unencrypted settings and updates? The app will remember your choice and switch back automatically when it detects secure firmware.',
           ),
           actions: [
             TextButton(onPressed: cancel, child: const Text('Cancel')),

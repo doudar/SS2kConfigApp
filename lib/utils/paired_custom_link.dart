@@ -73,6 +73,8 @@ class PairedCustomLink {
   String get _forgetKey => '${_bondKey!}_forget';
   static const _aliasPrefix = 'ss2k_pair_alias_';
   static const _requiresAuthentication = 'secure';
+  // A colon cannot occur in a base64url identity or the unpaired "secure" marker.
+  static const _legacyApprovedPrefix = 'legacy:';
   String get _aliasKey =>
       '${_aliasPrefix}${base64Url.encode(utf8.encode(alias))}';
   Completer<List<int>>? _reply;
@@ -217,7 +219,12 @@ class PairedCustomLink {
       forcedIndications = true;
       capability = await probe();
     }
-    final pinned = await _storage.read(key: _aliasKey);
+    final storedPin = await _storage.read(key: _aliasKey);
+    final legacyApproved =
+        storedPin?.startsWith(_legacyApprovedPrefix) ?? false;
+    final pinned = legacyApproved
+        ? storedPin!.substring(_legacyApprovedPrefix.length)
+        : storedPin;
     if (_closed) throw StateError('SmartSpin2k connection closed.');
     if (capability.first == protocol.success &&
         (capability.length != 7 || capability[2] != 1)) {
@@ -228,15 +235,13 @@ class PairedCustomLink {
     }
     if (capability.first == protocol.error ||
         capability[3] & protocol.cap_secure_settings == 0) {
-      if (pinned != null) {
+      if (pinned != null && !legacyApproved) {
         final confirm = confirmLegacy;
         if (confirm == null) {
           throw StateError(
             'This paired SmartSpin2k requires an encrypted connection.',
           );
         }
-        // Scope consent to this transport session. Keep the stored identity
-        // and keys for when the trainer runs pairing-capable firmware again.
         final approval = _legacyApproval = Completer<void>();
         approval.future.ignore();
         try {
@@ -244,6 +249,11 @@ class PairedCustomLink {
             if (!_closed && !approval.isCompleted) approval.complete();
           }, close);
           await approval.future;
+          if (_closed) throw StateError('SmartSpin2k connection closed.');
+          await _storage.write(
+            key: _aliasKey,
+            value: '$_legacyApprovedPrefix$pinned',
+          );
           if (_closed) throw StateError('SmartSpin2k connection closed.');
         } finally {
           _legacyApproval = null;
@@ -256,8 +266,14 @@ class PairedCustomLink {
     _capabilities = ByteData.sublistView(
       Uint8List.fromList(capability),
     ).getUint32(3, Endian.little);
-    if (pinned == null)
-      await _storage.write(key: _aliasKey, value: _requiresAuthentication);
+    // Seeing secure capabilities ends legacy consent even if authentication
+    // subsequently fails. Preserve the original identity for verification.
+    if (pinned == null || legacyApproved) {
+      await _storage.write(
+        key: _aliasKey,
+        value: pinned ?? _requiresAuthentication,
+      );
+    }
     if (forcedIndications) await legacyIndications!(false);
     final deviceId = secureDeviceId(
       await _handshake(secureInfoRequest(), protocol.secure_identity),
@@ -547,7 +563,9 @@ class PairedCustomLink {
     for (final entry in (await _storage.readAll()).entries.toList(
       growable: false,
     )) {
-      if (entry.key.startsWith(_aliasPrefix) && entry.value == identity) {
+      if (entry.key.startsWith(_aliasPrefix) &&
+          (entry.value == identity ||
+              entry.value == '$_legacyApprovedPrefix$identity')) {
         await _storage.delete(key: entry.key);
       }
     }

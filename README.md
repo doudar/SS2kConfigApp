@@ -32,7 +32,7 @@ A Flutter-based mobile application for controlling and configuring SmartSpin2K d
 
 Connect to the trainer in the app. When prompted, press and hold both shifter buttons. The app saves the pairing in the operating system's secure storage and reuses it over Bluetooth or DirCon. Tap the trainer name at the top of the screen and choose **Unpair trainer** to remove this app’s pairing from both devices. The same action is available in **Settings**. If the connection drops during removal, reconnect and choose **Finish unpairing**. A trainer factory reset clears all of its pairings. Older firmware retains its existing connection and update methods.
 
-If a previously paired trainer is running older firmware, choose **Use older firmware** to enable settings and updates for that connection. The app keeps the saved pairing for when you return to newer firmware. Legacy updates use HTTP over Wi-Fi, with Bluetooth OTA available on a Bluetooth connection when the HTTP endpoint is unreachable.
+The app detects older firmware when you connect. If this app previously saw secure firmware at the same trainer address, choose **Use older firmware** once to allow unencrypted settings and updates. The app remembers the choice across restarts, checks the firmware on each connection, and switches back to secure pairing when the trainer supports it again. Legacy updates use HTTP over Wi-Fi, with Bluetooth OTA available on a Bluetooth connection when the HTTP endpoint is unreachable.
 
 Tap **App Version** four times on the device screen to unlock **Maintenance → Developer Options**. This preference persists across app restarts. The menu controls cadence, heart rate, power, and ERG target simulation.
 

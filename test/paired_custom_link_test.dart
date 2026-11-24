@@ -323,7 +323,7 @@ void main() {
   );
   for (final closeBeforeApproval in [true, false]) {
     test(
-      'legacy consent belongs to one live connection (closed=$closeBeforeApproval)',
+      'only a live connection can remember legacy consent (closed=$closeBeforeApproval)',
       () async {
         final stored = {
           'ss2k_pair_alias_${base64Url.encode(utf8.encode("bench"))}': 'pinned',
@@ -356,24 +356,105 @@ void main() {
         }
         expect(link.legacy, !closeBeforeApproval);
         expect(link.authenticated, isFalse);
-        expect(await const FlutterSecureStorage().readAll(), stored);
+        expect(await const FlutterSecureStorage().readAll(), {
+          ...stored,
+          if (!closeBeforeApproval)
+            'ss2k_pair_alias_${base64Url.encode(utf8.encode("bench"))}':
+                'legacy:pinned',
+        });
         expect(writes, [
           [p.read, p.CommandId.capabilities],
         ]);
       },
     );
   }
+  test(
+    'remembered consent cannot replace a missing capability reply',
+    () async {
+      final aliasKey =
+          'ss2k_pair_alias_${base64Url.encode(utf8.encode("bench"))}';
+      FlutterSecureStorage.setMockInitialValues({
+        aliasKey: 'legacy:original-identity',
+      });
+      final silent = PairedCustomLink(
+        alias: 'bench',
+        deviceName: 'SmartTestS3',
+        maxWire: 234,
+        prompt: null,
+        onInner: (_) => fail('Unexpected settings'),
+        writeWire: (_) async => throw TimeoutException('Trainer unreachable'),
+      );
+      await expectLater(silent.initialize(), throwsA(isA<TimeoutException>()));
+      expect(silent.legacy, isFalse);
+    },
+  );
   test('an unrecognized capability error cannot select legacy mode', () async {
     probe = [p.error, p.CommandId.capabilities, 1];
     await expectLater(link.initialize(), throwsFormatException);
     expect(link.legacy, isFalse);
   });
   test(
+    'reconnect detects legacy firmware and the next secure probe restores the pin',
+    () async {
+      final aliasKey =
+          'ss2k_pair_alias_${base64Url.encode(utf8.encode("bench"))}';
+      FlutterSecureStorage.setMockInitialValues({
+        aliasKey: 'legacy:original-identity',
+      });
+      await link.initialize();
+      expect(link.legacy, isTrue);
+      expect(writes, [
+        [p.read, p.CommandId.capabilities],
+      ]);
+      link.close();
+
+      late PairedCustomLink upgraded;
+      upgraded = PairedCustomLink(
+        alias: 'bench',
+        deviceName: 'SmartTestS3',
+        maxWire: 234,
+        onInner: (_) => fail('Unexpected settings'),
+        prompt: (_, _, _) => fail('Cannot pair a different identity'),
+        writeWire: (frame) async {
+          if (frame.first == p.read) {
+            upgraded.receive([
+              p.success,
+              p.CommandId.capabilities,
+              1,
+              p.cap_secure_settings,
+              0,
+              0,
+              0,
+            ]);
+          } else {
+            expect(frame.first, p.secure_info);
+            upgraded.receive([p.secure_identity, ...List.filled(8, 3)]);
+          }
+        },
+      );
+      await expectLater(
+        upgraded.initialize(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('identity changed'),
+          ),
+        ),
+      );
+      expect(upgraded.legacy, isFalse);
+      expect(
+        await const FlutterSecureStorage().read(key: aliasKey),
+        'original-identity',
+      );
+    },
+  );
+  test(
     'forget clears both transport aliases owned by the verified trainer',
     () async {
       FlutterSecureStorage.setMockInitialValues({
         'ss2k_pair_alias_ble': 'trainer1',
-        'ss2k_pair_alias_dircon': 'trainer1',
+        'ss2k_pair_alias_dircon': 'legacy:trainer1',
         'ss2k_pair_alias_other': 'trainer2',
         'another_key': 'trainer1',
       });
