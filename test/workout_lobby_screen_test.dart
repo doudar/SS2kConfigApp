@@ -225,7 +225,12 @@ void main() {
       expect(twoDigitCadence, findsOneWidget);
       final cadenceRight = tester.getRect(twoDigitCadence).right;
       expect(find.text('145 BPM'), findsOneWidget);
-      final countdown = tester.getRect(find.textContaining('left in interval'));
+      final intervalTime = find.textContaining(RegExp(r'^\d+:\d{2} left$'));
+      final countdown = tester.getRect(intervalTime);
+      expect(
+        find.bySemanticsLabel(RegExp(r'left in interval$')),
+        findsOneWidget,
+      );
       final heartRate = tester.getRect(find.text('145 BPM'));
       expect(heartRate.left, greaterThan(countdown.right));
       expect(heartRate.center.dy, closeTo(countdown.center.dy, 1));
@@ -243,7 +248,7 @@ void main() {
       data.ftmsData.heartRate = 0;
       await tester.pump(const Duration(milliseconds: 200));
       expect(find.textContaining('BPM'), findsNothing);
-      expect(find.textContaining('left in interval'), findsOneWidget);
+      expect(intervalTime, findsOneWidget);
       expect(find.byType(WorkoutControls), findsNothing);
       expect(tester.takeException(), isNull);
       expect(controller.isPlaying, isTrue);

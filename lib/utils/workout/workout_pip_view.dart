@@ -47,6 +47,9 @@ class WorkoutPipView extends StatelessWidget {
                 );
               }
               final metrics = controller.deviceData.ftmsData;
+              final timeLeft = arcadeIntervalDuration(
+                controller.currentSegmentTimeRemaining,
+              );
               final segment = controller.currentSegment;
               final index = segment == null
                   ? 0
@@ -94,15 +97,11 @@ class WorkoutPipView extends StatelessWidget {
                           child: Text.rich(
                             TextSpan(
                               children: [
-                                TextSpan(
-                                  text: arcadeIntervalDuration(
-                                    controller.currentSegmentTimeRemaining,
-                                  ),
-                                  style: _numberStyle,
-                                ),
-                                const TextSpan(text: ' left in interval'),
+                                TextSpan(text: timeLeft, style: _numberStyle),
+                                const TextSpan(text: ' left'),
                               ],
                             ),
+                            semanticsLabel: '$timeLeft left in interval',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 16,
