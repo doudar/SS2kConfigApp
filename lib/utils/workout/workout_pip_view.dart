@@ -22,19 +22,15 @@ class WorkoutPipView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: WorkoutVisuals.ink,
+    // Android supplies the outer PiP shape, including square windows on Fire OS.
+    color: WorkoutVisuals.panel,
+    shape: const Border.fromBorderSide(BorderSide(color: Color(0xff43516a))),
     child: FittedBox(
-      child: Container(
+      child: SizedBox(
         width: 240,
         height: 120,
-        padding: const EdgeInsets.all(2),
-        child: Container(
-          decoration: BoxDecoration(
-            color: WorkoutVisuals.panel,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xff43516a)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
           child: ListenableBuilder(
             listenable: controller,
             builder: (context, _) {
