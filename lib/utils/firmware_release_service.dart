@@ -138,10 +138,22 @@ bool isFirmwareVersionNewer(String available, String installed) {
   return false;
 }
 
-/// Matches the release portion of firmware versions while allowing the device
-/// to append branch, commit-count, hardware, and git-hash metadata.
-///
-/// For example, `26.8.14` matches `26.8.14-develop-1-g560fef00`.
+bool firmwareUpdateVersionConfirmed(
+  String original,
+  String reported,
+  String? target, {
+  required bool receiptMissing,
+}) {
+  if (_releaseVersionParts(reported).length < 3) return false;
+  if (target != null && !firmwareVersionsMatch(target, reported)) return false;
+  if (target == null || receiptMissing) {
+    return _releaseVersionParts(original).length == 3 &&
+        !firmwareVersionsMatch(original, reported);
+  }
+  return true;
+}
+
+/// Matches the release portion even when the trainer appends build metadata.
 bool firmwareVersionsMatch(String expected, String reported) {
   final expectedParts = _releaseVersionParts(expected);
   final reportedParts = _releaseVersionParts(reported);

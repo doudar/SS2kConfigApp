@@ -1681,6 +1681,9 @@ class DeviceData {
     subscribed = false;
     charReceived.value = false;
     _myCharacteristic = null;
+    _firmwareService = null;
+    _firmwareDataCharacteristic = null;
+    _firmwareControlCharacteristic = null;
     indoorBikeCharacteristic = null;
     ftmsControlPointCharacteristic = null;
     machineStatusCharacteristic = null;
@@ -1741,9 +1744,11 @@ class DeviceData {
   BluetoothCharacteristic? _firmwareDataCharacteristic;
   BluetoothCharacteristic? _firmwareControlCharacteristic;
 
-  /// Creates the firmware writer supported by the active transport, or null
-  /// when that transport only supports HTTP OTA. Screens should not inspect
-  /// transport-specific characteristic state themselves.
+  bool get supportsBleFirmwareUpdate =>
+      _firmwareService != null &&
+      _firmwareDataCharacteristic != null &&
+      _firmwareControlCharacteristic != null;
+
   OtaPackage? createFirmwareOtaPackage() {
     final data = _firmwareDataCharacteristic;
     final control = _firmwareControlCharacteristic;
@@ -2157,6 +2162,9 @@ class DeviceData {
       }
 
       // firmware
+      _firmwareService = null;
+      _firmwareDataCharacteristic = null;
+      _firmwareControlCharacteristic = null;
       configAppCompatibleFirmware = false;
       for (BluetoothService s in services) {
         if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {

@@ -8,6 +8,9 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/screens/firmware_update_screen.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
+import 'package:ss2kconfigapp/utils/bleOTA.dart';
+import 'package:ss2kconfigapp/utils/constants.dart';
+import 'package:ss2kconfigapp/utils/device_transport_state.dart';
 import 'package:ss2kconfigapp/utils/firmware_release_service.dart';
 
 // Public half of a disposable test key. The signature is over the 32-byte
@@ -106,6 +109,54 @@ class _Trainer extends DeviceData {
     uploads.add(firmware);
     // Stop before reboot/version verification of a real trainer.
     throw StateError('Fixture transport ended after capturing the image');
+  }
+}
+
+class _CompletedUpload extends Fake implements OtaPackage {
+  @override
+  bool get firmwareupdate => true;
+  @override
+  Stream<int> get percentageStream => const Stream.empty();
+}
+
+class _BleTrainer extends _Trainer {
+  final state = DeviceTransportStateController()
+    ..markConnected(DeviceTransportKind.bluetooth);
+  String running = '26.9.8';
+  @override
+  bool get isDirConConnected => false;
+  @override
+  bool get isTransportActive => true;
+  @override
+  bool get hasPairedSession => false;
+  @override
+  bool get supportsBleFirmwareUpdate => true;
+  @override
+  DeviceTransportStateController get transportState => state;
+  @override
+  Future<bool> usesPairedSettings(BluetoothDevice device) async => false;
+  @override
+  OtaPackage createFirmwareOtaPackage() => _CompletedUpload();
+  @override
+  Future<void> updateFirmwareWithPackage(
+    OtaPackage package,
+    BluetoothDevice device,
+    int type, {
+    required Uint8List firmwareBytes,
+  }) async => uploads.add(firmwareBytes);
+  @override
+  Future<void> requestSetting(
+    BluetoothDevice device,
+    String name, {
+    int? extraByte,
+  }) async {
+    if (name == fwVname) firmwareVersion.value = running;
+  }
+
+  @override
+  void dispose() {
+    state.dispose();
+    super.dispose();
   }
 }
 
@@ -219,4 +270,44 @@ void main() {
     expect(picker.invocations, 1);
     await tester.pumpWidget(const SizedBox());
   });
+  testWidgets(
+    'a local BLE upload must reconnect and report a changed version',
+    (tester) async {
+      final ble = _BleTrainer()
+        ..configAppCompatibleFirmware = true
+        ..charReceived.value = true
+        ..firmwareVersion.value = '26.9.8';
+      DeviceDataManager.updateDataForDevice(device, ble);
+      addTearDown(ble.dispose);
+      await open(tester);
+      await tap(tester, 'Choose Firmware From Dialog');
+      await tap(tester, 'I trust the author');
+      await tester.tap(find.text('Confirm'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(ble.uploads.single, orderedEquals(image));
+      expect(find.text('Verifying Firmware'), findsOneWidget);
+      ble.running = '26.11.16';
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+      expect(find.text('Upload Successful'), findsNothing);
+      ble.state.markDisconnected(explicit: false);
+      ble.state.markConnected(DeviceTransportKind.bluetooth);
+      ble.running = '26.9.8';
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+      expect(find.text('Upload Successful'), findsNothing);
+      ble.running = '26.11.16';
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+      expect(
+        find.text('Firmware updated from 26.9.8 to 26.11.16.'),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 }

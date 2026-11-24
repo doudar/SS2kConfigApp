@@ -140,6 +140,14 @@ String bleOtaV1ErrorMessage(int errorCode) {
       'Unknown BLE firmware update error (0x${errorCode.toRadixString(16).padLeft(2, '0')})';
 }
 
+/// All image data was submitted, but the final receipt could not be observed.
+class BleOtaCompletionUnconfirmed implements Exception {
+  const BleOtaCompletionUnconfirmed();
+  @override
+  String toString() =>
+      'The trainer did not confirm completion of the BLE upload.';
+}
+
 abstract class OtaPackage {
   Future<void> updateFirmware(
     BluetoothDevice device,
@@ -164,6 +172,10 @@ class Esp32OtaPackage implements OtaPackage {
       StreamController<int>.broadcast();
 
   BleOtaV1Status? _latestV1Status;
+  Completer<void>? _legacyFinished;
+  bool _legacyFailed = false;
+  bool _legacyFinalChunk = false;
+  bool _finishSent = false;
   StreamSubscription<List<int>>? _controlSubscription;
 
   @override
@@ -188,13 +200,18 @@ class Esp32OtaPackage implements OtaPackage {
           _latestV1Status != null) {
         protocolV1Started = true;
         await _updateProtocolV1(device, firmware);
-      } else {
+      } else if (initialValue.isEmpty || initialValue.length == 1) {
         await _updateProtocolV0(device, firmware);
+      } else {
+        throw const FormatException(
+          'Unrecognized BLE firmware update protocol.',
+        );
       }
       firmwareupdate = true;
       if (!_percentageController.isClosed) _percentageController.add(100);
     } catch (_) {
       if (protocolV1Started &&
+          !_finishSent &&
           _latestV1Status?.state != BleOtaV1State.rebooting) {
         await _bestEffortV1Abort();
       }
@@ -244,7 +261,21 @@ class Esp32OtaPackage implements OtaPackage {
 
   void _recordControlValue(List<int> value) {
     final status = parseBleOtaV1Status(value);
-    if (status != null) _latestV1Status = status;
+    if (status != null) {
+      if (_latestV1Status?.hasError != true) _latestV1Status = status;
+      return;
+    }
+    final finished = _legacyFinished;
+    if (finished == null || value.isEmpty) return;
+    if (value.first == 0x04 || value.first == 0xff) {
+      _legacyFailed = true;
+      if (!finished.isCompleted)
+        finished.completeError(StateError('Legacy BLE flash failed.'));
+    } else if (value.first == 0x05 &&
+        _legacyFinalChunk &&
+        !finished.isCompleted) {
+      finished.complete();
+    }
   }
 
   Future<void> _updateProtocolV1(
@@ -253,11 +284,6 @@ class Esp32OtaPackage implements OtaPackage {
   ) async {
     final crc32 = calculateBleOtaCrc32(firmware);
     final capabilityFlags = _latestV1Status?.capabilityFlags ?? 0;
-    final characteristicReportsWriteWithoutResponse =
-        dataCharacteristic.properties.writeWithoutResponse;
-    // The versioned status packet is authoritative. Some host BLE backends
-    // (notably Windows implementations) omit the write-without-response
-    // characteristic property even when the peripheral supports it.
     final useWriteWithoutResponse = bleOtaV1ShouldWriteWithoutResponse(
       capabilityFlags,
     );
@@ -273,6 +299,8 @@ class Esp32OtaPackage implements OtaPackage {
       const {BleOtaV1State.updating},
       timeout: const Duration(seconds: 30),
       description: 'the OTA partition to become ready',
+      imageSize: firmware.length,
+      received: 0,
     );
 
     final mtu = await _bestAvailableMtu(device);
@@ -283,19 +311,28 @@ class Esp32OtaPackage implements OtaPackage {
     print(
       'BLE OTA protocol 1 selected; capabilities '
       '0x${capabilityFlags.toRadixString(16).padLeft(2, '0')}, MTU $mtu, '
-      'chunk size $chunkSize, characteristic WNR property '
-      '$characteristicReportsWriteWithoutResponse, using $writeMode',
+      'chunk size $chunkSize, '
+      'using $writeMode',
     );
 
     var bytesWritten = 0;
     var chunkNumber = 0;
+    // 26.x protocol 1 publishes its flash offset at 64 KiB and at EOF.
+    const checkpointSize = 64 * 1024;
+    var checkpoint = firmware.length.clamp(1, checkpointSize);
     while (bytesWritten < firmware.length) {
       _throwForLatestV1Error();
-      final end = (bytesWritten + chunkSize).clamp(0, firmware.length);
+      final end = (bytesWritten + chunkSize).clamp(0, checkpoint);
       final chunk = Uint8List.sublistView(firmware, bytesWritten, end);
       try {
         await dataCharacteristic
-            .write(chunk, withoutResponse: useWriteWithoutResponse)
+            .write(
+              chunk,
+              withoutResponse:
+                  useWriteWithoutResponse &&
+                  chunkNumber % 16 != 15 &&
+                  end != checkpoint,
+            )
             .timeout(
               const Duration(seconds: 10),
               onTimeout: () => throw TimeoutException(
@@ -312,19 +349,42 @@ class Esp32OtaPackage implements OtaPackage {
       }
       bytesWritten = end;
       chunkNumber++;
-      _emitProgress(bytesWritten, firmware.length);
+      if (bytesWritten == checkpoint) {
+        await _waitForV1State(
+          const {BleOtaV1State.flashing},
+          imageSize: firmware.length,
+          received: checkpoint,
+          timeout: const Duration(seconds: 15),
+          description:
+              'the trainer to confirm $checkpoint of ${firmware.length} bytes',
+        );
+        _emitProgress(checkpoint, firmware.length);
+        checkpoint = (checkpoint + checkpointSize).clamp(0, firmware.length);
+      }
     }
 
     _throwForLatestV1Error();
-    await controlCharacteristic.write(
-      Uint8List.fromList([0x02]),
-      withoutResponse: false,
-    );
-    await _waitForV1State(
-      const {BleOtaV1State.rebooting},
-      timeout: const Duration(minutes: 2),
-      description: 'firmware verification and reboot',
-    );
+    _finishSent = true;
+    try {
+      await controlCharacteristic.write([0x02], withoutResponse: false);
+      await _waitForV1State(
+        const {BleOtaV1State.rebooting},
+        imageSize: firmware.length,
+        received: firmware.length,
+        timeout: const Duration(seconds: 30),
+        description: 'firmware verification and reboot',
+      );
+    } catch (error) {
+      _throwForLatestV1Error();
+      if (_latestV1Status?.state != BleOtaV1State.rebooting ||
+          _latestV1Status?.bytesReceived != firmware.length ||
+          _latestV1Status?.imageSize != firmware.length) {
+        if (!device.isConnected || error is TimeoutException) {
+          throw const BleOtaCompletionUnconfirmed();
+        }
+        rethrow;
+      }
+    }
     print('BLE OTA protocol 1 update accepted; rebooting');
   }
 
@@ -342,40 +402,36 @@ class Esp32OtaPackage implements OtaPackage {
 
     final mtu = await _bestAvailableMtu(device);
     print('BLE OTA legacy protocol selected; MTU $mtu');
-    await controlCharacteristic.write(
-      Uint8List.fromList([0x01]),
-      withoutResponse: false,
-    );
-    await _waitForLegacyValue(
-      0x02,
-      timeout: const Duration(seconds: 15),
-      description: 'the legacy OTA start acknowledgement',
-    );
-
-    var bytesWritten = 0;
-    var chunkNumber = 0;
-    while (bytesWritten < firmware.length) {
-      final end = (bytesWritten + chunkSize).clamp(0, firmware.length);
-      final chunk = Uint8List.sublistView(firmware, bytesWritten, end);
-      final needsLongWrite = bleOtaChunkRequiresLongWrite(mtu, chunk.length);
-      await dataCharacteristic
-          .write(chunk, withoutResponse: false, allowLongWrite: needsLongWrite)
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => throw TimeoutException(
-              'Failed to write legacy BLE firmware chunk #$chunkNumber',
-            ),
-          );
-      bytesWritten = end;
-      chunkNumber++;
-      _emitProgress(bytesWritten, firmware.length);
+    // Protocol 0 starts on the first data write. Its control characteristic
+    // emits 0x02 (data), 0x04 (error) and 0x05 (end) as notifications.
+    final finished = _legacyFinished = Completer<void>();
+    finished.future.ignore();
+    var offset = 0;
+    while (offset < firmware.length) {
+      if (_legacyFailed) throw StateError('Legacy BLE flash failed.');
+      final end = (offset + chunkSize).clamp(0, firmware.length);
+      final chunk = Uint8List.sublistView(firmware, offset, end);
+      _legacyFinalChunk = end == firmware.length;
+      try {
+        await dataCharacteristic
+            .write(
+              chunk,
+              withoutResponse: false,
+              allowLongWrite: bleOtaChunkRequiresLongWrite(mtu, chunk.length),
+            )
+            .timeout(const Duration(seconds: 20));
+      } catch (_) {
+        if (_legacyFailed || !_legacyFinalChunk || device.isConnected) rethrow;
+        if (!finished.isCompleted) throw const BleOtaCompletionUnconfirmed();
+      }
+      offset = end;
+      _emitProgress(offset, firmware.length);
     }
-
-    await _waitForLegacyValue(
-      0x05,
-      timeout: const Duration(minutes: 10),
-      description: 'the legacy OTA completion acknowledgement',
+    await finished.future.timeout(
+      const Duration(seconds: 15),
+      onTimeout: () => throw const BleOtaCompletionUnconfirmed(),
     );
+    if (_legacyFailed) throw StateError('Legacy BLE flash failed.');
     print('Legacy BLE OTA update finished');
   }
 
@@ -400,6 +456,8 @@ class Esp32OtaPackage implements OtaPackage {
 
   Future<BleOtaV1Status> _waitForV1State(
     Set<BleOtaV1State> expected, {
+    required int imageSize,
+    required int received,
     required Duration timeout,
     required String description,
   }) async {
@@ -409,7 +467,9 @@ class Esp32OtaPackage implements OtaPackage {
       final latest = _latestV1Status;
       if (latest != null) {
         _throwForV1Error(latest);
-        if (latest.state != null && expected.contains(latest.state)) {
+        if (expected.contains(latest.state) &&
+            latest.imageSize == imageSize &&
+            latest.bytesReceived == received) {
           return latest;
         }
       }
@@ -422,42 +482,9 @@ class Esp32OtaPackage implements OtaPackage {
         lastReadError = null;
       } catch (error) {
         lastReadError = error;
-        final afterRead = _latestV1Status;
-        if (afterRead?.state == BleOtaV1State.rebooting &&
-            expected.contains(BleOtaV1State.rebooting)) {
-          return afterRead!;
-        }
+        _throwForLatestV1Error();
+        if (!controlCharacteristic.device.isConnected) rethrow;
       }
-    }
-    final suffix = lastReadError == null ? '' : ' Last read: $lastReadError';
-    throw TimeoutException('Timed out waiting for $description.$suffix');
-  }
-
-  Future<void> _waitForLegacyValue(
-    int expected, {
-    required Duration timeout,
-    required String description,
-  }) async {
-    final deadline = DateTime.now().add(timeout);
-    Object? lastReadError;
-    while (DateTime.now().isBefore(deadline)) {
-      try {
-        final value = await controlCharacteristic.read().timeout(
-          const Duration(seconds: 3),
-        );
-        if (value.isNotEmpty && value[0] == expected) return;
-        if (value.isNotEmpty && value[0] == 0xff) {
-          throw Exception('Legacy BLE OTA reported an error.');
-        }
-        lastReadError = null;
-      } catch (error) {
-        if (error is Exception &&
-            error.toString().contains('reported an error')) {
-          rethrow;
-        }
-        lastReadError = error;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 500));
     }
     final suffix = lastReadError == null ? '' : ' Last read: $lastReadError';
     throw TimeoutException('Timed out waiting for $description.$suffix');
@@ -488,6 +515,6 @@ class Esp32OtaPackage implements OtaPackage {
 
   void _emitProgress(int bytesWritten, int imageSize) {
     if (_percentageController.isClosed) return;
-    _percentageController.add(((bytesWritten / imageSize) * 100).round());
+    _percentageController.add((bytesWritten * 100 ~/ imageSize).clamp(0, 99));
   }
 }

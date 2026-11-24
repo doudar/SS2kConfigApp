@@ -9,6 +9,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/firmware_release_service.dart';
 
 void main() {
+  test(
+    'post-reboot verification needs the target or a version change for a local image',
+    () {
+      bool verified(
+        String before,
+        String after,
+        String? target, {
+        bool missing = false,
+      }) => firmwareUpdateVersionConfirmed(
+        before,
+        after,
+        target,
+        receiptMissing: missing,
+      );
+      expect(verified('26.9.8', '26.9.8', null), isFalse);
+      expect(verified('26.9.8', '', null), isFalse);
+      expect(verified('', '26.11.16', null), isFalse);
+      expect(verified('26.9.8', '26.11.16', null), isTrue);
+      expect(verified('26.9.8', '26.9.8', '26.11.16'), isFalse);
+      expect(
+        verified('26.11.16', '26.11.16', '26.11.16', missing: true),
+        isFalse,
+      );
+      expect(verified('26.9.8', '26.11.16', '26.11.16', missing: true), isTrue);
+    },
+  );
   group('FirmwareRelease', () {
     test('displayName returns correct format for most recent release', () {
       final release = FirmwareRelease(
