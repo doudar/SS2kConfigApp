@@ -313,7 +313,8 @@ class DeviceData {
     _applyStreamedFoundDevices(const <BleScanDevice>[]);
   }
 
-  static PairingPrompt? pairingPrompt;
+  static void Function(String, Future<void>, Future<void> Function())?
+      pairingPrompt;
   PairedCustomLink? _customLink;
   bool get hasPairedSession => _customLink?.authenticated ?? false;
 
@@ -363,7 +364,13 @@ class DeviceData {
               await characteristic.write(packet, withoutResponse: true);
             }
           : null,
-      prompt: pairingPrompt,
+      prompt: (name, approval, cancelHandshake) {
+        pairingPrompt?.call(name, approval, () async {
+          if (!identical(link, _customLink)) return;
+          cancelHandshake();
+          await disconnectPreferred(device);
+        });
+      },
       restoreNotificationMode: retry,
       legacyIndications:
           Platform.isAndroid &&
@@ -396,6 +403,7 @@ class DeviceData {
   }
 
   Future<PairedCustomLink> _readyCustomLink(BluetoothDevice device) async {
+    if (isUserDisconnect) throw const TransportNotConnected();
     final socket = _dirConSession;
     if (socket == null) {
       final characteristic = await _getMyCharacteristic(device);
@@ -693,6 +701,7 @@ class DeviceData {
           await _connectDirCon(device, ipAddress, waitForSetup: waitForSetup);
           return;
         } catch (error) {
+          if (isUserDisconnect) return;
           print('[DIRCON] $ipAddress unavailable, falling back to BLE: $error');
           await _closeDirCon();
         }
@@ -724,6 +733,7 @@ class DeviceData {
       // A failed bootstrap is not a dead link. Only report the transport down
       // when the physical session was never established; otherwise setup threw
       // over a live connection and nothing would ever re-mark it as connected.
+      if (isUserDisconnect) return;
       if (_transportStateController.value.phase !=
           DeviceTransportPhase.connected) {
         _markTransportDisconnected(explicit: false);
@@ -1532,12 +1542,14 @@ class DeviceData {
               );
               await _connectDirCon(device, ipAddress, waitForSetup: true);
 
+              if (isUserDisconnect) break;
               await _runReconnectedCallbacks(onReconnected);
 
               success = true;
               print('[AutoReconnect] Reconnected via DIRCON successfully.');
               break;
             } catch (error) {
+              if (isUserDisconnect) break;
               print('[AutoReconnect] DIRCON unavailable: $error');
               await _closeDirCon();
             }

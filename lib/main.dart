@@ -73,16 +73,38 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   // Start false on native so a clean install shows the wizard, not a ScanScreen flash.
   // kIsWeb stays true because the wizard is never shown on web.
   bool _onboardingCompleted = kIsWeb;
+  bool _scanAfterPairingCancel = false;
 
   void _showPairingPrompt(
     String name,
     Future<void> approval,
-    VoidCallback cancel,
+    Future<void> Function() disconnect,
   ) {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) {
-      cancel();
+      unawaited(disconnect().catchError((Object error) {
+        debugPrint('Could not disconnect after cancelling pairing: $error');
+      }));
       return;
+    }
+    var cancelled = false;
+    Future<void> cancel() async {
+      if (cancelled) return;
+      cancelled = true;
+      try {
+        await disconnect();
+      } catch (error) {
+        if (navigator.mounted) {
+          ScaffoldMessenger.of(navigator.context).showSnackBar(
+            SnackBar(content: Text('Could not disconnect from $name. $error')),
+          );
+        }
+      } finally {
+        if (mounted && navigator.mounted) {
+          setState(() => _scanAfterPairingCancel = true);
+          navigator.popUntil((route) => route.isFirst);
+        }
+      }
     }
     final route = DialogRoute<void>(
       context: navigator.context,
@@ -101,11 +123,12 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     unawaited(navigator.push(route));
     approval.then<void>(
       (_) {
-        if (route.isActive) navigator.removeRoute(route);
+        if (!cancelled && route.isActive) navigator.removeRoute(route);
       },
       onError: (Object error) {
+        if (cancelled || !navigator.mounted) return;
         if (route.isActive) navigator.removeRoute(route);
-        _scaffoldKey.currentState?.showSnackBar(
+        ScaffoldMessenger.of(navigator.context).showSnackBar(
           SnackBar(content: Text('Pairing did not finish. $error')),
         );
       },
@@ -439,6 +462,9 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 
   @override
   void dispose() {
+    if (DeviceData.pairingPrompt == _showPairingPrompt) {
+      DeviceData.pairingPrompt = null;
+    }
     _adapterStateStateSubscription.cancel();
     _linkSubscription?.cancel();
     OnboardingState.completedNotifier.removeListener(
@@ -455,7 +481,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     required bool demoMode,
   }) {
     // Network discovery and Dircon work even when the BLE adapter is off.
-    if (onboardingCompleted || demoMode) {
+    if (onboardingCompleted || demoMode || _scanAfterPairingCancel) {
       return const ScanScreen();
     } else {
       return ChangeNotifierProvider(

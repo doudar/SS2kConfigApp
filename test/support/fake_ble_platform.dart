@@ -500,6 +500,12 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     scheduleMicrotask(() => markConnected(request.remoteId));
     return true;
   }
+
+  @override
+  Future<bool> disconnect(BmDisconnectRequest request) async {
+    scheduleMicrotask(() => markDisconnected(request.remoteId));
+    return true;
+  }
 }
 
 /// A BLE-connected [DeviceData] with the FTMS characteristics assigned
