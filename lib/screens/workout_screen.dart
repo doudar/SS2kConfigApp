@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../utils/workout/workout_painter.dart';
+import '../utils/workout/workout_pip_view.dart';
 import '../utils/workout/workout_metrics.dart';
 import '../utils/workout/classic_workout_preview.dart';
 import '../utils/workout/workout_visuals.dart';
@@ -51,6 +53,10 @@ class _WorkoutScreenState extends State<WorkoutScreen>
   bool _arcadeFullscreen = false;
   bool _arcadePreferencesLoaded = false;
   bool _completionPending = false;
+  static const _pipChannel = MethodChannel('com.smartspin2k.app/workout_pip');
+  bool _pipSupported = false;
+  MediaQueryData? _mediaBeforePip;
+  bool _finishedInPip = false;
   bool _startingWorkout = false;
   final ArcadeSession _arcadeSession = ArcadeSession();
   late AnimationController _metricsAndSummaryFadeController;
@@ -115,6 +121,10 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     deviceData = DeviceDataManager.forDevice(widget.device);
     unawaited(deviceData.ensureFtmsNotifications(widget.device));
     _workoutController = WorkoutController(deviceData, widget.device);
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      _pipChannel.setMethodCallHandler(_handlePipChange);
+      unawaited(_checkPipSupport());
+    }
     _initTTSSettings();
     _initializeAnimationControllers();
     unawaited(_loadArcadePreferences());
@@ -197,7 +207,11 @@ class _WorkoutScreenState extends State<WorkoutScreen>
           if (_workoutController.progressPosition >= 1.0 &&
               !_workoutController.isUnlimitedFreeRide) {
             _workoutController.progressPosition = 0;
-            unawaited(_showFinishAndExport(celebrate: _arcadeMode));
+            if (_mediaBeforePip != null) {
+              setState(() => _finishedInPip = true);
+            } else {
+              unawaited(_showFinishAndExport(celebrate: _arcadeMode));
+            }
           }
         }
       }
@@ -224,6 +238,55 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     _arcadeSession.restoreStoryPreference(preferences.lastStoryVariant);
     _setArcadeMode(preferences.arcadeMode, persist: false);
     setState(() => _arcadePreferencesLoaded = true);
+  }
+
+  Future<void> _checkPipSupport() async {
+    try {
+      final supported = await _pipChannel.invokeMethod<bool>('isSupported');
+      if (mounted && supported == true) setState(() => _pipSupported = true);
+    } on MissingPluginException {
+      // Hosts without the Android activity cannot offer the overlay.
+    }
+  }
+
+  Future<void> _handlePipChange(MethodCall call) async {
+    if (call.method == 'modeChanged' && call.arguments == false) _leavePip();
+  }
+
+  void _leavePip() {
+    if (!mounted || _mediaBeforePip == null) return;
+    final showFinish = _finishedInPip;
+    setState(() {
+      _mediaBeforePip = null;
+      _finishedInPip = false;
+    });
+    _syncClassicPulse();
+    if (showFinish) unawaited(_showFinishAndExport(celebrate: _arcadeMode));
+  }
+
+  Future<void> _openPip() async {
+    if (!mounted || !_workoutController.isPlaying || _mediaBeforePip != null)
+      return;
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
+    setState(() => _mediaBeforePip = MediaQuery.of(context));
+    _syncClassicPulse();
+    // Draw the compact view before Android starts shrinking the activity.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    try {
+      if (await _pipChannel.invokeMethod<bool>('enter') == true) return;
+    } on PlatformException {
+      // Android can deny entry even on a device that advertises PiP.
+    }
+    if (!mounted) return;
+    _leavePip();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Could not open the overlay. Check picture-in-picture access for SmartSpin2k in Android settings.',
+        ),
+      ),
+    );
   }
 
   Future<void> _initTTSSettings() async {
@@ -371,7 +434,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
   }
 
   void _syncClassicPulse() {
-    if (_arcadeMode || _showWorkoutLobby) {
+    if (_arcadeMode || _showWorkoutLobby || _mediaBeforePip != null) {
       _pulseController.stop();
     } else if (!_pulseController.isAnimating) {
       _pulseController.repeat(reverse: true);
@@ -407,6 +470,9 @@ class _WorkoutScreenState extends State<WorkoutScreen>
   @override
   void dispose() {
     _isDisposing = true;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      _pipChannel.setMethodCallHandler(null);
+    }
     _workoutController.removeListener(_workoutControllerListener);
 
     // Now safely dispose animation + other resources.
@@ -495,6 +561,12 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     deviceData: deviceData,
     device: widget.device,
     ttsSettings: _ttsSettings,
+    onOpenWorkoutOverlay:
+        _pipSupported &&
+            _workoutController.isPlaying &&
+            !_workoutController.isFreeRide
+        ? _openPip
+        : null,
     onWorkoutLoaded: (content, {String? name}) {
       _updatePreviewDuration();
       if (name != null && mounted) setState(() => _workoutName = name);
@@ -542,6 +614,40 @@ class _WorkoutScreenState extends State<WorkoutScreen>
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final media = _mediaBeforePip;
+    // Keep the device header (reconnection) and text events (voice coach)
+    // mounted at ride size while Android resizes the activity.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned(
+          top: 0,
+          left: 0,
+          right: media == null ? 0 : null,
+          bottom: media == null ? 0 : null,
+          width: media?.size.width,
+          height: media?.size.height,
+          child: Offstage(
+            offstage: media != null,
+            child: TickerMode(
+              enabled: media == null,
+              child: MediaQuery(
+                data: media ?? MediaQuery.of(context),
+                child: Builder(builder: _buildRide),
+              ),
+            ),
+          ),
+        ),
+        if (media != null)
+          WorkoutPipView(
+            controller: _workoutController,
+            finished: _finishedInPip,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildRide(BuildContext context) {
     return ArcadeWorkoutFrame(
       expanded: _arcadeFullscreen,
       arcade: _arcadeMode
@@ -616,7 +722,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
           ),
         ],
       ),
-      body: AnimatedBuilder(
+      body: _mediaBeforePip != null ? const SizedBox.shrink() : AnimatedBuilder(
         animation: _workoutController,
         builder: (context, _) => Stack(
           fit: StackFit.expand,
