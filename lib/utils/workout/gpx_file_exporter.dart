@@ -10,6 +10,7 @@ import 'workout_export_dialog.dart';
 import 'workout_uploads.dart';
 import 'ride_map.dart';
 import 'workout_fit_export.dart';
+import 'workout_skyline.dart';
 import 'package:fit_tool/fit_tool.dart';
 import 'package:xml/xml.dart';
 import 'gpx_to_fit.dart';
@@ -20,12 +21,19 @@ class GpxFileExporter {
     String workoutName,
     List<TrackPoint> trackPoints, {
     RideMapSettings settings = const RideMapSettings(),
+    List<Offset> plan = const [],
+    double? ftp,
   }) async {
     if (trackPoints.isEmpty || settings.drawing == RideDrawing.none) return '';
-    return _gpxContent(
-      workoutName,
-      WorkoutFitExport.records(trackPoints, settings),
+    final records = WorkoutFitExport.records(
+      trackPoints,
+      settings,
+      plan: plan,
+      ftp: ftp,
     );
+    return records.first.positionLat == null
+        ? ''
+        : _gpxContent(workoutName, records);
   }
 
   static String _gpxContent(String workoutName, List<RecordMessage> records) {
@@ -93,24 +101,41 @@ ${records.map((point) => '''   <trkpt lat="${point.positionLat}" lon="${point.po
     final isStravaConnected = await StravaService.isAuthenticated();
     final isIntervalsConnected = await IntervalsService.isAuthenticated();
     final prefs = await SharedPreferences.getInstance();
-
     if (_tryCloseDialogIfShown(context, optionsDialogShown)) {
       optionsDialogShown = false;
     }
 
     if (!context.mounted) return;
+    // Open the prompt immediately, including when resuming from the overlay.
+    // Both the finished summary and the map use the same checkpoint snapshot.
+    final recorded = workoutController
+        .getExportTrackPoints()
+        .then<List<TrackPoint>?>(
+          (points) => points,
+          onError: (Object error) {
+            debugPrint('Could not read ride summary: $error');
+            return null; // Saving will retry the read.
+          },
+        );
     final exportChoice = await showDialog<WorkoutExportChoice>(
       context: context,
-      builder: (BuildContext context) => WorkoutExportDialog(
-        workoutName: workoutController.workoutName ?? 'Indoor ride',
-        duration: workoutController.formatDuration(
-          workoutController.elapsedSeconds,
+      builder: (context) => FutureBuilder<List<TrackPoint>?>(
+        future: recorded,
+        builder: (context, snapshot) => WorkoutExportDialog(
+          workoutName: workoutController.workoutName ?? 'Indoor ride',
+          duration: workoutController.formatDuration(
+            workoutController.elapsedSeconds,
+          ),
+          averagePower: snapshot.data == null
+              ? workoutController.averagePower
+              : averageRecordedWatts(
+                  snapshot.data!.map((p) => p.power),
+                )?.toDouble(),
+          averageCadence: workoutController.averageCadence,
+          stravaConnected: isStravaConnected,
+          intervalsConnected: isIntervalsConnected,
+          initialChoice: WorkoutExportChoice.loadPreferences(prefs),
         ),
-        averagePower: workoutController.averagePower,
-        averageCadence: workoutController.averageCadence,
-        stravaConnected: isStravaConnected,
-        intervalsConnected: isIntervalsConnected,
-        initialChoice: WorkoutExportChoice.loadPreferences(prefs),
       ),
     );
 
@@ -125,6 +150,8 @@ ${records.map((point) => '''   <trkpt lat="${point.positionLat}" lon="${point.po
       final saved = await exportWorkoutFile(
         context,
         workoutController,
+        mapSettings: exportChoice.mapSettings,
+        recorded: recorded,
         uploadToStrava: exportChoice.uploadToStrava,
         uploadToIntervals: exportChoice.uploadToIntervals,
       );
@@ -139,6 +166,8 @@ ${records.map((point) => '''   <trkpt lat="${point.positionLat}" lon="${point.po
   static Future<bool> exportWorkoutFile(
     BuildContext context,
     WorkoutController workoutController, {
+    required RideMapSettings mapSettings,
+    Future<List<TrackPoint>?>? recorded,
     bool uploadToStrava = false,
     bool uploadToIntervals = false,
   }) async {
@@ -165,7 +194,8 @@ ${records.map((point) => '''   <trkpt lat="${point.positionLat}" lon="${point.po
       final workoutName = workoutController.workoutName ?? 'Unnamed Workout';
 
       progressMessage.value = 'Generating workout track...';
-      final trackPoints = await workoutController.getExportTrackPoints();
+      final trackPoints =
+          await recorded ?? await workoutController.getExportTrackPoints();
 
       if (trackPoints.isEmpty) {
         if (context.mounted) {
@@ -180,10 +210,14 @@ ${records.map((point) => '''   <trkpt lat="${point.positionLat}" lon="${point.po
       }
 
       progressMessage.value = 'Saving workout file...';
-      final settings = RideMapSettings.load(
-        await SharedPreferences.getInstance(),
+      final plan = skylinePlan(workoutController.segments);
+      final ftp = workoutController.ftpValue;
+      final records = WorkoutFitExport.records(
+        trackPoints,
+        mapSettings,
+        plan: plan,
+        ftp: ftp,
       );
-      final records = WorkoutFitExport.records(trackPoints, settings);
       final appDir = await getApplicationDocumentsDirectory();
 
       final workoutsDir = Directory(
@@ -195,10 +229,13 @@ ${records.map((point) => '''   <trkpt lat="${point.positionLat}" lon="${point.po
 
       final fitFilePath = '${workoutsDir.path}/workout_$timestamp.fit';
       try {
-        final bytes = GpxToFitConverter.buildActivity(records).toBytes();
+        final bytes = GpxToFitConverter.buildActivity(
+          records,
+          ftp: ftp.round(),
+        ).toBytes();
         await File(fitFilePath).writeAsBytes(bytes);
       } catch (e) {
-        if (settings.drawing == RideDrawing.none) rethrow;
+        if (records.first.positionLat == null) rethrow;
         final gpxFile = File('${workoutsDir.path}/workout_$timestamp.gpx');
         await gpxFile.writeAsString(_gpxContent(workoutName, records));
         if (context.mounted) {
@@ -216,6 +253,12 @@ ${records.map((point) => '''   <trkpt lat="${point.positionLat}" lon="${point.po
           }
         }
         return true;
+      }
+      try {
+        await WorkoutFitExport.savePlan(fitFilePath, plan);
+      } on FileSystemException catch (error) {
+        // The FIT is complete. Past rides can still draw its recorded power.
+        debugPrint('Could not save workout skyline profile: $error');
       }
       WorkoutCoachRepository.invalidateLocal();
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_uploads.dart';
+import 'package:ss2kconfigapp/utils/workout/ride_map.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_export_dialog.dart';
 
 void main() {
@@ -120,6 +121,54 @@ void main() {
         expect(choice!.discard, isFalse);
       }
     }
+  });
+
+  testWidgets(
+    'upload map overrides this ride and preserves the default and city',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      const center = (name: 'Bolingbrook, IL', lat: 41.70, lon: -88.07);
+      await const RideMapSettings(
+        drawing: RideDrawing.chainring,
+        center: center,
+      ).save(prefs);
+      WorkoutExportChoice? result;
+      await open(
+        tester,
+        chooser(initialChoice: WorkoutExportChoice.loadPreferences(prefs)),
+        onResult: (value) => result = value as WorkoutExportChoice?,
+      );
+      await tapVisible(tester, 'Chainring');
+      await tester.tap(find.text('No map').last);
+      await tester.pumpAndSettle();
+      await tapVisible(tester, 'Strava');
+      await tapVisible(tester, 'Save & upload');
+      expect(result!.mapSettings.drawing, RideDrawing.none);
+      expect(result!.mapSettings.center, center);
+      await result!.savePreferences(
+        prefs,
+        stravaConnected: true,
+        intervalsConnected: true,
+      );
+      expect(RideMapSettings.load(prefs).drawing, RideDrawing.chainring);
+    },
+  );
+
+  testWidgets('a FIT-only export can choose the workout skyline', (
+    tester,
+  ) async {
+    WorkoutExportChoice? result;
+    await open(
+      tester,
+      chooser(strava: false, intervals: false),
+      onResult: (value) => result = value as WorkoutExportChoice?,
+    );
+    await tapVisible(tester, 'Random drawing');
+    await tester.tap(find.text('Workout skyline').last);
+    await tester.pumpAndSettle();
+    await tapVisible(tester, 'Save FIT file');
+    expect(result!.mapSettings.drawing, RideDrawing.skyline);
   });
 
   testWidgets('next ride remembers choices, including save only', (

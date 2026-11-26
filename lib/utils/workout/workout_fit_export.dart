@@ -1,19 +1,23 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show Offset;
 
 import 'package:fit_tool/fit_tool.dart';
 
 import 'gpx_to_fit.dart';
 import 'ride_map.dart';
 import 'workout_controller.dart';
+import 'workout_skyline.dart';
 
 class WorkoutFitExport {
   static List<RecordMessage> records(
     List<TrackPoint> points,
-    RideMapSettings settings,
-  ) {
+    RideMapSettings settings, {
+    List<Offset> plan = const [],
+    double? ftp,
+  }) {
     if (points.isEmpty) return [];
-    final route = RideMapRoute.forRide(settings, points.first.timestamp);
     double distance = 0;
     final samples = <RecordMessage>[];
     for (final point in points) {
@@ -25,25 +29,95 @@ class WorkoutFitExport {
         ..heartRate = point.heartRate
         ..cadence = point.cadence
         ..power = point.power
-        ..speed = point.speed;
-      samples.add(_position(record, route, distance));
+        ..speed = point.speed
+        ..distance = distance;
+      samples.add(record);
     }
+    final drawing = settings.drawing.forRide(
+      DateTime.fromMillisecondsSinceEpoch(
+        samples.first.timestamp!,
+        isUtc: true,
+      ),
+      includeSkyline: ftp != null,
+    );
+    _applyMap(samples, settings.withDrawing(drawing), plan: plan, ftp: ftp);
     return samples;
   }
 
-  static RecordMessage _position(
-    RecordMessage record,
-    RideMapRoute? route,
-    double distance,
-  ) {
-    record.distance = distance;
-    if (route != null) {
-      final coordinate = route.position(distance);
+  static void _applyMap(
+    List<RecordMessage> samples,
+    RideMapSettings settings, {
+    required List<Offset> plan,
+    double? ftp,
+    double? savedTss,
+  }) {
+    if (settings.drawing == RideDrawing.none) return;
+    final start = DateTime.fromMillisecondsSinceEpoch(
+      samples.first.timestamp!,
+      isUtc: true,
+    );
+    final isSkyline = settings.drawing == RideDrawing.skyline;
+    final skyline = isSkyline
+        ? WorkoutSkyline.fromRide(
+            samples.map((r) => r.power).toList(),
+            plan: plan,
+            ftp: ftp,
+            savedTss: savedTss,
+          )
+        : null;
+    final origin = isSkyline ? samples.first.distance! : 0.0;
+    final route = RideMapRoute.forRide(
+      settings,
+      start,
+      skyline: skyline,
+      skylineDistance: samples.last.distance! - origin,
+    );
+    if (route == null) return;
+    for (final record in samples) {
+      final coordinate = route.position(record.distance! - origin);
       record
         ..positionLat = coordinate.lat
         ..positionLong = coordinate.lon;
     }
-    return record;
+  }
+
+  // App FIT records preserve performance and FTP. The local companion keeps
+  // the prescribed profile so Past rides can also use the original intervals.
+  static File planFile(String fitPath) => File('$fitPath.plan.json');
+
+  static Future<void> savePlan(String fitPath, List<Offset> plan) async {
+    if (plan.isNotEmpty) {
+      await planFile(fitPath).writeAsString(
+        jsonEncode([
+          for (final point in plan) [point.dx, point.dy],
+        ]),
+      );
+    }
+  }
+
+  static Future<List<Offset>> _loadPlan(String path) async {
+    final file = planFile(path);
+    try {
+      if (!await file.exists()) return [];
+      final values = jsonDecode(await file.readAsString());
+      if (values is! List) return [];
+      final profile = <Offset>[];
+      for (final pair in values) {
+        if (pair case [
+          num x,
+          num y,
+        ] when x.isFinite && y.isFinite && x >= 0 && x <= 1 && y >= 0) {
+          profile.add(Offset(x.toDouble(), y.toDouble()));
+        } else {
+          return [];
+        }
+      }
+      return profile;
+    } on FormatException {
+      return [];
+    } on FileSystemException {
+      return [];
+    }
   }
 
   // Older app exports have GPS but no recorded speed or distance.
@@ -65,18 +139,25 @@ class WorkoutFitExport {
   static Future<bool> uploadSavedRide(
     File source,
     RideMapSettings settings,
-    Future<bool> Function(String) upload,
-  ) async {
+    Future<bool> Function(String) upload, {
+    double? fallbackFtp,
+  }) async {
     final saved = FitFile.fromBytes(await source.readAsBytes());
     final samples = saved.records
         .map((r) => r.message)
         .whereType<RecordMessage>();
     if (samples.isEmpty) throw const FormatException('No workout samples');
-    final start = DateTime.fromMillisecondsSinceEpoch(
-      samples.first.timestamp!,
-      isUtc: true,
+    final session = saved.records
+        .map((r) => r.message)
+        .whereType<SessionMessage>()
+        .firstOrNull;
+    final drawing = settings.drawing.forRide(
+      DateTime.fromMillisecondsSinceEpoch(
+        samples.first.timestamp!,
+        isUtc: true,
+      ),
+      includeSkyline: session?.thresholdPower != null,
     );
-    final route = RideMapRoute.forRide(settings, start);
     final records = <RecordMessage>[];
     RecordMessage? previous;
     double distance = 0;
@@ -91,25 +172,39 @@ class WorkoutFitExport {
           sample.speed ??
           (elapsed > 0 ? (distance - records.last.distance!) / elapsed : 0.0);
       records.add(
-        _position(
-          RecordMessage()
-            ..timestamp = sample.timestamp
-            ..altitude = sample.altitude
-            ..heartRate = sample.heartRate
-            ..cadence = sample.cadence
-            ..speed = math.max(0, speed)
-            ..power = sample.power,
-          route,
-          distance,
-        ),
+        RecordMessage()
+          ..timestamp = sample.timestamp
+          ..altitude = sample.altitude
+          ..heartRate = sample.heartRate
+          ..cadence = sample.cadence
+          ..speed = math.max(0, speed)
+          ..power = sample.power
+          ..distance = distance,
       );
       previous = sample;
     }
+    final plan = drawing == RideDrawing.skyline
+        ? await _loadPlan(source.path)
+        : const <Offset>[];
+    final rideFtp = session?.thresholdPower;
+    final ftp = rideFtp != null && rideFtp > 0
+        ? rideFtp.toDouble()
+        : fallbackFtp;
+    _applyMap(
+      records,
+      settings.withDrawing(drawing),
+      plan: plan,
+      ftp: ftp,
+      savedTss: session?.trainingStressScore,
+    );
     final temp = await Directory.systemTemp.createTemp('ss2k_upload_');
     try {
       final file = File('${temp.path}/${source.uri.pathSegments.last}');
       await file.writeAsBytes(
-        GpxToFitConverter.buildActivity(records).toBytes(),
+        GpxToFitConverter.buildActivity(
+          records,
+          ftp: session?.thresholdPower,
+        ).toBytes(),
       );
       return await upload(file.path);
     } finally {

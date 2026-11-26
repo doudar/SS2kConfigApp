@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../widgets/workout_dialog.dart';
+import '../../widgets/ride_drawing_field.dart';
+import 'ride_map.dart';
 import 'workout_uploads.dart';
 
 class WorkoutEndDialog extends StatelessWidget {
@@ -105,6 +107,7 @@ class WorkoutExportDialog extends StatefulWidget {
 }
 
 class _WorkoutExportDialogState extends State<WorkoutExportDialog> {
+  late RideDrawing _drawing = widget.initialChoice.mapSettings.drawing;
   late bool _strava =
       widget.stravaConnected && widget.initialChoice.uploadToStrava;
   late bool _intervals =
@@ -163,6 +166,11 @@ class _WorkoutExportDialogState extends State<WorkoutExportDialog> {
             ),
           ),
           const SizedBox(height: 22),
+          RideDrawingField(
+            initialDrawing: widget.initialChoice.mapSettings.drawing,
+            onChanged: (drawing) => _drawing = drawing,
+          ),
+          const SizedBox(height: 18),
           if (widget.stravaConnected || widget.intervalsConnected) ...[
             const WorkoutSectionLabel('UPLOAD TO YOUR APPS'),
             const SizedBox(height: 6),
@@ -195,6 +203,9 @@ class _WorkoutExportDialogState extends State<WorkoutExportDialog> {
           FilledButton.icon(
             onPressed: () => Navigator.of(context).pop(
               WorkoutExportChoice(
+                mapSettings: widget.initialChoice.mapSettings.withDrawing(
+                  _drawing,
+                ),
                 uploadToStrava: _strava,
                 uploadToIntervals: _intervals,
               ),

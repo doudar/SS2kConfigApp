@@ -4,6 +4,7 @@ import '../utils/workout/ride_map.dart';
 import '../utils/workout/workout_fit_export.dart';
 import 'package:flutter/material.dart';
 import 'workout_dialog.dart';
+import 'ride_drawing_field.dart';
 import '../utils/workout/fit_file_reader.dart';
 import '../utils/workout/workout_controller.dart';
 import '../utils/workout/workout_storage.dart';
@@ -159,6 +160,10 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
     }
 
     final isStravaConnected = await StravaService.isAuthenticated();
+    var uploadMap = isStravaConnected
+        ? RideMapSettings.load(await SharedPreferences.getInstance())
+        : const RideMapSettings();
+    if (!context.mounted) return;
 
     final String? exportChoice = await showDialog<String>(
       context: context,
@@ -184,6 +189,12 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
               ),
               const SizedBox(height: 16),
               const Text('Export Options:'),
+              if (isStravaConnected)
+                RideDrawingField(
+                  label: 'Map for Strava upload',
+                  initialDrawing: uploadMap.drawing,
+                  onChanged: (drawing) => uploadMap = uploadMap.withDrawing(drawing),
+                ),
             ],
           ),
           actions: <Widget>[
@@ -234,11 +245,11 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
 
       bool success;
       try {
-        final settings = RideMapSettings.load(await SharedPreferences.getInstance());
         success = await WorkoutFitExport.uploadSavedRide(
-          File(activity.filePath), settings, (path) => StravaService.uploadActivity(
+          File(activity.filePath), uploadMap, (path) => StravaService.uploadActivity(
             path, activity.name, 'Workout completed using SmartSpin2k',
           ),
+          fallbackFtp: widget.workoutController.ftpValue,
         );
       } catch (_) {
         success = false;
@@ -348,6 +359,8 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
         await file.delete();
       }
       await FitFileReader.deleteActivityMetadata(activity.filePath);
+      final plan = WorkoutFitExport.planFile(activity.filePath);
+      if (await plan.exists()) await plan.delete();
       await FitFileReader.deleteWorkoutThumbnail(activity.filePath);
       if (activity.isInProgress) {
         final inProgressPath = await WorkoutStorage.loadInProgressFilePath();

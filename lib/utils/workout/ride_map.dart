@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'workout_skyline.dart';
 
 enum RideDrawing {
   random('Random drawing'),
@@ -10,6 +11,7 @@ enum RideDrawing {
   smartSpin2k('SmartSpin2k'),
   chainring('Chainring'),
   bottle('Water bottle'),
+  skyline('Workout skyline'),
   none('No map');
 
   const RideDrawing(this.label);
@@ -17,11 +19,13 @@ enum RideDrawing {
 
   static const outlines = [bicycle, smartSpin2k, chainring, bottle];
 
-  RideDrawing forRide(DateTime start) => this == random
-      ? outlines[math.Random(
-          start.millisecondsSinceEpoch ~/ 1000,
-        ).nextInt(outlines.length)]
-      : this;
+  RideDrawing forRide(DateTime start, {bool includeSkyline = false}) {
+    if (this != random) return this;
+    final choices = includeSkyline ? const [...outlines, skyline] : outlines;
+    return choices[math.Random(
+      start.millisecondsSinceEpoch ~/ 1000,
+    ).nextInt(choices.length)];
+  }
 }
 
 typedef MapCenter = ({String name, double lat, double lon});
@@ -40,6 +44,9 @@ class RideMapSettings {
   });
   final RideDrawing drawing;
   final MapCenter center;
+
+  RideMapSettings withDrawing(RideDrawing value) =>
+      RideMapSettings(drawing: value, center: center);
 
   static RideMapSettings load(SharedPreferences prefs) {
     final saved = prefs.getString(_key);
@@ -87,8 +94,10 @@ class RideMapSettings {
 }
 
 /// Each outline is one continuous pen stroke, shared by the picker and FIT export.
-Path rideDrawingPath(RideDrawing drawing) {
+Path rideDrawingPath(RideDrawing drawing, {WorkoutSkyline? skyline}) {
   switch (drawing) {
+    case RideDrawing.skyline:
+      return (skyline ?? WorkoutSkyline.example).toPath();
     case RideDrawing.bicycle:
       final path = Path()..moveTo(24, 57);
       void wheel(double hubX) {
@@ -273,26 +282,41 @@ class RideMapRoute {
   final PathMetric _stroke;
   final Offset _origin;
   final MapCenter center;
+  final double _length;
 
-  RideMapRoute._(Path path, this.center)
+  RideMapRoute._(Path path, this.center, this._length)
     : _stroke = path.computeMetrics().single,
       _origin = path.getBounds().center;
 
-  static RideMapRoute? forRide(RideMapSettings settings, DateTime start) {
+  static RideMapRoute? forRide(
+    RideMapSettings settings,
+    DateTime start, {
+    WorkoutSkyline? skyline,
+    double? skylineDistance,
+  }) {
     final drawing = settings.drawing.forRide(start);
+    if (drawing == RideDrawing.skyline) {
+      if (skyline == null || skylineDistance == null || skylineDistance <= 0)
+        return null;
+      return RideMapRoute._(skyline.toPath(), settings.center, skylineDistance);
+    }
     return drawing == RideDrawing.none
         ? null
-        : RideMapRoute._(rideDrawingPath(drawing), settings.center);
+        : RideMapRoute._(
+            rideDrawingPath(drawing),
+            settings.center,
+            lengthMeters,
+          );
   }
 
   MapCoordinate position(double meters) {
     // Retrace the line on alternate passes so open outlines have no jump.
-    final cycle = meters % (2 * lengthMeters);
-    final along = cycle <= lengthMeters ? cycle : 2 * lengthMeters - cycle;
+    final cycle = meters % (2 * _length);
+    final along = cycle <= _length ? cycle : 2 * _length - cycle;
     final point = _stroke
-        .getTangentForOffset(along / lengthMeters * _stroke.length)!
+        .getTangentForOffset(along / _length * _stroke.length)!
         .position;
-    final offset = (point - _origin) * (lengthMeters / _stroke.length);
+    final offset = (point - _origin) * (_length / _stroke.length);
     final angle = offset.distance / earthRadius;
     final bearing = math.atan2(offset.dx, -offset.dy);
     final lat = center.lat * math.pi / 180;

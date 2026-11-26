@@ -121,7 +121,7 @@ class GpxToFitConverter {
     return path;
   }
 
-  static FitFile buildActivity(List<RecordMessage> records) {
+  static FitFile buildActivity(List<RecordMessage> records, {int? ftp}) {
     final builder = FitFileBuilder(autoDefine: true, minStringSize: 50);
     final startTimestamp = records.first.timestamp!;
     // Add File ID message
@@ -164,6 +164,7 @@ class GpxToFitConverter {
       ..firstLapIndex = 0
       ..numLaps = 1;
     sessionMessage.totalDistance = records.last.distance;
+    if (ftp != null && ftp > 0) sessionMessage.thresholdPower = ftp;
     builder.add(sessionMessage);
 
     // Add Activity message for summary timing
