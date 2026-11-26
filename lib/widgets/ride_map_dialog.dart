@@ -102,7 +102,8 @@ class _RideMapDialogState extends State<RideMapDialog> {
             ],
           ),
           const SizedBox(height: 16),
-          if (RideDrawing.outlines.contains(drawing))
+          if (RideDrawing.outlines.contains(drawing) ||
+              drawing == RideDrawing.skyline)
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: SizedBox(
@@ -116,7 +117,9 @@ class _RideMapDialogState extends State<RideMapDialog> {
             RideDrawing.none =>
               'Uploads include your workout metrics and omit GPS coordinates.',
             RideDrawing.random =>
-              'Each ride gets a random drawing. Trace the full outline in about 20 miles.',
+              'Each ride gets a random drawing. The skyline fits your ride distance. The other drawings take about 20 miles.',
+            RideDrawing.skyline =>
+              'The skyline traces your recorded power as a 30-second rolling average and fits your ride distance. The baseline traces average watts and TSS when there is room. Short rides use a plain baseline. Very short rides save without a map.',
             _ =>
               'Your ride traces the outline as you pedal. One full drawing is about 20 miles.',
           }),
@@ -215,8 +218,7 @@ class _PlacePickerState extends State<_PlacePicker> {
     } catch (_) {
       if (mounted)
         setState(
-          () => message =
-              'Place search is unavailable. Try again in a moment.',
+          () => message = 'Place search is unavailable. Try again in a moment.',
         );
     } finally {
       if (mounted) setState(() => busy = false);

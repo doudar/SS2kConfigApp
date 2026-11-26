@@ -213,7 +213,9 @@ and workout export as Classic.
   or stopping shrinks it back to reveal the header; Classic always keeps it.
   The header stays mounted to preserve connection monitoring, and expansion
   preserves the active Arcade state. Reduced motion switches layouts directly.
-  Named header buttons provide the mode switch, ride menu, and Classic graph tools.
+  The workout header has a mode switch and ride menu. On supported Android
+  devices, tap **PiP** during a structured workout to open picture-in-picture.
+  Fullscreen Arcade has the same action in its toolbar.
   Phones put those actions on a separate row below the device name. While the
   header is hidden during an Arcade ride, labeled in-game mode/menu buttons appear;
   pausing removes those copies as the header returns. Landing screens use the

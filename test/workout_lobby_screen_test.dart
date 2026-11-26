@@ -184,6 +184,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.isPlaying, isFalse);
       expect(find.text('RESUME').hitTestable(), findsNothing);
+      expect(find.byTooltip('Picture in picture'), findsNothing);
       // The compact in-ride FTP action reflects edits made in the lobby.
       await controller.updateFTP(250);
       await tester.pump();
@@ -207,16 +208,17 @@ void main() {
       await tester.tap(find.text('Ride menu'));
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Just ride'), findsOneWidget);
-      expect(controller.isPlaying, isTrue);
-      await tester.tap(find.text('Workout overlay'));
+      expect(find.text('Workout overlay'), findsNothing);
+      await tester.ensureVisible(find.text('Back to ride'));
+      await tester.tap(find.text('Back to ride'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.byTooltip('Picture in picture'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.textContaining('Could not open the overlay'), findsOneWidget);
       expect(controller.isPlaying, isTrue);
       allowPip = true;
-      await tester.tap(find.text('Ride menu'));
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.tap(find.text('Workout overlay'));
+      await tester.tap(find.byTooltip('Picture in picture'));
       await tester.pump();
       tester.view.physicalSize = const Size(192, 96);
       await tester.pump(const Duration(milliseconds: 400));
@@ -314,6 +316,7 @@ void main() {
         isTrue,
       );
       expect(find.text('Ride menu').hitTestable(), findsOneWidget);
+      expect(find.byTooltip('Picture in picture').hitTestable(), findsOneWidget);
       expect(find.text('Classic mode').hitTestable(), findsOneWidget);
       expect(find.byTooltip('Return to Classic').hitTestable(), findsOneWidget);
       expect(
@@ -370,6 +373,7 @@ void main() {
       expect(controller.workoutProgressSeconds, beforePause);
       expect(find.text('WORKOUT SUMMARY'), findsOneWidget);
       expect(find.text('PAUSED'), findsOneWidget);
+      expect(find.byTooltip('Picture in picture'), findsNothing);
       final summaryMetrics = tester.widgetList<MetricBox>(
         find.byType(MetricBox),
       );
@@ -435,9 +439,7 @@ void main() {
       expect(controller.isPlaying, isTrue);
       expect(controller.workoutProgressSeconds, greaterThanOrEqualTo(progress));
       expect(find.byType(WorkoutLobby), findsNothing);
-      await tester.tap(find.text('Ride menu'));
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.tap(find.text('Workout overlay'));
+      await tester.tap(find.byTooltip('Picture in picture'));
       await tester.pump();
       tester.view.physicalSize = const Size(192, 96);
       await tester.pump(const Duration(milliseconds: 400));

@@ -9,6 +9,38 @@ import 'package:ss2kconfigapp/utils/workout/workout_parser.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_storage.dart';
 
 void main() {
+  test(
+    'power trend averages consecutive seconds including zero and resets at gaps',
+    () {
+      WorkoutPainter painter({
+        List<double>? list,
+        Map<int, double> sparse = const {},
+      }) => WorkoutPainter(
+        segments: const [],
+        maxPower: 1,
+        totalDuration: 60,
+        ftpValue: 200,
+        currentProgress: .5,
+        actualPowerPoints: sparse,
+        powerPointsList: list,
+      );
+      final raw = [90.0, 0.0, 210.0, 150.0, double.nan, 240.0];
+      final trend = painter(
+        list: raw,
+      ).powerTrend.map((point) => point.value).toList();
+      expect(trend.take(4), [90, 45, 100, 120]);
+      expect(trend[4].isNaN, isTrue);
+      expect(trend.last, 240);
+      expect(raw[2], 210);
+      expect(
+        painter(
+          sparse: {4: 120, 5: 180, 12: 60},
+        ).powerTrend.map((p) => p.value),
+        [120, 150, 60],
+      );
+    },
+  );
+
   test('live power keeps target alignment without magnifying small errors', () {
     final block = WorkoutSegment(
       type: SegmentType.steadyState,
