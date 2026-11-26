@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -123,6 +124,14 @@ class _BleTrainer extends _Trainer {
   final state = DeviceTransportStateController()
     ..markConnected(DeviceTransportKind.bluetooth);
   String running = '26.9.8';
+  bool versionReadAvailable = true;
+  @override
+  Future<String?> readFirmwareVersion(BluetoothDevice device) async {
+    if (!versionReadAvailable) return null;
+    firmwareVersion.value = running;
+    return running;
+  }
+
   @override
   bool get isDirConConnected => false;
   @override
@@ -271,7 +280,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
   testWidgets(
-    'a local BLE upload must reconnect and report a changed version',
+    'a renamed local ZIP verifies fresh post-reboot reports without clearing the header or stacking dialogs',
     (tester) async {
       final ble = _BleTrainer()
         ..configAppCompatibleFirmware = true
@@ -279,6 +288,17 @@ void main() {
         ..firmwareVersion.value = '26.9.8';
       DeviceDataManager.updateDataForDevice(device, ble);
       addTearDown(ble.dispose);
+      final archive = Archive()..add(ArchiveFile.bytes('firmware.bin', image));
+      picker.selection = [
+        _File(
+          'SmartSpin2kFirmware-26.1.1.bin.zip',
+          ZipEncoder().encodeBytes(archive),
+        ),
+      ];
+      final displayedVersions = <String>[];
+      ble.firmwareVersion.addListener(
+        () => displayedVersions.add(ble.firmwareVersion.value),
+      );
       await open(tester);
       await tap(tester, 'Choose Firmware From Dialog');
       await tap(tester, 'I trust the author');
@@ -287,6 +307,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(ble.uploads.single, orderedEquals(image));
       expect(find.text('Verifying Firmware'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
       ble.running = '26.11.16';
       for (var i = 0; i < 4; i++) {
         await tester.pump(const Duration(seconds: 1));
@@ -294,6 +315,13 @@ void main() {
       expect(find.text('Upload Successful'), findsNothing);
       ble.state.markDisconnected(explicit: false);
       ble.state.markConnected(DeviceTransportKind.bluetooth);
+      ble.versionReadAvailable = false;
+      ble.firmwareVersion.value = ble.running;
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+      expect(find.text('Upload Successful'), findsNothing);
+      ble.versionReadAvailable = true;
       ble.running = '26.9.8';
       for (var i = 0; i < 4; i++) {
         await tester.pump(const Duration(seconds: 1));
@@ -307,6 +335,7 @@ void main() {
         find.text('Firmware updated from 26.9.8 to 26.11.16.'),
         findsOneWidget,
       );
+      expect(displayedVersions, isNot(contains('')));
       await tester.pumpWidget(const SizedBox());
     },
   );

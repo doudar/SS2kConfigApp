@@ -1802,6 +1802,24 @@ class DeviceData {
   bool isDisconnecting = false;
   bool configAppCompatibleFirmware = false;
   ValueNotifier<String> firmwareVersion = ValueNotifier("");
+  int _firmwareVersionReadings = 0;
+
+  void _recordFirmwareVersion(String version) {
+    _firmwareVersionReadings++;
+    firmwareVersion.value = version;
+  }
+
+  /// Return a fresh trainer report without blanking the version shown in the UI.
+  Future<String?> readFirmwareVersion(BluetoothDevice device) async {
+    final before = _firmwareVersionReadings;
+    await writeCustomCharacteristic(device, [
+      protocol.read,
+      protocol.CommandId.firmwareVer,
+    ]);
+    return before == _firmwareVersionReadings
+        ? null
+        : firmwareVersion.value.trim();
+  }
 
   // Create a broadcast stream controller for logs
   final StreamController<String> _logStreamController =
@@ -4508,7 +4526,7 @@ class DeviceData {
                 }
                 //Set the firmware version
                 if (c["vName"] == fwVname) {
-                  this.firmwareVersion.value = c["value"];
+                  _recordFirmwareVersion(c["value"]);
                   print(
                     "FW Version Was Updated!! ${c['value']} ${this.firmwareVersion.value}",
                   );
@@ -4587,7 +4605,7 @@ class DeviceData {
 
       characteristic['value'] = entry.value.toString();
       if (characteristic['vName'] == fwVname) {
-        firmwareVersion.value = characteristic['value'];
+        _recordFirmwareVersion(characteristic['value']);
       }
       _emitCharacteristicChange(characteristic);
     }

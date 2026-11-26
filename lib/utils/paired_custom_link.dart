@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as crypto;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:ss2k_protocol/secure.dart';
 import 'package:ss2k_protocol/ss2k_protocol.dart' as protocol;
@@ -59,6 +60,7 @@ class PairedCustomLink {
     ),
   );
   final _assembler = SecureAssembler();
+  Uint8List? _lastAuthenticatedRecord;
   SecureClient? _client;
   Future<void>? _setup;
   bool legacy = false;
@@ -92,6 +94,7 @@ class PairedCustomLink {
     _client?.close();
     _client = null;
     _assembler.reset();
+    _lastAuthenticatedRecord = null;
     final pending = _reply;
     if (pending != null && !pending.isCompleted) {
       pending.completeError(StateError('SmartSpin2k connection closed.'));
@@ -125,7 +128,11 @@ class PairedCustomLink {
     if (frame == null) return;
     final inner = frame.first == protocol.secure_data;
     if (inner && !authenticated) return;
+    // A BLE notification can be delivered twice. Compare the entire assembled
+    // record (including sequence and tag) before delivering any plaintext.
+    if (inner && listEquals(_lastAuthenticatedRecord, frame)) return;
     final packet = inner ? _client!.open(frame) : frame;
+    if (inner) _lastAuthenticatedRecord = Uint8List.fromList(frame);
     final waiting = _reply;
     if (waiting != null && !waiting.isCompleted && inner == _innerReply) {
       if (!inner && frame.length == 2 && frame.first == protocol.secure_error) {
@@ -356,6 +363,7 @@ class PairedCustomLink {
       protocol.secure_ready,
     );
     client.confirmSession(ready);
+    _lastAuthenticatedRecord = null;
     if (_closed) throw StateError('Pairing cancelled.');
     await _storage.write(key: _aliasKey, value: _identity!);
     if (_closed) throw StateError('Pairing cancelled.');

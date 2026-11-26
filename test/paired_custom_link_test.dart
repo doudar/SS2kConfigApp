@@ -136,6 +136,8 @@ void main() {
               paired.receive([p.secure_ready, ...proof('ready')]);
             case p.secure_data:
               paired.receive(record(0, change));
+              paired.receive(record(0, change));
+              paired.receive(record(1, reply));
               paired.receive(record(1, reply));
             default:
               fail('Unexpected secure request');
@@ -148,6 +150,8 @@ void main() {
         reply,
       );
       expect(received, [change, reply]);
+      expect(() => paired.receive(record(1, change)), throwsFormatException);
+      expect(() => paired.receive(record(0, change)), throwsFormatException);
       expect(
         p
             .decodeResponse(received.first, kind: p.ReplyKind.notification)

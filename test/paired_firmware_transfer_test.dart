@@ -24,8 +24,10 @@ class _Trainer {
     this.corrupt = false,
     this.dropBegin = false,
     this.brokenWnr = false,
+    this.duplicateAcks = false,
   });
   final bool dirCon, hasWnr, reject, corrupt, dropBegin, brokenWnr;
+  final bool duplicateAcks;
   int probes = 0;
   final int bits;
   int wire;
@@ -129,6 +131,7 @@ class _Trainer {
     for (final packet in replies) {
       try {
         app.receive(packet);
+        if (duplicateAcks) app.receive(Uint8List.fromList(packet));
       } on FormatException {
         app.invalidate();
       }
@@ -287,6 +290,20 @@ void main() {
       'DirCon baseline=${old.records} chunks/${old.modeledUs} us; fast=${fast.records}/${fast.modeledUs} us',
     );
   });
+
+  test(
+    'a paired BLE upload survives duplicated encrypted acknowledgements',
+    () async {
+      final trainer = _Trainer(
+        bits: p.cap_ble_ota_window4,
+        hasWnr: true,
+        duplicateAcks: true,
+      );
+      await send(trainer);
+      expect(trainer.withoutResponse, greaterThan(0));
+      expect(trainer.aborted, isFalse);
+    },
+  );
 
   for (final mtu in [23, 185, 247, 515]) {
     test(

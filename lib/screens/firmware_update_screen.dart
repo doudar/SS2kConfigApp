@@ -93,6 +93,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   String _updateStatus = '';
 
   bool updatingFirmware = false;
+  bool _verifying = false;
 
   final int PICKER = 2;
   final int RELEASE = 3;
@@ -310,7 +311,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     setState(() {});
   }
 
-  Future<({FirmwareImage image, String? version})?> _pickFirmware(
+  Future<FirmwareImage?> _pickFirmware(
     FirmwareAuthenticity verifier,
     FirmwareArchitecture architecture,
   ) async {
@@ -350,17 +351,12 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
         // Mobile file providers can grant access only to the selected document.
       }
     }
-    final image = verifier.local(
+    return verifier.local(
       file.name,
       await file.readAsBytes(),
       architecture,
       signature: signature,
     );
-    final version = RegExp(
-      r'^SmartSpin2kFirmware-(\d+\.\d+\.\d+)\.bin\.zip$',
-      caseSensitive: false,
-    ).firstMatch(file.name)?.group(1);
-    return (image: image, version: version);
   }
 
   bool _isNewerVersion(String versionA, String versionB) {
@@ -458,11 +454,10 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
           _hardwareDetection!.architecture,
         );
         if (local == null || !mounted) return;
-        if (!local.image.official &&
-            !await confirmUnofficialFirmware(context, local.image.filename))
+        if (!local.official &&
+            !await confirmUnofficialFirmware(context, local.filename))
           return;
-        image = local.image;
-        targetVersion = local.version;
+        image = local;
       } else if (type == RELEASE && effectiveRelease != null) {
         final client = http.Client();
         try {
@@ -590,6 +585,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       if (mounted) {
         setState(() {
           updatingFirmware = false;
+          _verifying = false;
         });
       }
     }
@@ -608,76 +604,67 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     int uploadEpoch, {
     required bool receiptMissing,
   }) async {
-    final navigator = Navigator.of(context);
-    final route = DialogRoute<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Verifying Firmware"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text(
-                targetVersion != null
-                    ? "Waiting for device to reboot and report version $targetVersion..."
-                    : "Waiting for device to reboot and report new version...",
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    unawaited(navigator.push(route));
-    try {
-      final deadline = DateTime.now().add(const Duration(minutes: 2));
-      var stableReads = 0;
-      var stableEpoch = -1;
-      String? candidate;
-      while (mounted && route.isActive && DateTime.now().isBefore(deadline)) {
-        await Future<void>.delayed(const Duration(seconds: 1));
-        if (!mounted) return null;
-        if (!deviceData.isTransportActive) {
-          stableReads = 0;
-          try {
-            await deviceData.reconnectAndSetup(widget.device);
-          } catch (_) {
-            continue;
-          }
-        }
-        final epoch = deviceData.transportState.value.epoch;
-        if (!deviceData.isTransportActive || epoch == uploadEpoch) continue;
-        deviceData.firmwareVersion.value = '';
-        await deviceData.requestSetting(widget.device, fwVname);
-        final current = deviceData.firmwareVersion.value.trim();
-        if (!deviceData.isTransportActive ||
-            deviceData.transportState.value.epoch != epoch ||
-            !firmwareUpdateVersionConfirmed(
-              originalVersion,
-              current,
-              targetVersion,
-              receiptMissing: receiptMissing,
-            )) {
-          stableReads = 0;
+    setState(() => _verifying = true);
+    final deadline = DateTime.now().add(const Duration(minutes: 2));
+    var stableReads = 0;
+    var stableEpoch = -1;
+    String? candidate;
+    while (mounted &&
+        !deviceData.isUserDisconnect &&
+        DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      if (!mounted) return null;
+      if (!deviceData.isTransportActive) {
+        stableReads = 0;
+        try {
+          await deviceData.reconnectAndSetup(widget.device);
+        } catch (_) {
           continue;
         }
-        if (current != candidate || epoch != stableEpoch) stableReads = 0;
-        candidate = current;
-        stableEpoch = epoch;
-        if (++stableReads >= 3) {
-          return current;
-        }
       }
-      return null;
-    } finally {
-      if (navigator.mounted && route.isActive) navigator.removeRoute(route);
+      final epoch = deviceData.transportState.value.epoch;
+      if (!deviceData.isTransportActive || epoch == uploadEpoch) continue;
+      String? current;
+      try {
+        current = await deviceData.readFirmwareVersion(widget.device);
+      } catch (_) {
+        // A disconnect or incomplete handshake can race the version read.
+      }
+      if (current == null ||
+          !deviceData.isTransportActive ||
+          deviceData.transportState.value.epoch != epoch ||
+          !firmwareUpdateVersionConfirmed(
+            originalVersion,
+            current,
+            targetVersion,
+            receiptMissing: receiptMissing,
+          )) {
+        stableReads = 0;
+        continue;
+      }
+      if (current != candidate || epoch != stableEpoch) stableReads = 0;
+      candidate = current;
+      stableEpoch = epoch;
+      if (++stableReads >= 3) {
+        return current;
+      }
     }
+    return null;
   }
 
   List<Widget> _buildUpdateButtons() {
+    if (_verifying) {
+      return const [
+        Text('Verifying Firmware', textAlign: TextAlign.center),
+        SizedBox(height: 12),
+        LinearProgressIndicator(),
+        SizedBox(height: 12),
+        Text(
+          'Waiting for the trainer to reconnect and report its running version…',
+          textAlign: TextAlign.center,
+        ),
+      ];
+    }
     return <Widget>[
       updatingFirmware
           ? Text(
