@@ -57,25 +57,47 @@ class WorkoutFitExport {
       isUtc: true,
     );
     final isSkyline = settings.drawing == RideDrawing.skyline;
-    final skyline = isSkyline
-        ? WorkoutSkyline.fromRide(
-            samples.map((r) => r.power).toList(),
-            plan: plan,
-            ftp: ftp,
-            savedTss: savedTss,
-          )
-        : null;
-    final origin = isSkyline ? samples.first.distance! : 0.0;
+    final origin = samples.first.distance!;
+    final totalDistance = samples.last.distance!;
+    final span = totalDistance - origin;
+    WorkoutSkyline? skyline;
+    var includeLettering = true;
+    if (isSkyline) {
+      // Repeated positions add no detail. Use the widest gap so a few
+      // moving seconds among many stationary records cannot distort the text.
+      var maxStep = 0.0, previous = origin;
+      for (final sample in samples) {
+        final distance = sample.distance!;
+        maxStep = math.max(maxStep, distance - previous);
+        previous = distance;
+      }
+      // A closed silhouette needs a few points per side. The small turns
+      // in the lettering need much finer spacing and room on the map.
+      if (span <= 0 || totalDistance < 25 || maxStep > span / 12) return;
+      includeLettering = totalDistance >= 1000 && maxStep <= span / 800;
+      skyline = WorkoutSkyline.fromRide(
+        samples.map((r) => r.power).toList(),
+        plan: plan,
+        ftp: ftp,
+        savedTss: savedTss,
+      );
+    }
     final route = RideMapRoute.forRide(
       settings,
       start,
       skyline: skyline,
-      skylineDistance: samples.last.distance! - origin,
+      skylineDistance: totalDistance,
+      includeLettering: includeLettering,
     );
     if (route == null) return;
-    for (final record in samples) {
-      final coordinate = route.position(record.distance! - origin);
-      record
+    final coordinates = isSkyline
+        ? route.positionsForClosedRide(
+            samples.map((r) => (r.distance! - origin) / span),
+          )
+        : samples.map((r) => route.position(r.distance!));
+    var index = 0;
+    for (final coordinate in coordinates) {
+      samples[index++]
         ..positionLat = coordinate.lat
         ..positionLong = coordinate.lon;
     }

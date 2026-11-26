@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:fit_tool/fit_tool.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -60,11 +61,31 @@ void main() {
   );
 
   test(
+    'recorded roof shows a 30-second rolling mean for every active second',
+    () {
+      final power = List<int?>.filled(3600, 100);
+      power.fillRange(1700, 1730, 400);
+      power[100] = null;
+      power[101] = 0;
+      final profile = WorkoutSkyline.fromRide(power, plan: []).profile;
+      expect(profile.length, 3600);
+      expect(profile.first, const Offset(0, 100));
+      expect(profile[100].dy, 100);
+      expect(profile[101].dy, closeTo(2800 / 29, .0001));
+      expect(profile[1700].dy, 110);
+      expect(profile[1729], Offset(1729 / 3599, 400));
+      expect(profile[1730].dy, 390);
+      expect(profile[1759].dy, 100);
+      expect(profile.last, const Offset(1, 100));
+    },
+  );
+
+  test(
     'FIT maps close once at ride distance, preserving samples across a pause',
     () async {
       final start = DateTime.utc(2026, 11, 26);
       final points = List.generate(
-        600,
+        1200,
         (i) => TrackPoint(
           timestamp: start.add(Duration(seconds: i + (i >= 300 ? 1800 : 0))),
           lat: 0,
@@ -82,16 +103,32 @@ void main() {
         plan: plan,
         ftp: 200,
       );
-      final expectedStats = WorkoutSkyline(plan, 150, 600 / 36 * .75 * .75);
+      final expectedStats = WorkoutSkyline(plan, 150, 1200 / 36 * .75 * .75);
       final route = RideMapRoute.forRide(
         settings,
         start,
         skyline: expectedStats,
-        skylineDistance: 599 * 8,
+        skylineDistance: 1200 * 8,
       )!;
-      expect(samples.length, 600);
-      for (final i in [0, 1, 200, 350, 450, 525, 599]) {
-        final pos = route.position(i * 8);
+      expect(samples.length, 1200);
+      final positions = route
+          .positionsForClosedRide(List.generate(1200, (i) => i / 1199))
+          .toList();
+      var gpsMeters = 0.0;
+      const radians = math.pi / 180;
+      for (var i = 1; i < samples.length; i++) {
+        final a = samples[i - 1], b = samples[i];
+        final north = (b.positionLat! - a.positionLat!) * radians;
+        final east =
+            (b.positionLong! - a.positionLong!) *
+            radians *
+            math.cos((b.positionLat! + a.positionLat!) * radians / 2);
+        gpsMeters +=
+            math.sqrt(north * north + east * east) * RideMapRoute.earthRadius;
+      }
+      expect(gpsMeters, closeTo(samples.last.distance!, 2));
+      for (final i in [0, 1, 200, 350, 450, 525, 1000, 1199]) {
+        final pos = positions[i];
         expect(samples[i].positionLat, closeTo(pos.lat, 1e-7));
         expect(samples[i].positionLong, closeTo(pos.lon, 1e-7));
         expect(
@@ -129,9 +166,73 @@ void main() {
           uploaded.map((r) => r.positionLong),
           samples.map((r) => r.positionLong),
         );
-        expect(uploaded.last.distance, 4800);
+        expect(uploaded.last.distance, 9600);
         return true;
       }, fallbackFtp: 300);
+    },
+  );
+
+  test(
+    'short and sparse rides use only the detail their GPS spacing supports',
+    () {
+      final start = DateTime.utc(2026, 11, 26);
+      List<RecordMessage> ride(int count, double speed, {int idle = 0}) =>
+          WorkoutFitExport.records(
+            List.generate(
+              count,
+              (i) => TrackPoint(
+                timestamp: start.add(Duration(seconds: i)),
+                lat: 0,
+                lon: 0,
+                elevation: 100,
+                heartRate: 140,
+                cadence: 80,
+                power: 150,
+                speed: i < idle ? 0 : speed,
+              ),
+            ),
+            settings,
+            plan: plan,
+            ftp: 200,
+          );
+      for (final records in [
+        ride(90, 8),
+        ride(1200, .25),
+        ride(1200, 8, idle: 1100),
+      ]) {
+        final total = records.last.distance!;
+        final first = records.first.distance!;
+        final silhouette = RideMapRoute.forRide(
+          settings,
+          start,
+          skyline: WorkoutSkyline(plan, 150, 1),
+          skylineDistance: total,
+          includeLettering: false,
+        )!;
+        final positions = silhouette
+            .positionsForClosedRide(
+              records.map((r) => (r.distance! - first) / (total - first)),
+            )
+            .toList();
+        expect(positions.length, records.length);
+        for (var i = 0; i < records.length; i++) {
+          final r = records[i], p = positions[i];
+          expect(r.positionLat, closeTo(p.lat, 1e-7));
+          expect(r.positionLong, closeTo(p.lon, 1e-7));
+        }
+      }
+      for (final records in [
+        ride(5, 10),
+        ride(90, .25),
+        ride(1200, 8, idle: 1198),
+      ]) {
+        expect(
+          records.every((r) => r.positionLat == null && r.positionLong == null),
+          isTrue,
+        );
+        expect(records.last.distance, greaterThan(0));
+        expect(records.last.power, 150);
+      }
     },
   );
 

@@ -98,29 +98,35 @@ class WorkoutSkyline {
   }
 
   static List<Offset> _recordedProfile(List<int?> samples) {
-    final bins = math.min(48, samples.length);
-    if (bins == 0) return const [Offset(0, 0), Offset(1, 0)];
+    // A trailing 30-second mean at each active second preserves short efforts,
+    // even on a long ride. Include coasting and skip missing measurements.
+    const window = 30;
     final profile = <Offset>[];
-    for (var bin = 0; bin < bins; bin++) {
-      final start = bin * samples.length ~/ bins;
-      final end = (bin + 1) * samples.length ~/ bins;
-      var sum = 0, count = 0;
-      for (var i = start; i < end; i++) {
-        final w = samples[i];
-        if (w != null && w >= 0) {
-          sum += w;
-          count++;
+    var sum = 0, count = 0;
+    for (var i = 0; i < samples.length; i++) {
+      final incoming = samples[i];
+      if (incoming != null && incoming >= 0) {
+        sum += incoming;
+        count++;
+      }
+      if (i >= window) {
+        final outgoing = samples[i - window];
+        if (outgoing != null && outgoing >= 0) {
+          sum -= outgoing;
+          count--;
         }
       }
-      final y = count == 0 ? 0.0 : sum / count;
-      if (bin == 0) profile.add(Offset(0, y));
-      profile.add(Offset((start + end) / (2 * samples.length), y));
-      if (bin == bins - 1) profile.add(Offset(1, y));
+      if (count > 0) {
+        profile.add(Offset(i / math.max(1, samples.length - 1), sum / count));
+      }
     }
+    if (profile.isEmpty) return const [Offset(0, 0), Offset(1, 0)];
+    if (profile.first.dx > 0) profile.insert(0, Offset(0, profile.first.dy));
+    if (profile.last.dx < 1) profile.add(Offset(1, profile.last.dy));
     return profile;
   }
 
-  Path toPath() {
+  Path toPath({bool includeLettering = true}) {
     const width = 900.0, baseline = 260.0;
     var low = profile.first.dy, high = low;
     for (final p in profile) {
@@ -140,7 +146,7 @@ class WorkoutSkyline {
     // keeping the words upright and readable left to right on a north-up map.
     final lettering = <Offset>[];
     var cursor = 0.0;
-    for (final char in label.split('')) {
+    for (final char in (includeLettering ? label : '').split('')) {
       if (char == ' ') {
         cursor += 4;
         continue;

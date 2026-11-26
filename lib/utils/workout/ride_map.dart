@@ -293,12 +293,17 @@ class RideMapRoute {
     DateTime start, {
     WorkoutSkyline? skyline,
     double? skylineDistance,
+    bool includeLettering = true,
   }) {
     final drawing = settings.drawing.forRide(start);
     if (drawing == RideDrawing.skyline) {
       if (skyline == null || skylineDistance == null || skylineDistance <= 0)
         return null;
-      return RideMapRoute._(skyline.toPath(), settings.center, skylineDistance);
+      return RideMapRoute._(
+        skyline.toPath(includeLettering: includeLettering),
+        settings.center,
+        skylineDistance,
+      );
     }
     return drawing == RideDrawing.none
         ? null
@@ -313,10 +318,30 @@ class RideMapRoute {
     // Retrace the line on alternate passes so open outlines have no jump.
     final cycle = meters % (2 * _length);
     final along = cycle <= _length ? cycle : 2 * _length - cycle;
-    final point = _stroke
-        .getTangentForOffset(along / _length * _stroke.length)!
-        .position;
-    final offset = (point - _origin) * (_length / _stroke.length);
+    return _project(_offsetAt(along / _length), _length / _stroke.length);
+  }
+
+  Offset _offsetAt(double fraction) =>
+      _stroke
+          .getTangentForOffset(fraction.clamp(0, 1) * _stroke.length)!
+          .position -
+      _origin;
+
+  Iterable<MapCoordinate> positionsForClosedRide(Iterable<double> fractions) {
+    final offsets = fractions.map(_offsetAt).toList();
+    // GPS viewers join successive records with straight lines. Scale those
+    // actual segments, including the shortcuts across sharp letter corners.
+    var sampledLength = 0.0;
+    for (var i = 1; i < offsets.length; i++) {
+      sampledLength += (offsets[i] - offsets[i - 1]).distance;
+    }
+    if (sampledLength == 0) return const [];
+    final metersPerUnit = _length / sampledLength;
+    return offsets.map((point) => _project(point, metersPerUnit));
+  }
+
+  MapCoordinate _project(Offset point, double metersPerUnit) {
+    final offset = point * metersPerUnit;
     final angle = offset.distance / earthRadius;
     final bearing = math.atan2(offset.dx, -offset.dy);
     final lat = center.lat * math.pi / 180;
