@@ -46,9 +46,9 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     with TickerProviderStateMixin {
   String? _workoutName;
   bool _arcadeMode = false;
-  bool _arcadeFullscreen = false;
-  late bool _structuredRidePlaying;
-  bool get _canOpenPip => _pipSupported && _structuredRidePlaying;
+  late bool _ridePlaying;
+  bool get _arcadeFullscreen => _arcadeMode && _ridePlaying;
+  bool get _canOpenPip => _pipSupported && _ridePlaying;
   bool _arcadePreferencesLoaded = false;
   bool _completionPending = false;
   static const _pipChannel = MethodChannel('com.smartspin2k.app/workout_pip');
@@ -106,8 +106,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     deviceData = DeviceDataManager.forDevice(widget.device);
     unawaited(deviceData.ensureFtmsNotifications(widget.device));
     _workoutController = WorkoutController(deviceData, widget.device);
-    _structuredRidePlaying =
-        _workoutController.isPlaying && !_workoutController.isFreeRide;
+    _ridePlaying = _workoutController.isPlaying;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       _pipChannel.setMethodCallHandler(_handlePipChange);
       unawaited(_checkPipSupport());
@@ -132,15 +131,8 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     _workoutControllerListener = () {
       if (!mounted) return;
       if (_isDisposing) return; // Skip any animation updates while disposing
-      final fullscreen = _arcadeMode && _workoutController.isPlaying;
-      final structuredRide =
-          _workoutController.isPlaying && !_workoutController.isFreeRide;
-      if (_arcadeFullscreen != fullscreen ||
-          _structuredRidePlaying != structuredRide) {
-        setState(() {
-          _arcadeFullscreen = fullscreen;
-          _structuredRidePlaying = structuredRide;
-        });
+      if (_ridePlaying != _workoutController.isPlaying) {
+        setState(() => _ridePlaying = _workoutController.isPlaying);
       }
 
       final lastUpdate = deviceData.lastFtmsUpdate;
@@ -405,10 +397,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
 
   void _setArcadeMode(bool enabled, {bool persist = true}) {
     if (_arcadeMode == enabled) return;
-    setState(() {
-      _arcadeMode = enabled;
-      _arcadeFullscreen = enabled && _workoutController.isPlaying;
-    });
+    setState(() => _arcadeMode = enabled);
     if (persist) unawaited(ArcadePreferences.saveMode(enabled));
     if (!enabled) _updateScrollPosition();
   }
