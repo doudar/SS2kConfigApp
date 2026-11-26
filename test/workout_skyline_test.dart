@@ -13,6 +13,52 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const settings = RideMapSettings(drawing: RideDrawing.skyline);
 
+  for (final seconds in [1, 2, 3, 4, 5]) {
+    test('$seconds recorded seconds survive saving and re-export', () async {
+      final temp = await Directory.systemTemp.createTemp('short_ride');
+      addTearDown(() => temp.delete(recursive: true));
+      final points = List.generate(
+        seconds,
+        (i) => TrackPoint(
+          timestamp: DateTime.utc(2026, 11, 26).add(Duration(seconds: i)),
+          speed: 10,
+          power: 140 + i,
+          heartRate: 120,
+          cadence: 91,
+          elevation: 100,
+          lat: 0,
+          lon: 0,
+        ),
+      );
+      final records = WorkoutFitExport.records(points, settings, ftp: 250);
+      final file = File('${temp.path}/ride.fit');
+      await file.writeAsBytes(
+        GpxToFitConverter.buildActivity(records, ftp: 250).toBytes(),
+      );
+      Future<bool> verify(String path) async {
+        final fit = FitFile.fromBytes(await File(path).readAsBytes());
+        final samples = fit.records
+            .map((r) => r.message)
+            .whereType<RecordMessage>()
+            .toList();
+        expect(samples.length, seconds);
+        expect(samples.map((r) => r.power), points.map((p) => p.power));
+        expect(samples.map((r) => r.heartRate), everyElement(120));
+        expect(samples.map((r) => r.cadence), everyElement(91));
+        expect(samples.last.distance, seconds * 10);
+        expect(samples.map((r) => r.positionLat), everyElement(isNull));
+        expect(samples.map((r) => r.positionLong), everyElement(isNull));
+        return true;
+      }
+
+      await verify(file.path);
+      expect(
+        await WorkoutFitExport.uploadSavedRide(file, settings, verify),
+        isTrue,
+      );
+    });
+  }
+
   test('recorded active seconds supply the skyline and baseline stats', () {
     // Alternating coasting and 300 W yields 150 W in each 30-second NP window.
     final watts = List.generate(3600, (i) => i.isEven ? 0 : 300);
