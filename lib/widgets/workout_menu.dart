@@ -37,14 +37,12 @@ class WorkoutMenu extends StatelessWidget {
     required this.device,
     required this.ttsSettings,
     required this.onWorkoutLoaded,
-    this.onOpenWorkoutOverlay,
   });
 
   final WorkoutController workoutController;
   final DeviceData deviceData;
   final BluetoothDevice device;
   final WorkoutTTSSettings ttsSettings;
-  final VoidCallback? onOpenWorkoutOverlay;
   final void Function(String content, {String? name}) onWorkoutLoaded;
 
   @override
@@ -95,7 +93,7 @@ class WorkoutMenu extends StatelessWidget {
 
   Future<void> _showMenuDialog(BuildContext context, {_MenuAction? initialAction}) async {
     var openedInitialAction = false;
-    final openOverlay = await showDialog<bool>(
+    await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
@@ -114,16 +112,6 @@ class WorkoutMenu extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (onOpenWorkoutOverlay != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: WorkoutActionTile(
-                    icon: Icons.picture_in_picture_alt,
-                    title: 'Workout overlay',
-                    subtitle: 'Keep ride metrics visible over other apps',
-                    onTap: () => Navigator.pop(dialogContext, true),
-                  ),
-                ),
               _menuTile(
                 dialogContext,
                 _MenuAction.selectWorkout,
@@ -214,7 +202,6 @@ class WorkoutMenu extends StatelessWidget {
         );
       },
     );
-    if (openOverlay == true) onOpenWorkoutOverlay?.call();
   }
 
   Widget _menuGroup({

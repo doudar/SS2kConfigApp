@@ -12,6 +12,15 @@ class WorkoutHeaderAction extends StatelessWidget {
     this.stacked = false,
   });
 
+  const WorkoutHeaderAction.pictureInPicture({
+    super.key,
+    required this.onPressed,
+    this.stacked = false,
+  }) : label = 'PiP',
+       tooltip = 'Picture in picture',
+       icon = Icons.picture_in_picture_alt,
+       badge = null;
+
   final String label;
   final IconData icon;
   final VoidCallback? onPressed;

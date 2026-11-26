@@ -38,6 +38,7 @@ class ArcadeWorkoutView extends StatefulWidget {
     this.onBrowseWorkouts,
     this.onWorkoutLoaded,
     this.onOpenMenu,
+    this.onOpenPip,
     this.hasDeviceHeader = false,
   });
 
@@ -49,6 +50,7 @@ class ArcadeWorkoutView extends StatefulWidget {
   final VoidCallback? onBrowseWorkouts;
   final VoidCallback? onWorkoutLoaded;
   final Future<void> Function()? onOpenMenu;
+  final VoidCallback? onOpenPip;
   final bool hasDeviceHeader;
 
   @override
@@ -749,6 +751,8 @@ class _ArcadeWorkoutViewState extends State<ArcadeWorkoutView>
       ),
     );
     final actions = <Widget>[
+      if (inGameNavigation && widget.onOpenPip != null)
+        WorkoutHeaderAction.pictureInPicture(stacked: narrow, onPressed: widget.onOpenPip),
       if (inGameNavigation && widget.onOpenMenu != null)
         WorkoutHeaderAction(
           stacked: narrow,
