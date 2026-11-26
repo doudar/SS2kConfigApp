@@ -7,58 +7,31 @@ import 'package:ss2kconfigapp/utils/workout/gpx_to_fit.dart';
 import 'package:ss2kconfigapp/utils/workout/ride_map.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_fit_export.dart';
-import 'package:ss2kconfigapp/utils/workout/workout_parser.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_skyline.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  final plan = skylinePlan([
-    WorkoutSegment(
-      type: SegmentType.warmup,
-      duration: 150,
-      powerLow: .5,
-      powerHigh: 1,
-      isRamp: true,
-    ),
-    WorkoutSegment(type: SegmentType.steadyState, duration: 150, powerLow: .6),
-  ]);
   const settings = RideMapSettings(drawing: RideDrawing.skyline);
 
-  test(
-    'target ramps and steps set the roof; only actual active seconds set the stats',
-    () {
-      expect(plan, [
-        const Offset(0, .5),
-        const Offset(.5, 1),
-        const Offset(.5, .6),
-        const Offset(1, .6),
-      ]);
-      // Alternating coasting and 300 W yields 150 W in each 30-second NP window.
-      final watts = List.generate(3600, (i) => i.isEven ? 0 : 300);
-      final skyline = WorkoutSkyline.fromRide(watts, plan: plan, ftp: 200);
-      expect(skyline.averageWatts, 150);
-      expect(skyline.tss, 56.25);
-      expect(skyline.label, 'AVG 150W   56 TSS');
-      expect(skyline.toPath().computeMetrics().single.isClosed, isTrue);
-      expect(
-        WorkoutSkyline.fromRide(watts, plan: [], ftp: 200).profile,
-        isNot(plan),
-      );
-      expect(
-        WorkoutSkyline.fromRide([0, 0], plan: [], ftp: 200).label,
-        'AVG 0W   0 TSS',
-      );
-      expect(WorkoutSkyline.fromRide([200], plan: [], savedTss: 74).tss, 74);
-      for (int digit = 0; digit < 10; digit++) {
-        final outline = WorkoutSkyline(
-          plan,
-          digit,
-          digit.toDouble(),
-        ).toPath().computeMetrics().single;
-        expect(outline.isClosed, isTrue);
-      }
-    },
-  );
+  test('recorded active seconds supply the skyline and baseline stats', () {
+    // Alternating coasting and 300 W yields 150 W in each 30-second NP window.
+    final watts = List.generate(3600, (i) => i.isEven ? 0 : 300);
+    final skyline = WorkoutSkyline.fromRide(watts, ftp: 200);
+    expect(skyline.averageWatts, 150);
+    expect(skyline.tss, 56.25);
+    expect(skyline.label, 'AVG 150W   56 TSS');
+    expect(skyline.toPath().computeMetrics().single.isClosed, isTrue);
+    expect(WorkoutSkyline.fromRide([0, 0], ftp: 200).label, 'AVG 0W   0 TSS');
+    expect(WorkoutSkyline.fromRide([200], savedTss: 74).tss, 74);
+    for (int digit = 0; digit < 10; digit++) {
+      final outline = WorkoutSkyline(
+        skyline.profile,
+        digit,
+        digit.toDouble(),
+      ).toPath().computeMetrics().single;
+      expect(outline.isClosed, isTrue);
+    }
+  });
 
   test(
     'recorded roof shows a 30-second rolling mean for every active second',
@@ -67,7 +40,7 @@ void main() {
       power.fillRange(1700, 1730, 400);
       power[100] = null;
       power[101] = 0;
-      final profile = WorkoutSkyline.fromRide(power, plan: []).profile;
+      final profile = WorkoutSkyline.fromRide(power).profile;
       expect(profile.length, 3600);
       expect(profile.first, const Offset(0, 100));
       expect(profile[100].dy, 100);
@@ -93,17 +66,15 @@ void main() {
           elevation: 120,
           heartRate: 144,
           cadence: 80,
-          power: 150,
+          power: i < 600 ? 100 : 200,
           speed: 8,
         ),
       );
-      final samples = WorkoutFitExport.records(
-        points,
-        settings,
-        plan: plan,
+      final samples = WorkoutFitExport.records(points, settings, ftp: 200);
+      final expectedStats = WorkoutSkyline.fromRide(
+        points.map((p) => p.power).toList(),
         ftp: 200,
       );
-      final expectedStats = WorkoutSkyline(plan, 150, 1200 / 36 * .75 * .75);
       final route = RideMapRoute.forRide(
         settings,
         start,
@@ -143,7 +114,7 @@ void main() {
       addTearDown(() => dir.delete(recursive: true));
       final file = File('${dir.path}/ride.fit');
       // Save without GPS, then choose the skyline from Past rides. Its original
-      // plan and FTP must win over the new FTP and the measured flat power line.
+      // FTP and measured power should reproduce the same GPS trace.
       final plain = WorkoutFitExport.records(
         points,
         const RideMapSettings(drawing: RideDrawing.none),
@@ -151,7 +122,8 @@ void main() {
       await file.writeAsBytes(
         GpxToFitConverter.buildActivity(plain, ftp: 200).toBytes(),
       );
-      await WorkoutFitExport.savePlan(file.path, plan);
+      // Older builds sometimes left a target profile next to the FIT.
+      await File('${file.path}.plan.json').writeAsString('[[0,1],[1,1]]');
       await WorkoutFitExport.uploadSavedRide(file, settings, (path) async {
         final fit = FitFile.fromBytes(await File(path).readAsBytes());
         final uploaded = fit.records
@@ -169,6 +141,39 @@ void main() {
         expect(uploaded.last.distance, 9600);
         return true;
       }, fallbackFtp: 300);
+    },
+  );
+
+  test(
+    'a saved ride without power exports its metrics without a skyline',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('no_power_fit');
+      addTearDown(() => dir.delete(recursive: true));
+      final file = File('${dir.path}/ride.fit');
+      final start = DateTime.utc(2026, 11, 26);
+      final records = List.generate(
+        90,
+        (i) => RecordMessage()
+          ..timestamp = start.add(Duration(seconds: i)).millisecondsSinceEpoch
+          ..heartRate = 140
+          ..distance = i * 8.0,
+      );
+      await file.writeAsBytes(
+        GpxToFitConverter.buildActivity(records).toBytes(),
+      );
+      await WorkoutFitExport.uploadSavedRide(file, const RideMapSettings(), (
+        path,
+      ) async {
+        final copy = FitFile.fromBytes(await File(path).readAsBytes());
+        final samples = copy.records
+            .map((r) => r.message)
+            .whereType<RecordMessage>();
+        expect(samples.length, records.length);
+        expect(samples.map((r) => r.positionLat), everyElement(isNull));
+        expect(samples.map((r) => r.heartRate), everyElement(140));
+        expect(samples.last.distance, records.last.distance);
+        return true;
+      });
     },
   );
 
@@ -192,7 +197,6 @@ void main() {
               ),
             ),
             settings,
-            plan: plan,
             ftp: 200,
           );
       for (final records in [
@@ -205,7 +209,9 @@ void main() {
         final silhouette = RideMapRoute.forRide(
           settings,
           start,
-          skyline: WorkoutSkyline(plan, 150, 1),
+          skyline: WorkoutSkyline.fromRide(
+            records.map((r) => r.power).toList(),
+          ),
           skylineDistance: total,
           includeLettering: false,
         )!;
@@ -261,16 +267,10 @@ void main() {
       );
       final random = WorkoutFitExport.records(
         points,
-        const RideMapSettings(),
-        plan: plan,
+        const RideMapSettings(drawing: RideDrawing.random),
         ftp: 200,
       );
-      final chosen = WorkoutFitExport.records(
-        points,
-        settings,
-        plan: plan,
-        ftp: 200,
-      );
+      final chosen = WorkoutFitExport.records(points, settings, ftp: 200);
       expect(
         random.map((r) => r.positionLat),
         chosen.map((r) => r.positionLat),

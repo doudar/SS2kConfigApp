@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
-import 'workout_parser.dart';
 import 'workout_training_load.dart';
 
 /// The recorder writes one sample per active second, including coasting.
@@ -13,25 +12,6 @@ int? averageRecordedWatts(Iterable<int?> samples) {
     count++;
   }
   return count == 0 ? null : (sum / count).round();
-}
-
-/// One point per end of a target interval or ramp. X is fraction of plan
-/// duration, Y is relative power. Equal X values retain vertical interval edges.
-List<Offset> skylinePlan(List<WorkoutSegment> segments) {
-  final duration = segments.fold<int>(0, (t, s) => t + s.duration);
-  if (duration <= 0) return [];
-  var elapsed = 0;
-  final profile = <Offset>[];
-  for (final segment in segments) {
-    if (segment.duration <= 0) continue;
-    final from = segment.getPowerAtTime(0);
-    final to = segment.getPowerAtTime(segment.duration);
-    if (!from.isFinite || !to.isFinite) return [];
-    profile.add(Offset(elapsed / duration, from));
-    elapsed += segment.duration;
-    profile.add(Offset(elapsed / duration, to));
-  }
-  return profile.any((p) => p.dy > 0) ? profile : [];
 }
 
 class WorkoutSkyline {
@@ -46,32 +26,13 @@ class WorkoutSkyline {
   ].join('   ');
 
   // Used only in the preferences picker before the rider has finished a ride.
-  static const example = WorkoutSkyline(
-    [
-      Offset(0, .5),
-      Offset(.15, .75),
-      Offset(.15, .55),
-      Offset(.24, .55),
-      Offset(.24, .85),
-      Offset(.36, .85),
-      Offset(.36, .55),
-      Offset(.46, .55),
-      Offset(.46, 1),
-      Offset(.58, 1),
-      Offset(.58, .55),
-      Offset(.68, .55),
-      Offset(.68, .85),
-      Offset(.8, .85),
-      Offset(.8, .6),
-      Offset(1, .4),
-    ],
-    178,
-    61,
-  );
+  static final example = WorkoutSkyline.fromRide([
+    for (final watts in [100, 140, 185, 130, 240, 130, 210, 145, 100])
+      ...List.filled(60, watts),
+  ], ftp: 220);
 
   factory WorkoutSkyline.fromRide(
     List<int?> samples, {
-    required List<Offset> plan,
     double? ftp,
     double? savedTss,
   }) {
@@ -90,11 +51,7 @@ class WorkoutSkyline {
       final np = normalizedPower(watts.map((w) => w.toDouble()));
       tss = WorkoutTrainingLoad(watts.length, np / ftp).tss;
     }
-    return WorkoutSkyline(
-      plan.isEmpty ? _recordedProfile(samples) : plan,
-      average,
-      tss,
-    );
+    return WorkoutSkyline(_recordedProfile(samples), average, tss);
   }
 
   static List<Offset> _recordedProfile(List<int?> samples) {

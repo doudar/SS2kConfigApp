@@ -155,7 +155,7 @@ void main() {
     },
   );
 
-  testWidgets('a FIT-only export can choose the workout skyline', (
+  testWidgets('a FIT-only export defaults to the workout skyline', (
     tester,
   ) async {
     WorkoutExportChoice? result;
@@ -164,9 +164,7 @@ void main() {
       chooser(strava: false, intervals: false),
       onResult: (value) => result = value as WorkoutExportChoice?,
     );
-    await tapVisible(tester, 'Random drawing');
-    await tester.tap(find.text('Workout skyline').last);
-    await tester.pumpAndSettle();
+    expect(find.text('Workout skyline'), findsOneWidget);
     await tapVisible(tester, 'Save FIT file');
     expect(result!.mapSettings.drawing, RideDrawing.skyline);
   });

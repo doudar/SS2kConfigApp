@@ -21,16 +21,10 @@ class GpxFileExporter {
     String workoutName,
     List<TrackPoint> trackPoints, {
     RideMapSettings settings = const RideMapSettings(),
-    List<Offset> plan = const [],
     double? ftp,
   }) async {
     if (trackPoints.isEmpty || settings.drawing == RideDrawing.none) return '';
-    final records = WorkoutFitExport.records(
-      trackPoints,
-      settings,
-      plan: plan,
-      ftp: ftp,
-    );
+    final records = WorkoutFitExport.records(trackPoints, settings, ftp: ftp);
     return records.first.positionLat == null
         ? ''
         : _gpxContent(workoutName, records);
@@ -210,12 +204,10 @@ ${records.map((point) => '''   <trkpt lat="${point.positionLat}" lon="${point.po
       }
 
       progressMessage.value = 'Saving workout file...';
-      final plan = skylinePlan(workoutController.segments);
       final ftp = workoutController.ftpValue;
       final records = WorkoutFitExport.records(
         trackPoints,
         mapSettings,
-        plan: plan,
         ftp: ftp,
       );
       final appDir = await getApplicationDocumentsDirectory();
@@ -253,12 +245,6 @@ ${records.map((point) => '''   <trkpt lat="${point.positionLat}" lon="${point.po
           }
         }
         return true;
-      }
-      try {
-        await WorkoutFitExport.savePlan(fitFilePath, plan);
-      } on FileSystemException catch (error) {
-        // The FIT is complete. Past rides can still draw its recorded power.
-        debugPrint('Could not save workout skyline profile: $error');
       }
       WorkoutCoachRepository.invalidateLocal();
 

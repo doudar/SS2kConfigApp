@@ -259,7 +259,7 @@ void main() {
       expect(
         tester
             .widget<ChoiceChip>(
-              find.widgetWithText(ChoiceChip, 'Random drawing'),
+              find.widgetWithText(ChoiceChip, 'Workout skyline'),
             )
             .selected,
         isTrue,

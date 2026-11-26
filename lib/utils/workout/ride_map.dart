@@ -6,12 +6,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'workout_skyline.dart';
 
 enum RideDrawing {
+  skyline('Workout skyline'),
   random('Random drawing'),
   bicycle('Road bike'),
   smartSpin2k('SmartSpin2k'),
   chainring('Chainring'),
   bottle('Water bottle'),
-  skyline('Workout skyline'),
   none('No map');
 
   const RideDrawing(this.label);
@@ -39,7 +39,7 @@ class RideMapSettings {
   );
   static const _key = 'workout_ride_map';
   const RideMapSettings({
-    this.drawing = RideDrawing.random,
+    this.drawing = RideDrawing.skyline,
     this.center = eauClaire,
   });
   final RideDrawing drawing;
@@ -58,7 +58,7 @@ class RideMapSettings {
             RideDrawing.values
                 .where((v) => v.name == data['drawing'])
                 .firstOrNull ??
-            RideDrawing.random;
+            const RideMapSettings().drawing;
         final center = parseCenter(data['name'], data['lat'], data['lon']);
         return RideMapSettings(drawing: drawing, center: center ?? eauClaire);
       }

@@ -19,6 +19,14 @@ void main() {
     () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
+      expect(RideMapSettings.load(prefs).drawing, RideDrawing.skyline);
+      await prefs.setString(
+        'workout_ride_map',
+        '{"drawing":"unknown","name":"Melbourne","lat":-37.8136,"lon":144.9631}',
+      );
+      expect(RideMapSettings.load(prefs).drawing, RideDrawing.skyline);
+      expect(RideMapSettings.load(prefs).center, center);
+      await const RideMapSettings(drawing: RideDrawing.random).save(prefs);
       expect(RideMapSettings.load(prefs).drawing, RideDrawing.random);
       expect(RideMapSettings.load(prefs).center, RideMapSettings.eauClaire);
       final choices = <RideDrawing>{};

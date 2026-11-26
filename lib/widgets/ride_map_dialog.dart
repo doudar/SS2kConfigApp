@@ -119,7 +119,7 @@ class _RideMapDialogState extends State<RideMapDialog> {
             RideDrawing.random =>
               'Each ride gets a random drawing. The skyline fits your ride distance. The other drawings take about 20 miles.',
             RideDrawing.skyline =>
-              'The skyline fits your ride distance. It follows your workout plan or, when there is no plan, your 30-second average power. The baseline traces average watts and TSS when there is room. Short rides use a plain baseline. Very short rides save without a map.',
+              'The skyline traces your recorded power as a 30-second rolling average and fits your ride distance. The baseline traces average watts and TSS when there is room. Short rides use a plain baseline. Very short rides save without a map.',
             _ =>
               'Your ride traces the outline as you pedal. One full drawing is about 20 miles.',
           }),

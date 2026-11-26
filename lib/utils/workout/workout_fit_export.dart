@@ -1,7 +1,5 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' show Offset;
 
 import 'package:fit_tool/fit_tool.dart';
 
@@ -14,7 +12,6 @@ class WorkoutFitExport {
   static List<RecordMessage> records(
     List<TrackPoint> points,
     RideMapSettings settings, {
-    List<Offset> plan = const [],
     double? ftp,
   }) {
     if (points.isEmpty) return [];
@@ -40,14 +37,13 @@ class WorkoutFitExport {
       ),
       includeSkyline: ftp != null,
     );
-    _applyMap(samples, settings.withDrawing(drawing), plan: plan, ftp: ftp);
+    _applyMap(samples, settings.withDrawing(drawing), ftp: ftp);
     return samples;
   }
 
   static void _applyMap(
     List<RecordMessage> samples,
     RideMapSettings settings, {
-    required List<Offset> plan,
     double? ftp,
     double? savedTss,
   }) {
@@ -77,10 +73,10 @@ class WorkoutFitExport {
       includeLettering = totalDistance >= 1000 && maxStep <= span / 800;
       skyline = WorkoutSkyline.fromRide(
         samples.map((r) => r.power).toList(),
-        plan: plan,
         ftp: ftp,
         savedTss: savedTss,
       );
+      if (skyline.averageWatts == null) return;
     }
     final route = RideMapRoute.forRide(
       settings,
@@ -100,45 +96,6 @@ class WorkoutFitExport {
       samples[index++]
         ..positionLat = coordinate.lat
         ..positionLong = coordinate.lon;
-    }
-  }
-
-  // App FIT records preserve performance and FTP. The local companion keeps
-  // the prescribed profile so Past rides can also use the original intervals.
-  static File planFile(String fitPath) => File('$fitPath.plan.json');
-
-  static Future<void> savePlan(String fitPath, List<Offset> plan) async {
-    if (plan.isNotEmpty) {
-      await planFile(fitPath).writeAsString(
-        jsonEncode([
-          for (final point in plan) [point.dx, point.dy],
-        ]),
-      );
-    }
-  }
-
-  static Future<List<Offset>> _loadPlan(String path) async {
-    final file = planFile(path);
-    try {
-      if (!await file.exists()) return [];
-      final values = jsonDecode(await file.readAsString());
-      if (values is! List) return [];
-      final profile = <Offset>[];
-      for (final pair in values) {
-        if (pair case [
-          num x,
-          num y,
-        ] when x.isFinite && y.isFinite && x >= 0 && x <= 1 && y >= 0) {
-          profile.add(Offset(x.toDouble(), y.toDouble()));
-        } else {
-          return [];
-        }
-      }
-      return profile;
-    } on FormatException {
-      return [];
-    } on FileSystemException {
-      return [];
     }
   }
 
@@ -205,9 +162,6 @@ class WorkoutFitExport {
       );
       previous = sample;
     }
-    final plan = drawing == RideDrawing.skyline
-        ? await _loadPlan(source.path)
-        : const <Offset>[];
     final rideFtp = session?.thresholdPower;
     final ftp = rideFtp != null && rideFtp > 0
         ? rideFtp.toDouble()
@@ -215,7 +169,6 @@ class WorkoutFitExport {
     _applyMap(
       records,
       settings.withDrawing(drawing),
-      plan: plan,
       ftp: ftp,
       savedTss: session?.trainingStressScore,
     );

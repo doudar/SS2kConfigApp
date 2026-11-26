@@ -359,8 +359,6 @@ class _CompletedActivitiesState extends State<CompletedActivities> {
         await file.delete();
       }
       await FitFileReader.deleteActivityMetadata(activity.filePath);
-      final plan = WorkoutFitExport.planFile(activity.filePath);
-      if (await plan.exists()) await plan.delete();
       await FitFileReader.deleteWorkoutThumbnail(activity.filePath);
       if (activity.isInProgress) {
         final inProgressPath = await WorkoutStorage.loadInProgressFilePath();
