@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../widgets/workout_dialog.dart';
+import '../../widgets/workout_settings_theme.dart';
 import '../../widgets/ride_drawing_field.dart';
 import 'ride_map.dart';
 import 'workout_uploads.dart';
@@ -119,121 +120,125 @@ class _WorkoutExportDialogState extends State<WorkoutExportDialog> {
     String metric(double? value, String unit) =>
         value != null && value.isFinite ? '${value.round()} $unit' : '—';
 
+    final summary = WorkoutSettingsPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.workoutName,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colors.onSurface,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 22,
+            runSpacing: 16,
+            children: [
+              _RideMetric(Icons.timer_outlined, 'Ride time', widget.duration),
+              _RideMetric(
+                Icons.bolt_rounded,
+                'Avg power',
+                metric(widget.averagePower, 'W'),
+              ),
+              _RideMetric(
+                Icons.rotate_right_rounded,
+                'Avg cadence',
+                metric(widget.averageCadence, 'rpm'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    final options = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        RideDrawingField(
+          initialDrawing: _drawing,
+          onChanged: (drawing) => setState(() => _drawing = drawing),
+        ),
+        if (widget.stravaConnected || widget.intervalsConnected) ...[
+          const SizedBox(height: 18),
+          const WorkoutSectionLabel('UPLOAD TO YOUR APPS'),
+          const SizedBox(height: 6),
+          const Text('Choose any or all. We will remember for next time.'),
+          const SizedBox(height: 10),
+          if (widget.stravaConnected)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const Text('Strava'),
+              value: _strava,
+              onChanged: (value) => setState(() => _strava = value!),
+            ),
+          if (widget.intervalsConnected)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const Text('Intervals.icu'),
+              value: _intervals,
+              onChanged: (value) => setState(() => _intervals = value!),
+            ),
+        ],
+      ],
+    );
     return WorkoutDialog(
+      maxWidth: WorkoutSettingsTheme.browserWidth,
       icon: Icons.directions_bike_rounded,
       eyebrow: 'YOUR WORKOUT',
       title: const Text('Save your ride'),
       subtitle:
           'Save a FIT file on this device and send your ride to your apps.',
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          WorkoutSettingsPanel(
-            child: Column(
+      content: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth >=
+              MediaQuery.textScalerOf(context).scale(640)) {
+            return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  widget.workoutName,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: colors.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Wrap(
-                  spacing: 22,
-                  runSpacing: 16,
-                  children: [
-                    _RideMetric(
-                      Icons.timer_outlined,
-                      'Ride time',
-                      widget.duration,
-                    ),
-                    _RideMetric(
-                      Icons.bolt_rounded,
-                      'Avg power',
-                      metric(widget.averagePower, 'W'),
-                    ),
-                    _RideMetric(
-                      Icons.rotate_right_rounded,
-                      'Avg cadence',
-                      metric(widget.averageCadence, 'rpm'),
-                    ),
-                  ],
-                ),
+                Expanded(child: summary),
+                const SizedBox(width: 24),
+                Expanded(child: options),
               ],
-            ),
-          ),
-          const SizedBox(height: 22),
-          RideDrawingField(
-            initialDrawing: widget.initialChoice.mapSettings.drawing,
-            onChanged: (drawing) => _drawing = drawing,
-          ),
-          const SizedBox(height: 18),
-          if (widget.stravaConnected || widget.intervalsConnected) ...[
-            const WorkoutSectionLabel('UPLOAD TO YOUR APPS'),
-            const SizedBox(height: 6),
-            const Text('Choose any or all. We will remember for next time.'),
-            const SizedBox(height: 10),
-            WorkoutSettingsPanel(
-              child: Column(
-                children: [
-                  if (widget.stravaConnected)
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('Strava'),
-                      value: _strava,
-                      onChanged: (value) => setState(() => _strava = value!),
-                    ),
-                  if (widget.intervalsConnected)
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('Intervals.icu'),
-                      value: _intervals,
-                      onChanged: (value) => setState(() => _intervals = value!),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 22),
-          ],
-          FilledButton.icon(
-            onPressed: () => Navigator.of(context).pop(
-              WorkoutExportChoice(
-                mapSettings: widget.initialChoice.mapSettings.withDrawing(
-                  _drawing,
-                ),
-                uploadToStrava: _strava,
-                uploadToIntervals: _intervals,
-              ),
-            ),
-            icon: Icon(
-              _strava || _intervals
-                  ? Icons.cloud_upload_outlined
-                  : Icons.download_rounded,
-            ),
-            label: Text(
-              _strava || _intervals ? 'Save & upload' : 'Save FIT file',
-            ),
-          ),
-          const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.center,
-            child: TextButton(
-              onPressed: () => Navigator.of(
-                context,
-              ).pop(const WorkoutExportChoice(discard: true)),
-              style: TextButton.styleFrom(
-                foregroundColor: colors.onSurfaceVariant,
-              ),
-              child: const Text('Discard workout'),
-            ),
-          ),
-        ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [summary, const SizedBox(height: 22), options],
+          );
+        },
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(
+            context,
+          ).pop(const WorkoutExportChoice(discard: true)),
+          style: TextButton.styleFrom(foregroundColor: colors.onSurfaceVariant),
+          child: const Text('Discard workout'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).pop(
+            WorkoutExportChoice(
+              mapSettings: widget.initialChoice.mapSettings.withDrawing(
+                _drawing,
+              ),
+              uploadToStrava: _strava,
+              uploadToIntervals: _intervals,
+            ),
+          ),
+          icon: Icon(
+            _strava || _intervals
+                ? Icons.cloud_upload_outlined
+                : Icons.download_rounded,
+          ),
+          label: Text(
+            _strava || _intervals ? 'Save & upload' : 'Save FIT file',
+          ),
+        ),
+      ],
     );
   }
 }
