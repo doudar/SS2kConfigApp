@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
 import 'package:ss2kconfigapp/utils/workout/gpx_file_exporter.dart';
 import 'package:ss2kconfigapp/utils/workout/gpx_to_fit.dart';
+import 'package:ss2kconfigapp/utils/workout/ride_map.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'dart:io';
@@ -68,6 +69,8 @@ void main() {
     final gpx = await GpxFileExporter.generateGpxContent(
       'Timestamp check',
       points,
+      // Use a fixed drawing so this three-second timestamp fixture contains GPS.
+      settings: const RideMapSettings(drawing: RideDrawing.bicycle),
     );
     final file = File(path.join(tempDir!.path, '$filename.gpx'));
     await file.writeAsString(gpx);

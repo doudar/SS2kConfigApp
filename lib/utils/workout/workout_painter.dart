@@ -236,6 +236,39 @@ class WorkoutPainter extends CustomPainter {
     canvas.restore();
   }
 
+  /// A trailing mean over consecutive workout seconds. Keep zero-watt coasting
+  /// samples and restart the window after a missing reading.
+  Iterable<MapEntry<int, double>> get powerTrend sync* {
+    final list = powerPointsList;
+    final points = list != null && list.isNotEmpty
+        ? list.asMap()
+        : actualPowerPoints;
+    double? previous, older;
+    int? lastSecond;
+    for (final point in points.entries) {
+      final watts = point.value;
+      if (lastSecond != point.key - 1 || !watts.isFinite || watts < 0) {
+        previous = older = null;
+      }
+      lastSecond = point.key;
+      if (!watts.isFinite || watts < 0) {
+        yield point;
+        continue;
+      }
+      final count = older != null
+          ? 3
+          : previous != null
+          ? 2
+          : 1;
+      yield MapEntry(
+        point.key,
+        (watts + (previous ?? 0) + (older ?? 0)) / count,
+      );
+      older = previous;
+      previous = watts;
+    }
+  }
+
   void _drawTracerLines(
     Canvas canvas,
     Size size,
@@ -254,12 +287,18 @@ class WorkoutPainter extends CustomPainter {
       required double Function(double) y,
       required double? current,
       bool zeroIsGap = false,
+      bool useTrendTip = false,
     }) {
       final path = Path();
       var connected = false;
       var hasPoints = false;
+      double? lastValue;
+      int? lastSecond;
       for (final point in points) {
         final value = point.value;
+        if (useTrendTip && lastSecond != point.key - 1) connected = false;
+        lastSecond = point.key;
+        lastValue = value;
         if (!value.isFinite || value < 0 || (zeroIsGap && value == 0)) {
           connected = false;
           continue;
@@ -290,16 +329,18 @@ class WorkoutPainter extends CustomPainter {
           ..color = color
           ..strokeWidth = WorkoutStroke.actualPowerLine,
       );
+      final tip = useTrendTip ? lastValue : current;
       if (!hasPoints ||
           current == null ||
-          !current.isFinite ||
-          current < 0 ||
-          (zeroIsGap && current == 0))
+          tip == null ||
+          !tip.isFinite ||
+          tip < 0 ||
+          (zeroIsGap && tip == 0))
         return;
       final center = Offset(
         (currentProgress.isFinite ? currentProgress : 0).clamp(0.0, 1.0) *
             size.width,
-        y(current).clamp(0.0, size.height),
+        y(tip).clamp(0.0, size.height),
       );
       canvas.drawCircle(
         center,
@@ -314,12 +355,11 @@ class WorkoutPainter extends CustomPainter {
     }
 
     trace(
-      points: powerPointsList != null && powerPointsList!.isNotEmpty
-          ? samples(powerPointsList!)
-          : actualPowerPoints.entries,
+      points: powerTrend,
       color: WorkoutVisuals.power,
       y: (power) => powerY(power, size),
       current: currentPower,
+      useTrendTip: true,
     );
     trace(
       points: samples(cadencePointsList ?? const []),

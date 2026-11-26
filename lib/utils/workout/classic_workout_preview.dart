@@ -70,7 +70,7 @@ class WorkoutTraceLegend extends StatelessWidget {
       runSpacing: 4,
       alignment: WrapAlignment.center,
       children: [
-        _TraceLabel('POWER · W', WorkoutVisuals.power),
+        _TraceLabel('3s POWER · W', WorkoutVisuals.power),
         _TraceLabel('CADENCE · RPM', WorkoutVisuals.cadence),
         _TraceLabel('HEART RATE · BPM', WorkoutVisuals.heartRate),
       ],

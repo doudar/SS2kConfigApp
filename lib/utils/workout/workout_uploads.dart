@@ -1,18 +1,22 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'ride_map.dart';
 
 class WorkoutExportChoice {
   const WorkoutExportChoice({
     this.uploadToStrava = false,
     this.uploadToIntervals = false,
     this.discard = false,
+    this.mapSettings = const RideMapSettings(),
   });
 
   final bool uploadToStrava;
   final bool uploadToIntervals;
   final bool discard;
+  final RideMapSettings mapSettings;
 
   static WorkoutExportChoice loadPreferences(SharedPreferences prefs) =>
       WorkoutExportChoice(
+        mapSettings: RideMapSettings.load(prefs),
         uploadToStrava: prefs.getBool('workout_upload_strava') ?? true,
         uploadToIntervals: prefs.getBool('workout_upload_intervals') ?? true,
       );

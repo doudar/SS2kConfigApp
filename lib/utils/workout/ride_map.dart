@@ -3,8 +3,10 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'workout_skyline.dart';
 
 enum RideDrawing {
+  skyline('Workout skyline'),
   random('Random drawing'),
   bicycle('Road bike'),
   smartSpin2k('SmartSpin2k'),
@@ -17,11 +19,13 @@ enum RideDrawing {
 
   static const outlines = [bicycle, smartSpin2k, chainring, bottle];
 
-  RideDrawing forRide(DateTime start) => this == random
-      ? outlines[math.Random(
-          start.millisecondsSinceEpoch ~/ 1000,
-        ).nextInt(outlines.length)]
-      : this;
+  RideDrawing forRide(DateTime start, {bool includeSkyline = false}) {
+    if (this != random) return this;
+    final choices = includeSkyline ? const [...outlines, skyline] : outlines;
+    return choices[math.Random(
+      start.millisecondsSinceEpoch ~/ 1000,
+    ).nextInt(choices.length)];
+  }
 }
 
 typedef MapCenter = ({String name, double lat, double lon});
@@ -35,11 +39,14 @@ class RideMapSettings {
   );
   static const _key = 'workout_ride_map';
   const RideMapSettings({
-    this.drawing = RideDrawing.random,
+    this.drawing = RideDrawing.skyline,
     this.center = eauClaire,
   });
   final RideDrawing drawing;
   final MapCenter center;
+
+  RideMapSettings withDrawing(RideDrawing value) =>
+      RideMapSettings(drawing: value, center: center);
 
   static RideMapSettings load(SharedPreferences prefs) {
     final saved = prefs.getString(_key);
@@ -51,7 +58,7 @@ class RideMapSettings {
             RideDrawing.values
                 .where((v) => v.name == data['drawing'])
                 .firstOrNull ??
-            RideDrawing.random;
+            const RideMapSettings().drawing;
         final center = parseCenter(data['name'], data['lat'], data['lon']);
         return RideMapSettings(drawing: drawing, center: center ?? eauClaire);
       }
@@ -87,8 +94,10 @@ class RideMapSettings {
 }
 
 /// Each outline is one continuous pen stroke, shared by the picker and FIT export.
-Path rideDrawingPath(RideDrawing drawing) {
+Path rideDrawingPath(RideDrawing drawing, {WorkoutSkyline? skyline}) {
   switch (drawing) {
+    case RideDrawing.skyline:
+      return (skyline ?? WorkoutSkyline.example).toPath();
     case RideDrawing.bicycle:
       final path = Path()..moveTo(24, 57);
       void wheel(double hubX) {
@@ -273,26 +282,66 @@ class RideMapRoute {
   final PathMetric _stroke;
   final Offset _origin;
   final MapCenter center;
+  final double _length;
 
-  RideMapRoute._(Path path, this.center)
+  RideMapRoute._(Path path, this.center, this._length)
     : _stroke = path.computeMetrics().single,
       _origin = path.getBounds().center;
 
-  static RideMapRoute? forRide(RideMapSettings settings, DateTime start) {
+  static RideMapRoute? forRide(
+    RideMapSettings settings,
+    DateTime start, {
+    WorkoutSkyline? skyline,
+    double? skylineDistance,
+    bool includeLettering = true,
+  }) {
     final drawing = settings.drawing.forRide(start);
+    if (drawing == RideDrawing.skyline) {
+      if (skyline == null || skylineDistance == null || skylineDistance <= 0)
+        return null;
+      return RideMapRoute._(
+        skyline.toPath(includeLettering: includeLettering),
+        settings.center,
+        skylineDistance,
+      );
+    }
     return drawing == RideDrawing.none
         ? null
-        : RideMapRoute._(rideDrawingPath(drawing), settings.center);
+        : RideMapRoute._(
+            rideDrawingPath(drawing),
+            settings.center,
+            lengthMeters,
+          );
   }
 
   MapCoordinate position(double meters) {
     // Retrace the line on alternate passes so open outlines have no jump.
-    final cycle = meters % (2 * lengthMeters);
-    final along = cycle <= lengthMeters ? cycle : 2 * lengthMeters - cycle;
-    final point = _stroke
-        .getTangentForOffset(along / lengthMeters * _stroke.length)!
-        .position;
-    final offset = (point - _origin) * (lengthMeters / _stroke.length);
+    final cycle = meters % (2 * _length);
+    final along = cycle <= _length ? cycle : 2 * _length - cycle;
+    return _project(_offsetAt(along / _length), _length / _stroke.length);
+  }
+
+  Offset _offsetAt(double fraction) =>
+      _stroke
+          .getTangentForOffset(fraction.clamp(0, 1) * _stroke.length)!
+          .position -
+      _origin;
+
+  Iterable<MapCoordinate> positionsForClosedRide(Iterable<double> fractions) {
+    final offsets = fractions.map(_offsetAt).toList();
+    // GPS viewers join successive records with straight lines. Scale those
+    // actual segments, including the shortcuts across sharp letter corners.
+    var sampledLength = 0.0;
+    for (var i = 1; i < offsets.length; i++) {
+      sampledLength += (offsets[i] - offsets[i - 1]).distance;
+    }
+    if (sampledLength == 0) return const [];
+    final metersPerUnit = _length / sampledLength;
+    return offsets.map((point) => _project(point, metersPerUnit));
+  }
+
+  MapCoordinate _project(Offset point, double metersPerUnit) {
+    final offset = point * metersPerUnit;
     final angle = offset.distance / earthRadius;
     final bearing = math.atan2(offset.dx, -offset.dy);
     final lat = center.lat * math.pi / 180;
