@@ -1,0 +1,145 @@
+{
+  "origin": "User-supplied SFX pack",
+  "cues": {
+    "pickup": {
+      "source": "Retro/coin.wav",
+      "source_sha256": "713ab16486913e5c852932db3c699ff50d01a76cd10267bbd7c1d2e4479c6d0c",
+      "asset": "sounds/arcade_pack_pickup.wav",
+      "milliseconds": 331,
+      "sha256": "ba36d86f6b40b3d4d99bb8f622b7ba63301067d909581cbd67e747ecde3cb3e2"
+    },
+    "bolt": {
+      "source": "Retro/throw.wav",
+      "source_sha256": "2559d3406efa99d100d222efe4250c3c93e03f2490f109b3fc300d4ddcf38a8c",
+      "asset": "sounds/arcade_pack_bolt.wav",
+      "milliseconds": 352,
+      "sha256": "31d2ac332d0da262649d7988b364f445a5d1437849b90718fcf7e56022a42ce2"
+    },
+    "combo": {
+      "source": "Retro/power_up.wav",
+      "source_sha256": "49393c26c0c15c2821b98aa78fd8efcd8a07f0b33a01c7693d5d41af9a45468f",
+      "asset": "sounds/arcade_pack_combo.wav",
+      "milliseconds": 638,
+      "sha256": "fd6e9c41f38e223d939bf117f8cba6e1bcd2f21685a1d3d94bf2c74a681c7d58"
+    },
+    "droneHit": {
+      "source": "Retro/explosion_small.wav",
+      "source_sha256": "c0ff6f850911185a0b1568b27fa19fc908c7cfdbe91a1b1d31414701ac263a4a",
+      "asset": "sounds/arcade_pack_droneHit.wav",
+      "milliseconds": 702,
+      "sha256": "51876795f564bee8be52bfbf2f39b5c03c930f0d3188a4dddcba3fea9742c968"
+    },
+    "bossApproach": {
+      "source": "Musical Effects/horror_sting.wav",
+      "source_sha256": "58a16863d12e2bbab51c1da3b2d7a8912d4c4f0435909f273a8e07c3bf097120",
+      "asset": "sounds/arcade_pack_bossApproach.wav",
+      "milliseconds": 880,
+      "sha256": "3665476b64dbc0470826a607986428b32719a7b80c78a4788cf52f90b83c5eea"
+    },
+    "sectorClear": {
+      "source": "Musical Effects/8_bit_positive_long.wav",
+      "source_sha256": "92246f5b76e42b62a1b2b4e4cffc77260842515c6829379c0dcc4d558696f6ad",
+      "asset": "sounds/arcade_pack_sectorClear.wav",
+      "milliseconds": 1211,
+      "sha256": "5838bf5d44d3754a360f9884c74c216dd86470f515bb411b27924f3807cd515f"
+    },
+    "bossDefeat": {
+      "source": "Retro/explosion_large.wav",
+      "source_sha256": "e9a6b859aa6739e1d36dc4223bdbda933411d15ab87fb518cc0e608596a2a30e",
+      "asset": "sounds/arcade_pack_bossDefeat.wav",
+      "milliseconds": 1331,
+      "sha256": "9bd8f045395855b66bc1a69faf3ee7782576b200a92abe00bdf0ada390653d17"
+    },
+    "enemyArrive": {
+      "source": "Other/whoosh_1.wav",
+      "source_sha256": "a5c147611caa5fb2ffd41ebe199cacce7817b00f59d4e1f1107447112b258e9a",
+      "asset": "sounds/arcade_pack_enemyArrive.wav",
+      "milliseconds": 325,
+      "sha256": "88702be2d0b38b9b3f7ed0d88bfe3d554a1285ae865bc9f7f7f6f226eb42a459"
+    },
+    "blasterReady": {
+      "source": "Retro/power_up_2.wav",
+      "source_sha256": "76ddce5144c1cb6dc19b2beb907e11e90d4206e27e94af932d76f69c05f758d6",
+      "asset": "sounds/arcade_pack_blasterReady.wav",
+      "milliseconds": 733,
+      "sha256": "f55dfdf28b33dbf1062c980b488b7d7633a2b26db4ace4e6ffa2bb275da6cd27"
+    },
+    "attackWarning": {
+      "source": "Musical Effects/8_bit_negative_quick.wav",
+      "source_sha256": "c51a16804f661fa08fb3424132c4b220257e9c7f10ff8a06d0760f7d769d7753",
+      "asset": "sounds/arcade_pack_attackWarning.wav",
+      "milliseconds": 378,
+      "sha256": "c05fbae41dec06e213eb001b7a353dddd1e5c42b1d3da2235c88f979f2a5bfdd"
+    },
+    "bossHit": {
+      "source": "Materials/metal_clang.wav",
+      "source_sha256": "a6aad537c9a142a7d6a35bf8dccf2ab90d31dcfa9a59d0ad7c59f894dc65d45e",
+      "asset": "sounds/arcade_pack_bossHit.wav",
+      "milliseconds": 592,
+      "sha256": "5af6c72170af60148a82a1bf6ec0f424aefabb49b4cffc1cee555240ce70bdb6"
+    },
+    "comboLost": {
+      "source": "Retro/power_down.wav",
+      "source_sha256": "3271de87442a4609a3d5d7b4ad6c55adbea4504dc6fa239837af3282b250f01b",
+      "asset": "sounds/arcade_pack_comboLost.wav",
+      "milliseconds": 518,
+      "sha256": "f5e89646cfb2c55b8558124fb6896e5ca16226346fdebb58c73dc956f6004f15"
+    },
+    "sectorStart": {
+      "source": "Musical Effects/8_bit_chime_positive.wav",
+      "source_sha256": "7b1e4d9c03ad9ada1b5c5a5b997470d2f741ea6a7119e5d4385afaa4a6ca0364",
+      "asset": "sounds/arcade_pack_sectorStart.wav",
+      "milliseconds": 309,
+      "sha256": "a676db57a48281edae38cc7e9b467007f3b2d504887511659dbf3adb145928c9"
+    },
+    "difficultyUp": {
+      "source": "Weapons/weapon_upgrade.wav",
+      "source_sha256": "74d130ceb849b6f60f24913587f5349415c22f4b8948e69a572eadebbfc5a77a",
+      "asset": "sounds/arcade_pack_difficultyUp.wav",
+      "milliseconds": 789,
+      "sha256": "2a757a030a51adce59a168a2ed97d2c82ff673541fa4d4e098163ef0c736c496"
+    },
+    "uiSelect": {
+      "source": "Retro/menu_blip.wav",
+      "source_sha256": "131fdab06051878b171541e8e19d29f9f44079af841e0ef5b008402925e36626",
+      "asset": "sounds/arcade_pack_uiSelect.wav",
+      "milliseconds": 96,
+      "sha256": "266ac819bb64e76b74f35d4be86cb54760b7e1aac1452f8ab23f0fd685a07c96"
+    },
+    "uiConfirm": {
+      "source": "Items/item_equip.wav",
+      "source_sha256": "b1198d7d56f20c17fa6ccc77a7547dfc4e5526adb071a7ae0b70316a9e8ed1cc",
+      "asset": "sounds/arcade_pack_uiConfirm.wav",
+      "milliseconds": 302,
+      "sha256": "fd0c641982442e62ee48614af6509620de8c81941fafeb436f5c77c323b95b1b"
+    },
+    "rideStart": {
+      "source": "Musical Effects/8_bit_level_start.wav",
+      "source_sha256": "ea72d6d64a41e7fed9ee3675bf256e511365edf0d5539adecbf4c4a1142596e9",
+      "asset": "sounds/arcade_pack_rideStart.wav",
+      "milliseconds": 2083,
+      "sha256": "69fd3d7887f37c6cc5cff7e4c9a5b0128e350ff2d6a4a6634fbfbbef8d5be967"
+    },
+    "ridePause": {
+      "source": "UI/toggle_off.wav",
+      "source_sha256": "3fda95562a48031fa117e2c22234eb2a2d50e9065465bfecb4cc52e3c31edc26",
+      "asset": "sounds/arcade_pack_ridePause.wav",
+      "milliseconds": 430,
+      "sha256": "e0f5230c85e6b0b7b9063da41952767df78d1884ad15e7853d20b565fa01fddc"
+    },
+    "rideResume": {
+      "source": "UI/toggle_on.wav",
+      "source_sha256": "d2e16090e00cd6c00da24c1f2663eca96d5b9f3b5e840864f30b4fc615747d4a",
+      "asset": "sounds/arcade_pack_rideResume.wav",
+      "milliseconds": 476,
+      "sha256": "ddf69c7158862b6bb4cc690603c26a43fbba24e4aa2090f76d4ba787c22dd91d"
+    },
+    "sectorSkip": {
+      "source": "UI/cancel.wav",
+      "source_sha256": "05c7972f74ffcc64d16e615b6a6adce1a34ab35d0405eface5b853d656718d21",
+      "asset": "sounds/arcade_pack_sectorSkip.wav",
+      "milliseconds": 152,
+      "sha256": "6d0080135cb30e52f0b95a49374d47f3cfb1ce22f970b8cf0eaeeedd56ef87b1"
+    }
+  }
+}

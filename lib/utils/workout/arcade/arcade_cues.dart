@@ -1,11 +1,25 @@
 import 'arcade_drones.dart';
+import 'arcade_pack_audio.g.dart';
 
 /// Gameplay cues carry priorities so rewards win over routine feedback.
 enum ArcadeCue {
   pickup(1, 180),
-  bolt(1, 240),
+  bolt(4, 240),
   combo(2, 600),
-  droneHit(2, 1800),
+  droneHit(4, 1800),
+  enemyArrive(1, 0),
+  blasterReady(2, 0),
+  attackWarning(3, 0),
+  bossHit(4, 0),
+  comboLost(1, 0),
+  sectorStart(2, 0),
+  difficultyUp(3, 0),
+  uiSelect(1, 0),
+  uiConfirm(2, 0),
+  rideStart(3, 0),
+  ridePause(3, 0),
+  rideResume(3, 0),
+  sectorSkip(2, 0),
   bossApproach(3, 1100),
   sectorClear(4, 850),
   bossDefeat(5, 1800),
@@ -27,9 +41,34 @@ enum ArcadeCue {
   stormRayAttack(3, 950),
   voidRegentAttack(3, 1200);
 
-  const ArcadeCue(this.priority, this.milliseconds);
+  const ArcadeCue(this.priority, this._milliseconds);
   final int priority;
-  final int milliseconds;
+  final int _milliseconds;
+  int get milliseconds => arcadePackDurations[name] ?? _milliseconds;
+
+  /// Combat has its own voice so reward fanfares cannot swallow a shot.
+  bool get isCombat => switch (this) {
+    bolt ||
+    droneHit ||
+    enemyArrive ||
+    blasterReady ||
+    attackWarning ||
+    bossHit ||
+    bossApproach ||
+    bossDefeat ||
+    wheelAttack ||
+    sentinelAttack ||
+    beetleAttack ||
+    waspAttack ||
+    orbAttack ||
+    golemAttack ||
+    brambleAttack ||
+    duneScorpionAttack ||
+    frostWardenAttack ||
+    stormRayAttack ||
+    voidRegentAttack => true,
+    _ => false,
+  };
 
   static ArcadeCue attackFor(ArcadeDroneStyle style) => switch (style) {
     ArcadeDroneStyle.wheel => wheelAttack,
@@ -44,14 +83,27 @@ enum ArcadeCue {
     ArcadeDroneStyle.stormRay => stormRayAttack,
     ArcadeDroneStyle.voidRegent => voidRegentAttack,
   };
-  // The drone impact reuses the existing burst/fanfare at a lower volume.
-  String get asset =>
-      'sounds/arcade_fx_${this == ArcadeCue.droneHit ? 'bossDefeat' : name}.wav';
+  String get asset => arcadePackDurations.containsKey(name)
+      ? 'sounds/arcade_pack_$name.wav'
+      : 'sounds/arcade_fx_$name.wav';
   double get volume => switch (this) {
     ArcadeCue.pickup => .20,
     ArcadeCue.bolt => .14,
     ArcadeCue.combo => .18,
     ArcadeCue.droneHit => .22,
+    ArcadeCue.enemyArrive => .18,
+    ArcadeCue.blasterReady => .28,
+    ArcadeCue.attackWarning => .30,
+    ArcadeCue.bossHit => .26,
+    ArcadeCue.comboLost => .16,
+    ArcadeCue.sectorStart => .24,
+    ArcadeCue.difficultyUp => .26,
+    ArcadeCue.uiSelect => .14,
+    ArcadeCue.uiConfirm => .18,
+    ArcadeCue.rideStart => .26,
+    ArcadeCue.ridePause => .18,
+    ArcadeCue.rideResume => .18,
+    ArcadeCue.sectorSkip => .18,
     ArcadeCue.bossApproach => .28,
     ArcadeCue.sectorClear => .34,
     ArcadeCue.bossDefeat => .38,
