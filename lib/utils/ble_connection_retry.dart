@@ -10,7 +10,7 @@ class BleConnectionAttemptsExhausted implements Exception {
   final Object cause;
 
   String get message =>
-      'Unable to connect to SmartSpin2k over Bluetooth after $attempts attempts. '
+      'Unable to connect to the trainer over Bluetooth after $attempts attempts. '
       'Move closer to the device, make sure it is powered on, then try again.';
 
   @override

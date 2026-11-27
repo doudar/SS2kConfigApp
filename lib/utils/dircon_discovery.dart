@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import 'constants.dart';
 
-/// A resolved SmartSpin2k DNS-SD service. The advertised MAC is the WiFi MAC,
+/// A resolved trainer DNS-SD service. The advertised MAC is the WiFi MAC,
 /// not the BLE address, and the serial number is not unique in SS2k firmware.
 class DirConEndpoint {
   const DirConEndpoint({
@@ -13,6 +13,7 @@ class DirConEndpoint {
     required this.name,
     required this.host,
     required this.port,
+    required this.isSmartSpin,
   });
 
   static const serviceType = '_wahoo-fitness-tnp._tcp';
@@ -20,18 +21,23 @@ class DirConEndpoint {
   final String name;
   final String host;
   final int port;
+  final bool isSmartSpin;
 
   static DirConEndpoint? fromService(BonsoirService service) {
+    if (service.port <= 0 || service.port > 65535) return null;
     final uuids = (service.attributes['ble-service-uuids'] ?? '')
         .toLowerCase()
-        .split(',')
-        .map((uuid) => uuid.trim());
-    // Other trainers advertise the same Dircon service. Require SS2k's
-    // configuration UUID, including when the owner has renamed the device.
-    if (!uuids.contains(csUUID.toLowerCase()) ||
-        service.port <= 0 ||
-        service.port > 65535 ||
-        service.hostAddresses.isEmpty)
+        .split(RegExp(r'[,;\s]+'))
+        .map((uuid) => uuid.startsWith('0x') ? uuid.substring(2) : uuid)
+        .where((uuid) => uuid.isNotEmpty)
+        .toSet();
+    final isSmartSpin = uuids.contains(csUUID.toLowerCase());
+    // Some DirCon advertisers omit the optional service list. Verify Indoor
+    // Bike Data over the socket before allowing those trainers into Workout.
+    if (!isSmartSpin &&
+        uuids.isNotEmpty &&
+        !uuids.contains('1826') &&
+        !uuids.contains(ftmsServiceUUID.toLowerCase()))
       return null;
     final addresses = service.hostAddresses
         .where((host) => host.isNotEmpty && host != '0.0.0.0' && host != '::')
@@ -50,6 +56,7 @@ class DirConEndpoint {
         orElse: () => addresses.first,
       ),
       port: service.port,
+      isSmartSpin: isSmartSpin,
     );
   }
 }

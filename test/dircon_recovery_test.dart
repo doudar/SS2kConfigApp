@@ -13,6 +13,7 @@ import 'support/fake_ble_platform.dart';
 import 'support/fake_dircon_session.dart';
 
 const endpoint = DirConEndpoint(
+  isSmartSpin: true,
   id: 'trainer',
   name: 'SmartSpin2k',
   host: '192.168.1.51',

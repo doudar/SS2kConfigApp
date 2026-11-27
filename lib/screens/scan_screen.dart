@@ -14,6 +14,7 @@ import '../widgets/smartspin_introduction.dart';
 
 import '../utils/constants.dart';
 import 'main_device_screen.dart';
+import 'workout_screen.dart';
 import '../utils/snackbar.dart';
 import '../utils/device_data.dart';
 import '../widgets/scan_result_tile.dart';
@@ -35,13 +36,22 @@ class ScanScreen extends StatefulWidget {
 class _ScanScreenState extends State<ScanScreen> {
   List<ScanResult> _scanResults = [];
   bool _bleScanning = false;
+  String? _openingDevice;
   final _networkDiscovery = DirConDiscovery();
   bool get _isScanning => _bleScanning || _networkDiscovery.isScanning;
-  List<SmartSpinScanResult> get _results => SmartSpinScanResult.merge(
-    _scanResults,
-    _networkDiscovery.endpoints,
-    includeAllBle: kIsWeb,
-  ).map(DeviceDataManager.reuseConnectedIdentity).toList();
+  List<SmartSpinScanResult> get _results {
+    final discovered = SmartSpinScanResult.merge(
+      _scanResults,
+      _networkDiscovery.endpoints,
+      includeAllBle: kIsWeb,
+      includeFtms: true,
+    ).map(DeviceDataManager.reuseConnectedIdentity);
+    return {
+      for (final result in DeviceDataManager.connectedWorkoutResults)
+        result.device.remoteId: result,
+      for (final result in discovered) result.device.remoteId: result,
+    }.values.toList();
+  }
 
   void _networkChanged() {
     if (mounted) setState(() {});
@@ -96,7 +106,7 @@ class _ScanScreenState extends State<ScanScreen> {
       if (kIsWeb) {
         // Web platform uses different scanning approach
         await FlutterBluePlus.startScan(
-          withServices: [Guid(csUUID)],
+          withServices: [Guid(csUUID), Guid(ftmsServiceUUID)],
           timeout: const Duration(seconds: 15),
         );
       } else {
@@ -134,35 +144,39 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> onConnectPressed(SmartSpinScanResult result) async {
+    if (_openingDevice != null) return;
     final device = result.device;
     final deviceData = DeviceDataManager.forDevice(device);
-    deviceData.applyScanResult(result);
-    await _networkDiscovery.stop();
+    setState(() => _openingDevice = device.remoteId.str);
     try {
-      // Reset the user disconnect flag if triggered
-      if (deviceData.isUserDisconnect) {
-        deviceData.isUserDisconnect = false;
+      await _networkDiscovery.stop();
+      if (FlutterBluePlus.isScanningNow) await FlutterBluePlus.stopScan();
+      if (device.remoteId.str != 'SmartSpin2k Demo') {
+        await deviceData.connectFromScan(
+          result,
+          workoutOnly: deviceData.isTransportActive && deviceData.workoutOnly,
+          identifyFromServices: kIsWeb && !result.isSmartSpin,
+        );
+        if (!deviceData.isTransportActive) return;
       }
-    } catch (e) {
-      print("Device DeviceData was not initialized: $e");
-    }
-    if (FlutterBluePlus.isScanningNow) {
-      await FlutterBluePlus.stopScan();
-    }
-    if (!deviceData.isTransportActive)
-      unawaited(
-        deviceData.connectPreferred(device).catchError((Object e) {
-          Snackbar.show(
-            ABC.c,
-            prettyException("Connect Error:", e),
-            success: false,
-          );
-        }),
+    } catch (error) {
+      Snackbar.show(
+        ABC.b,
+        prettyException('Connect Error:', error),
+        success: false,
       );
+      return;
+    } finally {
+      if (mounted) setState(() => _openingDevice = null);
+    }
     if (!mounted) return;
-    MaterialPageRoute route = MaterialPageRoute(
-      builder: (context) => MainDeviceScreen(device: device),
-      settings: RouteSettings(name: '/MainDeviceScreen'),
+    final route = MaterialPageRoute<void>(
+      builder: (_) => deviceData.workoutOnly
+          ? WorkoutScreen(device: device)
+          : MainDeviceScreen(device: device),
+      settings: RouteSettings(
+        name: deviceData.workoutOnly ? '/WorkoutScreen' : '/MainDeviceScreen',
+      ),
     );
     Navigator.of(context).push(route).then((_) {
       // Clear stale scan results when returning from device screen.
@@ -173,7 +187,7 @@ class _ScanScreenState extends State<ScanScreen> {
           _scanResults = [];
         });
         // Automatically start a fresh scan so new devices are discovered
-        if (!_showDemoButton) {
+        if (!_showDemoButton && ModalRoute.of(context)?.isCurrent == true) {
           onScanPressed();
         }
       }
@@ -310,7 +324,7 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Power on your SmartSpin2k, then scan to connect.',
+              'Power on your SmartSpin2k or FTMS bike trainer, then scan to connect.',
               style: TextStyle(height: 1.4),
             ),
             const SizedBox(height: 16),
@@ -322,9 +336,9 @@ class _ScanScreenState extends State<ScanScreen> {
               title: const Text('Having trouble connecting?'),
               children: [
                 const Text(
-                  '1. Keep your SmartSpin2k powered on and within range.\n'
+                  '1. Keep your trainer awake and within Bluetooth range.\n'
                   '2. Turn Bluetooth off and on, then scan again.\n'
-                  '3. Restart your SmartSpin2k.\n'
+                  '3. Restart your trainer.\n'
                   '4. Close other connected apps if needed. Each SmartSpin2k '
                   'supports up to 3 app connections.',
                   style: TextStyle(height: 1.5),
@@ -352,7 +366,11 @@ class _ScanScreenState extends State<ScanScreen> {
           (r) => ScanResultTile(
             key: ValueKey(r.device.remoteId.str),
             result: r,
-            onTap: () => onConnectPressed(r),
+            onDisconnected: () {
+              if (mounted) setState(() {});
+            },
+            opening: _openingDevice == r.device.remoteId.str,
+            onTap: _openingDevice == null ? () => onConnectPressed(r) : null,
           ),
         )
         .toList();

@@ -25,28 +25,45 @@ class SmartSpinScanResult {
           : ble!.device.platformName);
   String? get host =>
       network?.host ??
-      SmartSpinAdvertisement.ipAddress(
-        ble?.advertisementData.manufacturerData ?? {},
-      );
+      (isSmartSpin
+          ? SmartSpinAdvertisement.ipAddress(
+              ble?.advertisementData.manufacturerData ?? {},
+            )
+          : null);
+  bool get isSmartSpin =>
+      network?.isSmartSpin ??
+      (ble?.advertisementData.serviceUuids.contains(Guid(csUUID)) ?? false);
   bool get connectable => network != null || ble!.advertisementData.connectable;
 
   static List<SmartSpinScanResult> merge(
     List<ScanResult> bluetooth,
     List<DirConEndpoint> network, {
     bool includeAllBle = false,
+    bool includeFtms = false,
   }) {
-    final ble = {
-      for (final result in bluetooth)
-        if (includeAllBle ||
-            result.advertisementData.serviceUuids.contains(Guid(csUUID)))
-          result.device.remoteId: result,
-    }.values.toList();
+    final devices = {
+      for (final result in bluetooth) result.device.remoteId: result,
+    }.values;
+    // Only SmartSpin2k advertisements can identify a SmartSpin2k network
+    // endpoint. A third-party trainer may have the same display name.
+    final ble = devices
+        .where(
+          (result) =>
+              (includeAllBle && !includeFtms) ||
+              result.advertisementData.serviceUuids.contains(Guid(csUUID)),
+        )
+        .toList();
     final endpoints = {
-      for (final endpoint in network) endpoint.id: endpoint,
+      for (final endpoint in network)
+        if (includeFtms || endpoint.isSmartSpin) endpoint.id: endpoint,
     }.values.toList();
     final matched = <ScanResult>{};
     final results = <SmartSpinScanResult>[];
     for (final endpoint in endpoints) {
+      if (!endpoint.isSmartSpin) {
+        results.add(SmartSpinScanResult(network: endpoint));
+        continue;
+      }
       final exact = ble
           .where(
             (result) =>
@@ -94,6 +111,20 @@ class SmartSpinScanResult {
           .where((r) => !matched.contains(r))
           .map((r) => SmartSpinScanResult(ble: r)),
     );
+    if (includeFtms) {
+      final ftms = Guid(ftmsServiceUUID);
+      results.addAll(
+        devices
+            .where(
+              (r) =>
+                  !ble.contains(r) &&
+                  (includeAllBle ||
+                      r.advertisementData.serviceUuids.contains(ftms) ||
+                      r.advertisementData.serviceData.containsKey(ftms)),
+            )
+            .map((r) => SmartSpinScanResult(ble: r)),
+      );
+    }
     return results;
   }
 }

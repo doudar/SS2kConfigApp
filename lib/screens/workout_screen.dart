@@ -104,7 +104,8 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     super.initState();
     WakelockPlus.enable();
     deviceData = DeviceDataManager.forDevice(widget.device);
-    unawaited(deviceData.ensureFtmsNotifications(widget.device));
+    if (!deviceData.workoutOnly)
+      unawaited(deviceData.ensureFtmsNotifications(widget.device));
     _workoutController = WorkoutController(deviceData, widget.device);
     _ridePlaying = _workoutController.isPlaying;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
@@ -272,11 +273,11 @@ class _WorkoutScreenState extends State<WorkoutScreen>
 
   Future<void> _initTTSSettings() async {
     _ttsSettings = await WorkoutTTSSettings.create();
-    if (mounted) {
-      setState(() {
-        _ttsInitialized = true;
-      });
+    if (!mounted || _isDisposing) {
+      _ttsSettings.dispose();
+      return;
     }
+    setState(() => _ttsInitialized = true);
   }
 
   /// Rebuilds the zoom animation tween using the current preview + playing minutes.
@@ -451,7 +452,7 @@ class _WorkoutScreenState extends State<WorkoutScreen>
     _zoomController.dispose();
     _scrollController.dispose();
     workoutSoundGenerator.dispose();
-    _ttsSettings.dispose();
+    if (_ttsInitialized) _ttsSettings.dispose();
     WakelockPlus.disable();
 
     if (_workoutController.progressPosition >= 1.0) {

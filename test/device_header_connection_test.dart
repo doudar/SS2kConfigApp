@@ -14,6 +14,8 @@ import 'support/fake_ble_platform.dart';
 class _HeaderData extends DeviceData {
   final connection = DeviceTransportStateController();
   final actions = <String>[];
+  @override
+  bool workoutOnly = false;
   Completer<void>? disconnectGate;
   bool failDisconnect = false;
   bool interruptUnpair = false;
@@ -123,39 +125,59 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets(
+    'workout-only header offers connection actions without trainer maintenance',
+    (tester) async {
+      data.workoutOnly = true;
+      data.connection.markConnected(DeviceTransportKind.bluetooth);
+      await host(tester);
+      expect(find.text('Bluetooth connected · Workout only'), findsOneWidget);
+      await openMenu(tester);
+      expect(find.text('Disconnect'), findsOneWidget);
+      expect(find.text('Reconnect'), findsOneWidget);
+      expect(find.text('Refresh'), findsNothing);
+      expect(find.text('Reboot SS2k'), findsNothing);
+      expect(find.text('Unpair trainer'), findsNothing);
+      await unmount(tester);
+    },
+  );
+
   for (final transport in [
     DeviceTransportKind.bluetooth,
     DeviceTransportKind.dircon,
   ]) {
-    testWidgets('paired ${transport.name} trainer can cancel or confirm Unpair', (
-      tester,
-    ) async {
-      data.connection.markConnected(transport);
-      data.customResponseReceived.value = true;
-      data.pairingAvailable.value = true;
-      await host(tester);
+    testWidgets(
+      'paired ${transport.name} trainer can cancel or confirm Unpair',
+      (tester) async {
+        data.connection.markConnected(transport);
+        data.customResponseReceived.value = true;
+        data.pairingAvailable.value = true;
+        await host(tester);
 
-      await openMenu(tester);
-      await tester.tap(find.text('Unpair trainer'));
-      await tester.pumpAndSettle();
-      expect(data.actions, isEmpty);
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-      expect(data.actions, isEmpty);
-      expect(data.pairingAvailable.value, isTrue);
+        await openMenu(tester);
+        await tester.tap(find.text('Unpair trainer'));
+        await tester.pumpAndSettle();
+        expect(data.actions, isEmpty);
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(data.actions, isEmpty);
+        expect(data.pairingAvailable.value, isTrue);
 
-      await openMenu(tester);
-      await tester.tap(find.text('Unpair trainer'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Unpair'));
-      await tester.pumpAndSettle();
-      expect(data.actions, ['unpair']);
-      expect(data.pairingAvailable.value, isFalse);
-      await unmount(tester);
-    });
+        await openMenu(tester);
+        await tester.tap(find.text('Unpair trainer'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Unpair'));
+        await tester.pumpAndSettle();
+        expect(data.actions, ['unpair']);
+        expect(data.pairingAvailable.value, isFalse);
+        await unmount(tester);
+      },
+    );
   }
 
-  testWidgets('the menu hides unpairing when pairing is unavailable', (tester) async {
+  testWidgets('the menu hides unpairing when pairing is unavailable', (
+    tester,
+  ) async {
     data.connection.markConnected(DeviceTransportKind.bluetooth);
     data.customResponseReceived.value = true;
     await host(tester);
@@ -168,7 +190,9 @@ void main() {
     await unmount(tester);
   });
 
-  testWidgets('interrupted unpairing can be finished from the device menu', (tester) async {
+  testWidgets('interrupted unpairing can be finished from the device menu', (
+    tester,
+  ) async {
     data.connection.markConnected(DeviceTransportKind.dircon);
     data.customResponseReceived.value = true;
     data.pairingAvailable.value = true;
@@ -213,10 +237,7 @@ void main() {
     expect(find.text('26.9.15'), findsOneWidget);
     data.customResponsesDegraded.value = true;
     await tester.pump();
-    expect(
-      find.text('Bluetooth Connected, no data received'),
-      findsOneWidget,
-    );
+    expect(find.text('Bluetooth Connected, no data received'), findsOneWidget);
 
     data.customResponsesDegraded.value = false;
     await tester.pump();

@@ -26,6 +26,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'services/strava_service.dart';
 import 'services/intervals_service.dart';
 import 'screens/scan_screen.dart';
+import 'screens/workout_screen.dart';
 import 'screens/onboarding/onboarding_wizard.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'utils/onboarding/onboarding_state.dart';
@@ -78,40 +79,54 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   // Start false on native so a clean install shows the wizard, not a ScanScreen flash.
   // kIsWeb stays true because the wizard is never shown on web.
   bool _onboardingCompleted = kIsWeb;
-  bool _scanAfterPairingCancel = false;
+  bool _showScanHome = false;
 
   void _showPairingPrompt(
     String name,
     Future<void> approval,
-    Future<void> Function() disconnect, [
+    Future<BluetoothDevice> Function() useWorkout,
+  ) => _showConnectionDialog(name, approval, useWorkout);
+
+  void _showConnectionDialog(
+    String name,
+    Future<void> approval,
+    Future<BluetoothDevice?> Function() alternative, [
     void Function()? allowLegacy,
   ]) {
     final navigator = _navigatorKey.currentState;
-    if (navigator == null) {
-      unawaited(
-        disconnect().catchError((Object error) {
-          debugPrint('Could not disconnect after cancelling pairing: $error');
-        }),
-      );
-      return;
-    }
-    var cancelled = false;
-    Future<void> cancel() async {
-      if (cancelled) return;
-      cancelled = true;
+    if (navigator == null) return;
+    var selected = false;
+    Future<void> selectAlternative() async {
+      if (selected) return;
+      selected = true;
+      BluetoothDevice? workout;
       try {
-        await disconnect();
+        workout = await alternative();
       } catch (error) {
+        debugPrint('Workout connection failed: $error');
         if (navigator.mounted) {
           ScaffoldMessenger.of(navigator.context).showSnackBar(
-            SnackBar(content: Text('Could not disconnect from $name. $error')),
+            SnackBar(
+              content: Text('Could not change the connection to $name. $error'),
+            ),
           );
         }
-      } finally {
-        if (mounted && navigator.mounted) {
-          setState(() => _scanAfterPairingCancel = true);
-          navigator.popUntil((route) => route.isFirst);
-        }
+      }
+      if (!mounted || !navigator.mounted) return;
+      setState(() => _showScanHome = true);
+      final device = workout;
+      if (device == null) {
+        navigator.popUntil((route) => route.isFirst);
+      } else {
+        unawaited(
+          navigator.pushAndRemoveUntil<void>(
+            MaterialPageRoute<void>(
+              settings: const RouteSettings(name: '/WorkoutScreen'),
+              builder: (_) => WorkoutScreen(device: device),
+            ),
+            (route) => route.isFirst,
+          ),
+        );
       }
     }
 
@@ -128,11 +143,14 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
           ),
           content: Text(
             allowLegacy == null
-                ? 'Press and hold both shifter buttons on your SmartSpin2k until pairing finishes.'
+                ? 'Hold both shifter buttons to pair for settings and firmware updates, or choose Workout only to ride without pairing.'
                 : 'This trainer previously supported encrypted connections. It now reports older firmware. Allow unencrypted settings and updates? The app will remember your choice and switch back automatically when it detects secure firmware.',
           ),
           actions: [
-            TextButton(onPressed: cancel, child: const Text('Cancel')),
+            TextButton(
+              onPressed: selectAlternative,
+              child: Text(allowLegacy == null ? 'Workout only' : 'Cancel'),
+            ),
             if (allowLegacy != null)
               FilledButton(
                 onPressed: allowLegacy,
@@ -145,10 +163,10 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     unawaited(navigator.push(route));
     approval.then<void>(
       (_) {
-        if (!cancelled && route.isActive) navigator.removeRoute(route);
+        if (!selected && route.isActive) navigator.removeRoute(route);
       },
       onError: (Object error) {
-        if (cancelled || !navigator.mounted) return;
+        if (selected || !navigator.mounted) return;
         if (route.isActive) navigator.removeRoute(route);
         ScaffoldMessenger.of(navigator.context).showSnackBar(
           SnackBar(
@@ -168,7 +186,10 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     Future<void> approval,
     void Function() allow,
     Future<void> Function() disconnect,
-  ) => _showPairingPrompt(name, approval, disconnect, allow);
+  ) => _showConnectionDialog(name, approval, () async {
+    await disconnect();
+    return null;
+  }, allow);
 
   @override
   void initState() {
@@ -520,7 +541,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     required bool demoMode,
   }) {
     // Network discovery and Dircon work even when the BLE adapter is off.
-    if (onboardingCompleted || demoMode || _scanAfterPairingCancel) {
+    if (onboardingCompleted || demoMode || _showScanHome) {
       return const ScanScreen();
     } else {
       return ChangeNotifierProvider(

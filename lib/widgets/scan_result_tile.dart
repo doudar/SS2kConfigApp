@@ -13,11 +13,18 @@ import '../utils/device_data.dart';
 import '../utils/smartspin_scan_result.dart';
 
 class ScanResultTile extends StatefulWidget {
-  const ScanResultTile({Key? key, required this.result, this.onTap})
-    : super(key: key);
+  const ScanResultTile({
+    Key? key,
+    required this.result,
+    this.onTap,
+    this.onDisconnected,
+    this.opening = false,
+  }) : super(key: key);
 
   final SmartSpinScanResult result;
   final VoidCallback? onTap;
+  final VoidCallback? onDisconnected;
+  final bool opening;
 
   @override
   State<ScanResultTile> createState() => _ScanResultTileState();
@@ -93,6 +100,9 @@ class _ScanResultTileState extends State<ScanResultTile> {
     return serviceUuids.join(', ').toUpperCase();
   }
 
+  bool get _isSmartSpin =>
+      widget.result.isSmartSpin || _deviceData.hasSmartSpinService;
+
   bool get isConnected {
     return _connectionState == BluetoothConnectionState.connected;
   }
@@ -164,6 +174,17 @@ class _ScanResultTileState extends State<ScanResultTile> {
   }
 
   Widget _buildConnectButton(BuildContext context, {required bool compact}) {
+    if (widget.opening) {
+      return const Center(
+        child: SizedBox.square(
+          dimension: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            semanticsLabel: 'Connecting',
+          ),
+        ),
+      );
+    }
     final accentColor = _tileAccent(context);
     final accentDark = Color.alphaBlend(
       Colors.black.withValues(alpha: 0.45),
@@ -185,7 +206,7 @@ class _ScanResultTileState extends State<ScanResultTile> {
           children: [
             ElevatedButton(
               child: const Text('OPEN'),
-              onPressed: (widget.result.connectable) ? this.widget.onTap : null,
+              onPressed: widget.onTap,
               style: ElevatedButton.styleFrom(
                 backgroundColor: accentDark.withValues(alpha: 0.92),
                 foregroundColor: Colors.white,
@@ -210,6 +231,7 @@ class _ScanResultTileState extends State<ScanResultTile> {
               ),
               onPressed: () async {
                 await _deviceData.disconnectPreferred(widget.result.device);
+                if (mounted) widget.onDisconnected?.call();
               },
               style: OutlinedButton.styleFrom(
                 backgroundColor: Colors.black.withValues(alpha: 0.35),
@@ -392,7 +414,14 @@ class _ScanResultTileState extends State<ScanResultTile> {
                         color: Colors.black.withValues(alpha: 0.30),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Image.asset('assets/ss2kv3.png'),
+                      child: Image.asset(
+                        _isSmartSpin
+                            ? 'assets/ss2kv3.png'
+                            : 'assets/ftms_trainer.png',
+                        semanticLabel: _isSmartSpin
+                            ? 'SmartSpin2k'
+                            : 'FTMS trainer',
+                      ),
                     ),
                     trailing: SizedBox(
                       width: trailingWidth,

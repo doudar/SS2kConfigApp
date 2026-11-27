@@ -62,7 +62,7 @@ class _WelcomeStepState extends State<WelcomeStep> {
                       child: Text(
                         'Already have your SmartSpin2k? We’ll guide you '
                         'through installation, connection and your bike’s data source. '
-                        'If it’s already set up, use Exit Setup to find your device.',
+                        'If it’s already set up or you use another FTMS bike trainer, use Exit Setup to scan for it.',
                         style: TextStyle(height: 1.5),
                       ),
                     ),

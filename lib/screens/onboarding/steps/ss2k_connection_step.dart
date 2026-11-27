@@ -114,21 +114,28 @@ class _Ss2kConnectionStepState extends State<Ss2kConnectionStep> {
     } else {
       await _stopScan();
       final deviceData = DeviceDataManager.forDevice(device);
-      deviceData.applyScanResult(result);
-      if (deviceData.isUserDisconnect) {
-        deviceData.isUserDisconnect = false;
-      }
-
-      if (!deviceData.isTransportActive)
-        unawaited(
-          deviceData.connectPreferred(device).catchError((Object e) {
-            Snackbar.show(
-              ABC.c,
-              prettyException("Connect Error:", e),
-              success: false,
-            );
-          }),
+      try {
+        await deviceData.connectFromScan(
+          result,
+          identifyFromServices: kIsWeb && !result.isSmartSpin,
         );
+        if (!mounted || !deviceData.isTransportActive) return;
+        if (deviceData.workoutOnly) {
+          Snackbar.show(
+            ABC.b,
+            'Use Exit Setup to open this trainer for workouts.',
+            success: false,
+          );
+          return;
+        }
+      } catch (error) {
+        Snackbar.show(
+          ABC.b,
+          prettyException('Connect Error:', error),
+          success: false,
+        );
+        return;
+      }
     }
 
     session.connectedDevice = device;

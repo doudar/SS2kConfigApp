@@ -102,6 +102,9 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   /// without Machine Status and a discovery pass that missed it — the two cases
   /// the epoch-scoped re-probe exists to tell apart.
   bool discoveryIncludesMachineStatus = true;
+  bool discoveryIncludesCustomService = true;
+  bool discoveryIncludesIndoorBike = true;
+  bool discoveryIncludesControlPoint = true;
 
   /// How many times discovery actually reached the platform. The re-probe is
   /// budgeted at one per connection epoch, which is only observable here.
@@ -251,6 +254,9 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     _writeGateWaiters.clear();
     connectCalls.clear();
     discoveryIncludesMachineStatus = true;
+    discoveryIncludesCustomService = true;
+    discoveryIncludesIndoorBike = true;
+    discoveryIncludesControlPoint = true;
     discoveryCount = 0;
     answerCustomRequests = true;
     customReply = null;
@@ -262,8 +268,6 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   Stream<BmDiscoverServicesResult> get onDiscoveredServices =>
       _discoveredServices.stream;
 
-  /// Reports two primary services — the SmartSpin2k custom service and FTMS —
-  /// because `_findChar` only runs when more than one service is present.
   @override
   Future<bool> discoverServices(BmDiscoverServicesRequest request) async {
     discoveryCount++;
@@ -308,10 +312,11 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
       BmDiscoverServicesResult(
         remoteId: request.remoteId,
         services: [
-          service(csUUID, [ccUUID]),
+          if (discoveryIncludesCustomService) service(csUUID, [ccUUID]),
           service(ftmsServiceUUID, [
-            _indoorBikeUuid,
-            FTMS_CONTROL_POINT_CHARACTERISTIC_UUID,
+            if (discoveryIncludesIndoorBike) _indoorBikeUuid,
+            if (discoveryIncludesControlPoint)
+              FTMS_CONTROL_POINT_CHARACTERISTIC_UUID,
             if (discoveryIncludesMachineStatus) _machineStatusUuid,
           ]),
         ],

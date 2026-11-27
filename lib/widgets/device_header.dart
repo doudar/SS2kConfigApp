@@ -53,6 +53,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       deviceData.customResponseReceived,
       deviceData.customResponsesDegraded,
       deviceData.pairingAvailable,
+      deviceData.workoutControlNotice,
     ]);
     _deviceNameSubscription = deviceData.characteristicChanges
         .where((event) => event.vName == deviceNameVname)
@@ -109,7 +110,7 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         await _readRssiInto();
       }
       if (stale()) return;
-      if (widget.customRefreshEnabled) {
+      if (!deviceData.workoutOnly && widget.customRefreshEnabled) {
         if (widget.firmwareOnlyRefresh) {
           await deviceData.ensureCustomCharacteristicStream(widget.device);
         } else {
@@ -220,7 +221,9 @@ class _DeviceHeaderState extends State<DeviceHeader> {
 
   Future<void> _updateRssi() async {
     await _readRssiInto();
-    if (widget.customRefreshEnabled && deviceData.isTransportActive) {
+    if (!deviceData.workoutOnly &&
+        widget.customRefreshEnabled &&
+        deviceData.isTransportActive) {
       await deviceData.requestSetting(this.widget.device, fwVname);
     }
     // No need for manual setState here anymore - the listener handles
@@ -238,7 +241,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
     this.deviceData.isUserDisconnect = false;
 
     try {
-      await this.deviceData.connectPreferred(this.widget.device);
+      await this.deviceData.connectPreferred(
+        this.widget.device,
+        waitForSetup: deviceData.workoutOnly,
+      );
     } catch (e) {
       if (e is FlutterBluePlusException &&
           e.code == FbpErrorCode.connectionCanceled.index) {
@@ -263,7 +269,10 @@ class _DeviceHeaderState extends State<DeviceHeader> {
       // close it and reset subscriptions before asking for a new session.
       await deviceData.disconnectPreferred(widget.device);
       if (!mounted) return;
-      await deviceData.connectPreferred(widget.device);
+      await deviceData.connectPreferred(
+        widget.device,
+        waitForSetup: deviceData.workoutOnly,
+      );
     } catch (e) {
       Snackbar.show(
         ABC.c,
@@ -389,6 +398,9 @@ class _DeviceHeaderState extends State<DeviceHeader> {
         final transport = state.transport == DeviceTransportKind.dircon
             ? 'Network'
             : 'Bluetooth';
+        if (deviceData.workoutOnly)
+          return deviceData.workoutControlNotice.value ??
+              '$transport connected · Workout only';
         if (deviceData.customResponsesDegraded.value) {
           return '$transport Connected, no data received';
         }
@@ -544,7 +556,18 @@ class _DeviceHeaderState extends State<DeviceHeader> {
             title: Text(isConnected ? 'Reconnect' : 'Connect'),
           ),
         ),
-        if (isConnected && deviceData.customResponsesDegraded.value)
+        if (deviceData.workoutOnly && isConnected)
+          PopupMenuItem<VoidCallback>(
+            enabled: !_connectionBusy,
+            value: onDisconnectPressed,
+            child: const ListTile(
+              leading: Icon(Icons.link_off),
+              title: Text('Disconnect'),
+            ),
+          ),
+        if (!deviceData.workoutOnly &&
+            isConnected &&
+            deviceData.customResponsesDegraded.value)
           PopupMenuItem<VoidCallback>(
             enabled: false,
             child: Text(
@@ -558,24 +581,32 @@ class _DeviceHeaderState extends State<DeviceHeader> {
               style: theme.textTheme.bodyMedium,
             ),
           ),
-        PopupMenuItem<VoidCallback>(
-          enabled: isConnected && !_connectionBusy,
-          value: onDiscoverServicesPressed,
-          child: ListTile(leading: Icon(Icons.refresh), title: Text('Refresh')),
-        ),
-        PopupMenuItem<VoidCallback>(
-          enabled: _canReboot,
-          value: onRebootPressed,
-          child: ListTile(
-            enabled: _canReboot,
-            leading: Icon(Icons.restart_alt),
-            title: Text('Reboot SS2k'),
+        if (!deviceData.workoutOnly)
+          PopupMenuItem<VoidCallback>(
+            enabled: isConnected && !_connectionBusy,
+            value: onDiscoverServicesPressed,
+            child: ListTile(
+              leading: Icon(Icons.refresh),
+              title: Text('Refresh'),
+            ),
           ),
-        ),
-        if (isConnected && deviceData.pairingAvailable.value)
+        if (!deviceData.workoutOnly)
+          PopupMenuItem<VoidCallback>(
+            enabled: _canReboot,
+            value: onRebootPressed,
+            child: ListTile(
+              enabled: _canReboot,
+              leading: Icon(Icons.restart_alt),
+              title: Text('Reboot SS2k'),
+            ),
+          ),
+        if (!deviceData.workoutOnly &&
+            isConnected &&
+            deviceData.pairingAvailable.value)
           PopupMenuItem<VoidCallback>(
             enabled: !_connectionBusy,
-            value: () => confirmUnpairTrainer(context, deviceData, widget.device),
+            value: () =>
+                confirmUnpairTrainer(context, deviceData, widget.device),
             child: ListTile(
               leading: const Icon(Icons.link_off),
               title: Text(unpairTrainerLabel(deviceData)),
