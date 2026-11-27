@@ -136,16 +136,34 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
       builder: (context) => PopScope(
         canPop: false,
         child: AlertDialog(
+          constraints: allowLegacy == null
+              ? const BoxConstraints(minWidth: 280, maxWidth: 440)
+              : null,
+          scrollable: allowLegacy == null,
           title: Text(
             allowLegacy == null
-                ? 'Pair with $name'
+                ? 'Pair with ${name.isEmpty ? 'SmartSpin2k' : name}'
                 : 'Use older firmware on $name?',
           ),
-          content: Text(
-            allowLegacy == null
-                ? 'Hold both shifter buttons to pair for settings and firmware updates, or choose Workout only to ride without pairing.'
-                : 'This trainer previously supported encrypted connections. It now reports older firmware. Allow unencrypted settings and updates? The app will remember your choice and switch back automatically when it detects secure firmware.',
-          ),
+          content: allowLegacy == null
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'assets/images/hold_shifter_buttons.png',
+                      width: 180,
+                      height: 108,
+                      excludeFromSemantics: true,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Press and hold both shifter buttons together to pair for settings and firmware updates. To ride without pairing, choose Workout only.',
+                    ),
+                  ],
+                )
+              : const Text(
+                  'This trainer previously supported encrypted connections. It now reports older firmware. Allow unencrypted settings and updates? The app will remember your choice and switch back automatically when it detects secure firmware.',
+                ),
           actions: [
             TextButton(
               onPressed: selectAlternative,

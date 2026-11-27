@@ -13,6 +13,7 @@ void main() {
       for (final path in [
         'assets/ss2kv3.png',
         'assets/ftms_trainer.png',
+        'assets/images/hold_shifter_buttons.png',
         'assets/device_previews/shifter.png',
         'assets/device_previews/workout.png',
         'assets/device_previews/settings.png',

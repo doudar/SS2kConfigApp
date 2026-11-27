@@ -169,6 +169,12 @@ void main() {
         final connecting = data.connectPreferred(device, waitForSetup: true);
         await tester.pumpAndSettle();
         expect(find.text('Cancel'), findsNothing);
+        expect(
+          find.image(
+            const AssetImage('assets/images/hold_shifter_buttons.png'),
+          ),
+          findsOneWidget,
+        );
         expect(data.isDirConConnected, isTrue);
         await tester.tap(find.text('Workout only'));
         await tester.pump();
@@ -232,6 +238,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Use older firmware'), findsOneWidget);
+      expect(
+        find.image(const AssetImage('assets/images/hold_shifter_buttons.png')),
+        findsNothing,
+      );
       await tester.tap(find.text(accept ? 'Use older firmware' : 'Cancel'));
       await tester.pumpAndSettle();
       expect(find.text('Use older firmware'), findsNothing);
