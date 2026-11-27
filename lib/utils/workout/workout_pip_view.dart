@@ -43,18 +43,12 @@ class WorkoutPipView extends StatelessWidget {
                 );
               }
               final metrics = controller.deviceData.ftmsData;
-              final timeLeft = arcadeIntervalDuration(
-                controller.currentSegmentTimeRemaining,
-              );
-              final segment = controller.currentSegment;
-              final index = segment == null
-                  ? 0
-                  : controller.segments.indexOf(segment);
-              final ahead = controller.segments.skip(index).take(5).toList();
-              final duration = ahead.fold<int>(
-                0,
-                (sum, step) => sum + step.duration,
-              );
+              final freeRide = controller.isFreeRide;
+              final time = freeRide
+                  ? controller.formatDuration(controller.elapsedSeconds)
+                  : arcadeIntervalDuration(
+                      controller.currentSegmentTimeRemaining,
+                    );
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -68,12 +62,13 @@ class WorkoutPipView extends StatelessWidget {
                           unit: 'W',
                           color: WorkoutVisuals.power,
                         ),
-                        _MetricReading(
-                          label: 'Target',
-                          value: metrics.targetERG,
-                          unit: 'W',
-                          color: WorkoutVisuals.gold,
-                        ),
+                        if (!freeRide)
+                          _MetricReading(
+                            label: 'Target',
+                            value: metrics.targetERG,
+                            unit: 'W',
+                            color: WorkoutVisuals.gold,
+                          ),
                         _MetricReading(
                           label: 'Cadence',
                           value: metrics.cadence,
@@ -93,11 +88,13 @@ class WorkoutPipView extends StatelessWidget {
                           child: Text.rich(
                             TextSpan(
                               children: [
-                                TextSpan(text: timeLeft, style: _numberStyle),
-                                const TextSpan(text: ' left'),
+                                TextSpan(text: time, style: _numberStyle),
+                                TextSpan(text: freeRide ? ' elapsed' : ' left'),
                               ],
                             ),
-                            semanticsLabel: '$timeLeft left in interval',
+                            semanticsLabel: freeRide
+                                ? '$time elapsed'
+                                : '$time left in interval',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 16,
@@ -135,29 +132,10 @@ class WorkoutPipView extends StatelessWidget {
                       ],
                     ],
                   ),
-                  const SizedBox(height: 3),
-                  Expanded(
-                    child: Semantics(
-                      label: 'Current interval and upcoming workout profile',
-                      image: true,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: ColoredBox(
-                          color: WorkoutVisuals.ink,
-                          child: CustomPaint(
-                            painter: WorkoutPainter.preview(
-                              ahead,
-                              progress: duration > 0
-                                  ? controller.currentSegmentElapsedSeconds /
-                                        duration
-                                  : 0,
-                              highlightCurrent: true,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  if (!freeRide) ...[
+                    const SizedBox(height: 3),
+                    Expanded(child: _intervalProfile()),
+                  ],
                 ],
               );
             },
@@ -166,6 +144,32 @@ class WorkoutPipView extends StatelessWidget {
       ),
     ),
   );
+
+  Widget _intervalProfile() {
+    final segment = controller.currentSegment;
+    final index = segment == null ? 0 : controller.segments.indexOf(segment);
+    final ahead = controller.segments.skip(index).take(5).toList();
+    final duration = ahead.fold<int>(0, (sum, step) => sum + step.duration);
+    return Semantics(
+      label: 'Current interval and upcoming workout profile',
+      image: true,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(3),
+        child: ColoredBox(
+          color: WorkoutVisuals.ink,
+          child: CustomPaint(
+            painter: WorkoutPainter.preview(
+              ahead,
+              progress: duration > 0
+                  ? controller.currentSegmentElapsedSeconds / duration
+                  : 0,
+              highlightCurrent: true,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _MetricReading extends StatelessWidget {

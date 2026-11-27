@@ -9,11 +9,15 @@ class FirmwareRelease {
   const FirmwareRelease({
     required this.version,
     required this.downloadUrl,
+    this.manifestUrl,
+    this.manifestSignatureUrl,
     this.isMostRecent = false,
   });
 
   final String version;
   final String downloadUrl;
+  final String? manifestUrl;
+  final String? manifestSignatureUrl;
   final bool isMostRecent;
 
   String get displayName =>
@@ -39,7 +43,9 @@ class FirmwareReleaseService {
   Future<List<FirmwareRelease>> fetchAll() async {
     final override = debugReleasesOverride;
     if (override != null) return List.of(override);
-    final response = await http.get(releasesUri);
+    final response = await http
+        .get(releasesUri)
+        .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
       throw HttpException(
         'Unable to check firmware releases (HTTP ${response.statusCode}).',
@@ -76,21 +82,33 @@ List<FirmwareRelease> parseFirmwareReleases(String responseBody) {
     final assets = item['assets'];
     if (tag is! String || assets is! List) continue;
 
-    String? downloadUrl;
     final expectedAsset = expectedReleaseAssetName(tag);
-    for (final asset in assets) {
-      if (asset is Map<String, dynamic> && asset['name'] == expectedAsset) {
-        final url = asset['browser_download_url'];
-        if (url is String) downloadUrl = url;
-        break;
-      }
+    final urls = <String, String>{};
+    final duplicates = <String>{};
+    for (final asset in assets.whereType<Map>()) {
+      final name = asset['name'];
+      final url = asset['browser_download_url'];
+      if (name is! String ||
+          url is! String ||
+          Uri.tryParse(url)?.scheme != 'https')
+        continue;
+      if (urls.containsKey(name)) duplicates.add(name);
+      urls[name] = url;
     }
-
-    if (downloadUrl != null) {
+    final requiredNames = [
+      expectedAsset,
+      'firmware-manifest.json',
+      'firmware-manifest.sig',
+    ];
+    if (requiredNames.every(
+      (name) => urls.containsKey(name) && !duplicates.contains(name),
+    )) {
       releases.add(
         FirmwareRelease(
           version: tag,
-          downloadUrl: downloadUrl,
+          downloadUrl: urls[expectedAsset]!,
+          manifestUrl: urls['firmware-manifest.json']!,
+          manifestSignatureUrl: urls['firmware-manifest.sig']!,
           isMostRecent: releases.isEmpty,
         ),
       );
@@ -120,10 +138,22 @@ bool isFirmwareVersionNewer(String available, String installed) {
   return false;
 }
 
-/// Matches the release portion of firmware versions while allowing the device
-/// to append branch, commit-count, hardware, and git-hash metadata.
-///
-/// For example, `26.8.14` matches `26.8.14-develop-1-g560fef00`.
+bool firmwareUpdateVersionConfirmed(
+  String original,
+  String reported,
+  String? target, {
+  required bool receiptMissing,
+}) {
+  if (_releaseVersionParts(reported).length < 3) return false;
+  if (target != null && !firmwareVersionsMatch(target, reported)) return false;
+  if (target == null || receiptMissing) {
+    return _releaseVersionParts(original).length == 3 &&
+        !firmwareVersionsMatch(original, reported);
+  }
+  return true;
+}
+
+/// Matches the release portion even when the trainer appends build metadata.
 bool firmwareVersionsMatch(String expected, String reported) {
   final expectedParts = _releaseVersionParts(expected);
   final reportedParts = _releaseVersionParts(reported);

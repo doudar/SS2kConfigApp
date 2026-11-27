@@ -21,6 +21,43 @@ void main() {
     expect(frames[1].body, [0xcc]);
   });
 
+  test('secure writes deliver interleaved values in TCP order', () async {
+    final server = await _serve((socket) async {
+      final request = await socket.first;
+      final uuid = request.sublist(6, 22);
+      List<int> frame(int id, int seq, int byte) => [
+        1,
+        id,
+        seq,
+        0,
+        0,
+        17,
+        ...uuid,
+        byte,
+      ];
+      socket.add([
+        ...frame(6, 0, 1),
+        ...frame(6, 0, 2),
+        ...frame(4, request[2], 3),
+        ...frame(6, 0, 4),
+      ]);
+    });
+    final client = await DirConClient.connect(
+      InternetAddress.loopbackIPv4.address,
+      connectionPort: server.port,
+    );
+    final ordered = client.characteristicNotifications(_uuid).take(4).toList();
+    await client.writeCharacteristicOrdered(_uuid, [42]);
+    expect(await ordered.timeout(const Duration(seconds: 3)), [
+      [1],
+      [2],
+      [3],
+      [4],
+    ]);
+    await client.close();
+    await server.close();
+  });
+
   test('encodes the FTMS spin-down command sent over DIRCON', () {
     expect(FTMSControlPoint.spinDownCommand(true), [0x13, 0x01]);
     expect(FTMSControlPoint.spinDownCommand(false), [0x13, 0x02]);

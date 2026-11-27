@@ -51,6 +51,48 @@ void main() {
         .load();
   });
 
+  testWidgets('four version taps unlock persistent developer simulations', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final device = BluetoothDevice.fromId('SmartSpin2k Demo');
+    final data = DeviceData();
+    DeviceDataManager.updateDataForDevice(device, data);
+    addTearDown(() => DeviceDataManager.clearDataForDevice(device));
+    Future<void> launch() async {
+      await tester.pumpWidget(
+        MaterialApp(home: MainDeviceScreen(device: device)),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await launch();
+    final version = find.textContaining('App Version:');
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(version);
+      await tester.pump();
+    }
+    expect(find.text('Developer Options'), findsNothing);
+    await tester.tap(version);
+    await tester.pumpAndSettle();
+    for (final label in [
+      'Simulate cadence',
+      'Simulate heart rate',
+      'Simulate power',
+      'ERG mode',
+    ]) {
+      expect(find.text(label), findsOneWidget);
+    }
+    await tester.tap(find.text('ERG mode'));
+    await tester.pumpAndSettle();
+    expect(find.text('Simulate target power'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await launch();
+    await tester.tap(find.text('Maintenance'));
+    await tester.pumpAndSettle();
+    expect(find.text('Developer Options'), findsOneWidget);
+  });
+
   for (final size in [
     const Size(320, 568),
     const Size(390, 844),
@@ -102,6 +144,8 @@ void main() {
               () => MockClient(
                 (_) async => http.Response('''[
           {"tag_name":"99.0.0","assets":[
+            {"name":"firmware-manifest.json","browser_download_url":"https://example.com/m.json"},
+            {"name":"firmware-manifest.sig","browser_download_url":"https://example.com/m.sig"},
             {"name":"SmartSpin2kFirmware-99.0.0.bin.zip",
              "browser_download_url":"https://example.com/firmware.zip"}
           ]}

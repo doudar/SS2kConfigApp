@@ -9,7 +9,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
+    show
+        kDebugMode,
+        kIsWeb,
+        defaultTargetPlatform,
+        TargetPlatform,
+        visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:app_links/app_links.dart';
@@ -26,12 +31,13 @@ import 'package:fvp/fvp.dart' as fvp;
 import 'utils/onboarding/onboarding_state.dart';
 import 'utils/onboarding/wizard_session.dart';
 import 'utils/theme_provider.dart';
+import 'utils/device_data.dart' show DeviceData;
 import 'utils/demo.dart' show demoModeBypass;
 import 'utils/app_release_service.dart';
 
 void main() async {
-  FlutterBluePlus.setLogLevel(LogLevel.verbose, color: true);
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterBluePlus.setLogLevel(kDebugMode ? LogLevel.verbose : LogLevel.warning);
   fvp.registerWith(
     options: {
       'platforms': ['windows', 'macos', 'linux'],
@@ -72,10 +78,103 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   // Start false on native so a clean install shows the wizard, not a ScanScreen flash.
   // kIsWeb stays true because the wizard is never shown on web.
   bool _onboardingCompleted = kIsWeb;
+  bool _scanAfterPairingCancel = false;
+
+  void _showPairingPrompt(
+    String name,
+    Future<void> approval,
+    Future<void> Function() disconnect, [
+    void Function()? allowLegacy,
+  ]) {
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) {
+      unawaited(
+        disconnect().catchError((Object error) {
+          debugPrint('Could not disconnect after cancelling pairing: $error');
+        }),
+      );
+      return;
+    }
+    var cancelled = false;
+    Future<void> cancel() async {
+      if (cancelled) return;
+      cancelled = true;
+      try {
+        await disconnect();
+      } catch (error) {
+        if (navigator.mounted) {
+          ScaffoldMessenger.of(navigator.context).showSnackBar(
+            SnackBar(content: Text('Could not disconnect from $name. $error')),
+          );
+        }
+      } finally {
+        if (mounted && navigator.mounted) {
+          setState(() => _scanAfterPairingCancel = true);
+          navigator.popUntil((route) => route.isFirst);
+        }
+      }
+    }
+
+    final route = DialogRoute<void>(
+      context: navigator.context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: Text(
+            allowLegacy == null
+                ? 'Pair with $name'
+                : 'Use older firmware on $name?',
+          ),
+          content: Text(
+            allowLegacy == null
+                ? 'Press and hold both shifter buttons on your SmartSpin2k until pairing finishes.'
+                : 'This trainer previously supported encrypted connections. It now reports older firmware. Allow unencrypted settings and updates? The app will remember your choice and switch back automatically when it detects secure firmware.',
+          ),
+          actions: [
+            TextButton(onPressed: cancel, child: const Text('Cancel')),
+            if (allowLegacy != null)
+              FilledButton(
+                onPressed: allowLegacy,
+                child: const Text('Use older firmware'),
+              ),
+          ],
+        ),
+      ),
+    );
+    unawaited(navigator.push(route));
+    approval.then<void>(
+      (_) {
+        if (!cancelled && route.isActive) navigator.removeRoute(route);
+      },
+      onError: (Object error) {
+        if (cancelled || !navigator.mounted) return;
+        if (route.isActive) navigator.removeRoute(route);
+        ScaffoldMessenger.of(navigator.context).showSnackBar(
+          SnackBar(
+            content: Text(
+              allowLegacy == null
+                  ? 'Pairing did not finish. $error'
+                  : 'Connection closed.',
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showLegacyPrompt(
+    String name,
+    Future<void> approval,
+    void Function() allow,
+    Future<void> Function() disconnect,
+  ) => _showPairingPrompt(name, approval, disconnect, allow);
 
   @override
   void initState() {
     super.initState();
+    DeviceData.pairingPrompt = _showPairingPrompt;
+    DeviceData.legacyConnectionPrompt = _showLegacyPrompt;
     if (!kIsWeb) {
       try {
         _adapterStateStateSubscription = FlutterBluePlus.adapterState.listen((
@@ -399,6 +498,12 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
 
   @override
   void dispose() {
+    if (DeviceData.pairingPrompt == _showPairingPrompt) {
+      DeviceData.pairingPrompt = null;
+    }
+    if (DeviceData.legacyConnectionPrompt == _showLegacyPrompt) {
+      DeviceData.legacyConnectionPrompt = null;
+    }
     _adapterStateStateSubscription.cancel();
     _linkSubscription?.cancel();
     OnboardingState.completedNotifier.removeListener(
@@ -415,7 +520,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     required bool demoMode,
   }) {
     // Network discovery and Dircon work even when the BLE adapter is off.
-    if (onboardingCompleted || demoMode) {
+    if (onboardingCompleted || demoMode || _scanAfterPairingCancel) {
       return const ScanScreen();
     } else {
       return ChangeNotifierProvider(

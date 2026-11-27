@@ -9,6 +9,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/firmware_release_service.dart';
 
 void main() {
+  test(
+    'post-reboot verification needs the target or a version change for a local image',
+    () {
+      bool verified(
+        String before,
+        String after,
+        String? target, {
+        bool missing = false,
+      }) => firmwareUpdateVersionConfirmed(
+        before,
+        after,
+        target,
+        receiptMissing: missing,
+      );
+      expect(verified('26.9.8', '26.9.8', null), isFalse);
+      expect(verified('26.9.8', '', null), isFalse);
+      expect(verified('', '26.11.16', null), isFalse);
+      expect(verified('26.9.8', '26.11.16', null), isTrue);
+      expect(verified('26.9.8', '26.9.8', '26.11.16'), isFalse);
+      expect(
+        verified('26.11.16', '26.11.16', '26.11.16', missing: true),
+        isFalse,
+      );
+      expect(verified('26.9.8', '26.11.16', '26.11.16', missing: true), isTrue);
+    },
+  );
   group('FirmwareRelease', () {
     test('displayName returns correct format for most recent release', () {
       final release = FirmwareRelease(
@@ -103,6 +129,10 @@ void main() {
       final releases = parseFirmwareReleases('''
         [
           {
+            "tag_name": "26.9.2",
+            "assets": [{"name":"SmartSpin2kFirmware-26.9.2.bin.zip", "browser_download_url":"https://example.com/unsigned.zip"}]
+          },
+          {
             "tag_name": "26.9.1-beta",
             "draft": false,
             "prerelease": true,
@@ -113,6 +143,8 @@ void main() {
             "draft": false,
             "prerelease": false,
             "assets": [
+              {"name":"firmware-manifest.json","browser_download_url":"https://example.com/m.json"},
+              {"name":"firmware-manifest.sig","browser_download_url":"https://example.com/m.sig"},
               {
                 "name": "SmartSpin2kFirmware-26.8.2.bin.zip",
                 "browser_download_url": "https://example.com/26.8.2.zip"
@@ -124,6 +156,8 @@ void main() {
             "draft": false,
             "prerelease": false,
             "assets": [
+              {"name":"firmware-manifest.json","browser_download_url":"https://example.com/m.json"},
+              {"name":"firmware-manifest.sig","browser_download_url":"https://example.com/m.sig"},
               {
                 "name": "SmartSpin2kFirmware-26.8.1.bin.zip",
                 "browser_download_url": "https://example.com/26.8.1.zip"

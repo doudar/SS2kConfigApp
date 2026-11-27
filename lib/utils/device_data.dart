@@ -7,10 +7,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 import 'constants.dart';
+import 'paired_custom_link.dart';
+import 'package:ss2k_protocol/ss2k_protocol.dart' as protocol;
 import 'extra.dart';
 import 'bleConstants.dart';
 import 'ble_connection_retry.dart';
@@ -312,6 +313,179 @@ class DeviceData {
     _applyStreamedFoundDevices(const <BleScanDevice>[]);
   }
 
+  static void Function(String, Future<void>, Future<void> Function())?
+  pairingPrompt;
+  static void Function(
+    String,
+    Future<void>,
+    void Function(),
+    Future<void> Function(),
+  )?
+  legacyConnectionPrompt;
+  PairedCustomLink? _customLink;
+  bool get hasPairedSession => _customLink?.authenticated ?? false;
+
+  bool get forgetPending => _customLink?.forgetPending ?? false;
+  final pairingAvailable = ValueNotifier<bool>(false);
+
+  void _endCustomLink() {
+    _customLink?.close();
+    _customLink = null;
+    if (!_isDisposed) pairingAvailable.value = false;
+  }
+
+  void _receiveWire(PairedCustomLink? owner, List<int> packet) {
+    if (owner == null || !identical(_customLink, owner) || packet.isEmpty)
+      return;
+    try {
+      owner.receive(packet);
+    } catch (error) {
+      owner.invalidate();
+      print('[custom] Invalid secure packet: $error');
+    }
+  }
+
+  PairedCustomLink _createLink(
+    BluetoothDevice device, {
+    DirConSession? socket,
+    BluetoothCharacteristic? characteristic,
+  }) {
+    final retry = _customLink?.needsFreshSession == true;
+    _endCustomLink();
+    late final PairedCustomLink link;
+    Future<void> disconnectLink(void Function() close) async {
+      if (!identical(link, _customLink)) return;
+      close();
+      await disconnectPreferred(device);
+    }
+
+    final confirmLegacy = legacyConnectionPrompt;
+    link = PairedCustomLink(
+      alias: device.remoteId.str,
+      deviceName: preferredDeviceName(device.advName),
+      maxWire: 234,
+      currentMaxWire: socket == null
+          ? () => (device.mtuNow - 3).clamp(20, 512)
+          : null,
+      dirCon: socket != null,
+      writeOtaWithoutResponse:
+          socket == null &&
+              characteristic != null &&
+              characteristic.properties.writeWithoutResponse
+          ? (packet) async {
+              if (!identical(_customLink, link))
+                throw const TransportNotConnected();
+              await characteristic.write(packet, withoutResponse: true);
+            }
+          : null,
+      prompt: (name, approval, cancelHandshake) {
+        pairingPrompt?.call(
+          name,
+          approval,
+          () => disconnectLink(cancelHandshake),
+        );
+      },
+      confirmLegacy: confirmLegacy == null
+          ? null
+          : (name, approval, allow, close) => confirmLegacy(
+              name,
+              approval,
+              allow,
+              () => disconnectLink(close),
+            ),
+      restoreNotificationMode: retry,
+      legacyIndications:
+          Platform.isAndroid &&
+              characteristic != null &&
+              characteristic.properties.indicate
+          ? (bool useIndications) async {
+              if (!identical(_customLink, link))
+                throw const TransportNotConnected();
+              await characteristic.setNotifyValue(false);
+              if (!identical(_customLink, link))
+                throw const TransportNotConnected();
+              await characteristic.setNotifyValue(
+                true,
+                forceIndications: useIndications,
+              );
+            }
+          : null,
+      onInner: _decodeCustomValue,
+      writeWire: (packet) async {
+        if (!identical(_customLink, link)) throw const TransportNotConnected();
+        if (socket != null) {
+          if (!socket.isConnected) throw const TransportNotConnected();
+          await socket.writeCharacteristicOrdered(ccUUID, packet);
+        } else {
+          await characteristic!.write(packet);
+        }
+      },
+    );
+    return _customLink = link;
+  }
+
+  Future<PairedCustomLink> _readyCustomLink(BluetoothDevice device) async {
+    if (isUserDisconnect) throw const TransportNotConnected();
+    final socket = _dirConSession;
+    if (socket == null) {
+      final characteristic = await _getMyCharacteristic(device);
+      if (_dirConSession != null ||
+          characteristic == null ||
+          !characteristic.device.isConnected)
+        throw const TransportNotConnected();
+      if (_customLink?.needsFreshSession == true) {
+        _createLink(device, characteristic: characteristic);
+      }
+      if (!subscribed || _customLink == null) decode(device);
+      if (!characteristic.isNotifying)
+        await characteristic.setNotifyValue(true);
+    } else if (_customLink?.needsFreshSession == true) {
+      _createLink(device, socket: socket);
+    }
+    final link = _customLink;
+    if (link == null) throw const TransportNotConnected();
+    await link.initialize();
+    if (!identical(link, _customLink) ||
+        (!link.legacy && !link.authenticated && !link.forgetPending))
+      throw const TransportNotConnected();
+    pairingAvailable.value = link.authenticated || link.forgetPending;
+    if (link.authenticated) configAppCompatibleFirmware = true;
+    return link;
+  }
+
+  Future<bool> usesPairedSettings(BluetoothDevice device) async {
+    if (isSimulated) return false;
+    final link = await _queueBleOperation(() => _readyCustomLink(device));
+    if (link.forgetPending)
+      throw StateError(
+        "Select Finish unpairing in the trainer menu or Settings.",
+      );
+    return link.authenticated;
+  }
+
+  Future<void> forgetPairing(BluetoothDevice device) async {
+    await _queueBleOperation(() async {
+      final link = await _readyCustomLink(device);
+      await link.forget();
+    });
+    await disconnectPreferred(device);
+  }
+
+  Future<void> streamPairedFirmware(
+    BluetoothDevice device,
+    Uint8List firmware,
+    void Function(double) onProgress,
+  ) async {
+    await _queueBleOperation(
+      () async {
+        final link = await _readyCustomLink(device);
+        await link.streamFirmware(firmware, onProgress);
+      },
+      priority: TransportOpPriority.interactive,
+      label: 'paired firmware transfer',
+    );
+  }
+
   final DirConConnector? _dirConConnector;
   final DirConEndpointLookup _dirConEndpointLookup;
   DirConEndpoint? discoveredEndpoint;
@@ -549,6 +723,7 @@ class DeviceData {
           await _connectDirCon(device, ipAddress, waitForSetup: waitForSetup);
           return;
         } catch (error) {
+          if (isUserDisconnect) return;
           print('[DIRCON] $ipAddress unavailable, falling back to BLE: $error');
           await _closeDirCon();
         }
@@ -580,6 +755,7 @@ class DeviceData {
       // A failed bootstrap is not a dead link. Only report the transport down
       // when the physical session was never established; otherwise setup threw
       // over a live connection and nothing would ever re-mark it as connected.
+      if (isUserDisconnect) return;
       if (_transportStateController.value.phase !=
           DeviceTransportPhase.connected) {
         _markTransportDisconnected(explicit: false);
@@ -664,9 +840,13 @@ class DeviceData {
       _handleDirConDisconnect(device);
     });
     _markTransportConnected(DeviceTransportKind.dircon, device);
+    _createLink(device, socket: session);
     _dirConNotificationSubscription = session
         .characteristicNotifications(ccUUID)
-        .listen(_decodeCustomValue);
+        .listen((packet) {
+          if (identical(session, _dirConSession))
+            _receiveWire(_customLink, packet);
+        });
 
     // Indoor Bike Data and Machine Status are set up independently: firmware
     // that exposes one but not the other must still deliver the one it has, and
@@ -1211,6 +1391,7 @@ class DeviceData {
   Future<void> _closeDirCon() async {
     final session = _dirConSession;
     _dirConSession = null;
+    if (session != null) _endCustomLink();
     // Tearing down a live session is itself a transport transition. Callers
     // that already moved to connecting/reconnecting/disconnected are unaffected
     // by this guard, so no spurious disconnected phase is emitted mid-reconnect.
@@ -1383,12 +1564,14 @@ class DeviceData {
               );
               await _connectDirCon(device, ipAddress, waitForSetup: true);
 
+              if (isUserDisconnect) break;
               await _runReconnectedCallbacks(onReconnected);
 
               success = true;
               print('[AutoReconnect] Reconnected via DIRCON successfully.');
               break;
             } catch (error) {
+              if (isUserDisconnect) break;
               print('[AutoReconnect] DIRCON unavailable: $error');
               await _closeDirCon();
             }
@@ -1464,6 +1647,7 @@ class DeviceData {
     bool clearBleScanResults = false,
   }) {
     _setupCoordinator.invalidate();
+    _endCustomLink();
     final pendingResponse = _pendingCustomResponse;
     if (pendingResponse != null && !pendingResponse.isCompleted) {
       // Release the serialized BLE queue immediately. The next operation will
@@ -1497,6 +1681,9 @@ class DeviceData {
     subscribed = false;
     charReceived.value = false;
     _myCharacteristic = null;
+    _firmwareService = null;
+    _firmwareDataCharacteristic = null;
+    _firmwareControlCharacteristic = null;
     indoorBikeCharacteristic = null;
     ftmsControlPointCharacteristic = null;
     machineStatusCharacteristic = null;
@@ -1557,9 +1744,11 @@ class DeviceData {
   BluetoothCharacteristic? _firmwareDataCharacteristic;
   BluetoothCharacteristic? _firmwareControlCharacteristic;
 
-  /// Creates the firmware writer supported by the active transport, or null
-  /// when that transport only supports HTTP OTA. Screens should not inspect
-  /// transport-specific characteristic state themselves.
+  bool get supportsBleFirmwareUpdate =>
+      _firmwareService != null &&
+      _firmwareDataCharacteristic != null &&
+      _firmwareControlCharacteristic != null;
+
   OtaPackage? createFirmwareOtaPackage() {
     final data = _firmwareDataCharacteristic;
     final control = _firmwareControlCharacteristic;
@@ -1574,7 +1763,7 @@ class DeviceData {
     OtaPackage package,
     BluetoothDevice device,
     int firmwareType, {
-    required String binFilePath,
+    required Uint8List firmwareBytes,
   }) async {
     final service = _firmwareService;
     final data = _firmwareDataCharacteristic;
@@ -1591,7 +1780,7 @@ class DeviceData {
       service,
       data,
       control,
-      binFilePath: binFilePath,
+      firmware: firmwareBytes,
     );
   }
 
@@ -1613,6 +1802,24 @@ class DeviceData {
   bool isDisconnecting = false;
   bool configAppCompatibleFirmware = false;
   ValueNotifier<String> firmwareVersion = ValueNotifier("");
+  int _firmwareVersionReadings = 0;
+
+  void _recordFirmwareVersion(String version) {
+    _firmwareVersionReadings++;
+    firmwareVersion.value = version;
+  }
+
+  /// Return a fresh trainer report without blanking the version shown in the UI.
+  Future<String?> readFirmwareVersion(BluetoothDevice device) async {
+    final before = _firmwareVersionReadings;
+    await writeCustomCharacteristic(device, [
+      protocol.read,
+      protocol.CommandId.firmwareVer,
+    ]);
+    return before == _firmwareVersionReadings
+        ? null
+        : firmwareVersion.value.trim();
+  }
 
   // Create a broadcast stream controller for logs
   final StreamController<String> _logStreamController =
@@ -1801,6 +2008,7 @@ class DeviceData {
         if (!_setupCoordinator.isCurrent(generation) || !isDirConConnected) {
           return;
         }
+        await _readyCustomLink(device);
         subscribed = true;
         charReceived.value = true;
         configAppCompatibleFirmware = true;
@@ -1972,6 +2180,9 @@ class DeviceData {
       }
 
       // firmware
+      _firmwareService = null;
+      _firmwareDataCharacteristic = null;
+      _firmwareControlCharacteristic = null;
       configAppCompatibleFirmware = false;
       for (BluetoothService s in services) {
         if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {
@@ -2097,6 +2308,8 @@ class DeviceData {
       if (_myCharacteristic != null && !_myCharacteristic!.isNotifying) {
         await _queueBleOperation(() => _myCharacteristic!.setNotifyValue(true));
       }
+      if (sweepSettings && _myCharacteristic != null)
+        await _readyCustomLink(device);
       // Skipping deliberately leaves the stopwatch alone: the caller owns the
       // sweep now, and starting it here would pretend one just ran and suppress
       // the next due one.
@@ -2835,7 +3048,7 @@ class DeviceData {
         );
       }
 
-      if (!_ftmsDataController.isClosed) {
+      if (_ftmsDataController.hasListener && !_ftmsDataController.isClosed) {
         _ftmsDataController.add(
           FtmsData(
             cadence: ftmsData.cadence,
@@ -2849,8 +3062,9 @@ class DeviceData {
         );
       }
 
-      // Emit a characteristic change event for FTMS data updates
-      if (!_characteristicChangeController.isClosed) {
+      // The current readings above are available even without stream listeners.
+      if (_characteristicChangeController.hasListener &&
+          !_characteristicChangeController.isClosed) {
         _characteristicChangeController.add(
           CharacteristicChangeEvent(
             vName: "FTMS_DATA",
@@ -3591,66 +3805,23 @@ class DeviceData {
       return;
     }
 
-    List<int> value = [0x02, int.parse(c["reference"])];
-
-    switch (c["type"]) {
-      case "string":
-        value = value + s.codeUnits;
-      case "int":
-        int t = double.parse(s).round();
-        final list = new Uint64List.fromList([t]);
-        final bytes = new Uint8List.view(list.buffer);
-        final out = bytes.map(
-          (b) => '0x${b.toRadixString(16).padLeft(2, '0')}',
-        );
-        print('bytes: ${out}');
-        value = [
-          0x02,
-          int.parse(c["reference"]),
-          int.parse(out.elementAt(0)),
-          int.parse(out.elementAt(1)),
-        ];
+    final id = int.parse(c['reference']);
+    List<int> value;
+    switch (c['type']) {
+      case 'string':
+        value = id == protocol.CommandId.BLELogging
+            ? protocol.encodeValue(id, s == '1' || s == 'true')
+            : protocol.encodeValue(id, s);
         break;
-      case "bool":
-        (s == "false") ? s = "0" : s = "1";
-        int t = double.parse(s).round();
-        final list = new Uint64List.fromList([t]);
-        final bytes = new Uint8List.view(list.buffer);
-        final out = bytes.map(
-          (b) => '0x${b.toRadixString(16).padLeft(2, '0')}',
-        );
-        print('bytes: ${out}');
-        value = [
-          0x02,
-          int.parse(c["reference"]),
-          int.parse(out.elementAt(0)),
-          int.parse(out.elementAt(1)),
-        ];
+      case 'bool':
+        value = protocol.command(id).writeRequest == protocol.WireFormat.empty
+            ? protocol.encodeAction(id)
+            : protocol.encodeValue(id, s == 'true' || s == '1');
         break;
-      case "float":
-        int t = (double.parse(s) * 10).round();
-        final list = new Uint64List.fromList([t]);
-        final bytes = new Uint8List.view(list.buffer);
-        final out = bytes.map(
-          (b) => '0x${b.toRadixString(16).padLeft(2, '0')}',
-        );
-        print('bytes: ${out}');
-        value = [
-          0x02,
-          int.parse(c["reference"]),
-          int.parse(out.elementAt(0)),
-          int.parse(out.elementAt(1)),
-        ];
-        break;
-      case "long":
-        // Four little-endian bytes, which is what the firmware reassembles
-        // from rxValue[2..5]. toSigned keeps an out-of-range value from
-        // throwing here rather than being rejected by the device.
-        int t = double.parse(s).round().toSigned(32);
-        final bytes = Uint8List(4)
-          ..buffer.asByteData().setInt32(0, t, Endian.little);
-        print('bytes: ${bytes}');
-        value = [0x02, int.parse(c["reference"]), ...bytes];
+      case 'float':
+      case 'int':
+      case 'long':
+        value = protocol.encodeValue(id, num.parse(s));
         break;
       case "gearTeeth":
         // One setting on two characteristics: a built-in table is selected
@@ -3671,48 +3842,21 @@ class DeviceData {
         value = encodeGearTeethWrite(int.parse(c["reference"]), teeth);
         break;
       case "powerTableData":
-        // Define the INT_MIN value for uint16_t in little endian format
-        const int intMinValue = -32768;
-
-        // Loop through each row of the tableData
-        for (
-          int rowIndex = 0;
-          rowIndex < this.powerTableData.length;
-          rowIndex++
-        ) {
-          List<int?> row = this.powerTableData[rowIndex];
-          List<int> rowValue = [];
-
-          // Convert each entry in the row to its little-endian byte representation
-          for (int? entry in row) {
-            int valueToConvert = entry ?? intMinValue;
-            final list = Uint16List.fromList([valueToConvert]);
-            final bytes = Uint8List.view(list.buffer);
-            final out = bytes.map(
-              (b) => '0x${b.toRadixString(16).padLeft(2, '0')}',
-            );
-            print('bytes: ${out}');
-            rowValue.add(bytes[0]); // Low byte
-            rowValue.add(bytes[1]); // High byte
-          }
-
-          // Combine the request, reference, and row data
-          List<int> rowToSend =
-              [0x02, int.parse(c["reference"]), rowIndex] + rowValue;
-
-          // Write the data to the device. A failed row propagates: a
-          // half-written power table was never a good outcome.
-          await writeCustomCharacteristic(device, rowToSend);
+        for (int row = 0; row < powerTableData.length; row++) {
+          final packet = [
+            protocol.write,
+            protocol.CommandId.powerTableData,
+            row,
+            for (final cell in powerTableData[row]) ...[
+              (cell ?? protocol.power_table_unknown) & 255,
+              ((cell ?? protocol.power_table_unknown) >> 8) & 255,
+            ],
+          ];
+          await writeCustomCharacteristic(device, packet);
         }
-        // Every row has been sent. Returning here — rather than breaking — skips
-        // the trailing generic write below, which would otherwise put an extra
-        // header-only [0x02, reference] packet on the wire; an unconfirmed
-        // response to that packet can now make a completed upload report
-        // failure.
         return;
-
       default:
-      //value = [0xff];
+        throw UnsupportedError('Unknown SmartSpin2k setting type ${c["type"]}');
     }
     // A setting the user just changed, or a run enabling its log stream.
     // Something is waiting on it, unlike the background settings sweep.
@@ -3926,6 +4070,39 @@ class DeviceData {
     TransportOpPriority priority,
   ) async {
     return _queueBleOperation(priority: priority, label: 'custom char', () async {
+      final link = await _readyCustomLink(device);
+      if (link.forgetPending)
+        throw StateError(
+          "Select Finish unpairing in the trainer menu or Settings.",
+        );
+      if (link.authenticated) {
+        final descriptor = protocol.command(value[1]);
+        if (value[0] == protocol.read &&
+            descriptor.readRequest == protocol.WireFormat.none)
+          return;
+        var canonical =
+            value[0] == protocol.write &&
+                descriptor.writeRequest == protocol.WireFormat.empty
+            ? protocol.encodeAction(value[1])
+            : value;
+        if (value[0] == protocol.write &&
+            value[1] == protocol.CommandId.powerTableData) {
+          // Old companion backups can contain 38 columns. Current paired firmware
+          // exposes its fixed 30-column table in the protocol manifest.
+          final length = 3 + 2 * protocol.power_table_columns;
+          if (value.length > length) canonical = value.sublist(0, length);
+        }
+        final reply = await link.command(canonical);
+        _recordCustomResponseSuccess();
+        if (value[0] == protocol.write && reply[0] == protocol.error) {
+          throw StateError('SmartSpin2k rejected the settings change.');
+        }
+        if (value[0] == protocol.write &&
+            value[1] == protocol.CommandId.resetToDefaults) {
+          await link.removeCredential();
+        }
+        return;
+      }
       final dirConSession = _dirConSession;
       if (dirConSession != null && dirConSession.isConnected) {
         try {
@@ -3933,7 +4110,14 @@ class DeviceData {
             ccUUID,
             value,
           );
-          if (response.isNotEmpty) _decodeCustomValue(response);
+          if (response.isNotEmpty) {
+            if (response.first == protocol.secure_notification) {
+              throw const FormatException(
+                'Unexpected paired notification in a legacy DirCon reply.',
+              );
+            }
+            _decodeCustomValue(response);
+          }
         } catch (error) {
           print('[DIRCON] Custom characteristic write failed: $error');
           rethrow;
@@ -4132,9 +4316,12 @@ class DeviceData {
       return;
     }
 
-    _notifySubscription = characteristic.onValueReceived.listen(
-      _decodeCustomValue,
-    );
+    _customLink ?? _createLink(device, characteristic: characteristic);
+    _notifySubscription = characteristic.onValueReceived.listen((packet) {
+      if (_dirConSession == null &&
+          identical(characteristic, _myCharacteristic))
+        _receiveWire(_customLink, packet);
+    });
     device.cancelWhenDisconnected(_notifySubscription!);
   }
 
@@ -4163,8 +4350,11 @@ class DeviceData {
         }
       }
 
+      final carriesValue =
+          value.first == protocol.success ||
+          value.first == protocol.secure_notification;
       if (value.length > 1 &&
-          value[0] == 0x80 &&
+          carriesValue &&
           value[1] == bleScanResultsReference) {
         final update = _scanResultDecoder.add(value);
         if (update != null) {
@@ -4222,7 +4412,7 @@ class DeviceData {
         return;
       }
 
-      if (value[0] == 0x80) {
+      if (carriesValue) {
         if (value.length < 2) return;
 
         // Use cached map for O(1) lookup
@@ -4336,7 +4526,7 @@ class DeviceData {
                 }
                 //Set the firmware version
                 if (c["vName"] == fwVname) {
-                  this.firmwareVersion.value = c["value"];
+                  _recordFirmwareVersion(c["value"]);
                   print(
                     "FW Version Was Updated!! ${c['value']} ${this.firmwareVersion.value}",
                   );
@@ -4415,7 +4605,7 @@ class DeviceData {
 
       characteristic['value'] = entry.value.toString();
       if (characteristic['vName'] == fwVname) {
-        firmwareVersion.value = characteristic['value'];
+        _recordFirmwareVersion(characteristic['value']);
       }
       _emitCharacteristicChange(characteristic);
     }
@@ -4652,6 +4842,8 @@ class DeviceData {
   /// Dispose of resources
   void dispose() {
     _isDisposed = true;
+    _endCustomLink();
+    pairingAvailable.dispose();
     _cancelDirConRecovery();
     _bleDeviceScanTimer?.cancel();
     _bleDeviceScanTimer = null;

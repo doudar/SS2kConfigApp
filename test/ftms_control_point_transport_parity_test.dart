@@ -6,6 +6,8 @@
 // once per isolate and never unsubscribes, so these tests must stay in their
 // own file — restoring the previous instance in tearDown does not undo those
 // subscriptions.
+import 'dart:async';
+
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_blue_plus_platform_interface/flutter_blue_plus_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,6 +33,65 @@ void main() {
   // initialization binds to this fake rather than to a real platform.
   final blePlatform = FakeBlePlatform();
   FlutterBluePlusPlatform.instance = blePlatform;
+
+  test(
+    'the next custom operation retries a failed probe on the same BLE connection',
+    () async {
+      final harness = await BleHarness.connect(blePlatform);
+      addTearDown(harness.dispose);
+      var probes = 0;
+      blePlatform.customReply = (request) {
+        expect(request, [1, 0x36]);
+        if (++probes == 1)
+          throw TimeoutException('Transient capability write failure');
+        return [0xff, 0x36];
+      };
+      await expectLater(
+        harness.deviceData.usesPairedSettings(harness.device),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(probes, 1);
+      expect(harness.device.isConnected, isTrue);
+      expect(
+        await harness.deviceData.usesPairedSettings(harness.device),
+        isFalse,
+      );
+      expect(probes, 2);
+    },
+  );
+
+  test(
+    'a failed handshake retries on live BLE and cannot downgrade a pinned trainer',
+    () async {
+      final harness = await BleHarness.connect(blePlatform);
+      addTearDown(harness.dispose);
+      var probes = 0;
+      blePlatform.customReply = (request) {
+        if (request.first == 1 && request[1] == 0x36) {
+          return ++probes == 1 ? [0x80, 0x36, 1, 2, 0, 0, 0] : [0xff, 0x36];
+        }
+        expect(request, [0xa0]);
+        throw TimeoutException('Transient identity handshake failure');
+      };
+      await expectLater(
+        harness.deviceData.usesPairedSettings(harness.device),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(harness.device.isConnected, isTrue);
+      await expectLater(
+        harness.deviceData.usesPairedSettings(harness.device),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'reason',
+            contains('requires an encrypted connection'),
+          ),
+        ),
+      );
+      expect(probes, 2);
+      expect(harness.deviceData.hasPairedSession, isFalse);
+    },
+  );
 
   test('BLE and DIRCON deliver byte-identical target power commands', () async {
     final expected = FTMSControlPoint.targetPowerCommand(_targetWatts);
@@ -941,6 +1002,8 @@ void main() {
 
       bool isRead(List<int> w) => w.length >= 2 && w[0] == 0x01;
 
+      // Establish the protocol before gating the first actual settings read.
+      await deviceData.usesPairedSettings(harness.device);
       blePlatform.holdWriteGate(ccUUID);
       blePlatform.writes.clear();
 

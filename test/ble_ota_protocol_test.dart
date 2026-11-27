@@ -1,9 +1,134 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/utils/bleOTA.dart';
 
+class _Device extends Fake implements BluetoothDevice {
+  @override
+  int get mtuNow => 515;
+}
+
+class _Service extends Fake implements BluetoothService {}
+
+class _Characteristic extends Fake implements BluetoothCharacteristic {
+  final events = StreamController<List<int>>.broadcast(sync: true);
+  List<int> readableStatus = [];
+  void Function(List<int> bytes)? onWrite;
+  void publish(List<int> bytes) {
+    readableStatus = bytes;
+    events.add(bytes);
+  }
+
+  @override
+  Stream<List<int>> get onValueReceived => events.stream;
+  @override
+  Future<List<int>> read({int timeout = 15}) async => readableStatus;
+  @override
+  Future<bool> setNotifyValue(
+    bool notify, {
+    int timeout = 15,
+    bool forceIndications = false,
+  }) async => true;
+  @override
+  Future<void> write(
+    List<int> bytes, {
+    bool withoutResponse = false,
+    bool allowLongWrite = false,
+    int timeout = 15,
+  }) async => onWrite?.call(bytes);
+}
+
 void main() {
+  for (final legacyError in [true, false]) {
+    test(
+      'protocol 0 starts with data and honors terminal notification (error=$legacyError)',
+      () async {
+        final data = _Characteristic(), ctl = _Characteristic();
+        addTearDown(data.events.close);
+        addTearDown(ctl.events.close);
+        final lengths = <int>[];
+        ctl.onWrite = (_) => fail('Early 26.x firmware has no START command');
+        data.onWrite = (bytes) {
+          lengths.add(bytes.length);
+          ctl.publish([0x02]);
+          if (bytes.length < 512) ctl.publish([legacyError ? 0x04 : 0x05]);
+        };
+        final writer = Esp32OtaPackage(data, ctl);
+        final update = writer.updateFirmware(
+          _Device(),
+          2,
+          _Service(),
+          data,
+          ctl,
+          firmware: Uint8List(1031),
+        );
+        if (legacyError) {
+          await expectLater(update, throwsStateError);
+        } else {
+          await update;
+        }
+        expect(writer.firmwareupdate, !legacyError);
+        expect(lengths, [512, 512, 7]);
+      },
+    );
+  }
+
+  test(
+    'protocol 1 waits for the last flash receipt before sending FINISH',
+    () async {
+      final data = _Characteristic(), ctl = _Characteristic();
+      addTearDown(data.events.close);
+      addTearDown(ctl.events.close);
+      const size = 66001;
+      var sent = 0;
+      var finished = false;
+      final finalWrite = Completer<void>();
+      void publish(BleOtaV1State state, int received, int declared) {
+        final packet = Uint8List(12)
+          ..[0] = 1
+          ..[1] = state.value
+          ..[3] = 15;
+        ByteData.sublistView(packet)
+          ..setUint32(4, received, Endian.little)
+          ..setUint32(8, declared, Endian.little);
+        ctl.publish(packet);
+      }
+
+      publish(BleOtaV1State.waiting, 0, 0);
+      ctl.onWrite = (packet) {
+        if (packet.first == 1) {
+          publish(BleOtaV1State.updating, 0, size);
+        } else {
+          expect(packet, [2]);
+          finished = true;
+          publish(BleOtaV1State.rebooting, size, size);
+        }
+      };
+      data.onWrite = (bytes) {
+        sent += bytes.length;
+        if (sent == 65536) publish(BleOtaV1State.flashing, sent, size);
+        if (sent == size) finalWrite.complete();
+      };
+      final writer = Esp32OtaPackage(data, ctl);
+      final update = writer.updateFirmware(
+        _Device(),
+        2,
+        _Service(),
+        data,
+        ctl,
+        firmware: Uint8List(size),
+      );
+      await finalWrite.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(finished, isFalse);
+      publish(BleOtaV1State.flashing, size, size);
+      await update;
+      expect(finished, isTrue);
+      expect(writer.firmwareupdate, isTrue);
+    },
+  );
   group('BLE OTA protocol version 1', () {
     test('recognizes and decodes a 12-byte version 1 status packet', () {
       final packet = Uint8List(12);

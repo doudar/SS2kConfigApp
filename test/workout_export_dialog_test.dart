@@ -90,6 +90,28 @@ void main() {
     },
   );
 
+  testWidgets('Peloton shows the entire save dialog before scrolling', (
+    tester,
+  ) async {
+    // 1920 x 1080 at 240 dpi, with the Android navigation bar visible.
+    tester.view.devicePixelRatio = 1.5;
+    tester.view.physicalSize = const Size(1920, 1008);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await open(tester, chooser(), brightness: Brightness.dark);
+    final scroll = Scrollable.of(tester.element(find.text('Save your ride')));
+    expect(scroll.position.maxScrollExtent, 0);
+    for (final label in [
+      'Workout skyline',
+      'Strava',
+      'Intervals.icu',
+      'Save & upload',
+      'Discard workout',
+    ]) {
+      expect(find.text(label).hitTestable(), findsOneWidget);
+    }
+  });
+
   Future<void> tapVisible(WidgetTester tester, String label) async {
     await tester.ensureVisible(find.text(label));
     await tester.pumpAndSettle();
@@ -126,6 +148,10 @@ void main() {
   testWidgets(
     'upload map overrides this ride and preserves the default and city',
     (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1280, 672);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       const center = (name: 'Bolingbrook, IL', lat: 41.70, lon: -88.07);
@@ -142,6 +168,9 @@ void main() {
       await tapVisible(tester, 'Chainring');
       await tester.tap(find.text('No map').last);
       await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(400, 800);
+      await tester.pumpAndSettle();
+      expect(find.text('No map'), findsOneWidget);
       await tapVisible(tester, 'Strava');
       await tapVisible(tester, 'Save & upload');
       expect(result!.mapSettings.drawing, RideDrawing.none);

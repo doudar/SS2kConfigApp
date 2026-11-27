@@ -19,7 +19,7 @@ A Flutter-based mobile application for controlling and configuring SmartSpin2K d
 
 ### ⚙️ Device Configuration
 - Easy-to-use settings interface
-- Firmware updates over WiFi or Bluetooth
+- Paired settings and firmware updates over Bluetooth or DirCon (Wi-Fi)
 - Configuration presets for quick setup
 - Customizable power curves and resistance settings
 
@@ -27,6 +27,22 @@ A Flutter-based mobile application for controlling and configuring SmartSpin2K d
 - Strava connectivity for workout uploads
 - FIT file compatibility
 - Demo mode for testing without hardware
+
+## Pairing a SmartSpin2k
+
+Connect to the trainer in the app. When prompted, press and hold both shifter buttons. The app saves the pairing in the operating system's secure storage and reuses it over Bluetooth or DirCon. Tap the trainer name at the top of the screen and choose **Unpair trainer** to remove this app’s pairing from both devices. The same action is available in **Settings**. If the connection drops during removal, reconnect and choose **Finish unpairing**. A trainer factory reset clears all of its pairings. Older firmware retains its existing connection and update methods.
+
+The app detects older firmware when you connect. If this app previously saw secure firmware at the same trainer address, choose **Use older firmware** once to allow unencrypted settings and updates. The app remembers the choice across restarts, checks the firmware on each connection, and switches back to secure pairing when the trainer supports it again. On a Bluetooth connection, legacy updates use the trainer’s BLE update service when available. On a network connection they use HTTP.
+
+Tap **App Version** four times on the device screen to unlock **Maintenance → Developer Options**. This preference persists across app restarts. The menu controls cadence, heart rate, power, and ERG target simulation.
+
+Flutter fetches the custom characteristic schema and Dart codecs from [SS2kProtocol](https://github.com/doudar/SS2kProtocol). To adopt a protocol change, update the commit pinned in `pubspec.yaml`, run `flutter pub get`, and commit the updated `pubspec.lock`.
+
+## Updating trainer firmware
+
+The app checks the SmartSpin2k signature on the GitHub release manifest before downloading firmware. It then verifies the downloaded archive and the image for your trainer before starting the transfer. Older GitHub releases without a signed manifest are unavailable through the in-app download.
+
+For a manual update, select the official release ZIP to keep the firmware and its signature together. You can also select a local firmware binary. If the app cannot verify the SmartSpin2k signature, it asks whether you trust the author. Cancel to leave the trainer on its current firmware.
 
 ## Installation
 
@@ -198,7 +214,9 @@ and workout export as Classic.
   The header stays mounted to preserve connection monitoring, and expansion
   preserves the active Arcade state. Reduced motion switches layouts directly.
   The workout header has a mode switch and ride menu. On supported Android
-  devices, tap **PiP** during a structured workout to open picture-in-picture.
+  devices, tap **PiP** during a structured workout or Free Ride to open
+  picture-in-picture. Free Ride shows elapsed time, power, cadence, and heart
+  rate when available.
   Fullscreen Arcade has the same action in its toolbar.
   Phones put those actions on a separate row below the device name. While the
   header is hidden during an Arcade ride, labeled in-game mode/menu buttons appear;

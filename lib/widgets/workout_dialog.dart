@@ -17,6 +17,7 @@ class WorkoutDialog extends StatelessWidget {
     this.actions = const [],
     this.showClose = false,
     this.listBody = false,
+    this.maxWidth,
     this.showListScrollHint = true,
   });
 
@@ -28,6 +29,7 @@ class WorkoutDialog extends StatelessWidget {
   final List<Widget> actions;
   final bool showClose;
   final bool listBody;
+  final double? maxWidth;
 
   /// Disable when the content places its own cue above a persistent toolbar.
   final bool showListScrollHint;
@@ -40,9 +42,11 @@ class WorkoutDialog extends StatelessWidget {
       data: theme,
       child: Dialog(
         constraints: BoxConstraints(
-          maxWidth: listBody
-              ? WorkoutSettingsTheme.browserWidth
-              : WorkoutSettingsTheme.maxWidth,
+          maxWidth:
+              maxWidth ??
+              (listBody
+                  ? WorkoutSettingsTheme.browserWidth
+                  : WorkoutSettingsTheme.maxWidth),
         ),
         insetPadding: WorkoutSettingsTheme.inset,
         shape: RoundedRectangleBorder(

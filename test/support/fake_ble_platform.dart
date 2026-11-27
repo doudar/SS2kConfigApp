@@ -110,6 +110,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   /// Whether the device answers custom-characteristic requests. See
   /// [writeCharacteristic]; setting it false models a response-silent device.
   bool answerCustomRequests = true;
+  List<int> Function(List<int>)? customReply;
 
   final List<List<int>> writes = [];
 
@@ -252,6 +253,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     discoveryIncludesMachineStatus = true;
     discoveryCount = 0;
     answerCustomRequests = true;
+    customReply = null;
     _staleNotifyUuids.clear();
     _permanentStaleNotifyUuids.clear();
   }
@@ -396,9 +398,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
   ) async => BmBluetoothAdapterState(adapterState: BmAdapterStateEnum.on);
 
   @override
-  Future<bool> writeCharacteristic(
-    BmWriteCharacteristicRequest request,
-  ) async {
+  Future<bool> writeCharacteristic(BmWriteCharacteristicRequest request) async {
     final gateKey = _key(request.characteristicUuid.str);
     final gate = _writeGates[gateKey];
     if (gate != null) {
@@ -418,10 +418,16 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     // holds the shared transport queue until it arrives. A silent fake makes
     // every settings sweep cost the full 2 s response timeout per entry, which
     // is minutes for one connection bootstrap.
-    if (answerCustomRequests &&
-        _key(request.characteristicUuid.str) == _key(ccUUID) &&
-        request.value.length > 1) {
-      final reference = request.value[1];
+    if (_key(request.characteristicUuid.str) == _key(ccUUID) &&
+        (customReply != null ||
+            request.value.length > 1 &&
+                (answerCustomRequests ||
+                    request.value.length == 2 && request.value[1] == 0x36))) {
+      final response =
+          customReply?.call(request.value) ??
+          (request.value[1] == 0x31 || request.value[1] == 0x36
+              ? [0xff, request.value[1]]
+              : [0x80, request.value[1]]);
       scheduleMicrotask(() {
         _characteristicReceived.add(
           BmCharacteristicData(
@@ -433,9 +439,7 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
             // This harness models firmware from before 0x31. Unknown reads
             // are explicitly rejected, which exercises the production app's
             // legacy per-setting fallback without weakening its strict rule.
-            value: reference == 0x31
-                ? const [0xff, 0x31]
-                : [0x80, reference],
+            value: response,
             success: true,
             errorCode: 0,
             errorString: '',
@@ -494,6 +498,12 @@ final class FakeBlePlatform extends FlutterBluePlusPlatform {
     final failure = connectFailure;
     if (failure != null) throw failure;
     scheduleMicrotask(() => markConnected(request.remoteId));
+    return true;
+  }
+
+  @override
+  Future<bool> disconnect(BmDisconnectRequest request) async {
+    scheduleMicrotask(() => markDisconnected(request.remoteId));
     return true;
   }
 }
@@ -578,10 +588,7 @@ class BleHarness {
 
 /// Runs [body] with every `print` line also appended to [sink], so a test can
 /// assert on a specific transport log line without silencing normal output.
-Future<void> withPrintCapture(
-  List<String> sink,
-  Future<void> Function() body,
-) {
+Future<void> withPrintCapture(List<String> sink, Future<void> Function() body) {
   return runZoned(
     body,
     zoneSpecification: ZoneSpecification(

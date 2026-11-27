@@ -188,7 +188,8 @@ void main() {
       // The compact in-ride FTP action reflects edits made in the lobby.
       await controller.updateFTP(250);
       await tester.pump();
-      expect(find.text('FTP 250'), findsOneWidget);
+      expect(find.text('FTP 250 W · Adjust'), findsOneWidget);
+      expect(find.byType(ClassicWorkoutPreview), findsNothing);
       data.ftmsData.watts = 177;
       data.ftmsData.cadence = 92;
       data.ftmsData.heartRate = 145;
@@ -203,6 +204,7 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(controller.isPlaying, isTrue);
       expect(find.byType(WorkoutLobby), findsNothing);
+      expect(find.text('FTP 250').hitTestable(), findsOneWidget);
       await tester.tap(find.text('Ride menu'));
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Just ride'), findsOneWidget);
@@ -314,9 +316,16 @@ void main() {
         isTrue,
       );
       expect(find.text('Ride menu').hitTestable(), findsOneWidget);
-      expect(find.byTooltip('Picture in picture').hitTestable(), findsOneWidget);
+      expect(
+        find.byTooltip('Picture in picture').hitTestable(),
+        findsOneWidget,
+      );
       expect(find.text('Classic mode').hitTestable(), findsOneWidget);
       expect(find.byTooltip('Return to Classic').hitTestable(), findsOneWidget);
+      expect(
+        find.byType(ClassicWorkoutPreview, skipOffstage: false),
+        findsNothing,
+      );
       if (const bool.fromEnvironment('CLASSIC_STYLE_SCREENSHOTS')) {
         await tester.runAsync(() async {
           final boundary =
@@ -453,6 +462,46 @@ void main() {
       }
       expect(find.text('Arcade mode'), findsOneWidget);
       expect(find.text('Classic mode'), findsNothing);
+      controller.loadWorkout(
+        '<workout_file><name>Free Ride</name><workout><FreeRide Duration="0"/></workout></workout_file>',
+      );
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.tap(find.text('START WORKOUT'));
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      });
+      controller.startProgress();
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.isUnlimitedFreeRide, isTrue);
+      for (final arcade in [false, true]) {
+        if (arcade) {
+          await tester.tap(find.text('Arcade mode'));
+          await tester.pump(const Duration(milliseconds: 600));
+        }
+        await tester.tap(find.byTooltip('Picture in picture').hitTestable());
+        await tester.pump();
+        tester.view.physicalSize = const Size(192, 96);
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.text('Power'), findsOneWidget);
+        expect(find.text('Cadence'), findsOneWidget);
+        expect(
+          find.textContaining(RegExp(r'\d+:\d{2}:\d{2} elapsed$')),
+          findsOneWidget,
+        );
+        expect(find.text('Target'), findsNothing);
+        expect(
+          find.bySemanticsLabel(
+            'Current interval and upcoming workout profile',
+          ),
+          findsNothing,
+        );
+        await expandOverlay();
+        expect(controller.isPlaying, isTrue);
+      }
+      await tester.tap(find.text('PAUSE').hitTestable());
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(controller.isPlaying, isFalse);
+      expect(find.byTooltip('Picture in picture'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 20));
       expect(tester.takeException(), isNull);

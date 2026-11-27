@@ -9,8 +9,8 @@ import 'dart:async';
 import 'dart:io' as io;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:archive/archive_io.dart' as archive;
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import '../utils/firmware_authenticity.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:http/http.dart' as http;
@@ -23,6 +23,33 @@ import '../utils/constants.dart';
 import '../utils/firmware_architecture.dart';
 import '../utils/firmware_release_service.dart';
 import '../widgets/ss2k_app_bar.dart';
+
+Future<bool> confirmUnofficialFirmware(
+  BuildContext context,
+  String filename,
+) async {
+  return await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('Trust this firmware author?'),
+          content: Text(
+            '$filename has no valid official SmartSpin2k signature. Do you trust the author of this firmware?',
+          ),
+          actions: [
+            TextButton(
+              autofocus: true,
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('I trust the author'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+}
 
 class FirmwareUpdateScreen extends StatefulWidget {
   final BluetoothDevice device;
@@ -48,6 +75,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   VoidCallback? _firmwareVersionListener;
   Future<void>? _initializationFuture;
 
+  bool _loadingReleases = true;
   List<FirmwareRelease> _availableReleases = [];
   FirmwareRelease? _selectedRelease;
   HardwareDetection? _hardwareDetection;
@@ -55,17 +83,17 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   OtaPackage? otaPackage;
 
   StreamSubscription<int>? progressSubscription;
-  StreamSubscription<BluetoothConnectionState>? charSubscription;
   double _progress = 0;
   bool _loaded = false;
   DateTime? startTime;
   String timeRemaining = 'Calculating...';
   bool _usingWifi = false;
+  bool _pairedUpload = false;
   WifiOtaPhase? _wifiOtaPhase;
   String _updateStatus = '';
 
-  bool _uploadCompleteDialogShown = false;
   bool updatingFirmware = false;
+  bool _verifying = false;
 
   final int PICKER = 2;
   final int RELEASE = 3;
@@ -103,27 +131,11 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       this.deviceData.charReceived.addListener(_charListener);
     }
     unawaited(_bootstrapFirmwareData());
-    // Listen for firmware update progress and handle completion
-    progressSubscription?.onDone(() {
-      // Do not show dialog here, let the main control flow handle it
-    });
-
-    // Monitor device disconnection during firmware update
-    charSubscription = this.widget.device.connectionState.listen((state) {
-      // If progress is high (>95%), assume disconnect is due to reboot/completion
-      if (!_usingWifi &&
-          state != BluetoothConnectionState.connected &&
-          updatingFirmware &&
-          _progress < 0.95) {
-        _showUploadCompleteDialog(false);
-      }
-    });
   }
 
   @override
   void dispose() {
     progressSubscription?.cancel();
-    charSubscription?.cancel();
     this.deviceData.charReceived.removeListener(_charListener);
     if (_firmwareVersionListener != null) {
       deviceData.firmwareVersion.removeListener(_firmwareVersionListener!);
@@ -141,43 +153,24 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     }
   }
 
-  // Method to display dialog based on firmware update success or failure
-  void _showUploadCompleteDialog(bool isSuccess, {String? from, String? to}) {
-    if (!_uploadCompleteDialogShown) {
-      //Only show this dialog once.
-      _uploadCompleteDialogShown = true;
-      String title = isSuccess ? "Upload Successful" : "Upload Failed";
-      String content;
-
-      if (isSuccess) {
-        if (from != null && to != null) {
-          content = "Firmware updated from $from to $to.";
-        } else {
-          content = "The firmware upload was successful.";
-        }
-      } else {
-        content = "The device disconnected before the upload could complete.";
-      }
-
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text(title),
-            content: Text(content),
-            actions: <Widget>[
-              TextButton(
-                child: Text("OK"),
-                onPressed: () {
-                  _uploadCompleteDialogShown = false;
-                  Navigator.of(context).pop();
-                },
-              ),
-            ],
-          );
-        },
-      );
-    }
+  void _showVerifiedUpdate(String from, String to) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Upload Successful'),
+        content: Text(
+          firmwareVersionsMatch(from, to)
+              ? 'Transfer accepted. The trainer reports $to after reboot.'
+              : 'Firmware updated from $from to $to.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool> _showConfirmDialog({
@@ -217,17 +210,8 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   }
 
   Future<void> _initialize() async {
-    // A DIRCON session exposes the custom settings and FTMS services, but it
-    // does not populate FlutterBluePlus-only OTA characteristics. Wi-Fi OTA is
-    // still available and must not be blocked on those BLE fallback objects.
-    if (!deviceData.isSimulated) {
-      otaPackage = deviceData.createFirmwareOtaPackage();
-    }
-    if (otaPackage != null) {
-      await _progressStreamSubscription();
-    }
     await _detectHardwareArchitecture();
-    await _fetchAllFirmwareReleases();
+    unawaited(_fetchAllFirmwareReleases());
   }
 
   Future<void> _detectHardwareArchitecture() async {
@@ -282,15 +266,13 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
 
   Future<void> _progressStreamSubscription() async {
     await progressSubscription?.cancel();
-    if (this.deviceData.charReceived.value) {
-      progressSubscription = otaPackage!.percentageStream.listen((event) {
+    progressSubscription = otaPackage!.percentageStream.listen((event) {
+      if (!mounted) return;
+      setState(() {
         _progress = event / 100.0;
-        // Do not show dialog here when event == 100, let the main control flow handle it
-        setState(() {
-          updateProgress();
-        });
+        updateProgress();
       });
-    }
+    });
   }
 
   Future<void> _fetchAllFirmwareReleases() async {
@@ -298,6 +280,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       final releasesList = await const FirmwareReleaseService().fetchAll();
       if (!mounted) return;
       setState(() {
+        _loadingReleases = false;
         _availableReleases = releasesList;
         _selectedRelease = _availableReleases
             .cast<FirmwareRelease?>()
@@ -311,6 +294,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       print('Error fetching firmware releases: $e');
       if (!mounted) return;
       setState(() {
+        _loadingReleases = false;
         _availableReleases = [];
         _selectedRelease = null;
         _updateSelectedVersionColor();
@@ -327,44 +311,52 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     setState(() {});
   }
 
-  Future<String> _downloadAndExtractFirmware(String downloadUrl) async {
-    final architecture = _hardwareDetection!.architecture;
-    final expectedFilename = architecture.firmwareFilename;
-    final tempDir = await getTemporaryDirectory();
-    await tempDir.create(recursive: true);
-    final zipFile = io.File('${tempDir.path}/firmware.zip');
-    final firmwareFile = io.File('${tempDir.path}/$expectedFilename');
-
-    try {
-      final response = await http.get(Uri.parse(downloadUrl));
-      if (response.statusCode != 200) {
-        throw Exception(
-          'Failed to download firmware zip: HTTP ${response.statusCode}',
+  Future<FirmwareImage?> _pickFirmware(
+    FirmwareAuthenticity verifier,
+    FirmwareArchitecture architecture,
+  ) async {
+    final files = await FilePicker.pickFiles(
+      dialogTitle: 'Select firmware and optional matching .bin.sig',
+    );
+    if (files.isEmpty) return null;
+    final images = files
+        .where(
+          (f) =>
+              f.name.toLowerCase().endsWith('.bin') ||
+              f.name.toLowerCase().endsWith('.zip'),
+        )
+        .toList();
+    if (images.length != 1 || files.length > 2)
+      throw const FormatException(
+        'Select one firmware BIN or ZIP. A BIN can include its matching .bin.sig file.',
+      );
+    final file = images.single;
+    if (await file.length() > FirmwareAuthenticity.maxArchive)
+      throw const FormatException('Firmware file is too large.');
+    Uint8List? signature;
+    if (files.length == 2) {
+      final sidecar = files.firstWhere((f) => f != file);
+      if (!file.name.toLowerCase().endsWith('.bin') ||
+          sidecar.name != '${file.name}.sig')
+        throw const FormatException(
+          'Select the signature named after the BIN, with .sig appended.',
         );
-      }
-
-      await zipFile.writeAsBytes(response.bodyBytes);
-
-      final archiveBytes = await zipFile.readAsBytes();
-      final decodedArchive = archive.ZipDecoder().decodeBytes(archiveBytes);
-      final files = decodedArchive.where((file) => file.isFile).toList();
-      final selectedEntry = selectFirmwareArchiveEntry(
-        files.map((file) => file.name),
-        architecture,
-      );
-      final selectedFile = files.singleWhere(
-        (file) => file.name == selectedEntry,
-      );
-
-      final bytes = Uint8List.fromList(selectedFile.content as List<int>);
-      validateFirmwareImage(bytes, architecture);
-      await firmwareFile.writeAsBytes(bytes, flush: true);
-      return firmwareFile.path;
-    } finally {
-      if (await zipFile.exists()) {
-        await zipFile.delete();
+      if (await sidecar.length() <= 72) signature = await sidecar.readAsBytes();
+    } else if (file.name.toLowerCase().endsWith('.bin') && file.path != null) {
+      final sidecar = io.File('${file.path!}.sig');
+      try {
+        if (await sidecar.exists() && await sidecar.length() <= 72)
+          signature = await sidecar.readAsBytes();
+      } on io.FileSystemException {
+        // Mobile file providers can grant access only to the selected document.
       }
     }
+    return verifier.local(
+      file.name,
+      await file.readAsBytes(),
+      architecture,
+      signature: signature,
+    );
   }
 
   bool _isNewerVersion(String versionA, String versionB) {
@@ -420,6 +412,7 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     if (this.deviceData.isSimulated) return;
 
     await _initializeOnce();
+    if (!mounted || updatingFirmware) return;
     if (_hardwareDetection == null) {
       _showPreflightError('Could not determine the connected hardware.');
       return;
@@ -449,61 +442,41 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
     if (type == RELEASE && effectiveRelease != null) {
       targetVersion = effectiveRelease.version;
     }
-    // Note: For PICKER (2), targetVersion remains null as we can't easily know the version
-
-    print(
-      'Target firmware version for verification: $targetVersion (Type: $type)',
-    );
 
     try {
-      String binFilePath;
-
-      if (type == PICKER) {
-        // Get firmware file path from picker
-        final pickedFile = await FilePicker.pickFile(
-          type: FileType.custom,
-          allowedExtensions: ['bin'],
-        );
-
-        if (pickedFile == null) {
-          setState(() {
-            updatingFirmware = false;
-          });
-          return;
-        }
-
-        final pickedPath = pickedFile.path;
-        if (pickedPath != null) {
-          binFilePath = pickedPath;
-        } else {
-          // Some providers expose only a URI. Materialize it because both BLE
-          // and Wi-Fi OTA require a normal filesystem path.
-          final directory = await getTemporaryDirectory();
-          final safeName = pickedFile.name.split(RegExp(r'[/\\]')).last;
-          final temporaryFirmware = io.File('${directory.path}/$safeName');
-          await temporaryFirmware.writeAsBytes(await pickedFile.readAsBytes());
-          binFilePath = temporaryFirmware.path;
-        }
-      } else if (type == RELEASE && effectiveRelease != null) {
-        // Download and extract firmware from selected release
-        binFilePath = await _downloadAndExtractFirmware(
-          effectiveRelease.downloadUrl,
-        );
-      } else {
-        throw Exception('No firmware release was selected.');
-      }
-
-      final firmwareBytes = await io.File(binFilePath).readAsBytes();
-      validateFirmwareImage(
-        Uint8List.fromList(firmwareBytes),
-        _hardwareDetection!.architecture,
+      final verifier = FirmwareAuthenticity.fromPem(
+        await rootBundle.loadString('assets/ss2k-release-public.pem'),
       );
-
+      final FirmwareImage image;
+      if (type == PICKER) {
+        final local = await _pickFirmware(
+          verifier,
+          _hardwareDetection!.architecture,
+        );
+        if (local == null || !mounted) return;
+        if (!local.official &&
+            !await confirmUnofficialFirmware(context, local.filename))
+          return;
+        image = local;
+      } else if (type == RELEASE && effectiveRelease != null) {
+        final client = http.Client();
+        try {
+          image = await verifier.download(
+            effectiveRelease,
+            _hardwareDetection!.architecture,
+            client,
+          );
+        } finally {
+          client.close();
+        }
+      } else {
+        throw const FormatException('Select a firmware release.');
+      }
+      if (!mounted) return;
+      final firmwareBytes = image.bytes;
       final confirmed = await _showConfirmDialog(
-        release: effectiveRelease?.version ?? 'Local file',
-        filename: type == PICKER
-            ? binFilePath.split(RegExp(r'[/\\]')).last
-            : _hardwareDetection!.architecture.firmwareFilename,
+        release: targetVersion ?? 'Local file',
+        filename: image.filename,
       );
       if (!confirmed) {
         setState(() => updatingFirmware = false);
@@ -511,149 +484,108 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
       }
       await WakelockPlus.enable();
 
-      // Try WiFi update first
-      final wifiResult = await WifiOTA.updateFirmware(
-        deviceName: deviceData.preferredDeviceName(widget.device.advName),
-        deviceIp: deviceData.advertisedIpAddress,
-        firmwarePath: binFilePath,
-        firmwareFilename: _hardwareDetection!.architecture.firmwareFilename,
-        onProgress: (progress) {
-          if (!mounted) return;
-          setState(() {
-            _wifiOtaPhase = progress.phase;
-            _updateStatus = progress.message;
-            if (progress.fraction != null) {
-              _progress = progress.fraction!;
-              if (progress.phase == WifiOtaPhase.uploading) {
-                updateProgress();
-              }
-            }
-          });
-        },
-      );
-
-      bool updateSuccess = wifiResult.accepted;
-
-      if (!wifiResult.accepted && !wifiResult.shouldFallBackToBluetooth) {
-        throw Exception(wifiResult.message);
-      }
-
-      if (wifiResult.shouldFallBackToBluetooth) {
-        otaPackage = deviceData.createFirmwareOtaPackage();
-        if (otaPackage == null) {
-          throw Exception(
-            '${wifiResult.message} Bluetooth fallback is unavailable while connected over DIRCON. Reconnect using Bluetooth and try again.',
+      if (originalVersion.isEmpty) {
+        await deviceData.requestSetting(widget.device, fwVname);
+        originalVersion = deviceData.firmwareVersion.value;
+        if (originalVersion.isEmpty && targetVersion == null) {
+          throw StateError(
+            'Could not read the running firmware version before uploading.',
           );
         }
+      }
+      bool updateSuccess;
+      bool receiptMissing = false;
+      final uploadEpoch = deviceData.transportState.value.epoch;
+      _pairedUpload = await deviceData.usesPairedSettings(widget.device);
+      otaPackage = !_pairedUpload && !deviceData.isDirConConnected
+          ? deviceData.createFirmwareOtaPackage()
+          : null;
+      if (_pairedUpload) {
+        setState(() {
+          _usingWifi = deviceData.isDirConConnected;
+          _wifiOtaPhase = WifiOtaPhase.uploading;
+          _updateStatus = 'Streaming firmware over the paired connection...';
+        });
+        await deviceData.streamPairedFirmware(widget.device, firmwareBytes, (
+          fraction,
+        ) {
+          if (mounted)
+            setState(() {
+              _progress = fraction;
+              updateProgress();
+            });
+        });
+        updateSuccess = true;
+      } else if (otaPackage == null) {
+        final wifiResult = await WifiOTA.updateFirmware(
+          deviceName: deviceData.preferredDeviceName(widget.device.advName),
+          deviceIp: deviceData.advertisedIpAddress,
+          firmwareBytes: firmwareBytes,
+          firmwareFilename: _hardwareDetection!.architecture.firmwareFilename,
+          onProgress: (progress) {
+            if (!mounted) return;
+            setState(() {
+              _wifiOtaPhase = progress.phase;
+              _updateStatus = progress.message;
+              if (progress.fraction != null) {
+                _progress = progress.fraction!;
+                if (progress.phase == WifiOtaPhase.uploading) {
+                  updateProgress();
+                }
+              }
+            });
+          },
+        );
 
-        // Show message about falling back to BLE
+        updateSuccess = wifiResult.accepted;
+
+        if (!updateSuccess) throw StateError(wifiResult.message);
+      } else {
         setState(() {
           _usingWifi = false;
-          _progress = 0;
-          startTime = null;
-          timeRemaining = 'Calculating...';
           _wifiOtaPhase = null;
           _updateStatus = 'Uploading firmware via Bluetooth…';
         });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'WiFi update failed. Falling back to Bluetooth (this may take up to 5 minutes)...',
-            ),
-            duration: Duration(seconds: 5),
-          ),
-        );
-
-        // Stop notifications before BLE update
-        if (deviceData.indoorBikeCharacteristic != null) {
-          await deviceData.indoorBikeCharacteristic!.setNotifyValue(false);
-        }
-        deviceData.subscribed = false;
-
-        // Re-initialize OTA package to ensure we have a fresh stream controller
-        otaPackage = deviceData.createFirmwareOtaPackage();
         await _progressStreamSubscription();
-
-        await deviceData.updateFirmwareWithPackage(
-          otaPackage!,
-          widget.device,
-          type,
-          binFilePath: binFilePath,
-        );
-
-        updateSuccess = otaPackage!.firmwareupdate;
-
-        // Restore the custom settings listener used for verification. FTMS
-        // remains blocked until this screen is disposed.
-        deviceData.decode(this.widget.device);
-      }
-
-      // Determine whether to attempt verification
-      // We attempt verification if update reported success, OR if we are on BLE and progress was high
-      // (as BLE connection often drops right at the end causing "failure" report)
-      bool shouldVerify = updateSuccess;
-      if (!updateSuccess && !_usingWifi && _progress > 0.95) {
-        print(
-          'Update reported failure but progress is high ($_progress). Attempting verification.',
-        );
-        shouldVerify = true;
-      }
-
-      if (shouldVerify) {
-        String? verifiedVersion = await _verifyFirmwareUpdate(
-          targetVersion,
-          originalVersion,
-        );
-
-        if (verifiedVersion != null) {
-          _showUploadCompleteDialog(
-            true,
-            from: originalVersion,
-            to: verifiedVersion,
+        try {
+          await deviceData.updateFirmwareWithPackage(
+            otaPackage!,
+            widget.device,
+            type,
+            firmwareBytes: firmwareBytes,
           );
-        } else {
-          // Verification failed - reboot and show error
-          _showUploadCompleteDialog(false);
-          deviceData.reboot(widget.device);
+          updateSuccess = otaPackage!.firmwareupdate;
+        } on BleOtaCompletionUnconfirmed {
+          // Older trainers can reboot before delivering the end notification.
+          updateSuccess = true;
+          receiptMissing = true;
         }
+      }
+      if (!mounted) return;
+      if (!updateSuccess)
+        throw StateError('The trainer did not accept the firmware.');
+      final verified = await _verifyFirmwareUpdate(
+        targetVersion,
+        originalVersion,
+        uploadEpoch,
+        receiptMissing: receiptMissing,
+      );
+      if (!mounted) return;
+      if (verified == null) {
+        _showPreflightError(
+          'Could not confirm the new firmware after reboot. Last reported version: ${deviceData.firmwareVersion.value.isEmpty ? originalVersion : deviceData.firmwareVersion.value}.',
+        );
       } else {
-        _showUploadCompleteDialog(false);
+        _showVerifiedUpdate(originalVersion, verified);
       }
     } catch (e) {
-      bool recovered = false;
-      // If error occurred but progress was high, try to verify anyway
-      if (!_usingWifi && _progress > 0.95) {
-        print(
-          'Exception caught but progress is high. Attempting verification. Error: $e',
-        );
-        String? verifiedVersion = await _verifyFirmwareUpdate(
-          targetVersion,
-          originalVersion,
-        );
-        if (verifiedVersion != null) {
-          _showUploadCompleteDialog(
-            true,
-            from: originalVersion,
-            to: verifiedVersion,
-          );
-          recovered = true;
-        }
-      }
-
-      if (!recovered) {
-        // Restore the custom settings listener even if the update fails. FTMS
-        // remains blocked until this screen is disposed.
-        if (!_usingWifi) {
-          deviceData.decode(this.widget.device);
-        }
-        _showPreflightError(e.toString().replaceFirst('Exception: ', ''));
-        print('Firmware update failed with error: $e');
-      }
+      _showPreflightError(e.toString().replaceFirst('Exception: ', ''));
+      print('Firmware update failed with error: $e');
     } finally {
       if (mounted) {
         setState(() {
           updatingFirmware = false;
+          _verifying = false;
         });
       }
     }
@@ -669,126 +601,70 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
   Future<String?> _verifyFirmwareUpdate(
     String? targetVersion,
     String originalVersion,
-  ) async {
-    // Show verifying dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Verifying Firmware"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text(
-                targetVersion != null
-                    ? "Waiting for device to reboot and report version $targetVersion..."
-                    : "Waiting for device to reboot and report new version...",
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    String? verifiedVersion;
-    int checkCount = 0;
-
-    // Clear the current version to ensure we get a fresh reading
-    deviceData.firmwareVersion.value = "";
-
-    if (!deviceData.isTransportActive) {
-      try {
-        await deviceData.reconnectAndSetup(widget.device);
-      } catch (error) {
-        print('[FirmwareVerify] Initial reconnect failed: $error');
-      }
-    }
-
-    while (checkCount < 60) {
-      // 60 seconds (checking every 1s)
-      await Future.delayed(Duration(seconds: 1));
-      checkCount++;
-
+    int uploadEpoch, {
+    required bool receiptMissing,
+  }) async {
+    setState(() => _verifying = true);
+    final deadline = DateTime.now().add(const Duration(minutes: 2));
+    var stableReads = 0;
+    var stableEpoch = -1;
+    String? candidate;
+    while (mounted &&
+        !deviceData.isUserDisconnect &&
+        DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      if (!mounted) return null;
       if (!deviceData.isTransportActive) {
+        stableReads = 0;
         try {
           await deviceData.reconnectAndSetup(widget.device);
         } catch (_) {
           continue;
         }
       }
-
-      if (deviceData.isTransportActive) {
-        await deviceData.requestSetting(widget.device, fwVname);
+      final epoch = deviceData.transportState.value.epoch;
+      if (!deviceData.isTransportActive || epoch == uploadEpoch) continue;
+      String? current;
+      try {
+        current = await deviceData.readFirmwareVersion(widget.device);
+      } catch (_) {
+        // A disconnect or incomplete handshake can race the version read.
       }
-
-      // Get current version from deviceData
-      // Note: deviceData.firmwareVersion is updated via notification/polling
-      // We might need to force a read or wait for notification.
-      // The app seems to rely on notif.
-
-      String currentVersion = deviceData.firmwareVersion.value;
-      if (currentVersion.isNotEmpty) {
-        if (targetVersion != null) {
-          if (firmwareVersionsMatch(targetVersion, currentVersion)) {
-            if (await _versionRemainsStable(currentVersion, targetVersion)) {
-              verifiedVersion = currentVersion;
-              break;
-            }
-          }
-        } else {
-          // If no target version (e.g. picker), accept any version that is valid
-          // Ideally check if it changed, but if we cleared it, any *new* non-empty report
-          // is likely the post-reboot version.
-          // The user requested: "whatever the firmware version from DeviceData has changed to"
-          // We can check against originalVersion if desired, but for file picker
-          // users might re-flash same version.
-          if (await _versionRemainsStable(currentVersion, targetVersion)) {
-            verifiedVersion = currentVersion;
-            break;
-          }
-        }
-      }
-    }
-
-    // Close verifying dialog
-    Navigator.of(context).pop();
-
-    return verifiedVersion;
-  }
-
-  Future<bool> _versionRemainsStable(
-    String candidateVersion,
-    String? targetVersion,
-  ) async {
-    for (int i = 0; i < 4; i++) {
-      await Future.delayed(const Duration(seconds: 1));
-
-      if (!deviceData.isTransportActive) {
-        return false;
-      }
-
-      await deviceData.requestSetting(widget.device, fwVname);
-      final currentVersion = deviceData.firmwareVersion.value;
-      if (currentVersion.isEmpty) {
+      if (current == null ||
+          !deviceData.isTransportActive ||
+          deviceData.transportState.value.epoch != epoch ||
+          !firmwareUpdateVersionConfirmed(
+            originalVersion,
+            current,
+            targetVersion,
+            receiptMissing: receiptMissing,
+          )) {
+        stableReads = 0;
         continue;
       }
-
-      if (targetVersion != null) {
-        if (!firmwareVersionsMatch(targetVersion, currentVersion)) {
-          return false;
-        }
-      } else if (currentVersion != candidateVersion) {
-        return false;
+      if (current != candidate || epoch != stableEpoch) stableReads = 0;
+      candidate = current;
+      stableEpoch = epoch;
+      if (++stableReads >= 3) {
+        return current;
       }
     }
-
-    return true;
+    return null;
   }
 
   List<Widget> _buildUpdateButtons() {
+    if (_verifying) {
+      return const [
+        Text('Verifying Firmware', textAlign: TextAlign.center),
+        SizedBox(height: 12),
+        LinearProgressIndicator(),
+        SizedBox(height: 12),
+        Text(
+          'Waiting for the trainer to reconnect and report its running version…',
+          textAlign: TextAlign.center,
+        ),
+      ];
+    }
     return <Widget>[
       updatingFirmware
           ? Text(
@@ -798,7 +674,12 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
               textAlign: TextAlign.center,
             )
           : Text(
-              "Firmware will be uploaded via WiFi if available, falling back to BLE if needed.",
+              deviceData.hasPairedSession
+                  ? 'Firmware will be streamed over your paired connection.'
+                  : deviceData.isDirConConnected ||
+                        !deviceData.supportsBleFirmwareUpdate
+                  ? 'Firmware will be uploaded over Wi-Fi.'
+                  : 'Firmware will be uploaded over Bluetooth.',
               textAlign: TextAlign.center,
             ),
       SizedBox(height: updatingFirmware ? 16 : 8),
@@ -826,7 +707,9 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                 if (!_usingWifi || _wifiOtaPhase == WifiOtaPhase.uploading)
                   Text('Time remaining: $timeRemaining'),
                 Text(
-                  _usingWifi
+                  _pairedUpload && _usingWifi
+                      ? 'Updating via DirCon...'
+                      : _usingWifi
                       ? 'Updating via WiFi...'
                       : 'Updating via Bluetooth...',
                 ),
@@ -969,14 +852,21 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                       ],
                     ),
                   ),
-                  SizedBox(height: 20),
-                  Builder(
-                    builder: (context) {
-                      final isNarrow = MediaQuery.of(context).size.width < 600;
-                      final buttons = Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
+                ] else
+                  Text(
+                    _loadingReleases
+                        ? 'Checking for signed firmware releases…'
+                        : 'No signed firmware releases are available.',
+                  ),
+                const SizedBox(height: 20),
+                Builder(
+                  builder: (context) {
+                    final isNarrow = MediaQuery.of(context).size.width < 600;
+                    final buttons = Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_selectedRelease != null)
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Theme.of(
@@ -999,57 +889,51 @@ class _FirmwareUpdateState extends State<FirmwareUpdateScreen> {
                                 'Update to ${_selectedRelease?.displayName ?? "Selected Version"}',
                               ),
                             ),
-                            const SizedBox(height: 8),
-                            if (!io.Platform.isMacOS)
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Theme.of(
-                                    context,
-                                  ).colorScheme.secondary,
-                                  foregroundColor: Theme.of(
-                                    context,
-                                  ).colorScheme.onSecondary,
-                                ),
-                                onPressed: () async {
-                                  startFirmwareUpdate(PICKER);
-                                },
-                                child: const Text(
-                                  textAlign: TextAlign.center,
-                                  'Choose Firmware From Dialog',
-                                ),
-                              ),
-                          ],
-                        ),
-                      );
+                          const SizedBox(height: 8),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.secondary,
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onSecondary,
+                            ),
+                            onPressed: () async {
+                              startFirmwareUpdate(PICKER);
+                            },
+                            child: const Text(
+                              textAlign: TextAlign.center,
+                              'Choose Firmware From Dialog',
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
 
-                      final legend = ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 280),
-                        child: _legendCard(),
-                      );
+                    final legend = ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 280),
+                      child: _legendCard(),
+                    );
 
-                      if (isNarrow) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Remove Expanded in Column context
-                            (buttons.child as Column),
-                            const SizedBox(height: 12),
-                            legend,
-                          ],
-                        );
-                      } else {
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            legend,
-                            const SizedBox(width: 12),
-                            buttons,
-                          ],
-                        );
-                      }
-                    },
-                  ),
-                ],
+                    if (isNarrow) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Remove Expanded in Column context
+                          (buttons.child as Column),
+                          const SizedBox(height: 12),
+                          legend,
+                        ],
+                      );
+                    } else {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [legend, const SizedBox(width: 12), buttons],
+                      );
+                    }
+                  },
+                ),
               ],
             ),
     ];

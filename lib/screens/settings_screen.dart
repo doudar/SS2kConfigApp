@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../widgets/ss2k_app_bar.dart';
+import '../widgets/unpair_trainer.dart';
 import '../widgets/device_settings_style.dart';
 import '../utils/workout/workout_visuals.dart';
 import '../utils/snackbar.dart';
@@ -35,6 +36,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     deviceData = DeviceDataManager.forDevice(this.widget.device);
+    deviceData.pairingAvailable.addListener(_pairingChanged);
+  }
+
+  void _pairingChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    deviceData.pairingAvailable.removeListener(_pairingChanged);
+    super.dispose();
   }
 
   Widget _buildCategoryTile(
@@ -238,6 +250,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                         SizedBox(height: 20),
+                        if (deviceData.pairingAvailable.value)
+                          ListTile(
+                            leading: const Icon(Icons.link_off),
+                            title: Text(unpairTrainerLabel(deviceData)),
+                            onTap: () => confirmUnpairTrainer(
+                              context,
+                              deviceData,
+                              widget.device,
+                            ),
+                          ),
                         GridView.count(
                           crossAxisCount: columns,
                           crossAxisSpacing: 12,

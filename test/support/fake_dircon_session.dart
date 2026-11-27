@@ -244,6 +244,8 @@ class FakeDirConSession implements DirConSession {
     if (!_isConnected) throw StateError('DIRCON session is closed');
     writes.add((uuid: characteristicUuid, value: List<int>.from(value)));
     final key = _key(characteristicUuid);
+    if (value.length == 2 && value.first == 1 && value[1] == 0x36)
+      return [0xff, 0x36];
     final failure = _writeFailures[key];
     if (failure != null) throw failure;
     final configuredResponse = _writeResponses[key];
@@ -257,6 +259,12 @@ class FakeDirConSession implements DirConSession {
       return const <int>[0xff, 0x31];
     }
     return const <int>[];
+  }
+
+  @override
+  Future<void> writeCharacteristicOrdered(String uuid, List<int> value) async {
+    final reply = await writeCharacteristic(uuid, value);
+    if (reply.isNotEmpty) emitNotification(uuid, reply);
   }
 
   @override
@@ -289,9 +297,7 @@ class FakeDirConSession implements DirConSession {
 /// prove the first session was torn down and the second is live.
 class FakeDirConConnector {
   FakeDirConConnector([List<FakeDirConSession>? sessions])
-    : _queued = Queue<FakeDirConSession>.of(
-        sessions ?? [FakeDirConSession()],
-      );
+    : _queued = Queue<FakeDirConSession>.of(sessions ?? [FakeDirConSession()]);
 
   final Queue<FakeDirConSession> _queued;
 

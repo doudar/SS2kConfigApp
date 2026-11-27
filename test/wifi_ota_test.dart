@@ -99,7 +99,7 @@ void main() {
       final result = await WifiOTA.updateFirmware(
         deviceName: 'SmartSpin2k',
         deviceIp: '192.0.2.1',
-        firmwarePath: 'unused.bin',
+        firmwareBytes: const [1, 2, 3],
         firmwareFilename: 'firmware.bin',
         onProgress: (_) {},
         client: client,
