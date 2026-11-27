@@ -542,6 +542,7 @@ class DeviceData {
   bool _workoutOnly = false;
   bool _hasFtmsControl = false;
   final _unsupportedWorkoutOpcodes = <int>{};
+  static const _ergSensorNotice = 'ERG waiting for trainer sensors';
   final workoutControlNotice = ValueNotifier<String?>(null);
   bool get workoutOnly => _workoutOnly;
   bool get hasSmartSpinService => services.any((s) => s.uuid == Guid(csUUID));
@@ -4438,6 +4439,7 @@ class DeviceData {
     bool Function() isCurrent,
   ) async {
     if (!isCurrent()) return false;
+    String? retryNotice;
     Future<bool> procedure(List<int> command) async {
       final opcode = command.first;
       if (_unsupportedWorkoutOpcodes.contains(opcode)) return false;
@@ -4456,6 +4458,15 @@ class DeviceData {
       if (!isCurrent()) return false;
       if (result == FTMSResultCodes.SUCCESS) return true;
       if (result == FTMSResultCodes.OP_CODE_NOT_SUPPORTED) {
+        // SmartSpin2k also returns this result until a power or cadence
+        // source is available. Let the workout lane retry its current target.
+        if (opcode == FTMSOpCodes.SET_TARGET_POWER &&
+            (_lastScanResult?.isSmartSpin == true ||
+                discoveredEndpoint?.isSmartSpin == true ||
+                hasSmartSpinService)) {
+          retryNotice = _ergSensorNotice;
+          throw StateError(_ergSensorNotice);
+        }
         _unsupportedWorkoutOpcodes.add(opcode);
         if (opcode == FTMSOpCodes.REQUEST_CONTROL) {
           workoutControlNotice.value = 'Ride data only';
@@ -4479,7 +4490,12 @@ class DeviceData {
             FTMSOpCodes.STOP_OR_PAUSE,
             FTMSStopPauseParams.STOP,
           ]);
-          if (isCurrent()) _hasFtmsControl = false;
+          if (isCurrent()) {
+            _hasFtmsControl = false;
+            if (workoutControlNotice.value == _ergSensorNotice) {
+              workoutControlNotice.value = null;
+            }
+          }
         }
         return isCurrent();
       }
@@ -4506,7 +4522,8 @@ class DeviceData {
       return isCurrent();
     } catch (_) {
       if (isCurrent()) {
-        workoutControlNotice.value = 'Trainer control unavailable';
+        workoutControlNotice.value =
+            retryNotice ?? 'Trainer control unavailable';
       }
       rethrow;
     }

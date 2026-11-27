@@ -201,6 +201,56 @@ void main() {
     },
   );
 
+  for (final smartSpin in [true, false]) {
+    test(
+      'DirCon ERG rejection is temporary only for SmartSpin2k (SmartSpin2k=$smartSpin)',
+      () async {
+        final socket = FakeDirConSession();
+        final data = DeviceData(dirConConnector: (_) async => socket);
+        addTearDown(data.dispose);
+        final result = SmartSpinScanResult(
+          network: DirConEndpoint.fromService(
+            service(uuids: smartSpin ? csUUID : ftmsServiceUUID),
+          ),
+        );
+        await data.connectFromScan(result, workoutOnly: true);
+        Future<void> reply(int index, List<int> command, int resultCode) async {
+          await waitUntil(() => socket.writes.length > index);
+          expect(socket.writes[index].value, command);
+          socket.emitNotification(ftmsControlPointUUID, [
+            0x80,
+            command.first,
+            resultCode,
+          ]);
+        }
+
+        data.setWorkoutTargetPower(180);
+        await reply(0, [0], 1);
+        await reply(1, [7], 1);
+        await reply(2, [5, 180, 0], 2);
+        await waitUntil(
+          () =>
+              data.workoutControlNotice.value ==
+              (smartSpin
+                  ? 'ERG waiting for trainer sensors'
+                  : 'ERG targets unsupported'),
+        );
+        if (smartSpin) {
+          // The same target must be retried without reconnecting or changing watts.
+          await reply(3, [5, 180, 0], 1);
+          await waitUntil(() => data.workoutControlNotice.value == null);
+        } else {
+          data.setWorkoutTargetPower(190);
+          await Future<void>.delayed(Duration.zero);
+          expect(socket.writes, hasLength(3));
+        }
+        data.endWorkoutControl();
+        await reply(smartSpin ? 4 : 3, [8, 1], 1);
+        await data.disconnectPreferred(result.device);
+      },
+    );
+  }
+
   test('workout reconnect retains FTMS-only access', () async {
     final result = SmartSpinScanResult(ble: ble(id: 'workout-reconnect'));
     final data = DeviceData();
