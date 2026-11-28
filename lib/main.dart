@@ -69,7 +69,6 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     'com.example.ss2kconfigapp/power',
   );
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
-  late AppLinks _appLinks;
   StreamSubscription? _linkSubscription;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   final GlobalKey<ScaffoldMessengerState> _scaffoldKey =
@@ -358,180 +357,42 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     }
   }
 
-  Future<void> _initDeepLinkHandling() async {
-    _appLinks = AppLinks();
-
-    // Handle initial URI if the app was launched with one
-    final uri = await _appLinks.getInitialLink();
-    if (uri != null) {
-      _handleDeepLink(uri);
-    }
-
-    // Handle URI when app is already running
-    _linkSubscription = _appLinks.uriLinkStream.listen(
-      (uri) {
-        _handleDeepLink(uri);
-      },
-      onError: (err) {
-        debugPrint('Deep link error: $err');
-      },
+  void _initDeepLinkHandling() {
+    // The stream includes the link that launched the app as well as later links.
+    _linkSubscription = AppLinks().uriLinkStream.listen(
+      _handleDeepLink,
+      onError: (Object error) => debugPrint('Deep link error: $error'),
     );
   }
 
-  void _handleDeepLink(Uri uri) {
-    debugPrint('Handling deep link: ${uri.toString()}');
-    debugPrint('URI scheme: ${uri.scheme}, host: ${uri.host}');
-
-    // Handle Strava OAuth callback
-    if (uri.scheme == 'smartspin2k' &&
-        (uri.host == 'redirect' || uri.host == 'localhost')) {
-      final code = uri.queryParameters['code'];
-      final error = uri.queryParameters['error'];
-      // final state = uri.queryParameters['state']; // Unused
-
-      if (error != null) {
-        debugPrint('Strava auth error: $error');
-        _scaffoldKey.currentState?.showSnackBar(
-          SnackBar(
-            content: Text('Strava authentication error: $error'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      if (code != null) {
-        debugPrint('Received auth code: $code');
-
-        // Show loading dialog
-        showDialog(
-          context: _navigatorKey.currentContext!,
-          barrierDismissible: false,
-          builder: (context) => const AlertDialog(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Connecting to Strava...'),
-              ],
-            ),
-          ),
-        );
-
-        StravaService.handleAuthCallback(code).then((success) {
-          debugPrint('Auth callback result: $success');
-
-          // Close loading dialog
-          Navigator.of(_navigatorKey.currentContext!).pop();
-
-          if (success && mounted) {
-            _scaffoldKey.currentState?.showSnackBar(
-              const SnackBar(
-                content: Text('Successfully connected to Strava'),
-                backgroundColor: Colors.green,
-                duration: Duration(seconds: 3),
-              ),
-            );
-
-            // Ensure we're showing the main screen when returning from auth
-            while (_navigatorKey.currentState?.canPop() ?? false) {
-              _navigatorKey.currentState?.pop();
-            }
-            // Rebuild the screen to ensure proper state
-            if (mounted) {
-              setState(() {});
-            }
-          } else if (mounted) {
-            _scaffoldKey.currentState?.showSnackBar(
-              const SnackBar(
-                content: Text('Failed to connect to Strava'),
-                backgroundColor: Colors.red,
-                duration: Duration(seconds: 3),
-              ),
-            );
-          }
-        });
-      }
-      return; // handled
+  Future<void> _handleDeepLink(Uri uri) async {
+    if (uri.scheme != 'smartspin2k') return;
+    final isStrava = uri.host == 'redirect' || uri.host == 'localhost';
+    if (!isStrava && uri.host != 'intervals_redirect') return;
+    final provider = isStrava ? 'Strava' : 'Intervals.icu';
+    final error = uri.queryParameters['error'];
+    final code = uri.queryParameters['code'];
+    String message;
+    var success = false;
+    if (error != null) {
+      message = '$provider authentication error: $error';
+    } else if (code != null && code.isNotEmpty) {
+      success = isStrava
+          ? await StravaService.handleAuthCallback(code)
+          : await IntervalsService.handleAuthCallback(code);
+      message = success
+          ? 'Successfully connected to $provider'
+          : 'Failed to connect to $provider';
+    } else {
+      return;
     }
-
-    // Handle Intervals.icu OAuth callback
-    if (uri.scheme == 'smartspin2k' && uri.host == 'intervals_redirect') {
-      debugPrint('Handling Intervals.icu callback');
-      final code = uri.queryParameters['code'];
-      final error = uri.queryParameters['error'];
-
-      if (error != null) {
-        debugPrint('Intervals.icu auth error: $error');
-        _scaffoldKey.currentState?.showSnackBar(
-          SnackBar(
-            content: Text('Intervals.icu authentication error: $error'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      if (code != null) {
-        debugPrint('Received Intervals.icu auth code: $code');
-
-        // Show loading dialog
-        showDialog(
-          context: _navigatorKey.currentContext!,
-          barrierDismissible: false,
-          builder: (context) => const AlertDialog(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Connecting to Intervals.icu...'),
-              ],
-            ),
-          ),
-        );
-
-        IntervalsService.handleAuthCallback(code).then((success) {
-          debugPrint('Intervals.icu auth callback result: $success');
-
-          // Close loading dialog
-          Navigator.of(_navigatorKey.currentContext!).pop();
-
-          if (success && mounted) {
-            _scaffoldKey.currentState?.showSnackBar(
-              const SnackBar(
-                content: Text('Successfully connected to Intervals.icu'),
-                backgroundColor: Color(0xFF1B4F72),
-                duration: Duration(seconds: 3),
-              ),
-            );
-
-            // Ensure we're showing the main screen when returning from auth
-            while (_navigatorKey.currentState?.canPop() ?? false) {
-              _navigatorKey.currentState?.pop();
-            }
-            // Rebuild the screen to ensure proper state
-            if (mounted) {
-              setState(() {});
-            }
-          } else if (mounted) {
-            _scaffoldKey.currentState?.showSnackBar(
-              const SnackBar(
-                content: Text('Failed to connect to Intervals.icu'),
-                backgroundColor: Colors.red,
-                duration: Duration(seconds: 3),
-              ),
-            );
-          }
-        });
-      }
-      return; // handled
-    }
-
-    // Add a catch-all debug log for any truly unhandled deep links
-    debugPrint(
-      'Unhandled deep link: ${uri.toString()} (scheme: ${uri.scheme}, host: ${uri.host})',
+    if (!mounted) return;
+    _scaffoldKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: success ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
     );
   }
 
@@ -578,15 +439,13 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     );
 
     final themeProvider = Provider.of<ThemeProvider>(context);
-    return ScaffoldMessenger(
-      key: _scaffoldKey,
-      child: MaterialApp(
-        navigatorKey: _navigatorKey,
-        themeMode: ThemeMode.dark,
-        theme: themeProvider.darkTheme,
-        darkTheme: themeProvider.darkTheme,
-        home: screen,
-      ),
+    return MaterialApp(
+      scaffoldMessengerKey: _scaffoldKey,
+      navigatorKey: _navigatorKey,
+      themeMode: ThemeMode.dark,
+      theme: themeProvider.darkTheme,
+      darkTheme: themeProvider.darkTheme,
+      home: screen,
     );
   }
 }

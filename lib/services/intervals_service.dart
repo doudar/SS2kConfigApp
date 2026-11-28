@@ -198,7 +198,6 @@ class IntervalsService {
 
   // Handle OAuth callback
   static Future<bool> handleAuthCallback(String code) async {
-    debugPrint('Handling Intervals.icu auth callback with code: $code');
     try {
       final response = await http.post(
         Uri.parse(_tokenUrl),
@@ -216,7 +215,6 @@ class IntervalsService {
       );
 
       debugPrint('Intervals.icu auth callback response status: ${response.statusCode}');
-      debugPrint('Intervals.icu auth callback response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
