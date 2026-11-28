@@ -99,7 +99,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     await open(tester, chooser(), brightness: Brightness.dark);
-    final scroll = Scrollable.of(tester.element(find.text('Save your ride')));
+    final scroll = Scrollable.of(tester.element(find.text('Workout skyline')));
     expect(scroll.position.maxScrollExtent, 0);
     for (final label in [
       'Workout skyline',

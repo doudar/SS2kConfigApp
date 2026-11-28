@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/ride_map_place_search.dart';
 import '../utils/workout/ride_map.dart';
 import 'workout_dialog.dart';
+import 'ride_drawing_field.dart';
 
 class RideMapDialog extends StatefulWidget {
   const RideMapDialog({
@@ -65,82 +66,70 @@ class _RideMapDialogState extends State<RideMapDialog> {
       title: const Text('Ride map'),
       icon: Icons.map_outlined,
       showClose: true,
-      subtitle: 'Choose the map for your saved workouts and uploads.',
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      maxWidth: 760,
+      content: WorkoutControlGrid(
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final option in RideDrawing.values)
-                ChoiceChip(
-                  label: Text(option.label),
-                  selected: drawing == option,
-                  showCheckmark: false,
-                  avatar: switch (option) {
-                    RideDrawing.random => const Icon(
-                      Icons.shuffle_rounded,
-                      size: 20,
-                    ),
-                    RideDrawing.none => const Icon(
-                      Icons.location_off_outlined,
-                      size: 20,
-                    ),
-                    _ => CustomPaint(
-                      size: const Size.square(24),
-                      painter: _DrawingPreview(
-                        option,
-                        theme.colorScheme.onSurface,
-                      ),
-                    ),
-                  },
-                  onSelected: saving
-                      ? null
-                      : (_) => setState(() => drawing = option),
-                ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (RideDrawing.outlines.contains(drawing) ||
-              drawing == RideDrawing.skyline)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: SizedBox(
-                height: 96,
-                child: CustomPaint(
-                  painter: _DrawingPreview(drawing, theme.colorScheme.primary),
+              IgnorePointer(
+                ignoring: saving,
+                child: RideDrawingField(
+                  label: 'Upload map',
+                  initialDrawing: drawing,
+                  onChanged: (value) => setState(() => drawing = value),
                 ),
               ),
-            ),
-          Text(switch (drawing) {
-            RideDrawing.none =>
-              'Uploads include your workout metrics and omit GPS coordinates.',
-            RideDrawing.random =>
-              'Each ride gets a random drawing. The skyline fits your ride distance. The other drawings take about 20 miles.',
-            RideDrawing.skyline =>
-              'The skyline traces your recorded power as a 30-second rolling average and fits your ride distance. The baseline traces average watts and TSS when there is room. Short rides use a plain baseline. Very short rides save without a map.',
-            _ =>
-              'Your ride traces the outline as you pedal. One full drawing is about 20 miles.',
-          }),
-          if (drawing != RideDrawing.none) ...[
-            const SizedBox(height: 16),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.place_outlined),
-              title: const Text('Map center'),
-              subtitle: Text(center.name),
-              trailing: const Icon(Icons.edit_outlined),
-              enabled: !saving,
-              onTap: () async {
-                final place = await showDialog<MapCenter>(
-                  context: context,
-                  builder: (_) => const _PlacePicker(),
-                );
-                if (place != null && mounted) setState(() => center = place);
-              },
-            ),
-          ],
+              if (drawing != RideDrawing.none) ...[
+                const SizedBox(height: 16),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.place_outlined),
+                  title: const Text('Map center'),
+                  subtitle: Text(center.name),
+                  trailing: const Icon(Icons.edit_outlined),
+                  enabled: !saving,
+                  onTap: () async {
+                    final place = await showDialog<MapCenter>(
+                      context: context,
+                      builder: (_) => const _PlacePicker(),
+                    );
+                    if (place != null && mounted)
+                      setState(() => center = place);
+                  },
+                ),
+              ],
+            ],
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (RideDrawing.outlines.contains(drawing) ||
+                  drawing == RideDrawing.skyline)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: SizedBox(
+                    height: 54,
+                    child: CustomPaint(
+                      painter: _DrawingPreview(
+                        drawing,
+                        theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+              Text(switch (drawing) {
+                RideDrawing.none =>
+                  'Uploads include your workout metrics and omit GPS coordinates.',
+                RideDrawing.random =>
+                  'Each ride gets a random drawing. The skyline fits your ride distance. The other drawings take about 20 miles.',
+                RideDrawing.skyline =>
+                  'The skyline follows your 30-second average power over the ride distance. Longer rides include average watts and TSS along the baseline. Very short rides save without a map.',
+                _ =>
+                  'Your ride traces the outline as you pedal. One full drawing is about 20 miles.',
+              }),
+            ],
+          ),
           if (error != null)
             Text(error!, style: TextStyle(color: theme.colorScheme.error)),
         ],

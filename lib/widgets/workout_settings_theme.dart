@@ -8,9 +8,7 @@ abstract final class WorkoutSettingsTheme {
   static const dialogRadius = 26.0;
   static const panelRadius = 18.0;
   static const actionRadius = 16.0;
-  static const inset = EdgeInsets.symmetric(horizontal: 20, vertical: 24);
-  static const headerPadding = EdgeInsets.all(24);
-  static const bodyPadding = EdgeInsets.fromLTRB(24, 0, 24, 20);
+  static const inset = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
 
   static BoxDecoration panel(ColorScheme colors) => BoxDecoration(
     color: colors.onSurface.withValues(alpha: .035),

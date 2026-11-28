@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:ss2kconfigapp/widgets/workout_library.dart';
+import 'package:ss2kconfigapp/widgets/workout_sort.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_storage.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -158,10 +159,16 @@ void main() {
       'On-screen messages' ||
       'Power target (FTP)' ||
       'Trainer setup' => 'Ride settings',
-      'Connected apps' || 'Past rides' => 'My training',
       _ => null,
     };
     if (group != null) await tapVisible(tester, find.text(group));
+  }
+
+  Future<void> backToRide(WidgetTester tester) async {
+    if (find.text('Trainer setup').evaluate().isNotEmpty) {
+      await tapVisible(tester, find.byTooltip('Close').last);
+    }
+    await tapVisible(tester, find.text('Back to ride'));
   }
 
   Future<void> screenshot(WidgetTester tester, String name) async {
@@ -227,26 +234,176 @@ void main() {
               ),
               findsOneWidget,
             );
-            expect(find.byType(WorkoutDialog), findsNWidgets(2));
+            final fromSettings = [
+              'Voice coach',
+              'Ride map',
+              'On-screen messages',
+            ].contains(entry.key);
+            expect(
+              find.byType(WorkoutDialog),
+              findsNWidgets(fromSettings ? 3 : 2),
+            );
             expect(tester.takeException(), isNull);
             await screenshot(
               tester,
               '${entry.key.replaceAll(' ', '-').toLowerCase()}-${size.width.toInt()}-${brightness.name}',
             );
+            if (capture && entry.key != 'Choose a workout') {
+              final scrolls = find.descendant(
+                of: find.byType(WorkoutDialog).last,
+                matching: find.byType(Scrollable),
+              );
+              for (final scroll in tester.stateList<ScrollableState>(scrolls)) {
+                if (scroll.position.axis == Axis.vertical) {
+                  expect(
+                    scroll.position.maxScrollExtent,
+                    0,
+                    reason: '${entry.key} at $size',
+                  );
+                }
+              }
+            }
             final close = find.text('CLOSE');
             if (close.evaluate().isNotEmpty) {
-              await tapVisible(tester, close);
+              expect(close.hitTestable(), findsOneWidget);
+              await tester.tap(close);
             } else {
-              await tapVisible(tester, find.byTooltip('Close').last);
+              final closeButton = find.byTooltip('Close').last;
+              expect(closeButton.hitTestable(), findsOneWidget);
+              await tester.tap(closeButton);
             }
-            expect(find.byType(WorkoutDialog), findsOneWidget);
-            expect(find.text('Ride menu'), findsOneWidget);
-            await tapVisible(tester, find.text('Back to ride'));
+            await tester.pumpAndSettle();
+            expect(
+              find
+                  .text(fromSettings ? 'Ride settings' : 'Ride menu')
+                  .last
+                  .hitTestable(),
+              findsOneWidget,
+            );
+            await backToRide(tester);
             expect(find.byType(WorkoutDialog), findsNothing);
             expect(tester.takeException(), isNull);
           }
         }
       }
+    },
+  );
+
+  testWidgets('ride destinations fit without scrolling on compact screens', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    for (final size in [const Size(320, 568), const Size(844, 330)]) {
+      tester.view.physicalSize = size;
+      await host(tester);
+      void expectVisible(List<String> labels) {
+        for (final label in labels) {
+          expect(
+            find.text(label).hitTestable(),
+            findsOneWidget,
+            reason: '$size $label',
+          );
+        }
+        expect(
+          Scrollable.of(
+            tester.element(find.text(labels.first)),
+          ).position.maxScrollExtent,
+          0,
+        );
+      }
+
+      expectVisible([
+        'Choose a workout',
+        'Just ride',
+        'Past rides',
+        'Connected apps',
+        'Ride settings',
+        'Back to ride',
+      ]);
+      await tester.tap(find.text('Ride settings'));
+      await tester.pumpAndSettle();
+      expectVisible([
+        'Voice coach',
+        'Sound effects',
+        'Ride map',
+        'On-screen messages',
+        'Power target (FTP)',
+        'Trainer setup',
+      ]);
+      await backToRide(tester);
+    }
+  });
+
+  testWidgets(
+    'imported workouts sort by duration and load without changing selection',
+    (tester) async {
+      final prefs = await SharedPreferences.getInstance();
+      String plan(int seconds, double power) =>
+          '<workout_file><workout><SteadyState Duration="$seconds" Power="$power"/></workout></workout_file>';
+      await prefs.setString(
+        'saved_workouts',
+        jsonEncode([
+          {
+            'name': WorkoutStorage.defaultWorkoutName,
+            'content': '<workout_file><workout/></workout_file>',
+          },
+          {'name': 'Long easy', 'content': plan(3600, .4)},
+          {'name': 'Short hard', 'content': plan(1800, 1)},
+        ]),
+      );
+      String? picked;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: WorkoutLibrary(
+              selectionMode: true,
+              onWorkoutSelected: (name, _, _) => picked = name,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.widgetWithText(WorkoutOptionTile, 'Long easy'),
+          matching: find.byType(Checkbox),
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final (sort, first) in [
+        ('Shortest first', 'Short hard'),
+        ('Longest first', 'Long easy'),
+        ('Lowest TSS first', 'Long easy'),
+        ('Highest TSS first', 'Short hard'),
+      ]) {
+        await tester.tap(find.byTooltip('Sort workouts'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.widgetWithText(CheckedPopupMenuItem<WorkoutSort>, sort),
+        );
+        await tester.pumpAndSettle();
+        final titles = tester
+            .widgetList<WorkoutOptionTile>(find.byType(WorkoutOptionTile))
+            .map((w) => (w.title as Text).data)
+            .toList();
+        expect(titles.first, first);
+        expect(titles.last, WorkoutStorage.defaultWorkoutName);
+        expect(
+          tester
+              .widget<Checkbox>(
+                find.descendant(
+                  of: find.widgetWithText(WorkoutOptionTile, 'Long easy'),
+                  matching: find.byType(Checkbox),
+                ),
+              )
+              .value,
+          isTrue,
+        );
+      }
+      await tester.tap(find.text('Short hard'));
+      expect(picked, 'Short hard');
     },
   );
 
@@ -256,37 +413,21 @@ void main() {
       await host(tester);
       await openGroup(tester, 'Ride map');
       await tapVisible(tester, find.text('Ride map'));
-      expect(
-        tester
-            .widget<ChoiceChip>(
-              find.widgetWithText(ChoiceChip, 'Workout skyline'),
-            )
-            .selected,
-        isTrue,
-      );
-      await tapVisible(tester, find.text('SmartSpin2k'));
+      await tapVisible(tester, find.text('Workout skyline'));
+      await tapVisible(tester, find.text('SmartSpin2k').last);
       await tapVisible(tester, find.text('Map center'));
       await tapVisible(tester, find.text('Eau Claire, WI').last);
       await tapVisible(tester, find.text('Save'));
       await tapVisible(tester, find.text('Ride map'));
-      expect(
-        tester
-            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'SmartSpin2k'))
-            .selected,
-        isTrue,
-      );
-      await tapVisible(tester, find.text('No map'));
+      expect(find.text('SmartSpin2k').hitTestable(), findsOneWidget);
+      await tapVisible(tester, find.text('SmartSpin2k'));
+      await tapVisible(tester, find.text('No map').last);
       expect(find.text('Map center'), findsNothing);
       await tapVisible(tester, find.byTooltip('Close').last);
       await tapVisible(tester, find.text('Ride map'));
-      expect(
-        tester
-            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'SmartSpin2k'))
-            .selected,
-        isTrue,
-      );
+      expect(find.text('SmartSpin2k').hitTestable(), findsOneWidget);
       await tapVisible(tester, find.byTooltip('Close').last);
-      await tapVisible(tester, find.text('Back to ride'));
+      await backToRide(tester);
     },
   );
 
@@ -307,7 +448,7 @@ void main() {
     );
     expect(prefs.getDouble('workout_text_size'), isNotNull);
     await tapVisible(tester, find.text('CLOSE'));
-    await tapVisible(tester, find.text('Back to ride'));
+    await backToRide(tester);
     await host(tester, dialog: AudioCoachDialog(ttsSettings: tts));
     await tapVisible(tester, find.byType(Slider).first);
     expect(prefs.getDouble('workout_tts_volume'), .5);
@@ -329,7 +470,7 @@ void main() {
     expect(prefs.getBool(WorkoutSoundGenerator.preferenceKey), isFalse);
     expect(tts.enabled, isTrue);
 
-    await tapVisible(tester, find.text('Back to ride'));
+    await backToRide(tester);
     await host(tester);
     await openGroup(tester, 'Voice coach');
     expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
@@ -340,27 +481,26 @@ void main() {
     await tapVisible(tester, find.text('Sound effects'));
     expect(prefs.getBool(WorkoutSoundGenerator.preferenceKey), isTrue);
     expect(tts.enabled, isFalse);
-    await tapVisible(tester, find.text('Back to ride'));
+    await backToRide(tester);
   });
 
-  testWidgets(
-    'system back returns to the expanded menu without touching a ride',
-    (tester) async {
-      controller.isPlaying = true;
-      controller.workoutProgressSeconds = 300;
-      await host(tester);
-      await openGroup(tester, 'Voice coach');
-      await tapVisible(tester, find.text('Voice coach'));
-      await tester.binding.handlePopRoute();
-      await tester.pumpAndSettle();
-      expect(find.byType(WorkoutDialog), findsOneWidget);
-      expect(find.text('On-screen messages'), findsOneWidget);
-      expect(controller.isPlaying, isTrue);
-      expect(controller.workoutProgressSeconds, 300);
-      expect(controller.loaded, isNull);
-      await tapVisible(tester, find.text('Back to ride'));
-    },
-  );
+  testWidgets('system back returns to ride settings without touching a ride', (
+    tester,
+  ) async {
+    controller.isPlaying = true;
+    controller.workoutProgressSeconds = 300;
+    await host(tester);
+    await openGroup(tester, 'Voice coach');
+    await tapVisible(tester, find.text('Voice coach'));
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(WorkoutDialog), findsNWidgets(2));
+    expect(find.text('On-screen messages'), findsOneWidget);
+    expect(controller.isPlaying, isTrue);
+    expect(controller.workoutProgressSeconds, 300);
+    expect(controller.loaded, isNull);
+    await backToRide(tester);
+  });
 
   testWidgets('Just ride is easy before starting and protects an active ride', (
     tester,
@@ -370,7 +510,7 @@ void main() {
     expect(controller.loaded, contains('<FreeRide'));
     expect(find.text('Switch workouts?'), findsNothing);
     expect(controller.isPlaying, isFalse);
-    await tapVisible(tester, find.text('Back to ride'));
+    await backToRide(tester);
 
     controller.loaded = null;
     controller.isPlaying = true;
@@ -382,7 +522,7 @@ void main() {
     expect(controller.loaded, isNull);
     expect(controller.isPlaying, isTrue);
     expect(find.byType(WorkoutDialog), findsOneWidget);
-    await tapVisible(tester, find.text('Back to ride'));
+    await backToRide(tester);
   });
 
   testWidgets(
@@ -401,9 +541,62 @@ void main() {
       await tapVisible(tester, find.text('CLOSE'));
       expect(find.byType(WorkoutDialog), findsOneWidget);
       expect(find.text('Ride menu'), findsOneWidget);
-      await tapVisible(tester, find.text('Back to ride'));
+      await backToRide(tester);
     },
   );
+
+  testWidgets('bundled sorting loads the displayed workout', (tester) async {
+    const contents = {
+      'assets/workout_library/Endurance.zwo':
+          '<workout_file><workout><SteadyState Duration="3600" Power="0.6"/></workout></workout_file>',
+      'assets/workout_library/Sprint.zwo':
+          '<workout_file><workout><SteadyState Duration="300" Power="1.2"/></workout></workout_file>',
+    };
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    rootBundle.clear();
+    messenger.setMockMessageHandler('flutter/assets', (request) async {
+      final key = utf8.decode(
+        request!.buffer.asUint8List(
+          request.offsetInBytes,
+          request.lengthInBytes,
+        ),
+      );
+      if (key == 'AssetManifest.bin') {
+        return const StandardMessageCodec().encodeMessage({
+          for (final path in contents.keys)
+            path: [
+              {'asset': path},
+            ],
+        });
+      }
+      final content = contents[key];
+      return content == null
+          ? null
+          : ByteData.sublistView(utf8.encode(content));
+    });
+    addTearDown(() {
+      messenger.setMockMessageHandler('flutter/assets', null);
+      rootBundle.clear();
+    });
+    await host(tester, browse: true);
+    await tapVisible(tester, find.text('SmartSpin2k Library'));
+    await tapVisible(tester, find.byTooltip('Sort workouts'));
+    await tapVisible(
+      tester,
+      find.widgetWithText(CheckedPopupMenuItem<WorkoutSort>, 'Shortest first'),
+    );
+    final rows = tester.widgetList<WorkoutOptionTile>(
+      find.descendant(
+        of: find.byType(WorkoutDialog).last,
+        matching: find.byType(WorkoutOptionTile),
+      ),
+    );
+    final first = (rows.first.title as Text).data!;
+    expect(first, 'Sprint');
+    await tapVisible(tester, find.text(first));
+    expect(controller.loaded, contents['assets/workout_library/Sprint.zwo']);
+  });
 
   testWidgets('imported-workout arrow stays above working selection controls', (
     tester,
@@ -452,7 +645,7 @@ void main() {
       expect(find.text('Delete 11 selected workouts?'), findsOneWidget);
       await tapVisible(tester, find.text('CANCEL'));
       await tapVisible(tester, find.byTooltip('Close').last);
-      await tapVisible(tester, find.text('Back to ride'));
+      await backToRide(tester);
       expect(tester.takeException(), isNull);
     }
   });
