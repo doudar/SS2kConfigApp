@@ -195,6 +195,12 @@ class DeviceDataManager {
     return result;
   }
 
+  static Iterable<SmartSpinScanResult> get connectedWorkoutResults => _dataMap
+      .values
+      .where((d) => d.workoutOnly && d.isTransportActive)
+      .map((d) => d._lastScanResult)
+      .whereType<SmartSpinScanResult>();
+
   static DeviceData forDevice(BluetoothDevice device) {
     if (!_dataMap.containsKey(device.remoteId.str)) {
       _dataMap[device.remoteId.str] = DeviceData();
@@ -313,7 +319,11 @@ class DeviceData {
     _applyStreamedFoundDevices(const <BleScanDevice>[]);
   }
 
-  static void Function(String, Future<void>, Future<void> Function())?
+  static void Function(
+    String,
+    Future<void>,
+    Future<BluetoothDevice> Function(),
+  )?
   pairingPrompt;
   static void Function(
     String,
@@ -378,12 +388,46 @@ class DeviceData {
               await characteristic.write(packet, withoutResponse: true);
             }
           : null,
-      prompt: (name, approval, cancelHandshake) {
-        pairingPrompt?.call(
-          name,
-          approval,
-          () => disconnectLink(cancelHandshake),
-        );
+      prompt: (name, approval, _) {
+        pairingPrompt?.call(name, approval, () async {
+          if (!identical(link, _customLink) || !isTransportActive) {
+            throw const TransportNotConnected();
+          }
+          _workoutOnly = true;
+          configAppCompatibleFirmware = false;
+          final epoch = transportState.value.epoch;
+          _endCustomLink();
+          subscribed = false;
+          charReceived.value = false;
+          unawaited(_safeCancel(_notifySubscription, 'custom characteristic'));
+          _notifySubscription = null;
+          unawaited(
+            _safeCancel(
+              _dirConNotificationSubscription,
+              'DirCon custom characteristic',
+            ),
+          );
+          _dirConNotificationSubscription = null;
+          // A settings request interrupted by the handoff releases its FTMS
+          // notification block in its finally clause.
+          await _settingsRequestInFlight?.catchError((Object _) {});
+          await _endFtmsPostConnectionBlock(device);
+          if (!isDirConConnected && _ftmsSubscription == null) {
+            await ensureFtmsNotifications(device);
+          }
+          if (!isTransportActive || transportState.value.epoch != epoch) {
+            throw const TransportNotConnected();
+          }
+          if ((isDirConConnected
+                  ? _dirConFtmsSubscription
+                  : _ftmsSubscription) ==
+              null) {
+            await disconnectPreferred(device);
+            throw StateError('Could not subscribe to FTMS Indoor Bike Data.');
+          }
+          _updateWorkoutControlAvailability();
+          return _lastScanResult?.device ?? device;
+        });
       },
       confirmLegacy: confirmLegacy == null
           ? null
@@ -395,7 +439,8 @@ class DeviceData {
             ),
       restoreNotificationMode: retry,
       legacyIndications:
-          Platform.isAndroid &&
+          !kIsWeb &&
+              Platform.isAndroid &&
               characteristic != null &&
               characteristic.properties.indicate
           ? (bool useIndications) async {
@@ -425,6 +470,7 @@ class DeviceData {
   }
 
   Future<PairedCustomLink> _readyCustomLink(BluetoothDevice device) async {
+    if (workoutOnly) throw StateError('This connection is for workouts only.');
     if (isUserDisconnect) throw const TransportNotConnected();
     final socket = _dirConSession;
     if (socket == null) {
@@ -492,6 +538,64 @@ class DeviceData {
   int get advertisedDirConPort => discoveredEndpoint?.port ?? DirConClient.port;
   bool _hasBleIdentity = true;
 
+  SmartSpinScanResult? _lastScanResult;
+  bool _workoutOnly = false;
+  bool _hasFtmsControl = false;
+  bool _ftmsWorkoutStarted = false;
+  final _unsupportedWorkoutOpcodes = <int>{};
+  static const _ergSensorNotice = 'ERG waiting for trainer sensors';
+  final workoutControlNotice = ValueNotifier<String?>(null);
+  bool get workoutOnly => _workoutOnly;
+  bool get hasSmartSpinService => services.any((s) => s.uuid == Guid(csUUID));
+
+  /// Start a fresh session when changing modes so custom subscriptions and
+  /// requests cannot carry over into a workout-only connection.
+  Future<void> connectFromScan(
+    SmartSpinScanResult result, {
+    bool workoutOnly = false,
+    bool identifyFromServices = false,
+  }) async {
+    final device = result.device;
+    if (!identifyFromServices && !result.isSmartSpin) workoutOnly = true;
+    // Web Bluetooth omits advertisement UUIDs from chooser results.
+    if (identifyFromServices && !workoutOnly) {
+      if (isTransportActive) {
+        workoutOnly = !isDirConConnected && !hasSmartSpinService;
+      } else {
+        await device.connectAndUpdateStream();
+        try {
+          services = await device.discoverServices();
+          workoutOnly = !hasSmartSpinService;
+        } catch (_) {
+          await device.disconnectAndUpdateStream();
+          rethrow;
+        }
+      }
+    }
+    if (_workoutOnly != workoutOnly) {
+      if (isTransportActive || _initialConnectionInProgress || _reconnecting) {
+        final reconnect = _reconnectCompleter?.future;
+        final setup = _setupCoordinator.inFlight;
+        await disconnectPreferred(device);
+        await reconnect;
+        // Closing a pending pairing or settings handshake rejects its old setup.
+        if (setup != null) await setup.catchError((Object _) {});
+      }
+      _endFtmsPostConnectionBlock(device);
+      _workoutOnly = workoutOnly;
+      if (workoutOnly) configAppCompatibleFirmware = false;
+    }
+    _lastScanResult = result;
+    applyScanResult(result);
+    if (isTransportActive) return;
+    try {
+      await connectPreferred(device, waitForSetup: workoutOnly);
+    } catch (_) {
+      if (workoutOnly && isTransportActive) await disconnectPreferred(device);
+      rethrow;
+    }
+  }
+
   void applyScanResult(SmartSpinScanResult result) {
     if (_isDisposed) return;
     final bluetooth = result.ble?.device;
@@ -523,7 +627,8 @@ class DeviceData {
           discoveredEndpoint?.name ??
           (device.advName.isNotEmpty ? device.advName : device.platformName),
     );
-    if (endpoint == null) return false;
+    if (endpoint == null || (!workoutOnly && !endpoint.isSmartSpin))
+      return false;
     discoveredEndpoint = endpoint;
     advertisedIpAddress = endpoint.host;
     return true;
@@ -731,7 +836,7 @@ class DeviceData {
 
       if (!_hasBleIdentity) {
         throw StateError(
-          'SmartSpin2k is unavailable over Dircon. Scan again to retry.',
+          'Trainer is unavailable over DirCon. Scan again to retry.',
         );
       }
       device = resolveTransportDevice(device);
@@ -807,7 +912,17 @@ class DeviceData {
         await (_dirConConnector?.call(ipAddress) ??
             DirConClient.connect(ipAddress, connectionPort: port));
     try {
-      await session.initialize(serviceUuid: csUUID, characteristicUuid: ccUUID);
+      if (workoutOnly) {
+        await session.ensureCharacteristic(
+          serviceUuid: ftmsServiceUUID,
+          characteristicUuid: ftmsIndoorBikeDataUUID,
+        );
+      } else {
+        await session.initialize(
+          serviceUuid: csUUID,
+          characteristicUuid: ccUUID,
+        );
+      }
       if (isUserDisconnect || _isDisposed || !session.isConnected) {
         throw StateError('Dircon connection cancelled');
       }
@@ -828,8 +943,9 @@ class DeviceData {
       throw StateError('Dircon connection cancelled');
     }
     _dirConSession = session;
+    if (workoutOnly) _controlPointNotificationsLive = false;
     _dirConSetupComplete = false;
-    configAppCompatibleFirmware = true;
+    configAppCompatibleFirmware = !workoutOnly;
     _ensureCachedMap();
     // Registered before any optional discovery below. `disconnected` is a
     // broadcast stream with no replay: a transport failure raised while FTMS
@@ -840,13 +956,15 @@ class DeviceData {
       _handleDirConDisconnect(device);
     });
     _markTransportConnected(DeviceTransportKind.dircon, device);
-    _createLink(device, socket: session);
-    _dirConNotificationSubscription = session
-        .characteristicNotifications(ccUUID)
-        .listen((packet) {
-          if (identical(session, _dirConSession))
-            _receiveWire(_customLink, packet);
-        });
+    if (!workoutOnly) {
+      _createLink(device, socket: session);
+      _dirConNotificationSubscription = session
+          .characteristicNotifications(ccUUID)
+          .listen((packet) {
+            if (identical(session, _dirConSession))
+              _receiveWire(_customLink, packet);
+          });
+    }
 
     // Indoor Bike Data and Machine Status are set up independently: firmware
     // that exposes one but not the other must still deliver the one it has, and
@@ -905,6 +1023,11 @@ class DeviceData {
     _machineStatusNotificationsLive = machineStatusSubscription != null;
     _controlPointNotificationsLive = controlPointSubscription != null;
 
+    if (workoutOnly) {
+      if (ftmsSubscription == null)
+        throw StateError('Indoor Bike Data is unavailable.');
+      _updateWorkoutControlAvailability();
+    }
     print('[DIRCON] Connected to ${session.host}');
     if (waitForSetup) {
       await setupConnection(device);
@@ -1141,7 +1264,7 @@ class DeviceData {
                     : device.platformName),
           );
           if (!isCurrent()) return;
-          if (endpoint != null) {
+          if (endpoint != null && (workoutOnly || endpoint.isSmartSpin)) {
             candidate = await _openDirConSession(endpoint.host, endpoint.port);
             final prepared = candidate;
             // Finish any current BLE write before changing its response stream.
@@ -1216,7 +1339,8 @@ class DeviceData {
       markTransportConnected: false,
       sweepSettings: false,
     ).timeout(const Duration(seconds: 10));
-    if (ftmsControlPointCharacteristic == null || !device.isConnected) {
+    if ((!workoutOnly && ftmsControlPointCharacteristic == null) ||
+        !device.isConnected) {
       throw StateError('BLE FTMS Control Point is not ready after DIRCON loss');
     }
     // The FTMS setup inside `setupConnection` above ran while this transport was
@@ -1233,13 +1357,13 @@ class DeviceData {
       'duration=${stopwatch.elapsedMilliseconds}ms '
       'settle=${!reusedSession}; redelivering target.',
     );
-    if (reusedSession) {
+    if (reusedSession || workoutOnly) {
       await ensureFtmsNotifications(device);
     }
     await _runReconnectedCallbacks();
     // Last, and unawaited: the sweep holds the FTMS notification block for its
     // whole duration, so every stream above has to be live before it starts.
-    _sweepSettingsInBackground(device);
+    if (!workoutOnly) _sweepSettingsInBackground(device);
   }
 
   /// Runs the full settings sweep without blocking the caller.
@@ -1446,7 +1570,7 @@ class DeviceData {
         _transportStateController.value.transport == transport &&
         _transportStateController.value.phase == DeviceTransportPhase.connected;
     _transportStateController.markConnected(transport);
-    if (!wasAlreadyConnected && settle) {
+    if (!wasAlreadyConnected && settle && !workoutOnly) {
       _startFtmsPostConnectionBlock(device);
     } else if (!settle) {
       // A settle block outstanding from the *previous* transport blocks this
@@ -1472,13 +1596,13 @@ class DeviceData {
 
   /// Releases the settle block now instead of at its deadline. The refcount is
   /// decremented synchronously, so a caller may drive setup immediately after.
-  void _endFtmsPostConnectionBlock(BluetoothDevice device) {
+  Future<void> _endFtmsPostConnectionBlock(BluetoothDevice device) async {
     _ftmsPostConnectionTimer?.cancel();
     _ftmsPostConnectionTimer = null;
     if (!_ftmsPostConnectionBlockActive) return;
     _ftmsPostConnectionBlockActive = false;
-    print('[FTMS] settle block ended early: transport promoted');
-    unawaited(unblockFtmsNotifications(device));
+    print('[FTMS] settle block ended early');
+    await unblockFtmsNotifications(device);
   }
 
   void _markTransportDisconnected({required bool explicit}) {
@@ -1490,7 +1614,15 @@ class DeviceData {
     if (explicit) _releaseFtmsReadyWaiters();
   }
 
+  void _resetFtmsControl() {
+    _hasFtmsControl = false;
+    _ftmsWorkoutStarted = false;
+    _unsupportedWorkoutOpcodes.clear();
+    workoutControlNotice.value = null;
+  }
+
   void _handleTransportStateChanged() {
+    _resetFtmsControl();
     connectionState = isTransportActive
         ? BluetoothConnectionState.connected
         : BluetoothConnectionState.disconnected;
@@ -1529,7 +1661,11 @@ class DeviceData {
           _workoutControlActive &&
           _transportStateController.value.transport ==
               DeviceTransportKind.bluetooth;
-      if (!keepWorkoutOnBle) {
+      final bleOnlyWorkout =
+          workoutOnly &&
+          discoveredEndpoint == null &&
+          advertisedIpAddress == null;
+      if (!keepWorkoutOnBle && !bleOnlyWorkout) {
         try {
           await _refreshAdvertisedEndpointForReconnect(device);
         } catch (error) {
@@ -1647,6 +1783,7 @@ class DeviceData {
     bool clearBleScanResults = false,
   }) {
     _setupCoordinator.invalidate();
+    _resetFtmsControl();
     _endCustomLink();
     final pendingResponse = _pendingCustomResponse;
     if (pendingResponse != null && !pendingResponse.isCompleted) {
@@ -1713,6 +1850,7 @@ class DeviceData {
     // only an explicit disconnect or clearing scan results clears these choices.
     _applyStreamedFoundDevices(const <BleScanDevice>[]);
     lastFtmsUpdate = null;
+    ftmsData = FtmsData(targetERG: ftmsData.targetERG, mode: ftmsData.mode);
     _ftmsRecoveryInProgress = false;
     _lastFtmsRecoveryAttempt = null;
     // The control point this target was delivered through is gone, so the
@@ -2001,6 +2139,7 @@ class DeviceData {
     if (isSimulated) return Future.value();
 
     if (isDirConConnected) {
+      if (workoutOnly) return Future.value();
       final setupInProgress = _setupCoordinator.inFlight;
       if (setupInProgress != null) return setupInProgress;
       if (_dirConSetupComplete && !forceRefresh) return Future.value();
@@ -2008,7 +2147,12 @@ class DeviceData {
         if (!_setupCoordinator.isCurrent(generation) || !isDirConConnected) {
           return;
         }
-        await _readyCustomLink(device);
+        try {
+          await _readyCustomLink(device);
+        } catch (_) {
+          if (workoutOnly && isDirConConnected) return;
+          rethrow;
+        }
         subscribed = true;
         charReceived.value = true;
         configAppCompatibleFirmware = true;
@@ -2039,10 +2183,9 @@ class DeviceData {
     final needsBootstrap =
         forceRefresh ||
         services.isEmpty ||
-        _myCharacteristic == null ||
+        (!workoutOnly && (_myCharacteristic == null || !subscribed)) ||
         indoorBikeCharacteristic == null ||
-        ftmsControlPointCharacteristic == null ||
-        !subscribed;
+        (!workoutOnly && ftmsControlPointCharacteristic == null);
     if (!needsBootstrap) return Future.value();
 
     return _setupCoordinator.run(
@@ -2064,7 +2207,7 @@ class DeviceData {
     bool connectionIsCurrent() =>
         _setupCoordinator.isCurrent(generation) && device.isConnected;
 
-    if (Platform.isAndroid && device.mtuNow <= 23) {
+    if (!kIsWeb && Platform.isAndroid && device.mtuNow <= 23) {
       _mtuRequestedForConnection = false;
     }
 
@@ -2100,8 +2243,22 @@ class DeviceData {
 
     await _discoverServices(device, forceRefresh: forceRefresh);
     if (!connectionIsCurrent()) return;
-    if (services.length > 1) await _findChar();
+    if (services.isNotEmpty) await _findChar();
     if (!connectionIsCurrent()) return;
+    if (workoutOnly) {
+      if (indoorBikeCharacteristic == null) {
+        throw StateError(
+          'This trainer does not provide FTMS Indoor Bike Data.',
+        );
+      }
+      await ensureFtmsNotifications(device);
+      if (connectionIsCurrent() &&
+          isTransportActive &&
+          _ftmsSubscription == null) {
+        throw StateError('Could not subscribe to FTMS Indoor Bike Data.');
+      }
+      return;
+    }
     await updateCustomCharacter(device, sweepSettings: sweepSettings);
     if (!connectionIsCurrent()) return;
   }
@@ -2118,7 +2275,7 @@ class DeviceData {
 
     if (_myCharacteristic == null) {
       await _discoverServices(device);
-      if (services.length > 1) {
+      if (services.isNotEmpty) {
         await _findChar();
       }
     }
@@ -2159,47 +2316,49 @@ class DeviceData {
   Future _findChar() async {
     if (this.isSimulated) return;
     try {
-      // custom characteristic
-      BluetoothService cs = services.first;
-      for (BluetoothService s in services) {
-        if (s.uuid == Guid(csUUID)) {
-          cs = s;
-          break;
-        }
-      }
-      List<BluetoothCharacteristic> characteristics = cs.characteristics;
-      for (BluetoothCharacteristic c in characteristics) {
-        if (c.uuid == Guid(ccUUID)) {
-          _myCharacteristic = c;
-          if (!_myCharacteristic!.isNotifying) {
-            await _queueBleOperation(
-              () => _myCharacteristic!.setNotifyValue(true),
-            );
+      if (!workoutOnly) {
+        // custom characteristic
+        BluetoothService cs = services.first;
+        for (BluetoothService s in services) {
+          if (s.uuid == Guid(csUUID)) {
+            cs = s;
+            break;
           }
         }
-      }
-
-      // firmware
-      _firmwareService = null;
-      _firmwareDataCharacteristic = null;
-      _firmwareControlCharacteristic = null;
-      configAppCompatibleFirmware = false;
-      for (BluetoothService s in services) {
-        if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {
-          _firmwareService = s;
-          configAppCompatibleFirmware = true;
-          break;
-        }
-      }
-      if (configAppCompatibleFirmware) {
-        characteristics = _firmwareService!.characteristics;
+        List<BluetoothCharacteristic> characteristics = cs.characteristics;
         for (BluetoothCharacteristic c in characteristics) {
-          print(c.uuid.toString());
-          if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130005")) {
-            _firmwareDataCharacteristic = c;
+          if (c.uuid == Guid(ccUUID)) {
+            _myCharacteristic = c;
+            if (!_myCharacteristic!.isNotifying) {
+              await _queueBleOperation(
+                () => _myCharacteristic!.setNotifyValue(true),
+              );
+            }
           }
-          if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130003")) {
-            _firmwareControlCharacteristic = c;
+        }
+
+        // firmware
+        _firmwareService = null;
+        _firmwareDataCharacteristic = null;
+        _firmwareControlCharacteristic = null;
+        configAppCompatibleFirmware = false;
+        for (BluetoothService s in services) {
+          if (s.uuid == Guid("4FAFC201-1FB5-459E-8FCC-C5C9C331914B")) {
+            _firmwareService = s;
+            configAppCompatibleFirmware = true;
+            break;
+          }
+        }
+        if (configAppCompatibleFirmware) {
+          characteristics = _firmwareService!.characteristics;
+          for (BluetoothCharacteristic c in characteristics) {
+            print(c.uuid.toString());
+            if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130005")) {
+              _firmwareDataCharacteristic = c;
+            }
+            if (c.uuid == Guid("62ec0272-3ec5-11eb-b378-0242ac130003")) {
+              _firmwareControlCharacteristic = c;
+            }
           }
         }
       }
@@ -2285,11 +2444,11 @@ class DeviceData {
     bool sweepSettings = true,
   }) async {
     device = resolveTransportDevice(device);
-    if (this.isSimulated) return;
+    if (this.isSimulated || workoutOnly) return;
     if (_inUpdateLoop) {
       return;
     }
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       if (!_mtuRequestedForConnection && device.mtuNow <= 23) {
         _mtuRequestedForConnection = true;
         try {
@@ -2308,8 +2467,14 @@ class DeviceData {
       if (_myCharacteristic != null && !_myCharacteristic!.isNotifying) {
         await _queueBleOperation(() => _myCharacteristic!.setNotifyValue(true));
       }
-      if (sweepSettings && _myCharacteristic != null)
-        await _readyCustomLink(device);
+      if (sweepSettings && _myCharacteristic != null) {
+        try {
+          await _readyCustomLink(device);
+        } catch (_) {
+          if (workoutOnly) return;
+          rethrow;
+        }
+      }
       // Skipping deliberately leaves the stopwatch alone: the caller owns the
       // sweep now, and starting it here would pretend one just ran and suppress
       // the next due one.
@@ -2329,7 +2494,7 @@ class DeviceData {
 
   Future<void> ensureCustomCharacteristicStream(BluetoothDevice device) async {
     device = resolveTransportDevice(device);
-    if (this.isSimulated) return;
+    if (this.isSimulated || workoutOnly) return;
     if (isDirConConnected) {
       subscribed = true;
       charReceived.value = true;
@@ -2339,7 +2504,7 @@ class DeviceData {
 
     if (_myCharacteristic == null) {
       await _discoverServices(device);
-      if (services.length > 1) {
+      if (services.isNotEmpty) {
         await _findChar();
       }
     }
@@ -2418,7 +2583,7 @@ class DeviceData {
     if (indoorBikeCharacteristic == null) {
       await _discoverServices(device);
       if (isFtmsNotificationsBlocked) return;
-      if (services.length > 1) {
+      if (services.isNotEmpty) {
         await _findChar();
         discoveredThisPass = true;
       }
@@ -2443,7 +2608,7 @@ class DeviceData {
       if (_isDisposed || isFtmsNotificationsBlocked || !isTransportActive) {
         return;
       }
-      if (services.length > 1) {
+      if (services.isNotEmpty) {
         await _findChar();
       }
       print(
@@ -2474,7 +2639,7 @@ class DeviceData {
       if (_isDisposed || isFtmsNotificationsBlocked || !isTransportActive) {
         return;
       }
-      if (services.length > 1) {
+      if (services.isNotEmpty) {
         await _findChar();
       }
       stale = await _subscribeFtmsCharacteristics(device);
@@ -2529,6 +2694,9 @@ class DeviceData {
       previous: _controlPointSubscription,
     );
 
+    if (workoutOnly) {
+      _updateWorkoutControlAvailability();
+    }
     return stale;
   }
 
@@ -2964,32 +3132,24 @@ class DeviceData {
 
   void _decodeIndoorBikeData(List<int> value) {
     try {
-      lastFtmsUpdate = DateTime.now();
-      if (value.length < 4) {
-        return;
-      }
-
-      Uint8List data = Uint8List.fromList(value);
-      ByteData byteData = ByteData.sublistView(data);
-
-      int flags = byteData.getUint16(0, Endian.little);
+      if (value.length < 2) return;
+      final byteData = ByteData.sublistView(Uint8List.fromList(value));
+      final flags = byteData.getUint16(0, Endian.little);
       int index = 2;
-
       bool hasBytes(int requiredBytes) =>
-          (index + requiredBytes) <= byteData.lengthInBytes;
-
-      // Reset fields
-      ftmsData.cadence = 0;
-      ftmsData.watts = 0;
-      ftmsData.heartRate = 0;
-      ftmsData.speed = 0;
-
-      if (!hasBytes(2)) {
-        return;
+          index + requiredBytes <= byteData.lengthInBytes;
+      // Some trainers split one measurement across multiple notifications.
+      // More Data omits instantaneous speed. Keep fields from adjacent packets.
+      var speed = ftmsData.speed;
+      var watts = workoutOnly ? ftmsData.watts : 0;
+      var cadence = workoutOnly ? ftmsData.cadence : 0;
+      var resistance = ftmsData.resistance;
+      var heartRate = workoutOnly ? ftmsData.heartRate : 0;
+      if ((flags & 1) == 0) {
+        if (!hasBytes(2)) return;
+        speed = byteData.getUint16(index, Endian.little) ~/ 100;
+        index += 2;
       }
-      ftmsData.speed =
-          byteData.getUint16(index, Endian.little) ~/ 100; // resolution 0.01
-      index += 2;
 
       if ((flags & (1 << 1)) != 0) {
         if (!hasBytes(2)) return;
@@ -2998,7 +3158,7 @@ class DeviceData {
 
       if ((flags & (1 << 2)) != 0) {
         if (!hasBytes(2)) return;
-        ftmsData.cadence =
+        cadence =
             byteData.getUint16(index, Endian.little) ~/ 2; // resolution 0.5
         index += 2;
       }
@@ -3014,13 +3174,13 @@ class DeviceData {
 
       if ((flags & (1 << 5)) != 0) {
         if (!hasBytes(2)) return;
-        ftmsData.resistance = byteData.getInt16(index, Endian.little);
+        resistance = byteData.getInt16(index, Endian.little);
         index += 2;
       }
 
       if ((flags & (1 << 6)) != 0) {
         if (!hasBytes(2)) return;
-        ftmsData.watts = byteData.getInt16(index, Endian.little);
+        watts = byteData.getInt16(index, Endian.little);
         index += 2;
       }
 
@@ -3029,16 +3189,22 @@ class DeviceData {
         index += 2;
       }
       if ((flags & (1 << 8)) != 0) {
-        if (!hasBytes(1)) return;
-        index += 1;
+        if (!hasBytes(5)) return;
+        index += 5;
       }
 
       if ((flags & (1 << 9)) != 0) {
         if (!hasBytes(1)) return;
-        ftmsData.heartRate = byteData.getUint8(index);
+        heartRate = byteData.getUint8(index);
         index += 1;
       }
 
+      lastFtmsUpdate = DateTime.now();
+      ftmsData.speed = speed;
+      ftmsData.watts = watts;
+      ftmsData.cadence = cadence;
+      ftmsData.resistance = resistance;
+      ftmsData.heartRate = heartRate;
       if (DirConClient.diagnosticsEnabled && isDirConConnected) {
         print(
           '[DIRCON][FTMS] raw=${_diagnosticHex(value)} '
@@ -3414,7 +3580,7 @@ class DeviceData {
   // only firmware that explicitly rejects 0x31 uses the legacy per-reference
   // sweep below.
   Future<void> requestSettings(BluetoothDevice device) {
-    if (isSimulated) return Future<void>.value();
+    if (isSimulated || workoutOnly) return Future<void>.value();
 
     // Calibration owns the interactive FTMS channels while its lease is held.
     // Defer even the shorter snapshot transfer so background bootstrap traffic
@@ -3940,8 +4106,9 @@ class DeviceData {
   // back-pressure signal, with a small guard interval on Android/Peloton so
   // SS2kConfigApp does not monopolize the shared BLE stack while Grupetto is
   // also advertising/serving as a peripheral.
-  Duration get _bleWriteGuardInterval =>
-      Platform.isAndroid ? const Duration(milliseconds: 35) : Duration.zero;
+  Duration get _bleWriteGuardInterval => !kIsWeb && Platform.isAndroid
+      ? const Duration(milliseconds: 35)
+      : Duration.zero;
 
   /// Serializes one transport operation, ahead of lower-priority queued work.
   ///
@@ -4205,8 +4372,19 @@ class DeviceData {
     resetWorkoutSimulation();
   }
 
+  void _updateWorkoutControlAvailability() {
+    if (!_controlPointNotificationsLive) {
+      workoutControlNotice.value = 'Ride data only';
+    } else if (workoutControlNotice.value == 'Ride data only' &&
+        !_unsupportedWorkoutOpcodes.contains(FTMSOpCodes.REQUEST_CONTROL)) {
+      workoutControlNotice.value = null;
+    }
+    _workoutControlLane.onAvailabilityChanged();
+  }
+
   bool _isWorkoutControlReady() {
-    if (isSimulated) return false;
+    if (isSimulated || (workoutOnly && !_controlPointNotificationsLive))
+      return false;
     final state = _transportStateController.value;
     if (state.phase != DeviceTransportPhase.connected) return false;
     return switch (state.transport) {
@@ -4222,6 +4400,7 @@ class DeviceData {
   ) {
     return _queueBleOperation(
       () async {
+        if (workoutOnly) return _dispatchFtmsWorkout(batch, isCurrent);
         for (final command in batch.commands) {
           if (!isCurrent()) return false;
           await _writeFtmsControlPointCommandNow(command);
@@ -4235,6 +4414,127 @@ class DeviceData {
       priority: TransportOpPriority.interactive,
       label: 'workout control batch',
     );
+  }
+
+  // A GATT write acknowledgement only confirms delivery. FTMS trainers
+  // indicate the procedure result before accepting the next control command.
+  Future<int> _runFtmsProcedure(List<int> command) async {
+    final response = Completer<int>();
+    final subscription = controlPointResponseStream.listen((frame) {
+      if (!response.isCompleted &&
+          frame.length >= 3 &&
+          frame[0] == FTMSOpCodes.RESPONSE_CODE &&
+          frame[1] == command.first) {
+        response.complete(frame[2]);
+      }
+    });
+    try {
+      await _writeFtmsControlPointCommandNow(command);
+      return await response.future.timeout(const Duration(seconds: 4));
+    } finally {
+      await subscription.cancel();
+    }
+  }
+
+  Future<bool> _dispatchFtmsWorkout(
+    WorkoutControlBatch batch,
+    bool Function() isCurrent,
+  ) async {
+    if (!isCurrent()) return false;
+    String? retryNotice;
+    Future<bool> procedure(List<int> command) async {
+      final opcode = command.first;
+      if (_unsupportedWorkoutOpcodes.contains(opcode)) return false;
+      final result = await _runFtmsProcedure(command);
+      if (_isDisposed ||
+          !isTransportActive ||
+          transportState.value.epoch != batch.epoch) {
+        return false;
+      }
+      // Acknowledgements on this connection still describe the trainer even
+      // when a newer target or pause has superseded the command batch.
+      if (result == FTMSResultCodes.SUCCESS) {
+        switch (opcode) {
+          case FTMSOpCodes.REQUEST_CONTROL:
+            _hasFtmsControl = true;
+          case FTMSOpCodes.START_OR_RESUME:
+            _ftmsWorkoutStarted = true;
+          case FTMSOpCodes.STOP_OR_PAUSE:
+            _ftmsWorkoutStarted = false;
+        }
+        return isCurrent();
+      }
+      if (result == FTMSResultCodes.CONTROL_NOT_PERMITTED) {
+        _hasFtmsControl = false;
+        _ftmsWorkoutStarted = false;
+      }
+      if (!isCurrent()) return false;
+      if (result == FTMSResultCodes.OP_CODE_NOT_SUPPORTED) {
+        // SmartSpin2k also returns this result until a power or cadence
+        // source is available. Let the workout lane retry its current target.
+        if (opcode == FTMSOpCodes.SET_TARGET_POWER &&
+            (_lastScanResult?.isSmartSpin == true ||
+                discoveredEndpoint?.isSmartSpin == true ||
+                hasSmartSpinService)) {
+          retryNotice = _ergSensorNotice;
+          throw StateError(_ergSensorNotice);
+        }
+        _unsupportedWorkoutOpcodes.add(opcode);
+        if (opcode == FTMSOpCodes.REQUEST_CONTROL) {
+          workoutControlNotice.value = 'Ride data only';
+        } else if (opcode == FTMSOpCodes.SET_TARGET_POWER) {
+          workoutControlNotice.value = 'ERG targets unsupported';
+        }
+        return false;
+      }
+      throw StateError(
+        'Trainer rejected FTMS command $opcode (result $result)',
+      );
+    }
+
+    try {
+      if (batch.kind == WorkoutControlKind.simulationReset) {
+        if (_hasFtmsControl) {
+          await procedure([
+            FTMSOpCodes.STOP_OR_PAUSE,
+            FTMSStopPauseParams.STOP,
+          ]);
+          if (isCurrent() && workoutControlNotice.value == _ergSensorNotice) {
+            workoutControlNotice.value = null;
+          }
+        }
+        return isCurrent();
+      }
+      if (!_hasFtmsControl) {
+        if (!await procedure([FTMSOpCodes.REQUEST_CONTROL])) return isCurrent();
+        if (!isCurrent()) return false;
+      }
+      if (!_ftmsWorkoutStarted) {
+        await procedure([FTMSOpCodes.START_OR_RESUME]);
+        if (!isCurrent()) return false;
+      }
+      if (batch.watts == 0) {
+        // Prefer neutral simulation for free rides, then fall back to zero ERG.
+        final simulation = batch.commands.last;
+        if (!await procedure(simulation) && isCurrent()) {
+          await procedure(batch.commands.first);
+        }
+      } else {
+        // The SmartSpin2k-specific simulation prefix is unnecessary here.
+        await procedure(batch.commands.last);
+      }
+      if (isCurrent() &&
+          !_unsupportedWorkoutOpcodes.contains(FTMSOpCodes.SET_TARGET_POWER)) {
+        workoutControlNotice.value = null;
+      }
+      return isCurrent();
+    } catch (_) {
+      if (isCurrent()) {
+        workoutControlNotice.value =
+            retryNotice ?? 'Trainer control unavailable';
+      }
+      rethrow;
+    }
   }
 
   /// [onDispatch] fires once, *after* transport validation and immediately
@@ -4252,7 +4552,16 @@ class DeviceData {
         dirConSession != null &&
         dirConSession.isConnected) {
       onDispatch?.call();
-      await dirConSession.writeCharacteristic(ftmsControlPointUUID, command);
+      if (workoutOnly) {
+        // DirCon trainers can return the FTMS result in the write reply or
+        // through a subsequent Control Point notification.
+        await dirConSession.writeCharacteristicOrdered(
+          ftmsControlPointUUID,
+          command,
+        );
+      } else {
+        await dirConSession.writeCharacteristic(ftmsControlPointUUID, command);
+      }
       return;
     }
 
@@ -4844,6 +5153,7 @@ class DeviceData {
     _isDisposed = true;
     _endCustomLink();
     pairingAvailable.dispose();
+    workoutControlNotice.dispose();
     _cancelDirConRecovery();
     _bleDeviceScanTimer?.cancel();
     _bleDeviceScanTimer = null;

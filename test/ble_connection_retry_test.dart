@@ -77,7 +77,7 @@ void main() {
 
     expect(
       prettyException('Connect Error:', error),
-      'Connect Error: Unable to connect to SmartSpin2k over Bluetooth after '
+      'Connect Error: Unable to connect to the trainer over Bluetooth after '
       '10 attempts. Move closer to the device, make sure it is powered on, '
       'then try again.',
     );

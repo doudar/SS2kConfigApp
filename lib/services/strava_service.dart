@@ -339,7 +339,6 @@ class StravaService {
 
   // Handle OAuth callback
   static Future<bool> handleAuthCallback(String code) async {
-    debugPrint('Handling auth callback with code: $code');
     try {
       final response = await http.post(
         Uri.parse(_tokenUrl),
@@ -352,7 +351,6 @@ class StravaService {
       );
 
       debugPrint('Auth callback response status: ${response.statusCode}');
-      debugPrint('Auth callback response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);

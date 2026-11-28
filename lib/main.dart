@@ -26,6 +26,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'services/strava_service.dart';
 import 'services/intervals_service.dart';
 import 'screens/scan_screen.dart';
+import 'screens/workout_screen.dart';
 import 'screens/onboarding/onboarding_wizard.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'utils/onboarding/onboarding_state.dart';
@@ -68,7 +69,6 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     'com.example.ss2kconfigapp/power',
   );
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
-  late AppLinks _appLinks;
   StreamSubscription? _linkSubscription;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   final GlobalKey<ScaffoldMessengerState> _scaffoldKey =
@@ -78,40 +78,54 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
   // Start false on native so a clean install shows the wizard, not a ScanScreen flash.
   // kIsWeb stays true because the wizard is never shown on web.
   bool _onboardingCompleted = kIsWeb;
-  bool _scanAfterPairingCancel = false;
+  bool _showScanHome = false;
 
   void _showPairingPrompt(
     String name,
     Future<void> approval,
-    Future<void> Function() disconnect, [
+    Future<BluetoothDevice> Function() useWorkout,
+  ) => _showConnectionDialog(name, approval, useWorkout);
+
+  void _showConnectionDialog(
+    String name,
+    Future<void> approval,
+    Future<BluetoothDevice?> Function() alternative, [
     void Function()? allowLegacy,
   ]) {
     final navigator = _navigatorKey.currentState;
-    if (navigator == null) {
-      unawaited(
-        disconnect().catchError((Object error) {
-          debugPrint('Could not disconnect after cancelling pairing: $error');
-        }),
-      );
-      return;
-    }
-    var cancelled = false;
-    Future<void> cancel() async {
-      if (cancelled) return;
-      cancelled = true;
+    if (navigator == null) return;
+    var selected = false;
+    Future<void> selectAlternative() async {
+      if (selected) return;
+      selected = true;
+      BluetoothDevice? workout;
       try {
-        await disconnect();
+        workout = await alternative();
       } catch (error) {
+        debugPrint('Workout connection failed: $error');
         if (navigator.mounted) {
           ScaffoldMessenger.of(navigator.context).showSnackBar(
-            SnackBar(content: Text('Could not disconnect from $name. $error')),
+            SnackBar(
+              content: Text('Could not change the connection to $name. $error'),
+            ),
           );
         }
-      } finally {
-        if (mounted && navigator.mounted) {
-          setState(() => _scanAfterPairingCancel = true);
-          navigator.popUntil((route) => route.isFirst);
-        }
+      }
+      if (!mounted || !navigator.mounted) return;
+      setState(() => _showScanHome = true);
+      final device = workout;
+      if (device == null) {
+        navigator.popUntil((route) => route.isFirst);
+      } else {
+        unawaited(
+          navigator.pushAndRemoveUntil<void>(
+            MaterialPageRoute<void>(
+              settings: const RouteSettings(name: '/WorkoutScreen'),
+              builder: (_) => WorkoutScreen(device: device),
+            ),
+            (route) => route.isFirst,
+          ),
+        );
       }
     }
 
@@ -121,18 +135,39 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
       builder: (context) => PopScope(
         canPop: false,
         child: AlertDialog(
+          constraints: allowLegacy == null
+              ? const BoxConstraints(minWidth: 280, maxWidth: 440)
+              : null,
+          scrollable: allowLegacy == null,
           title: Text(
             allowLegacy == null
-                ? 'Pair with $name'
+                ? 'Pair with ${name.isEmpty ? 'SmartSpin2k' : name}'
                 : 'Use older firmware on $name?',
           ),
-          content: Text(
-            allowLegacy == null
-                ? 'Press and hold both shifter buttons on your SmartSpin2k until pairing finishes.'
-                : 'This trainer previously supported encrypted connections. It now reports older firmware. Allow unencrypted settings and updates? The app will remember your choice and switch back automatically when it detects secure firmware.',
-          ),
+          content: allowLegacy == null
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'assets/images/hold_shifter_buttons.png',
+                      width: 180,
+                      height: 108,
+                      excludeFromSemantics: true,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Press and hold both shifter buttons together to pair for settings and firmware updates. To ride without pairing, choose Workout only.',
+                    ),
+                  ],
+                )
+              : const Text(
+                  'This trainer previously supported encrypted connections. It now reports older firmware. Allow unencrypted settings and updates? The app will remember your choice and switch back automatically when it detects secure firmware.',
+                ),
           actions: [
-            TextButton(onPressed: cancel, child: const Text('Cancel')),
+            TextButton(
+              onPressed: selectAlternative,
+              child: Text(allowLegacy == null ? 'Workout only' : 'Cancel'),
+            ),
             if (allowLegacy != null)
               FilledButton(
                 onPressed: allowLegacy,
@@ -145,10 +180,10 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     unawaited(navigator.push(route));
     approval.then<void>(
       (_) {
-        if (!cancelled && route.isActive) navigator.removeRoute(route);
+        if (!selected && route.isActive) navigator.removeRoute(route);
       },
       onError: (Object error) {
-        if (cancelled || !navigator.mounted) return;
+        if (selected || !navigator.mounted) return;
         if (route.isActive) navigator.removeRoute(route);
         ScaffoldMessenger.of(navigator.context).showSnackBar(
           SnackBar(
@@ -168,7 +203,10 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     Future<void> approval,
     void Function() allow,
     Future<void> Function() disconnect,
-  ) => _showPairingPrompt(name, approval, disconnect, allow);
+  ) => _showConnectionDialog(name, approval, () async {
+    await disconnect();
+    return null;
+  }, allow);
 
   @override
   void initState() {
@@ -319,180 +357,42 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     }
   }
 
-  Future<void> _initDeepLinkHandling() async {
-    _appLinks = AppLinks();
-
-    // Handle initial URI if the app was launched with one
-    final uri = await _appLinks.getInitialLink();
-    if (uri != null) {
-      _handleDeepLink(uri);
-    }
-
-    // Handle URI when app is already running
-    _linkSubscription = _appLinks.uriLinkStream.listen(
-      (uri) {
-        _handleDeepLink(uri);
-      },
-      onError: (err) {
-        debugPrint('Deep link error: $err');
-      },
+  void _initDeepLinkHandling() {
+    // The stream includes the link that launched the app as well as later links.
+    _linkSubscription = AppLinks().uriLinkStream.listen(
+      _handleDeepLink,
+      onError: (Object error) => debugPrint('Deep link error: $error'),
     );
   }
 
-  void _handleDeepLink(Uri uri) {
-    debugPrint('Handling deep link: ${uri.toString()}');
-    debugPrint('URI scheme: ${uri.scheme}, host: ${uri.host}');
-
-    // Handle Strava OAuth callback
-    if (uri.scheme == 'smartspin2k' &&
-        (uri.host == 'redirect' || uri.host == 'localhost')) {
-      final code = uri.queryParameters['code'];
-      final error = uri.queryParameters['error'];
-      // final state = uri.queryParameters['state']; // Unused
-
-      if (error != null) {
-        debugPrint('Strava auth error: $error');
-        _scaffoldKey.currentState?.showSnackBar(
-          SnackBar(
-            content: Text('Strava authentication error: $error'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      if (code != null) {
-        debugPrint('Received auth code: $code');
-
-        // Show loading dialog
-        showDialog(
-          context: _navigatorKey.currentContext!,
-          barrierDismissible: false,
-          builder: (context) => const AlertDialog(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Connecting to Strava...'),
-              ],
-            ),
-          ),
-        );
-
-        StravaService.handleAuthCallback(code).then((success) {
-          debugPrint('Auth callback result: $success');
-
-          // Close loading dialog
-          Navigator.of(_navigatorKey.currentContext!).pop();
-
-          if (success && mounted) {
-            _scaffoldKey.currentState?.showSnackBar(
-              const SnackBar(
-                content: Text('Successfully connected to Strava'),
-                backgroundColor: Colors.green,
-                duration: Duration(seconds: 3),
-              ),
-            );
-
-            // Ensure we're showing the main screen when returning from auth
-            while (_navigatorKey.currentState?.canPop() ?? false) {
-              _navigatorKey.currentState?.pop();
-            }
-            // Rebuild the screen to ensure proper state
-            if (mounted) {
-              setState(() {});
-            }
-          } else if (mounted) {
-            _scaffoldKey.currentState?.showSnackBar(
-              const SnackBar(
-                content: Text('Failed to connect to Strava'),
-                backgroundColor: Colors.red,
-                duration: Duration(seconds: 3),
-              ),
-            );
-          }
-        });
-      }
-      return; // handled
+  Future<void> _handleDeepLink(Uri uri) async {
+    if (uri.scheme != 'smartspin2k') return;
+    final isStrava = uri.host == 'redirect' || uri.host == 'localhost';
+    if (!isStrava && uri.host != 'intervals_redirect') return;
+    final provider = isStrava ? 'Strava' : 'Intervals.icu';
+    final error = uri.queryParameters['error'];
+    final code = uri.queryParameters['code'];
+    String message;
+    var success = false;
+    if (error != null) {
+      message = '$provider authentication error: $error';
+    } else if (code != null && code.isNotEmpty) {
+      success = isStrava
+          ? await StravaService.handleAuthCallback(code)
+          : await IntervalsService.handleAuthCallback(code);
+      message = success
+          ? 'Successfully connected to $provider'
+          : 'Failed to connect to $provider';
+    } else {
+      return;
     }
-
-    // Handle Intervals.icu OAuth callback
-    if (uri.scheme == 'smartspin2k' && uri.host == 'intervals_redirect') {
-      debugPrint('Handling Intervals.icu callback');
-      final code = uri.queryParameters['code'];
-      final error = uri.queryParameters['error'];
-
-      if (error != null) {
-        debugPrint('Intervals.icu auth error: $error');
-        _scaffoldKey.currentState?.showSnackBar(
-          SnackBar(
-            content: Text('Intervals.icu authentication error: $error'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      if (code != null) {
-        debugPrint('Received Intervals.icu auth code: $code');
-
-        // Show loading dialog
-        showDialog(
-          context: _navigatorKey.currentContext!,
-          barrierDismissible: false,
-          builder: (context) => const AlertDialog(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Connecting to Intervals.icu...'),
-              ],
-            ),
-          ),
-        );
-
-        IntervalsService.handleAuthCallback(code).then((success) {
-          debugPrint('Intervals.icu auth callback result: $success');
-
-          // Close loading dialog
-          Navigator.of(_navigatorKey.currentContext!).pop();
-
-          if (success && mounted) {
-            _scaffoldKey.currentState?.showSnackBar(
-              const SnackBar(
-                content: Text('Successfully connected to Intervals.icu'),
-                backgroundColor: Color(0xFF1B4F72),
-                duration: Duration(seconds: 3),
-              ),
-            );
-
-            // Ensure we're showing the main screen when returning from auth
-            while (_navigatorKey.currentState?.canPop() ?? false) {
-              _navigatorKey.currentState?.pop();
-            }
-            // Rebuild the screen to ensure proper state
-            if (mounted) {
-              setState(() {});
-            }
-          } else if (mounted) {
-            _scaffoldKey.currentState?.showSnackBar(
-              const SnackBar(
-                content: Text('Failed to connect to Intervals.icu'),
-                backgroundColor: Colors.red,
-                duration: Duration(seconds: 3),
-              ),
-            );
-          }
-        });
-      }
-      return; // handled
-    }
-
-    // Add a catch-all debug log for any truly unhandled deep links
-    debugPrint(
-      'Unhandled deep link: ${uri.toString()} (scheme: ${uri.scheme}, host: ${uri.host})',
+    if (!mounted) return;
+    _scaffoldKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: success ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
     );
   }
 
@@ -520,7 +420,7 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     required bool demoMode,
   }) {
     // Network discovery and Dircon work even when the BLE adapter is off.
-    if (onboardingCompleted || demoMode || _scanAfterPairingCancel) {
+    if (onboardingCompleted || demoMode || _showScanHome) {
       return const ScanScreen();
     } else {
       return ChangeNotifierProvider(
@@ -539,15 +439,13 @@ class _SmartSpin2kAppState extends State<SmartSpin2kApp> {
     );
 
     final themeProvider = Provider.of<ThemeProvider>(context);
-    return ScaffoldMessenger(
-      key: _scaffoldKey,
-      child: MaterialApp(
-        navigatorKey: _navigatorKey,
-        themeMode: ThemeMode.dark,
-        theme: themeProvider.darkTheme,
-        darkTheme: themeProvider.darkTheme,
-        home: screen,
-      ),
+    return MaterialApp(
+      scaffoldMessengerKey: _scaffoldKey,
+      navigatorKey: _navigatorKey,
+      themeMode: ThemeMode.dark,
+      theme: themeProvider.darkTheme,
+      darkTheme: themeProvider.darkTheme,
+      home: screen,
     );
   }
 }

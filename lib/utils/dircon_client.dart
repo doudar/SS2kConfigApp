@@ -217,13 +217,13 @@ class DirConClient implements DirConSession {
     final services = await discoverServices();
     final normalizedService = _normalizeUuid(serviceUuid);
     if (!services.contains(normalizedService)) {
-      throw StateError('SmartSpin2k DIRCON service not found');
+      throw StateError('DirCon service $serviceUuid not found');
     }
 
     final characteristics = await discoverCharacteristics(serviceUuid);
     final normalizedCharacteristic = _normalizeUuid(characteristicUuid);
     if (!characteristics.contains(normalizedCharacteristic)) {
-      throw StateError('SmartSpin2k DIRCON characteristic not found');
+      throw StateError('DirCon characteristic $characteristicUuid not found');
     }
     if (enableNotifications) {
       await setNotifications(characteristicUuid, true);

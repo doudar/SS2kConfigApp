@@ -132,7 +132,7 @@ class SmartSpinIntroduction extends StatelessWidget {
                   const SizedBox(height: 5),
                   Text(
                     'The app sets up and controls your SmartSpin2k. '
-                    'Installing the app alone does not control bike resistance.',
+                    'You can also use the Workout screen with another FTMS bike trainer.',
                     style: TextStyle(color: secondary, height: 1.4),
                   ),
                 ],

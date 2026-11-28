@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:ss2k_protocol/ss2k_protocol.dart' as protocol;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../../../utils/constants.dart';
@@ -19,40 +20,56 @@ class MotorTestStep extends StatefulWidget {
 class _MotorTestStepState extends State<MotorTestStep> {
   bool _testRunning = false;
   bool _testRan = false;
+  String? _testError;
 
   Future<void> _runTest(WizardSession session) async {
     final device = session.connectedDevice;
-    if (device == null) return;
-
-    setState(() => _testRunning = true);
-    final deviceData = DeviceDataManager.forDevice(device);
-
-    // Establish the current position through the active transport before
-    // calculating the test movements. This avoids treating an as-yet-unread
-    // cached value as gear zero when the wizard is entered over DIRCON.
-    await deviceData.requestSetting(device, shifterPositionVname);
-
-    var c = deviceData.customCharacteristic.firstWhere(
-      (i) => i['vName'] == shifterPositionVname,
-      orElse: () => <String, dynamic>{},
-    );
-
-    if (c.isNotEmpty) {
-      final base = int.tryParse(c['value']?.toString() ?? '') ?? 0;
-
-      // Two upshifts then two downshifts, matching the shifter screen's write path
+    if (_testRunning) return;
+    setState(() {
+      _testRunning = true;
+      _testRan = false;
+      _testError = null;
+    });
+    try {
+      if (device == null) {
+        throw StateError('Connect to SmartSpin2k and try again.');
+      }
+      final deviceData = DeviceDataManager.forDevice(device);
+      final epoch = deviceData.transportState.value.epoch;
+      final step = session.currentStepIndex;
+      await deviceData.writeCustomCharacteristic(device, [
+        protocol.read,
+        protocol.CommandId.shifterPosition,
+      ], priority: TransportOpPriority.interactive);
+      final gear = deviceData.customCharacteristic.firstWhere(
+        (setting) => setting['vName'] == shifterPositionVname,
+      );
+      final base = int.tryParse(gear['value'].toString());
+      if (base == null) {
+        throw StateError('SmartSpin2k did not report its current gear.');
+      }
       for (final delta in [1, 2, 1, 0]) {
-        c = Map<String, Object>.from(c)..['value'] = (base + delta).toString();
-        await deviceData.writeToSS2k(device, c);
+        if (!mounted || session.currentStepIndex != step) return;
+        if (session.connectedDevice != device ||
+            (!deviceData.isSimulated &&
+                (!deviceData.isTransportActive ||
+                    deviceData.transportState.value.epoch != epoch))) {
+          throw StateError('The trainer connection changed. Please try again.');
+        }
+        await deviceData.writeToSS2kStrict(
+          device,
+          gear,
+          s: (base + delta).toString(),
+        );
         await Future.delayed(const Duration(milliseconds: 800));
       }
-    }
-
-    if (mounted) {
-      setState(() {
-        _testRunning = false;
-        _testRan = true;
-      });
+      if (mounted && session.currentStepIndex == step) _testRan = true;
+    } catch (error) {
+      if (mounted)
+        _testError =
+            'Motor test stopped. ${error is StateError ? error.message : error}';
+    } finally {
+      if (mounted) setState(() => _testRunning = false);
     }
   }
 
@@ -143,6 +160,14 @@ class _MotorTestStepState extends State<MotorTestStep> {
                   ),
                 ),
 
+                if (_testError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      _testError!,
+                      style: TextStyle(color: theme.colorScheme.error),
+                    ),
+                  ),
                 if (_testRan) ...[
                   const SizedBox(height: 28),
                   Container(

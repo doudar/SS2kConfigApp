@@ -11,6 +11,10 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2k_protocol/ss2k_protocol.dart' as p;
 import 'package:ss2kconfigapp/main.dart';
+import 'package:ss2kconfigapp/screens/workout_screen.dart';
+import 'package:ss2kconfigapp/utils/constants.dart';
+import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
+import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 import 'package:ss2kconfigapp/screens/scan_screen.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
 import 'package:ss2kconfigapp/utils/device_transport_state.dart';
@@ -29,6 +33,11 @@ List<int> _pairingReply(List<int> value) {
   }
   // Leave the offer pending until the user acts.
   return [];
+}
+
+class _TestWakelock extends WakelockPlusPlatformInterface {
+  @override
+  Future<void> toggle({required bool enable}) async {}
 }
 
 class _PairingTrainer extends FakeDirConSession {
@@ -86,31 +95,39 @@ void main() {
     },
   );
 
-  test('Cancel disconnects a trainer paired over Bluetooth', () async {
-    final harness = await BleHarness.connect(ble);
-    addTearDown(harness.dispose);
-    ble.customReply = _pairingReply;
-    final prompt = Completer<Future<void> Function()>();
-    DeviceData.pairingPrompt = (_, _, cancel) => prompt.complete(cancel);
-    addTearDown(() => DeviceData.pairingPrompt = null);
-    final pairing = expectLater(
-      harness.deviceData.usesPairedSettings(harness.device),
-      throwsStateError,
-    );
-    final cancel = await prompt.future.timeout(const Duration(seconds: 5));
-    await cancel();
-    await pairing;
-    expect(harness.device.isConnected, isFalse);
-    expect(harness.deviceData.isUserDisconnect, isTrue);
-    expect(
-      harness.deviceData.transportState.value.transport,
-      DeviceTransportKind.none,
-    );
-  });
+  test(
+    'Workout only closes the BLE pairing handshake and keeps FTMS connected',
+    () async {
+      final harness = await BleHarness.connect(ble);
+      addTearDown(harness.dispose);
+      ble.customReply = _pairingReply;
+      final prompt = Completer<Future<BluetoothDevice> Function()>();
+      DeviceData.pairingPrompt = (_, _, useWorkout) =>
+          prompt.complete(useWorkout);
+      addTearDown(() => DeviceData.pairingPrompt = null);
+      final pairing = expectLater(
+        harness.deviceData.usesPairedSettings(harness.device),
+        throwsStateError,
+      );
+      final useWorkout = await prompt.future.timeout(
+        const Duration(seconds: 5),
+      );
+      await useWorkout();
+      await pairing;
+      expect(harness.device.isConnected, isTrue);
+      expect(harness.deviceData.workoutOnly, isTrue);
+      expect(harness.deviceData.hasPairedSession, isFalse);
+      expect(harness.deviceData.isUserDisconnect, isFalse);
+      expect(
+        harness.deviceData.transportState.value.transport,
+        DeviceTransportKind.bluetooth,
+      );
+    },
+  );
 
   for (final onboarded in [true, false]) {
     testWidgets(
-      'Cancel disconnects and returns to Scan (onboarded=$onboarded)',
+      'Workout only opens Workout on the same DirCon session (onboarded=$onboarded)',
       (tester) async {
         SharedPreferences.setMockInitialValues({
           'onboarding_completed': onboarded,
@@ -146,26 +163,45 @@ void main() {
           ..advertisedIpAddress = session.host;
         final device = BluetoothDevice.fromId('00:00:00:00:22:01');
         addTearDown(data.dispose);
+        WakelockPlusPlatformInterface.instance = _TestWakelock();
+        DeviceDataManager.updateDataForDevice(device, data);
+        addTearDown(() => DeviceDataManager.clearDataForDevice(device));
         final connecting = data.connectPreferred(device, waitForSetup: true);
         await tester.pumpAndSettle();
-        expect(find.text('Cancel'), findsOneWidget);
+        expect(find.text('Cancel'), findsNothing);
+        expect(
+          find.image(
+            const AssetImage('assets/images/hold_shifter_buttons.png'),
+          ),
+          findsOneWidget,
+        );
         expect(data.isDirConConnected, isTrue);
-        await tester.runAsync(() async {
-          await tester.tap(find.text('Cancel'));
-          await Future<void>.delayed(Duration.zero);
-        });
-        await tester.pumpAndSettle();
+        await tester.tap(find.text('Workout only'));
+        await tester.pump();
         await connecting;
-        // Let the post-connect settle timer expire and check for a fallback.
-        await tester.pump(const Duration(seconds: 12));
-        await tester.pumpAndSettle();
-        expect(session.isClosed, isTrue);
-        expect(data.isUserDisconnect, isTrue);
-        expect(data.transportState.value.transport, DeviceTransportKind.none);
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(session.isClosed, isFalse);
+        expect(data.workoutOnly, isTrue);
+        expect(data.hasPairedSession, isFalse);
+        expect(data.transportState.value.transport, DeviceTransportKind.dircon);
         expect(ble.connectCalls, isEmpty);
+        expect(find.byType(WorkoutScreen), findsOneWidget);
+        session.emitNotification(ftmsIndoorBikeDataUUID, [
+          0x40,
+          0,
+          0,
+          0,
+          171,
+          0,
+        ]);
+        await tester.pump();
+        expect(data.ftmsData.watts, 171);
+        navigator.pop();
+        await tester.pumpAndSettle();
         expect(find.byType(ScanScreen), findsOneWidget);
         expect(navigator.canPop(), isFalse);
         expect(find.textContaining('Pairing did not finish'), findsNothing);
+        WorkoutController(data, device).cleanup();
         expect(await OnboardingState.isCompleted(), onboarded);
       },
     );
@@ -202,6 +238,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Use older firmware'), findsOneWidget);
+      expect(
+        find.image(const AssetImage('assets/images/hold_shifter_buttons.png')),
+        findsNothing,
+      );
       await tester.tap(find.text(accept ? 'Use older firmware' : 'Cancel'));
       await tester.pumpAndSettle();
       expect(find.text('Use older firmware'), findsNothing);
