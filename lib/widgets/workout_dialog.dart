@@ -1,18 +1,16 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'workout_settings_theme.dart';
 import 'workout_scroll_hint.dart';
 
 /// Shared shell for workout settings, pickers, confirmations and ride export.
-/// The whole shell scrolls, keeping actions reachable with large text or a
-/// keyboard. List bodies get a bounded viewport so lazy lists remain lazy.
+/// Navigation stays visible while long forms and lists scroll in the body.
 class WorkoutDialog extends StatelessWidget {
   const WorkoutDialog({
     super.key,
     required this.title,
     required this.content,
     this.icon = Icons.tune_rounded,
-    this.eyebrow = 'YOUR WORKOUT',
+    this.eyebrow,
     this.subtitle,
     this.actions = const [],
     this.showClose = false,
@@ -24,7 +22,7 @@ class WorkoutDialog extends StatelessWidget {
   final Widget title;
   final Widget content;
   final IconData icon;
-  final String eyebrow;
+  final String? eyebrow;
   final String? subtitle;
   final List<Widget> actions;
   final bool showClose;
@@ -58,105 +56,105 @@ class WorkoutDialog extends StatelessWidget {
         backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
         clipBehavior: Clip.antiAlias,
-        child: WorkoutScrollHint(
-          child: SingleChildScrollView(
-            child: Column(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final heading = Semantics(
+              namesRoute: true,
+              header: true,
+              child: DefaultTextStyle(
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleLarge!.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colors.onSurface,
+                ),
+                child: title,
+              ),
+            );
+            final description = subtitle == null
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      subtitle!,
+                      style: TextStyle(color: colors.onSurfaceVariant),
+                    ),
+                  );
+            final body = Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (description != null) description,
+                if (listBody)
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 520),
+                      child: showListScrollHint
+                          ? WorkoutScrollHint(child: content)
+                          : content,
+                    ),
+                  )
+                else
+                  content,
+              ],
+            );
+            return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Container(
-                  padding: WorkoutSettingsTheme.headerPadding,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        colors.primary.withValues(alpha: .12),
-                        colors.surface,
-                      ],
+                  color: colors.primary.withValues(alpha: .06),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(icon, color: colors.primary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (eyebrow != null)
+                              WorkoutSectionLabel(eyebrow!, accent: true),
+                            heading,
+                          ],
+                        ),
+                      ),
+                      if (showClose)
+                        IconButton(
+                          tooltip: 'Close',
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                    child: listBody
+                        ? body
+                        : WorkoutScrollHint(
+                            child: SingleChildScrollView(child: body),
+                          ),
+                  ),
+                ),
+                if (actions.isNotEmpty)
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: constraints.maxHeight * .42,
+                    ),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      child: WorkoutDialogActions(children: actions),
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: colors.primary.withValues(alpha: .10),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Icon(icon, color: colors.primary, size: 25),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: WorkoutSectionLabel(eyebrow, accent: true),
-                          ),
-                          if (showClose)
-                            IconButton(
-                              tooltip: 'Close',
-                              onPressed: () => Navigator.of(context).pop(),
-                              icon: const Icon(Icons.close_rounded),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      Semantics(
-                        namesRoute: true,
-                        header: true,
-                        child: DefaultTextStyle(
-                          style: theme.textTheme.headlineSmall!.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: colors.onSurface,
-                          ),
-                          child: title,
-                        ),
-                      ),
-                      if (subtitle != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          subtitle!,
-                          style: TextStyle(
-                            color: colors.onSurfaceVariant,
-                            height: 1.4,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: WorkoutSettingsTheme.bodyPadding,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (listBody)
-                        SizedBox(
-                          height: math.max(
-                            180,
-                            math.min(
-                              460,
-                              MediaQuery.sizeOf(context).height * .55,
-                            ),
-                          ),
-                          child: showListScrollHint
-                              ? WorkoutScrollHint(child: content)
-                              : content,
-                        )
-                      else
-                        content,
-                      if (actions.isNotEmpty) ...[
-                        const SizedBox(height: 24),
-                        WorkoutDialogActions(children: actions),
-                      ],
-                    ],
-                  ),
-                ),
               ],
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
@@ -281,6 +279,37 @@ class WorkoutSectionLabel extends StatelessWidget {
   );
 }
 
+/// Compact controls stack on phones and share rows on wide displays.
+class WorkoutControlGrid extends StatelessWidget {
+  const WorkoutControlGrid({
+    super.key,
+    required this.children,
+    this.maxColumns = 2,
+  });
+
+  final List<Widget> children;
+  final int maxColumns;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      const gap = 8.0;
+      const minWidth = 220.0;
+      final columns = ((constraints.maxWidth + gap) / (minWidth + gap))
+          .floor()
+          .clamp(1, maxColumns);
+      final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: [
+          for (final child in children) SizedBox(width: width, child: child),
+        ],
+      );
+    },
+  );
+}
+
 class WorkoutSettingSlider extends StatelessWidget {
   const WorkoutSettingSlider({
     super.key,
@@ -300,24 +329,27 @@ class WorkoutSettingSlider extends StatelessWidget {
   final int divisions;
   final ValueChanged<double> onChanged;
   @override
-  Widget build(BuildContext context) => WorkoutSettingsPanel(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 6),
-        Text(valueLabel, style: Theme.of(context).textTheme.titleLarge),
-        Slider(
-          value: value,
-          min: min,
-          max: max,
-          divisions: divisions,
-          label: valueLabel,
-          semanticFormatterCallback: (_) => '$label: $valueLabel',
-          onChanged: onChanged,
-        ),
-      ],
-    ),
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Wrap(
+        spacing: 8,
+        alignment: WrapAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+          Text(valueLabel),
+        ],
+      ),
+      Slider(
+        value: value,
+        min: min,
+        max: max,
+        divisions: divisions,
+        label: valueLabel,
+        semanticFormatterCallback: (_) => '$label: $valueLabel',
+        onChanged: onChanged,
+      ),
+    ],
   );
 }
 
@@ -354,47 +386,54 @@ class WorkoutActionTile extends StatelessWidget {
         button: true,
         child: InkWell(
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 25,
-                  color: primary ? foreground : colors.primary,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          color: foreground,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15,
-                        ),
-                      ),
-                      if (subtitle != null) ...[
-                        const SizedBox(height: 3),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    icon,
+                    size: 25,
+                    color: primary ? foreground : colors.primary,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          subtitle!,
+                          title,
                           style: TextStyle(
-                            color: primary
-                                ? foreground.withValues(alpha: .9)
-                                : colors.onSurfaceVariant,
-                            fontSize: 12,
-                            height: 1.4,
+                            color: foreground,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
                           ),
                         ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle!,
+                            style: TextStyle(
+                              color: primary
+                                  ? foreground.withValues(alpha: .9)
+                                  : colors.onSurfaceVariant,
+                              fontSize: 12,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Icon(Icons.arrow_forward_rounded, size: 18, color: foreground),
-              ],
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: foreground,
+                  ),
+                ],
+              ),
             ),
           ),
         ),

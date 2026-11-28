@@ -60,3 +60,33 @@ class WorkoutTrainingLoad {
   static String label(double? tss) =>
       tss == null ? 'TSS —' : 'Est. TSS ${tss.round()}';
 }
+
+/// Planned library metrics. A timed free ride can have a duration without a load.
+class WorkoutPlanMetrics {
+  const WorkoutPlanMetrics({this.seconds, this.tss});
+
+  final int? seconds;
+  final double? tss;
+
+  factory WorkoutPlanMetrics.fromZwo(String content) {
+    try {
+      final segments = WorkoutParser.parseZwoFile(content).segments;
+      final seconds = segments.fold<int>(0, (sum, s) => sum + s.duration);
+      return WorkoutPlanMetrics(
+        seconds: seconds > 0 ? seconds : null,
+        tss: WorkoutTrainingLoad.estimate(segments)?.tss,
+      );
+    } catch (_) {
+      return const WorkoutPlanMetrics();
+    }
+  }
+
+  String? get summary {
+    final duration = seconds;
+    if (duration == null) return null;
+    final hours = duration ~/ 3600;
+    final minutes = (duration % 3600) ~/ 60;
+    final time = hours > 0 ? '${hours}h ${minutes}m' : '${minutes}m';
+    return '$time • ${WorkoutTrainingLoad.label(tss)}';
+  }
+}

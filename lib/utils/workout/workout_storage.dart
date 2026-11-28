@@ -249,31 +249,8 @@ class WorkoutStorage {
     }
   }
 
-  static String? buildWorkoutSummary(String workoutContent) {
-    try {
-      final workoutData = WorkoutParser.parseZwoFile(workoutContent);
-      int totalTime = 0;
-
-      for (final segment in workoutData.segments) {
-        totalTime += segment.duration;
-      }
-
-      if (totalTime <= 0) {
-        return null;
-      }
-
-      final load = WorkoutTrainingLoad.estimate(workoutData.segments);
-      return '${_formatDuration(totalTime)} • ${WorkoutTrainingLoad.label(load?.tss)}';
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static String _formatDuration(int seconds) {
-    final hours = seconds ~/ 3600;
-    final minutes = (seconds % 3600) ~/ 60;
-    return hours > 0 ? '${hours}h ${minutes}m' : '${minutes}m';
-  }
+  static String? buildWorkoutSummary(String workoutContent) =>
+      WorkoutPlanMetrics.fromZwo(workoutContent).summary;
 
   // Delete a workout from the library
   static Future<void> deleteWorkout(String workoutName) async {

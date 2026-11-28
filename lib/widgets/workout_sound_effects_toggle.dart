@@ -25,9 +25,8 @@ class _WorkoutSoundEffectsToggleState extends State<WorkoutSoundEffectsToggle> {
 
   @override
   Widget build(BuildContext context) => SwitchListTile(
-    secondary: const Icon(Icons.volume_up_rounded),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
     title: const Text('Sound effects'),
-    subtitle: const Text('Workout clicks, interval chimes and finish fanfare'),
     value: _enabled ?? false,
     onChanged: _enabled == null
         ? null

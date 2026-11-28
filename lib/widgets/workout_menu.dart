@@ -106,89 +106,17 @@ class WorkoutMenu extends StatelessWidget {
         return WorkoutDialog(
           title: const Text('Ride menu'),
           icon: Icons.pedal_bike_rounded,
-          subtitle: 'Your next ride, your settings, all right here.',
-          showClose: true,
-          content: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
+          maxWidth: 720,
+          content: WorkoutControlGrid(
             children: [
-              _menuTile(
-                dialogContext,
-                _MenuAction.selectWorkout,
-                Icons.folder_open_rounded,
-                'Choose a workout',
-                subtitle: 'Browse your library or import a workout file',
-              ),
-              _menuTile(
-                dialogContext,
-                _MenuAction.freeRide,
-                Icons.all_inclusive_rounded,
-                'Just ride',
-                subtitle: 'No plan. Pedal at your own pace.',
-              ),
-              _menuGroup(
-                title: 'Ride settings',
-                subtitle: 'Voice, sounds, messages and trainer',
+              _menuTile(dialogContext, _MenuAction.selectWorkout, Icons.folder_open_rounded, 'Choose a workout'),
+              _menuTile(dialogContext, _MenuAction.freeRide, Icons.all_inclusive_rounded, 'Just ride'),
+              _menuTile(dialogContext, _MenuAction.completedActivities, Icons.history_rounded, 'Past rides'),
+              _menuTile(dialogContext, _MenuAction.connectedAccounts, Icons.link_rounded, 'Connected apps'),
+              WorkoutActionTile(
                 icon: Icons.tune_rounded,
-                children: [
-                  _menuTile(
-                    dialogContext,
-                    _MenuAction.audioCoach,
-                    Icons.record_voice_over_rounded,
-                    'Voice coach',
-                    subtitle: 'Spoken guidance during your ride',
-                  ),
-                  const WorkoutSoundEffectsToggle(),
-                  _menuTile(
-                    dialogContext,
-                    _MenuAction.rideMap,
-                    Icons.map_outlined,
-                    'Ride map',
-                    subtitle: 'Drawing and location for workout uploads',
-                  ),
-                  _menuTile(
-                    dialogContext,
-                    _MenuAction.workoutText,
-                    Icons.text_fields_rounded,
-                    'On-screen messages',
-                    subtitle: 'Text size and scrolling speed',
-                  ),
-                  _menuTile(
-                    dialogContext,
-                    _MenuAction.ftp,
-                    Icons.bolt_rounded,
-                    'Power target (FTP)',
-                    subtitle: 'Set your workout intensity baseline',
-                  ),
-                  _menuTile(
-                    dialogContext,
-                    _MenuAction.calibrate,
-                    Icons.build_outlined,
-                    'Trainer setup',
-                    subtitle: 'Calibrate your trainer when needed',
-                  ),
-                ],
-              ),
-              _menuGroup(
-                title: 'My training',
-                subtitle: 'Past rides and connected apps',
-                icon: Icons.history_rounded,
-                children: [
-                  _menuTile(
-                    dialogContext,
-                    _MenuAction.completedActivities,
-                    Icons.history_rounded,
-                    'Past rides',
-                    subtitle: 'Review, share or manage saved activities',
-                  ),
-                  _menuTile(
-                    dialogContext,
-                    _MenuAction.connectedAccounts,
-                    Icons.link_rounded,
-                    'Connected apps',
-                    subtitle: 'Strava and Intervals.icu',
-                  ),
-                ],
+                title: 'Ride settings',
+                onTap: () => _showRideSettings(dialogContext),
               ),
             ],
           ),
@@ -204,36 +132,27 @@ class WorkoutMenu extends StatelessWidget {
     );
   }
 
-  Widget _menuGroup({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required List<Widget> children,
-  }) => Card(
-    child: ExpansionTile(
-      leading: Icon(icon),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text(subtitle),
-      tilePadding: const EdgeInsets.all(16),
-      childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
-      shape: const Border(),
-      collapsedShape: const Border(),
-      children: children,
+  Future<void> _showRideSettings(BuildContext context) => showDialog<void>(
+    context: context,
+    builder: (ctx) => WorkoutDialog(
+      title: const Text('Ride settings'),
+      maxWidth: 720,
+      showClose: true,
+      content: WorkoutControlGrid(
+        children: [
+          _menuTile(ctx, _MenuAction.audioCoach, Icons.record_voice_over_rounded, 'Voice coach'),
+          const WorkoutSoundEffectsToggle(),
+          _menuTile(ctx, _MenuAction.rideMap, Icons.map_outlined, 'Ride map'),
+          _menuTile(ctx, _MenuAction.workoutText, Icons.text_fields_rounded, 'On-screen messages'),
+          _menuTile(ctx, _MenuAction.ftp, Icons.bolt_rounded, 'Power target (FTP)'),
+          _menuTile(ctx, _MenuAction.calibrate, Icons.build_outlined, 'Trainer setup'),
+        ],
+      ),
     ),
   );
 
-  Widget _menuTile(BuildContext context, _MenuAction action, IconData icon, String label, {String? subtitle}) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: WorkoutActionTile(
-          icon: icon,
-          title: label,
-          subtitle: subtitle,
-          // Keep this hub on the navigator stack. Close, back and cancellation in
-          // a child all reveal the same menu, including its expanded groups.
-          onTap: () => _handleAction(context, action),
-        ),
-      );
+  Widget _menuTile(BuildContext context, _MenuAction action, IconData icon, String label) =>
+      WorkoutActionTile(icon: icon, title: label, onTap: () => _handleAction(context, action));
 
   void _handleAction(BuildContext context, _MenuAction action) {
     switch (action) {
@@ -427,10 +346,7 @@ class WorkoutMenu extends StatelessWidget {
           Future<Map<String, dynamic>?> pickWorkoutFromFolder(Map<String, dynamic> folder) {
             return showDialog<Map<String, dynamic>>(
               context: dialogCtx,
-              builder: (_) => IntervalsWorkoutFolderDialog(
-                folder: folder,
-                thumbnailBuilder: _buildIntervalsThumbnail,
-              ),
+              builder: (_) => IntervalsWorkoutFolderDialog(folder: folder, thumbnailBuilder: _buildIntervalsThumbnail),
             );
           }
 
@@ -664,7 +580,6 @@ class WorkoutMenu extends StatelessWidget {
       builder: (ctx) => WorkoutDialog(
         title: const Text('Choose a workout'),
         icon: Icons.folder_open_rounded,
-        subtitle: 'Find your next ride.',
         showClose: true,
         listBody: true,
         showListScrollHint: false,
@@ -673,10 +588,10 @@ class WorkoutMenu extends StatelessWidget {
 
           headerWidgets: selectionMode
               ? [
-                  WorkoutOptionTile(
-                    leading: const Icon(Icons.file_upload_outlined),
-                    title: const Text('Import a workout file'),
-                    subtitle: const Text('Choose a .zwo file from your device'),
+                  WorkoutActionTile(
+                    icon: Icons.file_upload_outlined,
+                    title: 'Import a workout file',
+                    subtitle: 'Choose a .zwo file',
                     onTap: () => _runAfterDialogClose(ctx, () => _importZwo(rootContext)),
                   ),
                   FutureBuilder<bool>(
@@ -690,11 +605,9 @@ class WorkoutMenu extends StatelessWidget {
                       }
 
                       final isConnected = snapshot.data == true;
-                      return WorkoutOptionTile(
-                        leading: Image.asset('assets/intervals.png', width: 50, height: 50),
-                        title: Text(isConnected ? 'Intervals.icu Library' : 'Connect Intervals.icu for more workouts'),
-                        subtitle: isConnected ? const Text('Browse folders & workouts') : null,
-                        trailing: const Icon(Icons.chevron_right, size: 18),
+                      return WorkoutActionTile(
+                        icon: Icons.link_rounded,
+                        title: isConnected ? 'Intervals.icu Library' : 'Connect Intervals.icu',
                         onTap: () => _runAfterDialogClose(ctx, () {
                           if (isConnected) {
                             _pickWorkoutFromIntervals(rootContext);
@@ -705,19 +618,10 @@ class WorkoutMenu extends StatelessWidget {
                       );
                     },
                   ),
-                  WorkoutOptionTile(
-                    leading: Image.asset('assets/ss2kv3.png', width: 50, height: 50),
-                    title: const Text('SmartSpin2k Library'),
-                    subtitle: const Text('Bundled workouts'),
-                    trailing: const Icon(Icons.chevron_right, size: 18),
+                  WorkoutActionTile(
+                    icon: Icons.folder_open_rounded,
+                    title: 'SmartSpin2k Library',
                     onTap: () => _runAfterDialogClose(ctx, () => _showAssetWorkoutFolder(rootContext)),
-                  ),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
-                      child: Text('Imported Workouts:', style: Theme.of(context).textTheme.titleSmall),
-                    ),
                   ),
                 ]
               : const [],
@@ -813,9 +717,8 @@ class WorkoutMenu extends StatelessWidget {
             return WorkoutDialog(
               title: const Text('On-screen messages'),
               icon: Icons.text_fields_rounded,
-              subtitle: 'Adjust the messages shown during your ride.',
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
+              maxWidth: 720,
+              content: WorkoutControlGrid(
                 children: [
                   WorkoutSettingSlider(
                     label: 'Font Size',
@@ -829,7 +732,6 @@ class WorkoutMenu extends StatelessWidget {
                       WorkoutTextEventOverlay.saveTextSettings(value, WorkoutTextStyle.scrollSpeed);
                     },
                   ),
-                  const SizedBox(height: 16),
                   WorkoutSettingSlider(
                     label: 'Scroll Speed',
                     valueLabel: '${WorkoutTextStyle.scrollSpeed.toInt()} px/s',
@@ -842,49 +744,50 @@ class WorkoutMenu extends StatelessWidget {
                       WorkoutTextEventOverlay.saveTextSettings(WorkoutTextStyle.scrollingText, value);
                     },
                   ),
-                  const SizedBox(height: 16),
-                  OutlinedButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (ctx3) {
-                          final testSegment = WorkoutSegment(
-                            type: SegmentType.steadyState,
-                            duration: 60,
-                            powerLow: 100,
-                            powerHigh: 150,
-                            textEvents: [
-                              TextEvent(
-                                timeOffset: 0,
-                                message:
-                                    'Text Size ${WorkoutTextStyle.scrollingText.toInt()} , Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
-                              ),
-                            ],
-                          );
-                          return WorkoutDialog(
-                            title: const Text('Preview workout text'),
-                            icon: Icons.text_fields_rounded,
-                            content: SizedBox(
-                              width: double.maxFinite,
-                              child: WorkoutTextEventOverlay(
-                                currentSegment: testSegment,
-                                secondsIntoSegment: 0,
-                                ttsSettings: ttsSettings,
-                                workoutController: workoutController,
-                                testText:
-                                    'Text Size ${WorkoutTextStyle.scrollingText.toInt()} x Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
-                              ),
-                            ),
-                            actions: [TextButton(onPressed: () => Navigator.pop(ctx3), child: const Text('CLOSE'))],
-                          );
-                        },
-                      );
-                    },
-                    child: const Text('TEST SETTINGS'),
-                  ),
                 ],
               ),
-              actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CLOSE'))],
+              actions: [
+                OutlinedButton(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx3) {
+                        final testSegment = WorkoutSegment(
+                          type: SegmentType.steadyState,
+                          duration: 60,
+                          powerLow: 100,
+                          powerHigh: 150,
+                          textEvents: [
+                            TextEvent(
+                              timeOffset: 0,
+                              message:
+                                  'Text Size ${WorkoutTextStyle.scrollingText.toInt()} , Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
+                            ),
+                          ],
+                        );
+                        return WorkoutDialog(
+                          title: const Text('Preview workout text'),
+                          icon: Icons.text_fields_rounded,
+                          content: SizedBox(
+                            width: double.maxFinite,
+                            child: WorkoutTextEventOverlay(
+                              currentSegment: testSegment,
+                              secondsIntoSegment: 0,
+                              ttsSettings: ttsSettings,
+                              workoutController: workoutController,
+                              testText:
+                                  'Text Size ${WorkoutTextStyle.scrollingText.toInt()} x Speed ${WorkoutTextStyle.scrollSpeed.toInt()}',
+                            ),
+                          ),
+                          actions: [TextButton(onPressed: () => Navigator.pop(ctx3), child: const Text('CLOSE'))],
+                        );
+                      },
+                    );
+                  },
+                  child: const Text('TEST SETTINGS'),
+                ),
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CLOSE')),
+              ],
             );
           },
         );

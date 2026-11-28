@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ss2kconfigapp/widgets/intervals_workout_folder_dialog.dart';
+import 'package:ss2kconfigapp/widgets/workout_dialog.dart';
+import 'package:ss2kconfigapp/widgets/workout_sort.dart';
 
 void main() {
   testWidgets(
@@ -44,7 +46,15 @@ void main() {
                             {'name': 'Empty folder', 'children': []},
                             {
                               'name': 'Build week',
-                              'children': [workout],
+                              'children': [
+                                workout,
+                                {
+                                  ...workout,
+                                  'name': 'Short hard ride',
+                                  'moving_time': '1800',
+                                  'icu_training_load': '82.5',
+                                },
+                              ],
                             },
                           ],
                         },
@@ -74,9 +84,35 @@ void main() {
         expect(tester.getSize(find.byType(ListView)).height, greaterThan(0));
         await tap('Empty folder');
         expect(find.text('No workouts in this folder yet.'), findsOneWidget);
-        await tap('Go back');
+        await tester.tap(find.byTooltip('Go back'));
+        await tester.pumpAndSettle();
         await tap('Build week');
         expect(find.text('01:00:00 • TL 70 • IF 0.85'), findsOneWidget);
+        for (final sort in [
+          'Shortest first',
+          'Highest TSS first',
+          'Lowest TSS first',
+        ]) {
+          await tester.tap(find.byTooltip('Sort workouts'));
+          await tester.pumpAndSettle();
+          final choice = find.widgetWithText(
+            CheckedPopupMenuItem<WorkoutSort>,
+            sort,
+          );
+          await tester.ensureVisible(choice);
+          await tester.pumpAndSettle();
+          await tester.tap(choice);
+          await tester.pumpAndSettle();
+          final first = tester
+              .widgetList<WorkoutOptionTile>(find.byType(WorkoutOptionTile))
+              .first;
+          expect(
+            (first.title as Text).data,
+            sort == 'Lowest TSS first'
+                ? 'Threshold intervals'
+                : 'Short hard ride',
+          );
+        }
         await tap('Threshold intervals');
         expect(selection, workout);
         expect(find.byType(IntervalsWorkoutFolderDialog), findsNothing);

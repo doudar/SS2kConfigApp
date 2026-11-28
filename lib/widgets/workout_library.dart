@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'workout_dialog.dart';
+import 'workout_sort.dart';
+import '../utils/workout/workout_training_load.dart';
 import 'workout_scroll_hint.dart';
 import 'package:flutter/services.dart' show AssetManifest, rootBundle;
 import '../utils/workout/workout_storage.dart';
@@ -68,6 +70,7 @@ class WorkoutLibrary extends StatefulWidget {
     required void Function(String name, String content) onSelected,
   }) async {
     final assets = await loadAssetWorkouts();
+    if (!context.mounted) return;
     if (assets.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -78,50 +81,71 @@ class WorkoutLibrary extends StatefulWidget {
       return;
     }
 
-    if (!context.mounted) return;
+    final entries = Future.wait(
+      assets.map((asset) async {
+        final content = await rootBundle.loadString(asset.path);
+        return _LibraryWorkout(asset.name, content);
+      }),
+    );
+    var sort = WorkoutSort.original;
     await showDialog<void>(
       context: context,
-      builder: (ctx) => WorkoutDialog(
-        title: const Text('Workout Library'),
-        icon: Icons.folder_open_rounded,
-        listBody: true,
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: assets.length,
-            itemBuilder: (context, index) {
-              final workout = assets[index];
-              return FutureBuilder<String>(
-                future: rootBundle.loadString(workout.path),
-                builder: (context, contentSnapshot) {
-                  final content = contentSnapshot.data;
-                  final summary = _buildWorkoutSummaryText(content);
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, update) => WorkoutDialog(
+          title: Row(
+            children: [
+              const Expanded(child: Text('Workout Library')),
+              WorkoutSortButton(
+                value: sort,
+                onChanged: (value) => update(() => sort = value),
+              ),
+            ],
+          ),
+          icon: Icons.folder_open_rounded,
+          listBody: true,
+          content: FutureBuilder<List<_LibraryWorkout>>(
+            future: entries,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return const Center(
+                  child: Text('Could not load the workout library.'),
+                );
+              }
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final workouts = sort.apply(
+                snapshot.data!,
+                (entry) => entry.metrics,
+              );
+              return ListView.builder(
+                itemCount: workouts.length,
+                itemBuilder: (context, index) {
+                  final workout = workouts[index];
                   return WorkoutOptionTile(
+                    key: ValueKey(workout.name),
                     leading: _buildWorkoutThumbnail(
                       name: workout.name,
-                      content: content,
+                      content: workout.content,
                     ),
                     title: Text(workout.name),
-                    subtitle: summary,
-                    onTap: () async {
+                    subtitle: workout.summary,
+                    onTap: () {
                       Navigator.pop(ctx);
-                      final workoutContent =
-                          content ?? await rootBundle.loadString(workout.path);
-                      onSelected(workout.name, workoutContent);
+                      onSelected(workout.name, workout.content);
                     },
                   );
                 },
               );
             },
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('CLOSE'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('CLOSE'),
-          ),
-        ],
       ),
     );
   }
@@ -137,14 +161,7 @@ class AssetWorkout {
   const AssetWorkout({required this.path, required this.name});
 }
 
-Widget _buildWorkoutThumbnail({
-  required String name,
-  required String? content,
-}) {
-  if (content == null) {
-    return _workoutThumbnailPlaceholder();
-  }
-
+Widget _buildWorkoutThumbnail({required String name, required String content}) {
   return FutureBuilder<String?>(
     future: WorkoutStorage.getOrGenerateWorkoutThumbnail(
       workoutName: name,
@@ -168,28 +185,37 @@ Widget _workoutThumbnailPlaceholder() {
   return Container(width: 100, height: 60, color: Colors.grey[300]);
 }
 
-Text? _buildWorkoutSummaryText(String? content) {
-  if (content == null) {
-    return null;
-  }
+class _LibraryWorkout {
+  _LibraryWorkout(this.name, this.content);
+  final String name;
+  final String content;
+  late final metrics = WorkoutPlanMetrics.fromZwo(content);
 
-  final summary = WorkoutStorage.buildWorkoutSummary(content);
-  if (summary == null) {
-    return null;
+  Text? get summary {
+    final label = metrics.summary;
+    return label == null ? null : Text(label);
   }
-
-  return Text(summary);
 }
 
 class _WorkoutLibraryState extends State<WorkoutLibrary> {
-  Future<List<Map<String, dynamic>>>? _workoutsFuture;
+  late Future<List<_LibraryWorkout>> _workoutsFuture;
+  WorkoutSort _sort = WorkoutSort.original;
+
   final Set<String> _selectedWorkouts = {};
   String? _inProgressWorkoutName;
+
+  Future<List<_LibraryWorkout>> _loadWorkouts() async => [
+    for (final row in await WorkoutStorage.getSavedWorkouts())
+      _LibraryWorkout(
+        row['name'] as String? ?? '',
+        row['content'] as String? ?? '',
+      ),
+  ];
 
   @override
   void initState() {
     super.initState();
-    _workoutsFuture = WorkoutStorage.getSavedWorkouts();
+    _workoutsFuture = _loadWorkouts();
     _loadInProgressWorkoutName();
   }
 
@@ -216,17 +242,16 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
 
   void _refreshWorkouts() {
     setState(() {
-      _workoutsFuture = WorkoutStorage.getSavedWorkouts();
+      _workoutsFuture = _loadWorkouts();
       _selectedWorkouts.clear();
     });
   }
 
-  Future<void> _deleteSelected(List<Map<String, dynamic>> workouts) async {
+  Future<void> _deleteSelected(List<_LibraryWorkout> workouts) async {
     if (_selectedWorkouts.isEmpty) return;
 
     for (final workout in workouts) {
-      final name = workout['name'] as String?;
-      if (name == null) continue;
+      final name = workout.name;
       if (_selectedWorkouts.contains(name) &&
           name != WorkoutStorage.defaultWorkoutName) {
         await WorkoutStorage.deleteWorkout(name);
@@ -239,7 +264,7 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<Map<String, dynamic>>>(
+    return FutureBuilder<List<_LibraryWorkout>>(
       future: _workoutsFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -255,9 +280,9 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
           );
         }
 
-        final workouts = snapshot.data!;
+        final workouts = _sort.apply(snapshot.data!, (entry) => entry.metrics);
         final selectableWorkouts = workouts.where((workout) {
-          final name = workout['name'];
+          final name = workout.name;
           return name != WorkoutStorage.defaultWorkoutName &&
               name != _inProgressWorkoutName;
         }).toList();
@@ -272,23 +297,37 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
               child: WorkoutScrollHint(
                 child: ListView.builder(
                   padding: EdgeInsets.zero,
-                  itemCount: widget.headerWidgets.length + workouts.length,
+                  itemCount: widget.headerWidgets.length + 1 + workouts.length,
                   itemBuilder: (context, index) {
                     if (index < widget.headerWidgets.length) {
                       return widget.headerWidgets[index];
                     }
 
-                    final workoutIndex = index - widget.headerWidgets.length;
+                    if (index == widget.headerWidgets.length) {
+                      return Row(
+                        children: [
+                          const Expanded(child: Text('Imported workouts')),
+                          WorkoutSortButton(
+                            value: _sort,
+                            onChanged: (value) => setState(() => _sort = value),
+                          ),
+                        ],
+                      );
+                    }
+                    final workoutIndex =
+                        index - widget.headerWidgets.length - 1;
                     final workout = workouts[workoutIndex];
-                    final name = workout['name'] as String? ?? '';
+                    final name = workout.name;
                     final isInProgress = name == _inProgressWorkoutName;
                     final isSelectable =
                         name != WorkoutStorage.defaultWorkoutName &&
                         !isInProgress;
                     final isSelected = _selectedWorkouts.contains(name);
                     return _WorkoutTile(
+                      key: ObjectKey(workout),
                       name: name,
-                      content: workout['content'],
+                      content: workout.content,
+                      summary: workout.summary,
                       selectionMode: widget.selectionMode,
                       isSelected: isSelected,
                       canSelect: isSelectable,
@@ -328,9 +367,7 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
                               if (value == true) {
                                 _selectedWorkouts.addAll(
                                   selectableWorkouts
-                                      .map(
-                                        (workout) => workout['name'] as String,
-                                      )
+                                      .map((workout) => workout.name)
                                       .where((name) => name.isNotEmpty),
                                 );
                               }
@@ -395,6 +432,7 @@ class _WorkoutLibraryState extends State<WorkoutLibrary> {
 class _WorkoutTile extends StatelessWidget {
   final String name;
   final String content;
+  final Text? summary;
   final bool selectionMode;
   final void Function(String name, String content, bool isInProgress)?
   onSelected;
@@ -405,8 +443,10 @@ class _WorkoutTile extends StatelessWidget {
   final ValueChanged<bool> onSelectionChanged;
 
   const _WorkoutTile({
+    super.key,
     required this.name,
     required this.content,
+    required this.summary,
     required this.selectionMode,
     this.onSelected,
     this.onReset,
@@ -418,8 +458,6 @@ class _WorkoutTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final summary = _buildWorkoutSummaryText(content);
-
     return WorkoutOptionTile(
       leading: _buildWorkoutThumbnail(name: name, content: content),
       trailing: canSelect

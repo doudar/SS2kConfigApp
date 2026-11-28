@@ -44,7 +44,6 @@ class WorkoutConnectedAccounts {
       builder: (context) => WorkoutDialog(
         title: const Text('Connected apps'),
         icon: Icons.link_rounded,
-        subtitle: 'Connect your training apps to bring your rides together.',
         showClose: true,
         content: buildConnectedAccountsMenu(context),
       ),
