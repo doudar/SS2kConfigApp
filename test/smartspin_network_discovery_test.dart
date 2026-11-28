@@ -168,6 +168,41 @@ void main() {
     );
   }
 
+  test('FTMS starts before applying a superseding workout target', () async {
+    final result = SmartSpinScanResult(ble: ble(smartSpin: false, ftms: true));
+    platform.discoveryIncludesCustomService = false;
+    final data = DeviceData();
+    addTearDown(data.dispose);
+    await data.connectFromScan(result);
+    var nextWrite = 0;
+    Future<void> acknowledge(
+      List<int> command, {
+      void Function()? beforeReply,
+    }) async {
+      await waitUntil(() => platform.writes.length > nextWrite);
+      expect(platform.writes[nextWrite++], command);
+      beforeReply?.call();
+      platform.emitNotification(result.device.remoteId, ftmsControlPointUUID, [
+        0x80,
+        command.first,
+        1,
+      ]);
+    }
+
+    data.setWorkoutTargetPower(150);
+    await acknowledge([0], beforeReply: () => data.setWorkoutTargetPower(175));
+    await acknowledge([7], beforeReply: () => data.setWorkoutTargetPower(190));
+    await acknowledge([5, 190, 0]);
+    data.endWorkoutControl();
+    await acknowledge([
+      8,
+      1,
+    ], beforeReply: () => data.setWorkoutTargetPower(210));
+    await acknowledge([7]);
+    await acknowledge([5, 210, 0]);
+    await data.disconnectPreferred(result.device);
+  });
+
   test(
     'a refused control request leaves telemetry working and sends no target',
     () async {

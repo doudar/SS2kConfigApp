@@ -541,6 +541,7 @@ class DeviceData {
   SmartSpinScanResult? _lastScanResult;
   bool _workoutOnly = false;
   bool _hasFtmsControl = false;
+  bool _ftmsWorkoutStarted = false;
   final _unsupportedWorkoutOpcodes = <int>{};
   static const _ergSensorNotice = 'ERG waiting for trainer sensors';
   final workoutControlNotice = ValueNotifier<String?>(null);
@@ -1615,6 +1616,7 @@ class DeviceData {
 
   void _resetFtmsControl() {
     _hasFtmsControl = false;
+    _ftmsWorkoutStarted = false;
     _unsupportedWorkoutOpcodes.clear();
     workoutControlNotice.value = null;
   }
@@ -4449,14 +4451,24 @@ class DeviceData {
           transportState.value.epoch != batch.epoch) {
         return false;
       }
-      // Ownership follows the trainer's reply even if the user paused while
-      // Request Control was on the wire. The queued stop can then release it.
-      if (opcode == FTMSOpCodes.REQUEST_CONTROL &&
-          result == FTMSResultCodes.SUCCESS) {
-        _hasFtmsControl = true;
+      // Acknowledgements on this connection still describe the trainer even
+      // when a newer target or pause has superseded the command batch.
+      if (result == FTMSResultCodes.SUCCESS) {
+        switch (opcode) {
+          case FTMSOpCodes.REQUEST_CONTROL:
+            _hasFtmsControl = true;
+          case FTMSOpCodes.START_OR_RESUME:
+            _ftmsWorkoutStarted = true;
+          case FTMSOpCodes.STOP_OR_PAUSE:
+            _ftmsWorkoutStarted = false;
+        }
+        return isCurrent();
+      }
+      if (result == FTMSResultCodes.CONTROL_NOT_PERMITTED) {
+        _hasFtmsControl = false;
+        _ftmsWorkoutStarted = false;
       }
       if (!isCurrent()) return false;
-      if (result == FTMSResultCodes.SUCCESS) return true;
       if (result == FTMSResultCodes.OP_CODE_NOT_SUPPORTED) {
         // SmartSpin2k also returns this result until a power or cadence
         // source is available. Let the workout lane retry its current target.
@@ -4475,9 +4487,6 @@ class DeviceData {
         }
         return false;
       }
-      if (result == FTMSResultCodes.CONTROL_NOT_PERMITTED) {
-        _hasFtmsControl = false;
-      }
       throw StateError(
         'Trainer rejected FTMS command $opcode (result $result)',
       );
@@ -4490,11 +4499,8 @@ class DeviceData {
             FTMSOpCodes.STOP_OR_PAUSE,
             FTMSStopPauseParams.STOP,
           ]);
-          if (isCurrent()) {
-            _hasFtmsControl = false;
-            if (workoutControlNotice.value == _ergSensorNotice) {
-              workoutControlNotice.value = null;
-            }
+          if (isCurrent() && workoutControlNotice.value == _ergSensorNotice) {
+            workoutControlNotice.value = null;
           }
         }
         return isCurrent();
@@ -4502,6 +4508,8 @@ class DeviceData {
       if (!_hasFtmsControl) {
         if (!await procedure([FTMSOpCodes.REQUEST_CONTROL])) return isCurrent();
         if (!isCurrent()) return false;
+      }
+      if (!_ftmsWorkoutStarted) {
         await procedure([FTMSOpCodes.START_OR_RESUME]);
         if (!isCurrent()) return false;
       }
