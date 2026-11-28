@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:ss2kconfigapp/widgets/workout_library.dart';
@@ -11,6 +12,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ss2kconfigapp/utils/device_data.dart';
+import 'package:ss2kconfigapp/utils/theme_provider.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_controller.dart';
 import 'package:ss2kconfigapp/utils/workout/workout_tts_settings.dart';
 import 'package:ss2kconfigapp/utils/workout/sounds.dart';
@@ -42,7 +44,16 @@ class _Data implements DeviceData {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   const capture = bool.fromEnvironment('CAPTURE_WORKOUT_SETTINGS');
+  late ThemeData appTheme;
+  setUpAll(() async {
+    final loaded = Completer<void>();
+    final provider = ThemeProvider()..addListener(loaded.complete);
+    await loaded.future;
+    appTheme = provider.darkTheme;
+    provider.dispose();
+  });
   late WorkoutTTSSettings tts;
   late _Controller controller;
   final boundaryKey = GlobalKey();
@@ -81,19 +92,15 @@ void main() {
   Future<void> host(
     WidgetTester tester, {
     Widget? dialog,
-    Brightness brightness = Brightness.light,
     double scale = 1,
     ValueChanged<Object?>? onResult,
     bool browse = false,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.red,
-            brightness: brightness,
-          ),
-        ),
+        themeMode: ThemeMode.dark,
+        theme: appTheme,
+        darkTheme: appTheme,
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,
@@ -187,14 +194,14 @@ void main() {
   }
 
   testWidgets(
-    'workout menus fit light and dark phones, landscape and large text',
+    'workout menus use the app dark theme and fit phones, landscape and large text',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPhysicalSize);
       if (capture)
         await tester.runAsync(() async {
-          await (FontLoader('Roboto')..addFont(
+          await (FontLoader('Segoe UI')..addFont(
                 File(
                   'C:/Windows/Fonts/segoeui.ttf',
                 ).readAsBytes().then(ByteData.sublistView),
@@ -210,80 +217,78 @@ void main() {
         const Size(1200, 900),
       ]) {
         tester.view.physicalSize = size;
-        for (final brightness in Brightness.values) {
-          for (final entry in {
-            'Voice coach': 'Voice coach',
-            'Ride map': 'Ride map',
-            'On-screen messages': 'On-screen messages',
-            'Connected apps': 'Connected apps',
-            'Choose a workout': 'Choose a workout',
-          }.entries) {
-            await host(tester, brightness: brightness, scale: capture ? 1 : 2);
-            expect(tester.takeException(), isNull);
-            if (entry.key == 'Voice coach')
-              await screenshot(
-                tester,
-                'menu-${size.width.toInt()}-${brightness.name}',
-              );
-            await openGroup(tester, entry.key);
-            await tapVisible(tester, find.text(entry.key));
-            expect(
-              find.descendant(
-                of: find.byType(WorkoutDialog).last,
-                matching: find.text(entry.value),
-              ),
-              findsOneWidget,
+        for (final entry in {
+          'Voice coach': 'Voice coach',
+          'Ride map': 'Ride map',
+          'On-screen messages': 'On-screen messages',
+          'Connected apps': 'Connected apps',
+          'Choose a workout': 'Choose a workout',
+        }.entries) {
+          await host(tester, scale: capture ? 1 : 2);
+          final menuTheme = Theme.of(tester.element(find.text('Ride menu')));
+          expect(menuTheme.brightness, Brightness.dark);
+          expect(menuTheme.colorScheme, appTheme.colorScheme);
+          expect(tester.takeException(), isNull);
+          if (entry.key == 'Voice coach')
+            await screenshot(tester, 'menu-${size.width.toInt()}-dark');
+          await openGroup(tester, entry.key);
+          await tapVisible(tester, find.text(entry.key));
+          expect(
+            find.descendant(
+              of: find.byType(WorkoutDialog).last,
+              matching: find.text(entry.value),
+            ),
+            findsOneWidget,
+          );
+          final fromSettings = [
+            'Voice coach',
+            'Ride map',
+            'On-screen messages',
+          ].contains(entry.key);
+          expect(
+            find.byType(WorkoutDialog),
+            findsNWidgets(fromSettings ? 3 : 2),
+          );
+          expect(tester.takeException(), isNull);
+          await screenshot(
+            tester,
+            '${entry.key.replaceAll(' ', '-').toLowerCase()}-${size.width.toInt()}-dark',
+          );
+          if (capture && entry.key != 'Choose a workout') {
+            final scrolls = find.descendant(
+              of: find.byType(WorkoutDialog).last,
+              matching: find.byType(Scrollable),
             );
-            final fromSettings = [
-              'Voice coach',
-              'Ride map',
-              'On-screen messages',
-            ].contains(entry.key);
-            expect(
-              find.byType(WorkoutDialog),
-              findsNWidgets(fromSettings ? 3 : 2),
-            );
-            expect(tester.takeException(), isNull);
-            await screenshot(
-              tester,
-              '${entry.key.replaceAll(' ', '-').toLowerCase()}-${size.width.toInt()}-${brightness.name}',
-            );
-            if (capture && entry.key != 'Choose a workout') {
-              final scrolls = find.descendant(
-                of: find.byType(WorkoutDialog).last,
-                matching: find.byType(Scrollable),
-              );
-              for (final scroll in tester.stateList<ScrollableState>(scrolls)) {
-                if (scroll.position.axis == Axis.vertical) {
-                  expect(
-                    scroll.position.maxScrollExtent,
-                    0,
-                    reason: '${entry.key} at $size',
-                  );
-                }
+            for (final scroll in tester.stateList<ScrollableState>(scrolls)) {
+              if (scroll.position.axis == Axis.vertical) {
+                expect(
+                  scroll.position.maxScrollExtent,
+                  0,
+                  reason: '${entry.key} at $size',
+                );
               }
             }
-            final close = find.text('CLOSE');
-            if (close.evaluate().isNotEmpty) {
-              expect(close.hitTestable(), findsOneWidget);
-              await tester.tap(close);
-            } else {
-              final closeButton = find.byTooltip('Close').last;
-              expect(closeButton.hitTestable(), findsOneWidget);
-              await tester.tap(closeButton);
-            }
-            await tester.pumpAndSettle();
-            expect(
-              find
-                  .text(fromSettings ? 'Ride settings' : 'Ride menu')
-                  .last
-                  .hitTestable(),
-              findsOneWidget,
-            );
-            await backToRide(tester);
-            expect(find.byType(WorkoutDialog), findsNothing);
-            expect(tester.takeException(), isNull);
           }
+          final close = find.text('CLOSE');
+          if (close.evaluate().isNotEmpty) {
+            expect(close.hitTestable(), findsOneWidget);
+            await tester.tap(close);
+          } else {
+            final closeButton = find.byTooltip('Close').last;
+            expect(closeButton.hitTestable(), findsOneWidget);
+            await tester.tap(closeButton);
+          }
+          await tester.pumpAndSettle();
+          expect(
+            find
+                .text(fromSettings ? 'Ride settings' : 'Ride menu')
+                .last
+                .hitTestable(),
+            findsOneWidget,
+          );
+          await backToRide(tester);
+          expect(find.byType(WorkoutDialog), findsNothing);
+          expect(tester.takeException(), isNull);
         }
       }
     },

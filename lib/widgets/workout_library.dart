@@ -169,7 +169,11 @@ Widget _buildWorkoutThumbnail({required String name, required String content}) {
     ),
     builder: (context, snapshot) {
       if (!snapshot.hasData) {
-        return _workoutThumbnailPlaceholder();
+        return Container(
+          width: 100,
+          height: 60,
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        );
       }
       return Image.memory(
         base64Decode(snapshot.data!),
@@ -179,10 +183,6 @@ Widget _buildWorkoutThumbnail({required String name, required String content}) {
       );
     },
   );
-}
-
-Widget _workoutThumbnailPlaceholder() {
-  return Container(width: 100, height: 60, color: Colors.grey[300]);
 }
 
 class _LibraryWorkout {
